@@ -122,7 +122,7 @@ def test_walk_noexist(test_dir, continuation):
 
 
 @pytest.mark.parametrize(
-    'continuation', ('0', '', None, 'ab', 'c', 'c/a.txt', 'XXX')
+    'continuation', ('0', '', 'ab', 'c', 'c/a.txt', 'XXX')
 )
 def test_walk_stupidkey(test_dir, continuation):
     listing, tmp_path = test_dir
@@ -137,7 +137,7 @@ def test_walk_stupidkey(test_dir, continuation):
     my_reference_key = functools.partial(reference_key, key=my_key)
 
     files = sorted([Path(f) for f in list(zip(*listing))[0]], key=my_reference_key)
-    continuation = 'ab'
+
     index = bisect.bisect(
         a=files,
         x=my_reference_key(continuation),
