@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modama-crawler"
+description = "Expose a file system tree as a data repository, e.g. through OAI-PMH"
+license = {file = "LICENSE"}
+keywords = ["OAI-PMH", "data repository", "metadata"]
+requires-python = ">=3.14"
+version = "0.0.1.dev0"
+dependencies = [
+    "natsort",
+]
+classifiers = [
+    "Programming Language :: Python :: 3.14",
+    "Development Status :: 3 - Alpha",
+]
+authors = [
+    {name="Dieter Weber", email="d.weber@fz-juelich.de"},
+]
+
+[project.urls]
+repository = "https://iffgit.fz-juelich.de/weber/data-management-system/"
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-cov"]
+
+[tool.setuptools.dynamic]
+
+
