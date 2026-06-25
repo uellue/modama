@@ -1,14 +1,17 @@
 import os
-import stat
 import pathlib
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Sequence
 import bisect
+import functools
 
 import natsort
 
 
+from .recognition import FileHandler, guess
+
+
 # FIXME define rich type with metadata and whatnot
-CrawlResultItem = pathlib.Path
+CrawlResultItem = FileHandler
 
 
 default_key = natsort.natsort_keygen()
@@ -20,7 +23,7 @@ def is_real_dir(p: pathlib.Path) -> bool:
 
 def _nextpath_inner(
         root: pathlib.Path, continuation: tuple,
-        deterministic_key: Callable, n: int) -> Sequence[CrawlResultItem]:
+        deterministic_key: Callable, n: int) -> Sequence[pathlib.Path]:
     # Find file entries that come after the continuation token in the chosen
     # sort order. If the continuation token is a directory, it descends into
     # that directory. It will list files until it encounters a directory so that
@@ -103,13 +106,22 @@ def _mk_deterministic(key):
     return deterministic_key
 
 
+def outer_key(item, key):
+    # The key is applied separately at each level of the path hierarchy.
+    # For that reason we create a nested key with a tuple of tuples
+    # that should resolve to the same sort order
+    parts = pathlib.Path(item).parts
+    return tuple(key(p) for p in parts)
+
+
 def crawl(
             root: pathlib.Path | str, continuation: pathlib.Path | str,
-            key: Callable = default_key, n: int = 1) -> Iterable[CrawlResultItem]:
+            key: Callable = default_key, n: int = 1) -> dict[pathlib.Path, CrawlResultItem]:
     # _nextpath_inner() stops returning entries when it encounters a directory
     # since it will need to descend. That's why this outer function keeps
     # calling _nextpath_inner() until our bucket is full
-    result = []
+    result = {}
+    outstanding = {}
     root = pathlib.Path(root).resolve(strict=True)
     continuation = pathlib.Path(continuation)
 
@@ -125,18 +137,34 @@ def crawl(
 
     deterministic_key = _mk_deterministic(key)
 
+    outer = functools.partial(outer_key, key=deterministic_key)
+
     continuation_parts = continuation.parts
     if not continuation_parts:
         # This will resolve to the root node in _nextpath_inner.
         continuation_parts = ('', )
-    while len(result) < n:
+    while len(result) < n or len(outstanding) != 0:
         pieces = _nextpath_inner(
             root=root, continuation=continuation_parts,
             deterministic_key=deterministic_key, n=n-len(result)
         )
-        print(pieces)
         if len(pieces) == 0:
             break
-        result.extend(pieces)
+        for piece in pieces:
+            if piece in outstanding:
+                outstanding.pop(piece)
+                continue
+            guesses = guess(root / piece)
+            handler = FileHandler.create(root, piece, guesses)
+            for member in handler.members:
+                if member == piece:
+                    continue
+                elif member in result:
+                    raise Exception()
+                    result.pop(member)
+                else:
+                    raise Exception()
+                    outstanding[member] = handler
+            result[piece] = handler
         continuation_parts = pathlib.Path(pieces[-1]).parts
     return result

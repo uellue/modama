@@ -5,15 +5,10 @@ from random import shuffle
 from pathlib import Path
 import bisect
 
-from modama_crawler.dirwalk import crawl, default_key, _mk_deterministic
+from modama_crawler.dirwalk import crawl, outer_key, default_key, _mk_deterministic
 
 
-def reference_key(item, key=default_key):
-    # The key is applied separately at each level of the path hierarchy.
-    # For that reason we create a nested key with a tuple of tuples
-    # that should resolve to the same sort order
-    parts = Path(item).parts
-    return tuple(key(p) for p in parts)
+reference_key = functools.partial(outer_key, key=_mk_deterministic(default_key))
 
 
 @pytest.fixture
@@ -60,7 +55,7 @@ def test_walk(test_dir):
     )
     print(res)
     files = sorted([Path(f) for f in list(zip(*listing))[0]], key=reference_key)
-    assert res == files
+    assert list(res.keys()) == files
 
 
 @pytest.mark.parametrize(
@@ -76,7 +71,7 @@ def test_walk_count(test_dir, n):
         n=n
     )
     print(res)
-    assert res == files[:n]
+    assert list(res.keys()) == files[:n]
 
 
 @pytest.mark.parametrize(
@@ -94,7 +89,7 @@ def test_walk_skip(test_dir, count):
             n=count,
         )
         print(res)
-        assert res == files[n+1:n+1+count]
+        assert list(res.keys()) == files[n+1:n+1+count]
 
 
 @pytest.mark.parametrize(
@@ -118,7 +113,7 @@ def test_walk_noexist(test_dir, continuation):
         n=1000
     )
     print(res)
-    assert res == files[index:]
+    assert list(res.keys()) == files[index:]
 
 
 @pytest.mark.parametrize(
@@ -134,7 +129,7 @@ def test_walk_stupidkey(test_dir, continuation):
 
     my_key = _mk_deterministic(stupid_key)
 
-    my_reference_key = functools.partial(reference_key, key=my_key)
+    my_reference_key = functools.partial(outer_key, key=my_key)
 
     files = sorted([Path(f) for f in list(zip(*listing))[0]], key=my_reference_key)
 
@@ -151,4 +146,4 @@ def test_walk_stupidkey(test_dir, continuation):
         key=stupid_key
     )
     print(res)
-    assert res == files[index:]
+    assert list(res.keys()) == files[index:]
