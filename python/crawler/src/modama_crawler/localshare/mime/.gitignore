@@ -1,0 +1,15 @@
+# Ignore freedesktop.org shared MIME related datastructures
+# that we redirect from ~/.local/share/mime
+application/
+aliases
+generic-icons
+globs
+globs2
+icons
+magic
+mime.cache
+subclasses
+treemagic
+types
+version
+XMLnamespaces
