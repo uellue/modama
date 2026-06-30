@@ -61,6 +61,13 @@ class FileHandler(ABC):
         return tuple(cls._registry.get(file_type, []))
 
     @classmethod
+    def handlers(cls) -> Sequence[Type["FileHandler"]]:
+        result = set()
+        for handlers in cls._registry.values():
+            result.update(handlers)
+        return tuple(result)
+
+    @classmethod
     def resolve(
             cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]) -> Type["FileHandler"]:
         path = pathlib.Path(path)
@@ -110,6 +117,11 @@ class FileHandler(ABC):
 
     @abstractmethod
     def datacite(self):
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def xdg_mimeinfo() -> str | None:
         raise NotImplementedError
 
 
@@ -319,7 +331,8 @@ class EMPAD(BaseFileHandler):
 
     @staticmethod
     def xdg_mimeinfo():
-        return """
+        return """<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
 <mime-type type="application/x.empad-raw">
   <comment>Raw binary data component of EMPAD datasets</comment>
   <glob pattern="scan_x*_y*.raw" weight="80"/>
@@ -338,4 +351,5 @@ class EMPAD(BaseFileHandler):
   <glob pattern="*.xml"/>
   <glob pattern="*.XML"/>
 </mime-type>
+</mime-info>
 """
