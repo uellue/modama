@@ -3,6 +3,8 @@ import pathlib
 from typing import Callable, Sequence
 import bisect
 import functools
+from collections import OrderedDict
+import copy
 
 import natsort
 
@@ -23,7 +25,7 @@ def is_real_dir(p: pathlib.Path) -> bool:
 
 def _nextpath_inner(
         root: pathlib.Path, continuation: tuple,
-        deterministic_key: Callable, n: int) -> Sequence[pathlib.Path]:
+        deterministic_key: Callable, n: int, outstanding: set | None = None) -> Sequence[pathlib.Path]:
     # Find file entries that come after the continuation token in the chosen
     # sort order. If the continuation token is a directory, it descends into
     # that directory. It will list files until it encounters a directory so that
@@ -35,6 +37,10 @@ def _nextpath_inner(
     # we descend from the depth of the continuation token up
     # until we can match it with existing directories
     # and find sth to return
+    if outstanding is not None:
+        still_outstanding = copy.copy(outstanding)
+    else:
+        still_outstanding = set()
     for i in range(len(continuation)):
         subpath = pathlib.Path(*continuation[:len(continuation)-i])
         # The continuation token was an existing directory and our next task is
@@ -48,9 +54,10 @@ def _nextpath_inner(
             if contents:
                 result = []
                 base = subpath
-                while contents and len(result) < n:
+                while contents and (len(result) < n or still_outstanding) :
                     sn = contents.pop(0)
                     result.append(base / sn)
+                    still_outstanding.discard(base / sn)
                     item = root / base / sn
                     # We found a directory and need to descend now to keep
                     # the deterministic order.
@@ -81,9 +88,10 @@ def _nextpath_inner(
                 if contents:
                     result = []
                     base = subpath.parent
-                    while contents and len(result) < n:
+                    while contents and (len(result) < n or still_outstanding):
                         sn = contents.pop(0)
                         result.append(base / sn)
+                        still_outstanding.discard(base / sn)
                         # We found a directory and need to descend now to keep
                         # the deterministic order.
                         # Descending is delegated to outer function which calls
@@ -116,7 +124,7 @@ def outer_key(item, key):
 
 def crawl(
             root: pathlib.Path | str, continuation: pathlib.Path | str,
-            key: Callable = default_key, n: int = 1) -> dict[pathlib.Path, CrawlResultItem]:
+            key: Callable = default_key, n: int = 1) -> tuple[dict[pathlib.Path, CrawlResultItem], pathlib.Path]:
     # _nextpath_inner() stops returning entries when it encounters a directory
     # since it will need to descend. That's why this outer function keeps
     # calling _nextpath_inner() until our bucket is full
@@ -139,18 +147,24 @@ def crawl(
 
     outer = functools.partial(outer_key, key=deterministic_key)
 
+    def dict_item_key(item):
+        return outer(item[0])
+
     continuation_parts = continuation.parts
     if not continuation_parts:
         # This will resolve to the root node in _nextpath_inner.
         continuation_parts = ('', )
+    new_continuation = continuation
     while len(result) < n or len(outstanding) != 0:
         pieces = _nextpath_inner(
             root=root, continuation=continuation_parts,
-            deterministic_key=deterministic_key, n=n-len(result)
+            deterministic_key=deterministic_key, n=n-len(result),
+            outstanding=set(outstanding.keys()),
         )
         if len(pieces) == 0:
             break
         for piece in pieces:
+            new_continuation = piece
             if piece in outstanding:
                 outstanding.pop(piece)
                 continue
@@ -160,11 +174,12 @@ def crawl(
                 if member == piece:
                     continue
                 elif member in result:
-                    raise Exception()
                     result.pop(member)
                 else:
-                    raise Exception()
                     outstanding[member] = handler
-            result[piece] = handler
+            result[handler.path] = handler
         continuation_parts = pathlib.Path(pieces[-1]).parts
-    return result
+    result = OrderedDict(sorted(result.items(), key=dict_item_key))
+    if outstanding:
+        raise Exception(str(outstanding))
+    return (result, new_continuation)

@@ -48,13 +48,14 @@ def test_walk(test_dir):
     listing, tmp_path = test_dir
     shuffle(listing)
 
-    res = crawl(
+    res, continuation = crawl(
         root=tmp_path,
         continuation='',
         n=len(listing)
     )
-    print(res)
+    print(res, continuation)
     files = sorted([Path(f) for f in list(zip(*listing))[0]], key=reference_key)
+    assert continuation == files[-1]
     assert list(res.keys()) == files
 
 
@@ -65,13 +66,16 @@ def test_walk_count(test_dir, n):
     listing, tmp_path = test_dir
     shuffle(listing)
     files = sorted([Path(f) for f in list(zip(*listing))[0]], key=reference_key)
-    res = crawl(
+    res, continuation = crawl(
         root=tmp_path,
         continuation='',
         n=n
     )
-    print(res)
-    assert list(res.keys()) == files[:n]
+    print(res, continuation)
+    expected = files[:n]
+    assert list(res.keys()) == expected
+    if expected:
+        assert continuation == expected[-1]
 
 
 @pytest.mark.parametrize(
@@ -83,13 +87,16 @@ def test_walk_skip(test_dir, count):
     files = sorted([Path(f) for f in list(zip(*listing))[0]], key=reference_key)
 
     for n in range(len(files)):
-        res = crawl(
+        res, continuation = crawl(
             root=tmp_path,
             continuation=files[n],
             n=count,
         )
-        print(res)
-        assert list(res.keys()) == files[n+1:n+1+count]
+        print(res, continuation)
+        expected = files[n+1:n+1+count]
+        assert list(res.keys()) == expected
+        if expected:
+            assert continuation == expected[-1]
 
 
 @pytest.mark.parametrize(
@@ -107,13 +114,16 @@ def test_walk_noexist(test_dir, continuation):
         key=reference_key,
     )
 
-    res = crawl(
+    res, continuation = crawl(
         root=tmp_path,
         continuation=continuation,
         n=1000
     )
-    print(res)
-    assert list(res.keys()) == files[index:]
+    print(res, continuation)
+    expected = files[index:]
+    assert list(res.keys()) == expected
+    if expected:
+        assert continuation == expected[-1]
 
 
 @pytest.mark.parametrize(
@@ -139,11 +149,14 @@ def test_walk_stupidkey(test_dir, continuation):
         key=my_reference_key,
     )
 
-    res = crawl(
+    res, continuation = crawl(
         root=tmp_path,
         continuation=continuation,
         n=1000,
         key=stupid_key
     )
-    print(res)
-    assert list(res.keys()) == files[index:]
+    print(res, continuation)
+    expected = files[index:]
+    assert list(res.keys()) == expected
+    if expected:
+        assert continuation == expected[-1]
