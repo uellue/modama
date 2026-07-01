@@ -5,39 +5,30 @@ from random import shuffle
 from pathlib import Path
 import bisect
 
-from modama_crawler.dirwalk import crawl, default_key, _mk_deterministic
+from modama_crawler.dirwalk import crawl, outer_key, default_key, _mk_deterministic
 
 
-def reference_key(item, key=default_key):
-    # The key is applied separately at each level of the path hierarchy.
-    # For that reason we create a nested key with a tuple of tuples
-    # that should resolve to the same sort order
-    parts = Path(item).parts
-    return tuple(key(p) for p in parts)
+reference_key = functools.partial(outer_key, key=_mk_deterministic(default_key))
+
+
+EMPAD = """<root name="acquisition_1">
+    <timestamp timestamp="1706883519.18255" isoformat="2024-02-02T15:18:39.182550" />
+    <software_version>1.2.2 (2021-08-20)</software_version>
+    <raw_file filename="series_x1234.raw" />
+</root>
+"""
 
 
 @pytest.fixture
-def test_mib(tmp_path):
+def test_dir(tmp_path):
     listing = [
-        ('0.testmib', 'f', ''),
-        ('7.testhdr', 'f', '1.testmib\n0.testmib\n'),
-        ('1.testhdr', 'f', 'x.testmib\nb/x.testmib\n'),
-        ('a/', 'd', ''),
-        ('a/a.txt', 'f', ''),
-        ('a/b.txt', 'f', ''),
-        ('a/d.txt', 'f', ''),
-        ('b/', 'd', ''),
-        ('b/a.txt', 'f', ''),
-        ('b/b.txt', 'f', ''),
-        ('b/d.txt', 'f', ''),
-        ('b/x.testmib', 'f', ''),
-        ('b/b', 'l', 'b/'),
-        ('1.testmib', 'f', ''),
-        ('c', 'l', 'a/'),
-        ('a.txt', 'f', ''),
-        ('b.txt', 'f', ''),
-        ('d.txt', 'f', ''),
-        ('x.testmib', 'f', ''),
+        ('xxx.xml', 'f', EMPAD),
+        ('series_x1234.raw', 'f', ''),
+        ('a', 'd', ''),
+        ('a/aaa.xml', 'f', EMPAD),
+        ('a/series_x1234.raw', 'f', ''),
+        ('something.txt', 'f', ''),
+        ('something.raw', 'f', ''),
     ]
 
     for path, kind, content in listing:
@@ -54,3 +45,61 @@ def test_mib(tmp_path):
             raise RuntimeError('WTF')
     shuffle(listing)
     return (listing, tmp_path)
+
+
+def test_walk(test_dir):
+    listing, tmp_path = test_dir
+    shuffle(listing)
+
+    res, continuation = crawl(
+        root=tmp_path,
+        continuation='',
+        n=len(listing)
+    )
+    print(res, continuation)
+
+    expected = sorted(list(zip(*listing))[0], key=reference_key)
+    assert continuation == Path(expected[-1])
+    expected.remove('series_x1234.raw')
+    expected.remove('a/series_x1234.raw')
+
+    found = [str(f) for f in res.keys()]
+
+    print(found)
+    print(expected)
+
+    assert found == expected
+
+
+def test_walk_stepwise(test_dir):
+    listing, tmp_path = test_dir
+    shuffle(listing)
+
+    res = {}
+    continuation = ''
+
+    while True:
+        piece, continuation = crawl(
+            root=tmp_path,
+            continuation=continuation,
+            n=1
+        )
+        if piece:
+            for key in piece.keys():
+                assert key not in res
+            res.update(piece)
+        else:
+            break
+    print(res, continuation)
+
+    expected = sorted(list(zip(*listing))[0], key=reference_key)
+    assert continuation == Path(expected[-1])
+    expected.remove('series_x1234.raw')
+    expected.remove('a/series_x1234.raw')
+
+    found = [str(f) for f in res.keys()]
+
+    print(found)
+    print(expected)
+
+    assert found == expected
