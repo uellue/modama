@@ -7,6 +7,7 @@ import datetime
 from functools import cache
 import os
 import glob
+import tempfile
 
 from xdg import Mime
 import magika
@@ -123,6 +124,32 @@ class FileHandler(ABC):
     @abstractmethod
     def xdg_mimeinfo() -> str | None:
         raise NotImplementedError
+
+    @classmethod
+    def install_mime_info(cls, application: str | None = None):
+        if application is None:
+            application = 'modama-crawler'
+        snippets = []
+        handlers = cls.handlers()
+        for handler in handlers:
+            mimeinfo = handler.xdg_mimeinfo()
+            if mimeinfo:
+                snippets.append(mimeinfo)
+        if snippets:
+            filename = application + '.xml'
+            header = """<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+"""
+            footer = "</mime-info>"
+            with tempfile.TemporaryDirectory() as d:
+                package_file = os.path.join(d, filename)
+                with open(package_file, 'w') as f:
+                    f.write(header)
+                    for snippet in snippets:
+                        f.write(snippet)
+                        f.write('\n')
+                    f.write(footer)
+                Mime.install_mime_info(application=application, package_file=package_file)
 
 
 class BaseFileHandler(FileHandler):
@@ -331,9 +358,7 @@ class EMPAD(BaseFileHandler):
 
     @staticmethod
     def xdg_mimeinfo():
-        return """<?xml version="1.0"?>
-<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
-<mime-type type="application/x.empad-raw">
+        return """<mime-type type="application/x.empad-raw">
   <comment>Raw binary data component of EMPAD datasets</comment>
   <glob pattern="scan_x*_y*.raw" weight="80"/>
   <glob pattern="series_x*.raw" weight="80"/>
@@ -351,5 +376,4 @@ class EMPAD(BaseFileHandler):
   <glob pattern="*.xml"/>
   <glob pattern="*.XML"/>
 </mime-type>
-</mime-info>
 """
