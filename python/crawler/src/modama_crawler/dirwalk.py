@@ -1,10 +1,10 @@
 import os
 import pathlib
-from typing import Callable, Sequence
+from typing import Callable, Sequence, Any
 import bisect
 import functools
 from collections import OrderedDict
-import copy
+import warnings
 
 import natsort
 
@@ -23,9 +23,25 @@ def is_real_dir(p: pathlib.Path) -> bool:
     return not p.is_symlink() and p.is_dir()
 
 
+def remove_smaller_equal(outstanding: OrderedDict[pathlib.Path, Any], item: pathlib.Path, outer_key: Callable):
+    keys = list(outstanding.keys())
+    keys.sort(key=outer_key)
+
+    idx = bisect.bisect_right(
+        a=keys,
+        x=outer_key(item),
+        key=outer_key
+    )
+    for extra_key in keys[:idx]:
+        outstanding.pop(extra_key)
+        if extra_key != item:
+            warnings.warn(f"Walked beyond outstanding item {extra_key} to {item} without encountering it")
+
+
 def _nextpath_inner(
         root: pathlib.Path, continuation: tuple,
-        deterministic_key: Callable, n: int, outstanding: set | None = None) -> Sequence[pathlib.Path]:
+        deterministic_key: Callable, outer_key: Callable, n: int,
+        outstanding: OrderedDict[pathlib.Path, Any]) -> Sequence[pathlib.Path]:
     # Find file entries that come after the continuation token in the chosen
     # sort order. If the continuation token is a directory, it descends into
     # that directory. It will list files until it encounters a directory so that
@@ -37,10 +53,32 @@ def _nextpath_inner(
     # we descend from the depth of the continuation token up
     # until we can match it with existing directories
     # and find sth to return
-    if outstanding is not None:
-        still_outstanding = copy.copy(outstanding)
-    else:
-        still_outstanding = set()
+
+    # Don't modify the argument since the calling function
+    # will need to keep track of outstanding bits itself
+    outstanding = outstanding.copy()
+
+    def process(contents, root, base, outstanding, n):
+        result = []
+        # TODO limit oversize since files a and z on top level may span the entire repository
+        while contents and (len(result) < n or outstanding):
+            # print(result, n, outstanding)
+            sn = contents.pop(0)
+            result.append(base / sn)
+            remove_smaller_equal(
+                outstanding=outstanding,
+                item=base / sn,
+                outer_key=outer_key
+            )
+            item = root / base / sn
+            # We found a directory and need to descend now to keep
+            # the deterministic order.
+            # Descending is delegated to outer function which calls
+            # this function with an appropriate continuation key
+            if is_real_dir(item):
+                break
+        return result
+
     for i in range(len(continuation)):
         subpath = pathlib.Path(*continuation[:len(continuation)-i])
         # The continuation token was an existing directory and our next task is
@@ -50,22 +88,16 @@ def _nextpath_inner(
         cont = root / subpath
         if is_real_dir(cont) and i == 0:
             target_dir = cont
+            # TODO limit recursion depth
             contents = sorted((x for x in os.listdir(target_dir)), key=deterministic_key)
             if contents:
-                result = []
-                base = subpath
-                while contents and (len(result) < n or still_outstanding) :
-                    sn = contents.pop(0)
-                    result.append(base / sn)
-                    still_outstanding.discard(base / sn)
-                    item = root / base / sn
-                    # We found a directory and need to descend now to keep
-                    # the deterministic order.
-                    # Descending is delegated to outer function which calls
-                    # this function with an appropriate continuation key
-                    if is_real_dir(item):
-                        break
-                return result
+                return process(
+                    contents=contents,
+                    root=root,
+                    base=subpath,
+                    outstanding=outstanding,
+                    n=n,
+                )
         # It is a file or doesn't exist
         else:
             # Look at contents one level up
@@ -86,19 +118,13 @@ def _nextpath_inner(
                 )
                 contents = contents[idx:]
                 if contents:
-                    result = []
-                    base = subpath.parent
-                    while contents and (len(result) < n or still_outstanding):
-                        sn = contents.pop(0)
-                        result.append(base / sn)
-                        still_outstanding.discard(base / sn)
-                        # We found a directory and need to descend now to keep
-                        # the deterministic order.
-                        # Descending is delegated to outer function which calls
-                        # this function with an appropriate continuation key
-                        if is_real_dir(root / base / sn):
-                            break
-                    return result
+                    return process(
+                        contents=contents,
+                        root=root,
+                        base=subpath.parent,
+                        outstanding=outstanding,
+                        n=n,
+                    )
     # Apparently we didn't find anything
     return []
 
@@ -129,7 +155,9 @@ def crawl(
     # since it will need to descend. That's why this outer function keeps
     # calling _nextpath_inner() until our bucket is full
     result = {}
-    outstanding = {}
+    outstanding = OrderedDict()
+    seen = set()
+    claimed = OrderedDict()
     root = pathlib.Path(root).resolve(strict=True)
     continuation = pathlib.Path(continuation)
 
@@ -155,29 +183,74 @@ def crawl(
         # This will resolve to the root node in _nextpath_inner.
         continuation_parts = ('', )
     new_continuation = continuation
+    # TODO limit oversize since files a and z on top level may span the entire repository
     while len(result) < n or len(outstanding) != 0:
         pieces = _nextpath_inner(
             root=root, continuation=continuation_parts,
-            deterministic_key=deterministic_key, n=n-len(result),
-            outstanding=set(outstanding.keys()),
+            deterministic_key=deterministic_key,
+            outer_key=outer,
+            n=n-len(result),
+            outstanding=outstanding,
         )
         if len(pieces) == 0:
             break
         for piece in pieces:
+            seen.add(piece)
             new_continuation = piece
-            if piece in outstanding:
-                outstanding.pop(piece)
+            ignore = piece in outstanding
+            remove_smaller_equal(
+                outstanding=outstanding,
+                item=piece,
+                outer_key=outer,
+            )
+            if ignore:
                 continue
             guesses = guess(root / piece)
             handler = FileHandler.create(root, piece, guesses)
             for member in handler.members:
-                if member == piece:
-                    continue
-                elif member in result:
-                    result.pop(member)
-                else:
-                    outstanding[member] = handler
-            result[handler.path] = handler
+                # Must have been the other handler's path attribute to end up there
+                if member in claimed:
+                    # SHOULD be identical to handler if we just encountered another
+                    # file. However, that should have been in outstanding and ignored
+                    other_handler = claimed[member]
+                    warnings.warn(
+                        "Encountered existing handler "
+                        f"{handler.path} that claims {member} without appearing in outstanding files"
+                    )
+                    if set(other_handler.members) != set(handler.members):
+                        warnings.warn(
+                            "Encountered member file mismatch between "
+                            f"{handler.path} {handler.members} and {other_handler.path} {other_handler.members}."
+                        )
+                    if type(other_handler) is not type(handler):
+                        warnings.warn(
+                            "Encountered type mismatch between "
+                            f"{handler.path} {type(handler)} and {other_handler.path} {type(other_handler)}."
+                        )
+                # Handle secondary files that will be ignored in listing See if
+                # we need to put this in the "outstanding" list only if this
+                # member comes after the continuation token. Otherwise out of
+                # scope, safely ignored. If the member is the current item, we don't add
+                # to outstanding files since we are handling it just now.
+                elif member != piece and outer(member) > outer(continuation):
+                    # Truly looking forward beyond current place in tree
+                    if outer(member) > outer(piece):
+                        outstanding[member] = handler
+                    elif member not in seen:
+                        warnings.warn(
+                            f"Member {member} of {handler.path} encountered that wasn't seen "
+                            "before, but should have been seen."
+                        )
+                if outer(member) <= outer(continuation):
+                    warnings.warn(
+                            f"Member {member} of {handler.path} encountered that comes before "
+                            f"continuation token {continuation}."
+                        )
+                claimed[member] = handler
+            # Don't overwrite previously added handler
+            # We've already warned in case of a duplicate
+            if handler.path not in result:
+                result[handler.path] = handler
         continuation_parts = pathlib.Path(pieces[-1]).parts
     result = OrderedDict(sorted(result.items(), key=dict_item_key))
     if outstanding:

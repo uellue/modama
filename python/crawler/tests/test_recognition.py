@@ -3,7 +3,7 @@ import pytest
 import functools
 from random import shuffle
 from pathlib import Path
-import bisect
+from contextlib import contextmanager, suppress
 
 from modama_crawler.dirwalk import crawl, outer_key, default_key, _mk_deterministic
 
@@ -19,17 +19,37 @@ EMPAD = """<root name="acquisition_1">
 """
 
 
-@pytest.fixture
-def test_dir(tmp_path):
-    listing = [
-        ('xxx.xml', 'f', EMPAD),
-        ('series_x1234.raw', 'f', ''),
-        ('a', 'd', ''),
-        ('a/aaa.xml', 'f', EMPAD),
-        ('a/series_x1234.raw', 'f', ''),
-        ('something.txt', 'f', ''),
-        ('something.raw', 'f', ''),
-    ]
+@pytest.fixture(params=["valid", "invalid"])
+def test_dir(tmp_path, request):
+    if request.param == 'valid':
+        listing = [
+            ('a', 'd', ''),
+            ('a/aaa.xml', 'f', EMPAD),
+            ('a/series_x1234.raw', 'f', ''),
+            ('b.txt', 'f', ''),
+            ('series_x1234.raw', 'f', ''),
+            ('something.txt', 'f', ''),
+            ('something.raw', 'f', ''),
+            ('xxx.xml', 'f', EMPAD),
+            ('zzz.abc', 'f', EMPAD),
+        ]
+    elif request.param == 'invalid':
+        listing = [
+            ('a', 'd', ''),
+            ('a/aaa.xml', 'f', EMPAD),
+            ('a/series_x1234.raw', 'f', ''),
+            ('b.txt', 'f', ''),
+            ('series_x1234.raw', 'f', ''),
+            ('something.txt', 'f', ''),
+            ('something.raw', 'f', ''),
+            # Two XML files claiming the same raw file
+            ('www.xml', 'f', EMPAD),
+            ('xxx.xml', 'f', EMPAD),
+            # Don't match
+            ('zzz.abc', 'f', EMPAD),
+        ]
+    else:
+        raise ValueError(f"{request.param} WTF")
 
     for path, kind, content in listing:
         if kind == 'f':
@@ -44,18 +64,26 @@ def test_dir(tmp_path):
         else:
             raise RuntimeError('WTF')
     shuffle(listing)
-    return (listing, tmp_path)
+    return (listing, tmp_path, request.param)
 
 
 def test_walk(test_dir):
-    listing, tmp_path = test_dir
+    listing, tmp_path, param = test_dir
     shuffle(listing)
-
-    res, continuation = crawl(
-        root=tmp_path,
-        continuation='',
-        n=len(listing)
-    )
+    if param == 'invalid':
+        @contextmanager
+        def warns():
+            with pytest.warns(UserWarning, match="Encountered existing handler www.xml"):
+                with pytest.warns(UserWarning, match="Encountered member file mismatch between www.xml"):
+                    yield
+    else:
+        warns = suppress
+    with warns():
+        res, continuation = crawl(
+            root=tmp_path,
+            continuation='',
+            n=len(listing)
+        )
     print(res, continuation)
 
     expected = sorted(list(zip(*listing))[0], key=reference_key)
@@ -72,24 +100,37 @@ def test_walk(test_dir):
 
 
 def test_walk_stepwise(test_dir):
-    listing, tmp_path = test_dir
+    listing, tmp_path, param = test_dir
     shuffle(listing)
 
     res = {}
     continuation = ''
-
-    while True:
-        piece, continuation = crawl(
-            root=tmp_path,
-            continuation=continuation,
-            n=1
-        )
-        if piece:
-            for key in piece.keys():
-                assert key not in res
-            res.update(piece)
-        else:
-            break
+    loop = 0
+    if param == 'invalid':
+        @contextmanager
+        def warns():
+            with pytest.warns(UserWarning, match="Encountered existing handler www.xml"):
+                with pytest.warns(UserWarning, match="Encountered member file mismatch between www.xml"):
+                    yield
+    else:
+        warns = suppress
+    with warns():
+        while True:
+            piece, continuation = crawl(
+                root=tmp_path,
+                continuation=continuation,
+                n=1
+            )
+            print(loop)
+            loop += 1
+            if piece:
+                print(piece, continuation)
+                for key in piece.keys():
+                    assert key not in res
+                res.update(piece)
+            else:
+                print("finished")
+                break
     print(res, continuation)
 
     expected = sorted(list(zip(*listing))[0], key=reference_key)
