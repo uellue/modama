@@ -14,7 +14,7 @@ import magika
 import datacite.schema45
 import defusedxml.ElementTree as ET
 
-from .datacite import get_identifier, get_publisher
+from .repository import get_identifier, get_publisher
 
 
 mgk = magika.Magika()
@@ -177,25 +177,39 @@ class BaseFileHandler(FileHandler):
             res = self.abspath.owner()
         except KeyError:
             res = str(self.stat.st_uid)
-        return [
-            {'name': res},
-        ]
+        return [res]
 
     def get_titles(self):
         return [
-            {'title': str(self.path)},
+            str(self.path),
         ]
 
     def get_year(self):
         return str(datetime.datetime.fromtimestamp(self.stat.st_ctime).year)
 
     def get_dates(self):
-        return [
-            {
-                'date': datetime.datetime.fromtimestamp(self.stat.st_ctime).isoformat(),
-                'dateType': "Created",
-            }
-        ]
+        return [self.mtime]
+
+    def get_descriptions(self):
+        return [', '.join(f"'{str(m)}'" for m in self.members)]
+
+    @property
+    @cache
+    def ctime(self) -> float:
+        ctime = self.stat.st_ctime
+        for member in self.members:
+            abspath = self.root / member
+            ctime = min(ctime, abspath.stat().st_ctime)
+        return ctime
+
+    @property
+    @cache
+    def mtime(self) -> float:
+        mtime = self.stat.st_mtime
+        for member in self.members:
+            abspath = self.root / member
+            mtime = max(mtime, abspath.stat().st_mtime)
+        return mtime
 
     def get_resource_type(self):
         g = self.get_mimes()[0]
@@ -210,9 +224,17 @@ class BaseFileHandler(FileHandler):
             str_g = str(g)
             if str_g not in result:
                 result.append(str_g)
+        # Only keep 'application/octet-stream' if there is no other option
+        if len(result) > 1:
+            try:
+                result.remove('application/octet-stream')
+            except ValueError:
+                pass
         return result
 
     def datacite(self):
+        raise NotImplementedError
+        # FIXME adapt to changes to better suit `oaipmh` module
         record = {
             "identifier": get_identifier(self.path, self.root),
             "creators": self.get_creators(),

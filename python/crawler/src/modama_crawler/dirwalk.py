@@ -9,10 +9,10 @@ import warnings
 import natsort
 
 
-from .recognition import FileHandler, guess
+from .recognition import FileHandler, BaseFileHandler, guess
 
 
-CrawlResultItem = FileHandler
+CrawlResultItem = BaseFileHandler
 
 
 default_key = natsort.natsort_keygen()
@@ -120,6 +120,7 @@ def _nextpath_inner(
         if is_real_dir(cont) and i == 0:
             target_dir = cont
             # TODO limit recursion depth
+            # print(target_dir, os.listdir(target_dir))
             contents = sorted((x for x in os.listdir(target_dir)), key=stable_key)
             if contents:
                 return process(
@@ -160,6 +161,15 @@ def _nextpath_inner(
     return []
 
 
+def stringify(item):
+    if isinstance(item, int):
+        return f"{item:020d}"
+    elif isinstance(item, float):
+        return f"{item:040.20f}"
+    else:
+        return str(item)
+
+
 def _mk_stable(key):
     def stable_key(item):
         # natsort does not guarantee a stable sorting order since e.g.
@@ -167,7 +177,10 @@ def _mk_stable(key):
         # appending the item itself, we guarantee a stable order for
         # unique items. Since we are working with strings resp. byte sequences,
         # a stable order should be establishable one way or another.
-        return tuple(key(item)) + (item, )
+
+        # stringify() because otherwise e.g. natsort may return different types
+        # for the items, leading to invalid comparisons.
+        return tuple(stringify(k) for k in key(item)) + (str(item), )
     return stable_key
 
 

@@ -16,35 +16,22 @@ modama_crawler integration.
 from flask import Flask, request, Response
 import os
 from datetime import datetime
+import pathlib
 
 from oaipmh.server import Server as OAIServer
 from oaipmh.server import oai_dc_writer
 from oaipmh import error as oaipmh_error
 from oaipmh import metadata as oaipmh_metadata
+from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
+
+from modama_crawler.repository import get_identifier, get_publisher
+from modama_crawler.recognition import BaseFileHandler
+from modama_crawler.dirwalk import crawl
 
 app = Flask(__name__)
 
 # Example in-memory records. Replace with modama_crawler datasource.
-RECORDS = {
-    "oai:example.org:1": {
-        "datestamp": "2020-01-01T00:00:00Z",
-        "metadata": {
-            "title": "Example Record 1",
-            "creator": "Alice",
-            "subject": "Test",
-            "description": "An example record",
-        },
-    },
-    "oai:example.org:2": {
-        "datestamp": "2021-06-15T12:34:56Z",
-        "metadata": {
-            "title": "Example Record 2",
-            "creator": "Bob",
-            "subject": "Demo",
-            "description": "Another example record",
-        },
-    },
-}
+RECORDS, cont = crawl(root=pathlib.Path('/storage/er-c-data'), continuation='', n=100)
 
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
@@ -61,12 +48,17 @@ NSMAP = {
 
 # --- oaipmh integration ---
 def _parse_datestamp(s):
-    # accepts YYYY-MM-DD or full timestamp ending with Z
     if s is None:
         return None
-    if s.endswith('Z'):
-        return datetime.strptime(s, '%Y-%m-%dT%H:%M:%SZ')
-    return datetime.strptime(s, '%Y-%m-%d')
+    if isinstance(s, datetime):
+        return s
+    if isinstance(s, str):
+        return datestamp_to_datetime(s)
+    raise TypeError(f'Unsupported datestamp value: {s!r}')
+
+
+def _format_datestamp(timestamp: float):
+    return datetime_to_datestamp(datetime.fromtimestamp(timestamp))
 
 
 class SimpleIdentify:
@@ -86,8 +78,7 @@ class SimpleIdentify:
         return [os.environ.get('OAI_ADMIN_EMAIL', 'admin@example.org')]
 
     def earliestDatestamp(self):
-        dates = [_parse_datestamp(r['datestamp']) for r in RECORDS.values()]
-        return min(dates)
+        return datetime.fromtimestamp(0)
 
     def deletedRecord(self):
         return 'no'
@@ -103,33 +94,40 @@ class SimpleIdentify:
 
 
 class SimpleHeader:
-    def __init__(self, identifier, datestamp, deleted=False):
-        self._id = identifier
-        self._datestamp = _parse_datestamp(datestamp)
-        self._deleted = deleted
+    def __init__(self, handler: BaseFileHandler):
+        self._handler = handler
 
     def isDeleted(self):
-        return self._deleted
+        return False
 
     def identifier(self):
-        return self._id
+        return get_identifier(self._handler.path, self._handler.root)
 
     def datestamp(self):
-        return self._datestamp
+        return datetime.fromtimestamp(self._handler.mtime)
 
     def setSpec(self):
         return []
 
 
 class SimpleMetadata:
-    def __init__(self, metadata):
-        # Maps from (key, value) to (key, [value])
-        self._map = {}
-        for k, v in metadata.items():
-            self._map.setdefault(k, []).append(v)
+    def __init__(self, handler: BaseFileHandler):
+        self._handler = handler
 
     def getMap(self):
-        return self._map
+        handler = self._handler
+        result = {
+            'title': handler.get_titles(),
+            'creator': handler.get_creators(),
+            'date': [_format_datestamp(d) for d in handler.get_dates()],
+            'format': handler.get_formats(),
+            'identifier': [get_identifier(handler.path, handler.root)],
+            'description': handler.get_descriptions(),
+            # subject, contributor, source, language, relation, coverage and
+            # rights mapping are not implemented yet
+        }
+        result['publisher'] = [get_publisher()]
+        return result
 
 
 class InMemoryOAIServer:
@@ -139,25 +137,28 @@ class InMemoryOAIServer:
     def identify(self):
         return SimpleIdentify(self._base)
 
-    def getRecord(self, identifier=None, metadataPrefix=None, **kw):
-        rec = RECORDS.get(identifier)
-        if not rec:
+    def getRecord(self, identifier, metadataPrefix, **kw):
+        print(metadataPrefix)
+        handler = RECORDS.get(identifier)
+        if not handler:
             raise oaipmh_error.NoRecordsMatchError(f'identifier {identifier} not found')
-        header = SimpleHeader(identifier, rec['datestamp'])
-        metadata = SimpleMetadata(rec['metadata'])
+        header = SimpleHeader(handler)
+        metadata = SimpleMetadata(handler)
         return header, metadata, None
 
     def listMetadataFormats(self, **kw):
         return [('oai_dc', 'http://www.openarchives.org/OAI/2.0/oai_dc.xsd', DC_NS)]
 
-    def listIdentifiers(self, metadataPrefix=None, **kw):
-        for identifier, rec in RECORDS.items():
-            yield SimpleHeader(identifier, rec['datestamp'])
+    def listIdentifiers(self, metadataPrefix, **kw):
+        print(metadataPrefix)
+        for identifier, handler in RECORDS.items():
+            yield SimpleHeader(handler)
 
-    def listRecords(self, metadataPrefix=None, **kw):
-        for identifier, rec in RECORDS.items():
-            header = SimpleHeader(identifier, rec['datestamp'])
-            metadata = SimpleMetadata(rec['metadata'])
+    def listRecords(self, metadataPrefix, **kw):
+        print(metadataPrefix)
+        for identifier, handler in RECORDS.items():
+            header = SimpleHeader(handler)
+            metadata = SimpleMetadata(handler)
             yield (header, metadata, None)
 
 
