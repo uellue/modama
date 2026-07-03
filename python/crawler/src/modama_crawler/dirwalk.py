@@ -12,7 +12,6 @@ import natsort
 from .recognition import FileHandler, guess
 
 
-# FIXME define rich type with metadata and whatnot
 CrawlResultItem = FileHandler
 
 
@@ -38,9 +37,42 @@ def remove_smaller_equal(outstanding: OrderedDict[pathlib.Path, Any], item: path
             warnings.warn(f"Walked beyond outstanding item {extra_key} to {item} without encountering it")
 
 
+def _time_in_range(time: float, since: float | None, until: float | None) -> bool:
+    if since is not None and time < since:
+        return False
+    if until is not None and time > until:
+        return False
+    return True
+
+
+def matches_oai_pmh_datestamp_limits(
+        stat: os.stat_result | Any,
+        *,
+        c_since: float | None = None,
+        c_until: float | None = None,
+        m_since: float | None = None,
+        m_until: float | None = None,
+) -> bool:
+    """Return True if the stat matches OAI-PMH selective harvesting time bounds.
+
+    Per OAI-PMH selective harvesting, a record is included if its modification
+    timestamp or its creation timestamp falls within the inclusive [from, until]
+    range. If no time bounds are specified, all records match.
+    """
+    m_active = (m_since is not None) or (m_until is not None)
+    c_active = (c_since is not None) or (c_until is not None)
+
+    if not m_active and not c_active:
+        return True
+
+    m_matches = _time_in_range(stat.st_mtime, m_since, m_until) if m_active else False
+    c_matches = _time_in_range(stat.st_ctime, c_since, c_until) if c_active else False
+    return m_matches or c_matches
+
+
 def _nextpath_inner(
         root: pathlib.Path, continuation: tuple,
-        deterministic_key: Callable, outer_key: Callable, n: int,
+        stable_key: Callable, outer_key: Callable, n: int,
         outstanding: OrderedDict[pathlib.Path, Any]) -> Sequence[pathlib.Path]:
     # Find file entries that come after the continuation token in the chosen
     # sort order. If the continuation token is a directory, it descends into
@@ -48,11 +80,7 @@ def _nextpath_inner(
     # the filtering and sorting does not have to be repeated for folders
     # containing many files. The last entry of the result can be used as a
     # continuation token to continue. If there's nothing more to find, an empty
-    # list is returned. deterministic_key()
-
-    # we descend from the depth of the continuation token up
-    # until we can match it with existing directories
-    # and find sth to return
+    # list is returned.
 
     # Don't modify the argument since the calling function
     # will need to keep track of outstanding bits itself
@@ -72,24 +100,27 @@ def _nextpath_inner(
             )
             item = root / base / sn
             # We found a directory and need to descend now to keep
-            # the deterministic order.
+            # the stable order.
             # Descending is delegated to outer function which calls
             # this function with an appropriate continuation key
             if is_real_dir(item):
                 break
         return result
 
+    # We ascend from the depth of the continuation token up
+    # until we can match it with existing directories
+    # and find sth to return
     for i in range(len(continuation)):
         subpath = pathlib.Path(*continuation[:len(continuation)-i])
         # The continuation token was an existing directory and our next task is
-        # to descend into that directory for things. No need to filter since the
+        # to descend into that directory. No need to filter since the
         # directory content comes after the containing directory in the sort
         # order
         cont = root / subpath
         if is_real_dir(cont) and i == 0:
             target_dir = cont
             # TODO limit recursion depth
-            contents = sorted((x for x in os.listdir(target_dir)), key=deterministic_key)
+            contents = sorted((x for x in os.listdir(target_dir)), key=stable_key)
             if contents:
                 return process(
                     contents=contents,
@@ -106,15 +137,15 @@ def _nextpath_inner(
             if is_real_dir(containing_dir):
                 contents = sorted(
                     (x for x in os.listdir(containing_dir)),
-                    key=deterministic_key)
+                    key=stable_key)
                 # We filter out everything smaller or equal to the matching
                 # level of our continuation token
-                comp_item = deterministic_key(continuation[len(continuation)-i-1])
+                comp_item = stable_key(continuation[len(continuation)-i-1])
 
                 idx = bisect.bisect(
                     a=contents,
                     x=comp_item,
-                    key=deterministic_key
+                    key=stable_key
                 )
                 contents = contents[idx:]
                 if contents:
@@ -129,15 +160,15 @@ def _nextpath_inner(
     return []
 
 
-def _mk_deterministic(key):
-    def deterministic_key(item):
-        # natsort does not guarantee a deterministic sorting order since e.g.
+def _mk_stable(key):
+    def stable_key(item):
+        # natsort does not guarantee a stable sorting order since e.g.
         # "023", "0023", "23", "0023" all map to the same key "('', 23)". By
-        # appending the item itself, we guarantee a well-defined order for
+        # appending the item itself, we guarantee a stable order for
         # unique items. Since we are working with strings resp. byte sequences,
-        # a deterministic order should be establishable one way or another.
+        # a stable order should be establishable one way or another.
         return tuple(key(item)) + (item, )
-    return deterministic_key
+    return stable_key
 
 
 def outer_key(item, key):
@@ -150,7 +181,9 @@ def outer_key(item, key):
 
 def crawl(
             root: pathlib.Path | str, continuation: pathlib.Path | str,
-            key: Callable = default_key, n: int = 1) -> tuple[dict[pathlib.Path, CrawlResultItem], pathlib.Path]:
+            key: Callable = default_key, n: int = 1,
+            c_since: float | None = None, c_until: float | None = None,
+            m_since: float | None = None, m_until: float | None = None) -> tuple[dict[pathlib.Path, CrawlResultItem], pathlib.Path]:
     # _nextpath_inner() stops returning entries when it encounters a directory
     # since it will need to descend. That's why this outer function keeps
     # calling _nextpath_inner() until our bucket is full
@@ -171,9 +204,9 @@ def crawl(
     # root
     continuation = (root / continuation).absolute().relative_to(root, walk_up=False)
 
-    deterministic_key = _mk_deterministic(key)
+    stable_key = _mk_stable(key)
 
-    outer = functools.partial(outer_key, key=deterministic_key)
+    outer = functools.partial(outer_key, key=stable_key)
 
     def dict_item_key(item):
         return outer(item[0])
@@ -187,7 +220,7 @@ def crawl(
     while len(result) < n or len(outstanding) != 0:
         pieces = _nextpath_inner(
             root=root, continuation=continuation_parts,
-            deterministic_key=deterministic_key,
+            stable_key=stable_key,
             outer_key=outer,
             n=n-len(result),
             outstanding=outstanding,
@@ -202,6 +235,14 @@ def crawl(
                 outstanding=outstanding,
                 item=piece,
                 outer_key=outer,
+            )
+            stat = (root / piece).stat(follow_symlinks=False)
+            ignore = ignore or not matches_oai_pmh_datestamp_limits(
+                stat,
+                c_since=c_since,
+                c_until=c_until,
+                m_since=m_since,
+                m_until=m_until,
             )
             if ignore:
                 continue

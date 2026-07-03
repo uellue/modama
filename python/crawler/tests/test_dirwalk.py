@@ -1,14 +1,21 @@
-import pytest
-
 import functools
 from random import shuffle
 from pathlib import Path
 import bisect
+from types import SimpleNamespace
 
-from modama_crawler.dirwalk import crawl, outer_key, default_key, _mk_deterministic
+import pytest
+
+from modama_crawler.dirwalk import (
+    crawl,
+    default_key,
+    matches_oai_pmh_datestamp_limits,
+    outer_key,
+    _mk_stable,
+)
 
 
-reference_key = functools.partial(outer_key, key=_mk_deterministic(default_key))
+reference_key = functools.partial(outer_key, key=_mk_stable(default_key))
 
 
 @pytest.fixture
@@ -99,6 +106,20 @@ def test_walk_skip(test_dir, count):
             assert continuation == expected[-1]
 
 
+def test_matches_oai_pmh_datestamp_limits():
+    stat = SimpleNamespace(st_mtime=10.0, st_ctime=20.0)
+
+    assert matches_oai_pmh_datestamp_limits(stat)
+    assert matches_oai_pmh_datestamp_limits(stat, m_since=1.0, m_until=10.0)
+    assert matches_oai_pmh_datestamp_limits(stat, c_since=20.0, c_until=30.0)
+    assert matches_oai_pmh_datestamp_limits(stat, m_since=11.0, c_since=19.0)
+    assert matches_oai_pmh_datestamp_limits(stat, m_until=11.0, c_until=20.0)
+
+    assert not matches_oai_pmh_datestamp_limits(stat, m_since=11.0, m_until=12.0)
+    assert not matches_oai_pmh_datestamp_limits(stat, c_since=21.0, c_until=22.0)
+    assert not matches_oai_pmh_datestamp_limits(stat, m_since=11.0, c_since=21.0)
+
+
 @pytest.mark.parametrize(
     'continuation', ('0', '', None, 'ab', 'c', 'c/a.txt', 'XXX')
 )
@@ -137,7 +158,7 @@ def test_walk_stupidkey(test_dir, continuation):
         # reverse
         return str(item)[::-1]
 
-    my_key = _mk_deterministic(stupid_key)
+    my_key = _mk_stable(stupid_key)
 
     my_reference_key = functools.partial(outer_key, key=my_key)
 
