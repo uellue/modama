@@ -1,5 +1,5 @@
 import os
-import pathlib
+from pathlib import Path
 from typing import Callable, Sequence, Any
 import bisect
 import functools
@@ -9,20 +9,33 @@ import warnings
 import natsort
 
 
-from .recognition import FileHandler, BaseFileHandler, guess
+from .recognition import FileHandler, guess
 
 
-CrawlResultItem = BaseFileHandler
+CrawlResultItem = FileHandler
 
 
 default_key = natsort.natsort_keygen()
 
 
-def is_real_dir(p: pathlib.Path) -> bool:
+def is_real_dir(p: Path) -> bool:
     return not p.is_symlink() and p.is_dir()
 
 
-def remove_smaller_equal(outstanding: OrderedDict[pathlib.Path, Any], item: pathlib.Path, outer_key: Callable):
+def sanitize(root: Path, path: Path) -> Path:
+    # Sanitize path elements
+    for p in path.parts:
+        if p in ('.', '..'):
+            raise ValueError(f'Path {path} contains "., .." path elements.')
+
+    # Sanitize path (II): Append to directory root, make absolute
+    # (don't resolve to not follow symlinks) and make sure it is relative to the
+    # root
+    path = (root / path).absolute().relative_to(root, walk_up=False)
+    return path
+
+
+def remove_smaller_equal(outstanding: OrderedDict[Path, Any], item: Path, outer_key: Callable):
     keys = list(outstanding.keys())
     keys.sort(key=outer_key)
 
@@ -71,9 +84,9 @@ def matches_oai_pmh_datestamp_limits(
 
 
 def _nextpath_inner(
-        root: pathlib.Path, continuation: tuple,
+        root: Path, continuation: tuple,
         stable_key: Callable, outer_key: Callable, n: int,
-        outstanding: OrderedDict[pathlib.Path, Any]) -> Sequence[pathlib.Path]:
+        outstanding: OrderedDict[Path, Any]) -> tuple[Sequence[Path], bool]:
     # Find file entries that come after the continuation token in the chosen
     # sort order. If the continuation token is a directory, it descends into
     # that directory. It will list files until it encounters a directory so that
@@ -88,6 +101,7 @@ def _nextpath_inner(
 
     def process(contents, root, base, outstanding, n):
         result = []
+        cont = False
         # TODO limit oversize since files a and z on top level may span the entire repository
         while contents and (len(result) < n or outstanding):
             # print(result, n, outstanding)
@@ -104,14 +118,16 @@ def _nextpath_inner(
             # Descending is delegated to outer function which calls
             # this function with an appropriate continuation key
             if is_real_dir(item):
+                cont = True
                 break
-        return result
+
+        return result, (len(contents) > 0 or cont)
 
     # We ascend from the depth of the continuation token up
     # until we can match it with existing directories
     # and find sth to return
     for i in range(len(continuation)):
-        subpath = pathlib.Path(*continuation[:len(continuation)-i])
+        subpath = Path(*continuation[:len(continuation)-i])
         # The continuation token was an existing directory and our next task is
         # to descend into that directory. No need to filter since the
         # directory content comes after the containing directory in the sort
@@ -158,7 +174,7 @@ def _nextpath_inner(
                         n=n,
                     )
     # Apparently we didn't find anything
-    return []
+    return ([], False)
 
 
 def stringify(item):
@@ -188,15 +204,15 @@ def outer_key(item, key):
     # The key is applied separately at each level of the path hierarchy.
     # For that reason we create a nested key with a tuple of tuples
     # that should resolve to the same sort order
-    parts = pathlib.Path(item).parts
+    parts = Path(item).parts
     return tuple(key(p) for p in parts)
 
 
 def crawl(
-            root: pathlib.Path | str, continuation: pathlib.Path | str,
+            root: Path | str, continuation: Path | str,
             key: Callable = default_key, n: int = 1,
             c_since: float | None = None, c_until: float | None = None,
-            m_since: float | None = None, m_until: float | None = None) -> tuple[dict[pathlib.Path, CrawlResultItem], pathlib.Path]:
+            m_since: float | None = None, m_until: float | None = None) -> tuple[dict[Path, CrawlResultItem], Path | None]:
     # _nextpath_inner() stops returning entries when it encounters a directory
     # since it will need to descend. That's why this outer function keeps
     # calling _nextpath_inner() until our bucket is full
@@ -204,18 +220,10 @@ def crawl(
     outstanding = OrderedDict()
     seen = set()
     claimed = OrderedDict()
-    root = pathlib.Path(root).resolve(strict=True)
-    continuation = pathlib.Path(continuation)
+    root = Path(root).resolve(strict=True)
+    continuation = Path(continuation)
 
-    # Sanitize continuation token
-    for p in continuation.parts:
-        if p in ('.', '..'):
-            raise ValueError(f'Continuation token {continuation} contains "., .." path elements.')
-
-    # Sanitize continuation token (II): Append to directory root, make absolute
-    # (don't resolve to not follow symlinks) and make sure it is relative to the
-    # root
-    continuation = (root / continuation).absolute().relative_to(root, walk_up=False)
+    continuation = sanitize(root=root, path=continuation)
 
     stable_key = _mk_stable(key)
 
@@ -230,15 +238,27 @@ def crawl(
         continuation_parts = ('', )
     new_continuation = continuation
     # TODO limit oversize since files a and z on top level may span the entire repository
+    finished = False
     while len(result) < n or len(outstanding) != 0:
-        pieces = _nextpath_inner(
+        missing = n-len(result)
+        pieces, cont = _nextpath_inner(
             root=root, continuation=continuation_parts,
             stable_key=stable_key,
             outer_key=outer,
-            n=n-len(result),
+            n=missing,
             outstanding=outstanding,
         )
+        # The inner function would have found more, we ar enot done
+        if cont is True:
+            finished = False
+        # The inner function hit an end point and didn't return enough items.
+        # This will only persist if the while loop condition
+        # is not met anymore in the next pass
+        if cont is False and len(pieces) < missing:
+            finished = True
+        # This one will stick since we exit the loop here
         if len(pieces) == 0:
+            finished = True
             break
         for piece in pieces:
             seen.add(piece)
@@ -305,8 +325,15 @@ def crawl(
             # We've already warned in case of a duplicate
             if handler.path not in result:
                 result[handler.path] = handler
-        continuation_parts = pathlib.Path(pieces[-1]).parts
+        continuation_parts = Path(pieces[-1]).parts
     result = OrderedDict(sorted(result.items(), key=dict_item_key))
     if outstanding:
         raise Exception(str(outstanding))
+    if n == 0:
+        # No files processed, return input continuation
+        pass
+    elif finished:
+        # Finished processing all files
+        new_continuation = None
+    # else: keep new_continuation as the last file processed
     return (result, new_continuation)

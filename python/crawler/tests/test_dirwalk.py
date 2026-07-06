@@ -62,12 +62,13 @@ def test_walk(test_dir):
     )
     print(res, continuation)
     files = sorted([Path(f) for f in list(zip(*listing))[0]], key=reference_key)
-    assert continuation == files[-1]
+    # When all items are processed, continuation should be None (finished)
+    assert continuation is None
     assert list(res.keys()) == files
 
 
 @pytest.mark.parametrize(
-    'n', tuple(range(5)) + (100, )
+    'n', tuple(range(20)) + (100, )
 )
 def test_walk_count(test_dir, n):
     listing, tmp_path = test_dir
@@ -81,7 +82,17 @@ def test_walk_count(test_dir, n):
     print(res, continuation)
     expected = files[:n]
     assert list(res.keys()) == expected
-    if expected:
+    # When n >= total files, crawling is finished, continuation should be None
+    # When n < total files and we got some files, there are more items, continuation should not be None
+    # When n=0, we got 0 files from root, continuation should be the input continuation ('')
+    if n >= len(files):
+        assert continuation is None
+    elif n == 0:
+        # When n=0, we didn't process any files, so continuation should be the input
+        assert continuation == Path('')
+    else:
+        assert continuation is not None
+        # continuation should be the last file in the result
         assert continuation == expected[-1]
 
 
@@ -99,11 +110,35 @@ def test_walk_skip(test_dir, count):
             continuation=files[n],
             n=count,
         )
-        print(res, continuation)
+        # We skip one at n=0
+        remaining = len(files) - n - 1
+        print(n, remaining, res, continuation)
         expected = files[n+1:n+1+count]
         assert list(res.keys()) == expected
-        if expected:
+        # When count=0, we got 0 files, continuation should be the input
+        # continuation (files[n])
+        # When count >= remaining files, crawling is
+        # finished, continuation should be None
+        # When 0 < count < remaining
+        # files, there are more items, continuation should not be None
+        if count == 0:
+            # When count=0, we didn't process any files, so continuation should
+            # be the input
+            assert continuation == files[n]
+        # We must recognize that we are past the end
+        elif count > remaining:
+            print(count, remaining)
+            assert continuation is None
+        # We must recognize that there's more to fetch
+        elif count < remaining:
+            print(count, remaining)
+            assert continuation is not None
             assert continuation == expected[-1]
+        # The behavior for count == remaining is undefined since we may either
+        # realize that the listing is exhausted, or finish "on the mark"
+        # without realizing that there wouldn't be a next one.
+        else:
+            assert continuation in (None, expected[-1])
 
 
 def test_matches_oai_pmh_datestamp_limits():
@@ -143,8 +178,8 @@ def test_walk_noexist(test_dir, continuation):
     print(res, continuation)
     expected = files[index:]
     assert list(res.keys()) == expected
-    if expected:
-        assert continuation == expected[-1]
+    # With n=1000, we should get all remaining files, so continuation should be None (finished)
+    assert continuation is None
 
 
 @pytest.mark.parametrize(
@@ -179,5 +214,5 @@ def test_walk_stupidkey(test_dir, continuation):
     print(res, continuation)
     expected = files[index:]
     assert list(res.keys()) == expected
-    if expected:
-        assert continuation == expected[-1]
+    # With n=1000, we should get all remaining files, so continuation should be None (finished)
+    assert continuation is None

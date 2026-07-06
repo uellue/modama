@@ -107,23 +107,12 @@ class FileHandler(ABC):
         return handler_cls(root, path, guesses)
 
     @classmethod
-    @abstractmethod
     def matches(cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]) -> int | None:
         """Return 0..100 if this handler can handle the path, otherwise None."""
-        return None
-
-    @abstractmethod
-    def _find_all_members(self) -> Iterable[pathlib.Path]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def datacite(self):
-        raise NotImplementedError
-
-    @staticmethod
-    @abstractmethod
-    def xdg_mimeinfo() -> str | None:
-        raise NotImplementedError
+        if (root / path).exists():
+            return 0
+        else:
+            return None
 
     @classmethod
     def install_mime_info(cls, application: str | None = None):
@@ -151,18 +140,8 @@ class FileHandler(ABC):
                     f.write(footer)
                 Mime.install_mime_info(application=application, package_file=package_file)
 
-
-class BaseFileHandler(FileHandler):
     def _find_all_members(self) -> Iterable[pathlib.Path]:
         return [self.path]
-
-    @classmethod
-    def matches(cls, root, path, guesses) -> int | None:
-        """Return 0..100 if this handler can handle the path, otherwise None."""
-        if (root / path).exists():
-            return 0
-        else:
-            return None
 
     @property
     @cache
@@ -254,11 +233,11 @@ class BaseFileHandler(FileHandler):
         return None
 
 
-class OctetStream(BaseFileHandler):
+class OctetStream(FileHandler):
     file_types = (Mime.MIMEtype("application/octet-stream"), )
 
 
-class Directory(BaseFileHandler):
+class Directory(FileHandler):
     file_types = (Mime.MIMEtype("inode/directory"), )
 
     @classmethod
@@ -271,7 +250,7 @@ class Directory(BaseFileHandler):
             return None
 
 
-class Symlink(BaseFileHandler):
+class Symlink(FileHandler):
     file_types = (Mime.MIMEtype("inode/symlink"), )
 
     @classmethod
@@ -283,7 +262,7 @@ class Symlink(BaseFileHandler):
             return None
 
 
-class EMPAD(BaseFileHandler):
+class EMPAD(FileHandler):
     file_types = (Mime.MIMEtype('application/x.empad+xml'), Mime.MIMEtype('application/x.empad-raw'))
 
     def _find_all_members(self):

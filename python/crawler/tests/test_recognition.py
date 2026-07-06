@@ -108,7 +108,8 @@ def test_walk(test_dir):
     print(res, continuation)
 
     expected = sorted(list(zip(*listing))[0], key=reference_key)
-    assert continuation == Path(expected[-1])
+    # Exhausted the directory, continuation must be None
+    assert continuation is None
     expected.remove('series_x1234.raw')
     expected.remove('a/series_x1234.raw')
 
@@ -149,13 +150,12 @@ def test_walk_stepwise(test_dir):
                 for key in piece.keys():
                     assert key not in res
                 res.update(piece)
-            else:
+            if continuation is None:
                 print("finished")
                 break
     print(res, continuation)
 
     expected = sorted(list(zip(*listing))[0], key=reference_key)
-    assert continuation == Path(expected[-1])
     expected.remove('series_x1234.raw')
     expected.remove('a/series_x1234.raw')
 

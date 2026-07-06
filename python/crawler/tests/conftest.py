@@ -16,7 +16,7 @@ CANARY_MIME = xdg.Mime.MIMEtype('application', 'x.modamatestfile')
 
 
 # File handler for self test
-class Canary(modama_crawler.recognition.BaseFileHandler):
+class Canary(modama_crawler.recognition.FileHandler):
     file_types = (CANARY_MIME, )
 
     @staticmethod
