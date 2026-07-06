@@ -115,12 +115,6 @@ def test_walk_skip(test_dir, count):
         print(n, remaining, res, continuation)
         expected = files[n+1:n+1+count]
         assert list(res.keys()) == expected
-        # When count=0, we got 0 files, continuation should be the input
-        # continuation (files[n])
-        # When count >= remaining files, crawling is
-        # finished, continuation should be None
-        # When 0 < count < remaining
-        # files, there are more items, continuation should not be None
         if count == 0:
             # When count=0, we didn't process any files, so continuation should
             # be the input

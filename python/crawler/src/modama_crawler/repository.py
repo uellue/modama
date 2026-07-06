@@ -1,10 +1,10 @@
 import pathlib
-
-from urllib.parse import quote_plus
+import re
+from urllib.parse import unquote_plus, quote_plus
 
 
 # from mgmtinterface import quote_path
-def quote_path(path: str):
+def quote_path(path: str) -> str:
     """
     Consistently quote the path such that it can appear in the
     query part of a URL, as close to the standard as possible
@@ -13,15 +13,33 @@ def quote_path(path: str):
     return quote_plus(path, safe="!$'()*,/:;?@")
 
 
-def get_identifier(path: pathlib.Path, root: pathlib.Path) -> str:
-    # abspath = root / path
-    # st = abspath.stat()
-    # identifier = {
-    #     'path': str(path),
-    #     'size': st.st_size,
-    # }
-    # suffix = json.dumps(identifier).encode().hex().lower()
-    return f"https://er-c-data-mgmt.fz-juelich.de/browse?path={quote_path('/' + str(path))}"
+def unquote_path(quoted_path: str) -> str:
+    return unquote_plus(quoted_path)
+
+
+def get_identifier(path: pathlib.Path | None) -> str | None:
+    if path is None:
+        return None
+    else:
+        return f"https://er-c-data-mgmt.fz-juelich.de/browse?path={quote_path('/' + str(path))}"
+
+
+def path_from_identifier(identifier: str) -> str:
+    """Extract the path from an OAI-PMH identifier URL.
+
+    This is the inverse of get_identifier().
+    """
+    # The identifier is a URL like:
+    # https://er-c-data-mgmt.fz-juelich.de/browse?path=/some/path
+    # Extract the path query parameter
+    match = re.search(r'path=([^&]+)', identifier)
+    if match:
+        path_str = unquote_path(match.group(1))
+        # Remove leading slash if present
+        if path_str.startswith('/'):
+            path_str = path_str[1:]
+        return path_str
+    raise ValueError(f"Could not extract path from identifier: {identifier}")
 
 
 # FIXME get from environment
