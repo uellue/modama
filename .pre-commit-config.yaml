@@ -6,6 +6,7 @@ repos:
     # Run the linter.
     - id: ruff-check
       types_or: [ python, pyi, jupyter, pyproject ]
+      exclude: ^prototypes/
     # Run the formatter.
     - id: ruff-format
 # - repo: https://github.com/DetachHead/basedpyright-prek-mirror

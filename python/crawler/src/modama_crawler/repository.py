@@ -1,4 +1,4 @@
-import pathlib
+from pathlib import Path
 import re
 from urllib.parse import unquote_plus, quote_plus
 
@@ -17,7 +17,7 @@ def unquote_path(quoted_path: str) -> str:
     return unquote_plus(quoted_path)
 
 
-def get_identifier(path: pathlib.Path | None) -> str | None:
+def get_identifier(path: Path | None) -> str | None:
     if path is None:
         return None
     else:
@@ -32,11 +32,11 @@ def path_from_identifier(identifier: str) -> str:
     # The identifier is a URL like:
     # https://er-c-data-mgmt.fz-juelich.de/browse?path=/some/path
     # Extract the path query parameter
-    match = re.search(r'path=([^&]+)', identifier)
+    match = re.search(r"path=([^&]+)", identifier)
     if match:
         path_str = unquote_path(match.group(1))
         # Remove leading slash if present
-        if path_str.startswith('/'):
+        if path_str.startswith("/"):
             path_str = path_str[1:]
         return path_str
     raise ValueError(f"Could not extract path from identifier: {identifier}")
@@ -50,7 +50,7 @@ def get_publisher() -> str:
 def sanitize(root: Path, path: Path) -> Path:
     # Sanitize path elements
     for p in path.parts:
-        if p in ('.', '..'):
+        if p in (".", ".."):
             raise ValueError(f'Path {path} contains "., .." path elements.')
 
     # Sanitize path (II): Append to directory root, make absolute

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pathlib
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import ClassVar, Dict, Sequence, Type, Iterable
 import datetime
 from functools import cache
@@ -38,7 +38,7 @@ def guess(path: pathlib.Path) -> Sequence[Mime.MIMEtype]:
 class FileHandler(ABC):
     _registry: ClassVar[Dict[Mime.MIMEtype, list[Type["FileHandler"]]]] = {}
 
-    file_types: ClassVar[tuple[Mime.MIMEtype, ...]] = (Mime.MIMEtype('', ''), )
+    file_types: ClassVar[tuple[Mime.MIMEtype, ...]] = (Mime.MIMEtype("", ""),)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -46,7 +46,9 @@ class FileHandler(ABC):
             for file_type in cls.file_types:
                 cls._registry.setdefault(file_type, []).append(cls)
 
-    def __init__(self, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]):
+    def __init__(
+        self, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]
+    ):
         self.root = root
         self.path = path
         self.guesses = guesses
@@ -58,7 +60,9 @@ class FileHandler(ABC):
         self.abspath = self.root / path
 
     @classmethod
-    def handlers_for_type(cls, file_type: Mime.MIMEtype) -> Sequence[Type["FileHandler"]]:
+    def handlers_for_type(
+        cls, file_type: Mime.MIMEtype
+    ) -> Sequence[Type["FileHandler"]]:
         return tuple(cls._registry.get(file_type, []))
 
     @classmethod
@@ -70,7 +74,8 @@ class FileHandler(ABC):
 
     @classmethod
     def resolve(
-            cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]) -> Type["FileHandler"]:
+        cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]
+    ) -> Type["FileHandler"]:
         path = pathlib.Path(path)
         root = pathlib.Path(root)
         best_match: Type["FileHandler"] | None = None
@@ -88,12 +93,14 @@ class FileHandler(ABC):
                 if priority > best_priority:
                     best_priority = priority
                     best_match = handler_cls
-        octet_stream = Mime.MIMEtype('application/octet-stream')
+        octet_stream = Mime.MIMEtype("application/octet-stream")
         # If octet stream is an option, then directory, symlink or octet stream
         # should have matched. Sth fundamental is amiss with the recognition
         # setup
         if best_match is None and octet_stream in guesses:
-            raise ValueError(f"No handler matched for file types {guesses} and path {path}, not even octet stream.")
+            raise ValueError(
+                f"No handler matched for file types {guesses} and path {path}, not even octet stream."
+            )
         # Let's try again: It should be a file and it should match octet stream as a fallback
         elif best_match is None:
             return cls.resolve(root, path, [octet_stream])
@@ -102,12 +109,16 @@ class FileHandler(ABC):
             return best_match
 
     @classmethod
-    def create(cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]) -> "FileHandler":
+    def create(
+        cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]
+    ) -> "FileHandler":
         handler_cls = cls.resolve(root, path, guesses)
         return handler_cls(root, path, guesses)
 
     @classmethod
-    def matches(cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]) -> int | None:
+    def matches(
+        cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]
+    ) -> int | None:
         """Return 0..100 if this handler can handle the path, otherwise None."""
         if (root / path).exists():
             return 0
@@ -117,7 +128,7 @@ class FileHandler(ABC):
     @classmethod
     def install_mime_info(cls, application: str | None = None):
         if application is None:
-            application = 'modama-crawler'
+            application = "modama-crawler"
         snippets = []
         handlers = cls.handlers()
         for handler in handlers:
@@ -125,20 +136,22 @@ class FileHandler(ABC):
             if mimeinfo:
                 snippets.append(mimeinfo)
         if snippets:
-            filename = application + '.xml'
+            filename = application + ".xml"
             header = """<?xml version="1.0"?>
 <mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
 """
             footer = "</mime-info>"
             with tempfile.TemporaryDirectory() as d:
                 package_file = os.path.join(d, filename)
-                with open(package_file, 'w') as f:
+                with open(package_file, "w") as f:
                     f.write(header)
                     for snippet in snippets:
                         f.write(snippet)
-                        f.write('\n')
+                        f.write("\n")
                     f.write(footer)
-                Mime.install_mime_info(application=application, package_file=package_file)
+                Mime.install_mime_info(
+                    application=application, package_file=package_file
+                )
 
     def _find_all_members(self) -> Iterable[pathlib.Path]:
         return [self.path]
@@ -170,7 +183,7 @@ class FileHandler(ABC):
         return [self.mtime]
 
     def get_descriptions(self):
-        return [', '.join(f"'{str(m)}'" for m in self.members)]
+        return [", ".join(f"'{str(m)}'" for m in self.members)]
 
     @property
     @cache
@@ -206,7 +219,7 @@ class FileHandler(ABC):
         # Only keep 'application/octet-stream' if there is no other option
         if len(result) > 1:
             try:
-                result.remove('application/octet-stream')
+                result.remove("application/octet-stream")
             except ValueError:
                 pass
         return result
@@ -234,11 +247,11 @@ class FileHandler(ABC):
 
 
 class OctetStream(FileHandler):
-    file_types = (Mime.MIMEtype("application/octet-stream"), )
+    file_types = (Mime.MIMEtype("application/octet-stream"),)
 
 
 class Directory(FileHandler):
-    file_types = (Mime.MIMEtype("inode/directory"), )
+    file_types = (Mime.MIMEtype("inode/directory"),)
 
     @classmethod
     def matches(cls, root, path, guesses) -> int | None:
@@ -251,7 +264,7 @@ class Directory(FileHandler):
 
 
 class Symlink(FileHandler):
-    file_types = (Mime.MIMEtype("inode/symlink"), )
+    file_types = (Mime.MIMEtype("inode/symlink"),)
 
     @classmethod
     def matches(cls, root, path, guesses) -> int | None:
@@ -263,10 +276,13 @@ class Symlink(FileHandler):
 
 
 class EMPAD(FileHandler):
-    file_types = (Mime.MIMEtype('application/x.empad+xml'), Mime.MIMEtype('application/x.empad-raw'))
+    file_types = (
+        Mime.MIMEtype("application/x.empad+xml"),
+        Mime.MIMEtype("application/x.empad-raw"),
+    )
 
     def _find_all_members(self):
-        if Mime.MIMEtype('application/x.empad+xml') in self.guesses:
+        if Mime.MIMEtype("application/x.empad+xml") in self.guesses:
             found_raw = self.__find_raw(self.abspath)
             if found_raw is None:
                 # Should not have matched otherwise
@@ -274,7 +290,7 @@ class EMPAD(FileHandler):
             else:
                 score, raw_file = found_raw
             return [self.path, raw_file.relative_to(self.root)]
-        elif Mime.MIMEtype('application/x.empad-raw') in self.guesses:
+        elif Mime.MIMEtype("application/x.empad-raw") in self.guesses:
             found_xml = self.__find_xml(self.abspath)
             if found_xml is None:
                 # Should not have matched otherwise
@@ -291,9 +307,8 @@ class EMPAD(FileHandler):
     def __find_xml(cls, abs_raw):
         containing_dir = os.path.dirname(abs_raw)
         # Look for XML files that could be the parent
-        potential_xml = (
-            glob.glob('*.xml', root_dir=containing_dir) +
-            glob.glob('*.XML', root_dir=containing_dir)
+        potential_xml = glob.glob("*.xml", root_dir=containing_dir) + glob.glob(
+            "*.XML", root_dir=containing_dir
         )
         for f in potential_xml:
             abs_xml = os.path.join(containing_dir, f)
@@ -312,14 +327,11 @@ class EMPAD(FileHandler):
         raw_file = emroot.find("raw_file")
         if raw_file is None:
             return None
-        raw_filename = raw_file.attrib['filename']
+        raw_filename = raw_file.attrib["filename"]
         if raw_filename is None:
             return None
         filename = os.path.basename(raw_filename)
-        path_raw = os.path.join(
-            os.path.dirname(abs_xml),
-            filename
-        )
+        path_raw = os.path.join(os.path.dirname(abs_xml), filename)
         if not os.path.exists(path_raw):
             return None
         return (50, pathlib.Path(path_raw))
@@ -338,16 +350,19 @@ class EMPAD(FileHandler):
         if expected_rawpath is None:
             return score
         else:
-            if pathlib.Path(path_raw).resolve() == pathlib.Path(expected_rawpath).resolve():
+            if (
+                pathlib.Path(path_raw).resolve()
+                == pathlib.Path(expected_rawpath).resolve()
+            ):
                 return score
             else:
                 return None
 
     @classmethod
     def matches(cls, root, path, guesses):
-        if Mime.MIMEtype('application/x.empad+xml') in guesses:
+        if Mime.MIMEtype("application/x.empad+xml") in guesses:
             return cls.__match_xml(root / path)
-        elif Mime.MIMEtype('application/x.empad-raw') in guesses:
+        elif Mime.MIMEtype("application/x.empad-raw") in guesses:
             found_xml = cls.__find_xml(root / path)
             if found_xml is not None:
                 score, abspath = found_xml
@@ -355,7 +370,7 @@ class EMPAD(FileHandler):
         return None
 
     def get_mimes(self):
-        return [Mime.MIMEtype('application/x.empad+xml'), Mime.MIMEtype('text/xml')]
+        return [Mime.MIMEtype("application/x.empad+xml"), Mime.MIMEtype("text/xml")]
 
     @staticmethod
     def xdg_mimeinfo():

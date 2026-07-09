@@ -7,7 +7,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 from xdg import Mime
 
-SQL_ESCAPE_RE = re.compile(r'([%_\\])')
+SQL_ESCAPE_RE = re.compile(r"([%_\\])")
 
 
 @dataclass(frozen=True)
@@ -30,28 +30,30 @@ class CandidateMatch:
 
 
 def _escape_like(text: str) -> str:
-    return SQL_ESCAPE_RE.sub(r'\\\1', text)
+    return SQL_ESCAPE_RE.sub(r"\\\1", text)
 
 
 def _glob_to_like(pattern: str) -> Optional[str]:
-    if '[' in pattern or ']' in pattern:
+    if "[" in pattern or "]" in pattern:
         return None
 
     result = []
     for ch in pattern:
-        if ch == '*':
-            result.append('%')
-        elif ch == '?':
-            result.append('_')
-        elif ch in ('%', '_', '\\'):
-            result.append('\\')
+        if ch == "*":
+            result.append("%")
+        elif ch == "?":
+            result.append("_")
+        elif ch in ("%", "_", "\\"):
+            result.append("\\")
             result.append(ch)
         else:
             result.append(ch)
-    return ''.join(result)
+    return "".join(result)
 
 
-def _sql_filter_for_basename(pattern: str, case_sensitive: bool, path_column: str = 'path') -> Optional[Tuple[str, Tuple[str, ...]]]:
+def _sql_filter_for_basename(
+    pattern: str, case_sensitive: bool
+) -> Optional[Tuple[str, Tuple[str, ...]]]:
     """Return a (sql, params) tuple for a basename-anchored LIKE filter or None.
 
     This helper only constructs the SQL expression and parameter tuple; callers
@@ -62,21 +64,23 @@ def _sql_filter_for_basename(pattern: str, case_sensitive: bool, path_column: st
         return None
 
     if case_sensitive:
-        path_expr = path_column
+        path_expr = "path"
         like_expr = like_pattern
     else:
-        path_expr = f'LOWER({path_column})'
+        path_expr = "LOWER(path)"
         like_expr = like_pattern.lower()
 
-    params = (f'%/{like_expr}',)
+    params = (f"%/{like_expr}",)
     escape_clause = " ESCAPE '\\'"
-    sql = f'({path_expr} LIKE ?{escape_clause})'
+    sql = f"({path_expr} LIKE ?{escape_clause})"
 
     return sql, params
 
 
-def _build_path_filter(pattern: str, case_sensitive: bool, mime: Mime.MIMEtype, weight: int, path_column: str = 'path') -> Optional[SQLPathFilter]:
-    result = _sql_filter_for_basename(pattern, case_sensitive, path_column=path_column)
+def _build_path_filter(
+    pattern: str, case_sensitive: bool, mime: Mime.MIMEtype, weight: int
+) -> Optional[SQLPathFilter]:
+    result = _sql_filter_for_basename(pattern, case_sensitive)
     if result is None:
         return None
     sql, params = result
@@ -92,41 +96,44 @@ def _build_path_filter(pattern: str, case_sensitive: bool, mime: Mime.MIMEtype, 
     )
 
 
-def collect_sql_path_filters(path_column: str = 'path') -> List[SQLPathFilter]:
+def collect_sql_path_filters() -> List[SQLPathFilter]:
     Mime.update_cache()
     result: List[SQLPathFilter] = []
 
     for mtype, rule_set in Mime.globs.allglobs.items():
-        for weight, pattern, flags in sorted(rule_set, key=lambda item: item[0], reverse=True):
-            case_sensitive = 'cs' in flags
-            filter_ = _build_path_filter(pattern, case_sensitive, mtype, weight, path_column=path_column)
+        for weight, pattern, flags in sorted(
+            rule_set, key=lambda item: item[0], reverse=True
+        ):
+            case_sensitive = "cs" in flags
+            filter_ = _build_path_filter(pattern, case_sensitive, mtype, weight)
             if filter_ is not None:
                 result.append(filter_)
     return result
 
 
-def build_sql_where_clause(filters: Iterable[SQLPathFilter]) -> Tuple[str, Tuple[str, ...]]:
+def build_sql_where_clause(
+    filters: Iterable[SQLPathFilter],
+) -> Tuple[str, Tuple[str, ...]]:
     pieces: List[str] = []
     params: List[str] = []
     for filter_ in filters:
         pieces.append(filter_.sql)
         params.extend(filter_.params)
     if not pieces:
-        return '1 = 0', ()
-    return ' OR '.join(pieces), tuple(params)
+        return "1 = 0", ()
+    return " OR ".join(pieces), tuple(params)
 
 
 def query_matching_paths(
     conn: sqlite3.Connection,
     table_name: str,
-    path_column: str = 'path',
     filters: Optional[Sequence[SQLPathFilter]] = None,
 ) -> List[Tuple[str, str, int]]:
     if filters is None:
-        filters = collect_sql_path_filters(path_column=path_column)
+        filters = collect_sql_path_filters()
 
     where_clause, params = build_sql_where_clause(filters)
-    sql = f'SELECT {path_column}, mime, weight FROM {table_name} WHERE {where_clause}'
+    sql = f"SELECT path, mime, weight FROM {table_name} WHERE {where_clause}"
     cursor = conn.execute(sql, params)
     return cursor.fetchall()
 
@@ -136,11 +143,17 @@ def resolve_name_matches(path: str) -> Sequence[Tuple[Mime.MIMEtype, int]]:
     return list(Mime.globs.all_matches(path))
 
 
-def summarize_candidates(rows: Sequence[Tuple[str, str, int]]) -> Sequence[CandidateMatch]:
+def summarize_candidates(
+    rows: Sequence[Tuple[str, str, int]],
+) -> Sequence[CandidateMatch]:
     groups: dict[str, List[Tuple[Mime.MIMEtype, int]]] = {}
     for path, mime_name, weight in rows:
         # mime_name is stored as a string representation for compatibility
-        mime = Mime.MIMEtype(*mime_name.split('/', 1)) if '/' in mime_name else Mime.MIMEtype(mime_name, '')
+        mime = (
+            Mime.MIMEtype(*mime_name.split("/", 1))
+            if "/" in mime_name
+            else Mime.MIMEtype(mime_name, "")
+        )
         groups.setdefault(path, []).append((mime, weight))
 
     results: List[CandidateMatch] = []
@@ -159,7 +172,11 @@ def summarize_candidates(rows: Sequence[Tuple[str, str, int]]) -> Sequence[Candi
     return results
 
 
-def sniff_paths_with_magic(paths: Iterable[str], possible: Optional[Sequence[Mime.MIMEtype]] = None, follow: bool = True) -> dict[str, Optional[Mime.MIMEtype]]:
+def sniff_paths_with_magic(
+    paths: Iterable[str],
+    possible: Optional[Sequence[Mime.MIMEtype]] = None,
+    follow: bool = True,
+) -> dict[str, Optional[Mime.MIMEtype]]:
     Mime.update_cache()
     result: dict[str, Optional[Mime.MIMEtype]] = {}
 
@@ -172,12 +189,12 @@ def sniff_paths_with_magic(paths: Iterable[str], possible: Optional[Sequence[Mim
     return result
 
 
-def build_mime_filter_map(path_column: str = 'path') -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
+def build_mime_filter_map() -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
     """Build a mapping of MIME -> list[SQLPathFilter] including only SQL-convertible filters.
 
     Each list is sorted by descending weight.
     """
-    filters = collect_sql_path_filters(path_column=path_column)
+    filters = collect_sql_path_filters()
     mapping: dict[Mime.MIMEtype, List[SQLPathFilter]] = {}
     for f in filters:
         if not f.is_simple:
@@ -191,10 +208,10 @@ def build_mime_filter_map(path_column: str = 'path') -> dict[Mime.MIMEtype, List
 
 def ensure_dataset_tables(
     conn: sqlite3.Connection,
-    files_table: str = 'files',
-    datasets_table: str = 'datasets',
-    mimes_table: str = 'mimes',
-    files_in_datasets_table: str = 'files_in_datasets',
+    files_table: str = "files",
+    datasets_table: str = "datasets",
+    mimes_table: str = "mimes",
+    files_in_datasets_table: str = "files_in_datasets",
 ) -> None:
     """Create the 4-table MIME prefilter schema if it does not exist.
 
@@ -249,20 +266,18 @@ def ensure_dataset_tables(
 
 def apply_mime_prefilter(
     conn: sqlite3.Connection,
-    source_table: str,
-    path_column: str = 'path',
-    files_table: str = 'files',
-    datasets_table: str = 'datasets',
-    mimes_table: str = 'mimes',
-    files_in_datasets_table: str = 'files_in_datasets',
+    files_table: str = "files",
+    datasets_table: str = "datasets",
+    mimes_table: str = "mimes",
+    files_in_datasets_table: str = "files_in_datasets",
     filters_map: Optional[dict[Mime.MIMEtype, List[SQLPathFilter]]] = None,
 ) -> dict[str, int]:
-    """Apply SQL-based mime filters to `source_table` and populate dataset tables.
+    """Apply SQL-based mime filters to `files_table` and populate dataset tables.
 
     Returns a summary mapping mime-string -> matched count.
     """
     if filters_map is None:
-        filters_map = build_mime_filter_map(path_column=path_column)
+        filters_map = build_mime_filter_map()
 
     ensure_dataset_tables(
         conn,
@@ -279,48 +294,36 @@ def apply_mime_prefilter(
             continue
 
         where_clause, params = build_sql_where_clause(filters)
-        sql = f"SELECT {path_column} FROM {source_table} WHERE {where_clause}"
-        rows = [r[0] for r in conn.execute(sql, params).fetchall()]
-        if not rows:
-            summary[str(mime)] = 0
-            continue
-
         mime_str = str(mime)
-        count = 0
 
-        for path in rows:
-            # Ensure path exists in files table
-            cur.execute(f'INSERT OR IGNORE INTO {files_table} (path) VALUES (?)', (path,))
-            cur.execute(f'SELECT path_id FROM {files_table} WHERE path = ?', (path,))
-            row = cur.fetchone()
-            if row is None:
-                path_id = cur.lastrowid
-            else:
-                path_id = row[0]
+        # Create datasets for all matching paths (one dataset per file)
+        cur.execute(
+            f"INSERT OR IGNORE INTO {datasets_table} (path_id) "
+            f"SELECT path_id FROM {files_table} WHERE {where_clause}",
+            params,
+        )
 
-            # Insert into datasets
-            cur.execute(f'INSERT OR IGNORE INTO {datasets_table} (path_id) VALUES (?)', (path_id,))
-            cur.execute(f'SELECT dataset_id FROM {datasets_table} WHERE path_id = ?', (path_id,))
-            row = cur.fetchone()
-            if row is None:
-                dataset_id = cur.lastrowid
-            else:
-                dataset_id = row[0]
+        # Assign MIME type to all newly created datasets in one go
+        cur.execute(
+            f"INSERT OR IGNORE INTO {mimes_table} (dataset_id, mime) "
+            f"SELECT d.dataset_id, ? "
+            f"FROM {datasets_table} d "
+            f"JOIN {files_table} f USING (path_id) "
+            f"WHERE {where_clause}",
+            (mime_str, *params),
+        )
 
-            # Insert into mimes
-            cur.execute(
-                f'INSERT OR IGNORE INTO {mimes_table} (dataset_id, mime) VALUES (?, ?)',
-                (dataset_id, mime_str),
-            )
+        # Link files to datasets in one go
+        cur.execute(
+            f"INSERT OR IGNORE INTO {files_in_datasets_table} (dataset_id, path_id) "
+            f"SELECT d.dataset_id, d.path_id "
+            f"FROM {datasets_table} d "
+            f"JOIN {files_table} f USING (path_id) "
+            f"WHERE {where_clause}",
+            params,
+        )
 
-            # Insert into files_in_datasets
-            cur.execute(
-                f'INSERT OR IGNORE INTO {files_in_datasets_table} (dataset_id, path_id) VALUES (?, ?)',
-                (dataset_id, path_id),
-            )
-            count += 1
-
-        summary[mime_str] = count
+        summary[mime_str] = cur.rowcount
 
     conn.commit()
     return summary
@@ -328,9 +331,9 @@ def apply_mime_prefilter(
 
 def resolve_ambiguous_with_get_type2(
     conn: sqlite3.Connection,
-    files_table: str = 'files',
-    datasets_table: str = 'datasets',
-    mimes_table: str = 'mimes',
+    files_table: str = "files",
+    datasets_table: str = "datasets",
+    mimes_table: str = "mimes",
 ) -> dict[str, int]:
     """Resolve ambiguous dataset MIME mappings using xdg.Mime.get_type2.
 
@@ -363,11 +366,20 @@ def resolve_ambiguous_with_get_type2(
             continue
         mt_str = str(mt)
         # Delete any candidate rows that don't match the resolved mime
-        cur.execute(f"DELETE FROM {mimes_table} WHERE dataset_id = ? AND mime != ?", (dataset_id, mt_str))
+        cur.execute(
+            f"DELETE FROM {mimes_table} WHERE dataset_id = ? AND mime != ?",
+            (dataset_id, mt_str),
+        )
         # Ensure resolved mapping exists
-        cur.execute(f"SELECT 1 FROM {mimes_table} WHERE dataset_id = ? AND mime = ?", (dataset_id, mt_str))
+        cur.execute(
+            f"SELECT 1 FROM {mimes_table} WHERE dataset_id = ? AND mime = ?",
+            (dataset_id, mt_str),
+        )
         if cur.fetchone() is None:
-            cur.execute(f"INSERT INTO {mimes_table} (dataset_id, mime) VALUES (?, ?)", (dataset_id, mt_str))
+            cur.execute(
+                f"INSERT INTO {mimes_table} (dataset_id, mime) VALUES (?, ?)",
+                (dataset_id, mt_str),
+            )
         resolved += 1
 
     conn.commit()
