@@ -27,7 +27,7 @@ from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
 
 from modama_crawler.repository import get_identifier, get_publisher, path_from_identifier
 from modama_crawler.recognition import guess, FileHandler
-from modama_crawler.dirwalk import crawl, sanitize
+from modama_crawler.dirwalk import crawl_datasets, sanitize
 
 app = Flask(__name__)
 
@@ -155,7 +155,7 @@ def _get_crawl_results(
         continuation = pathlib.Path('')
 
     # Perform the crawl with date filtering
-    records, new_continuation = crawl(
+    records, new_continuation = crawl_datasets(
         root=ROOT_PATH,
         continuation=continuation,
         n=n,

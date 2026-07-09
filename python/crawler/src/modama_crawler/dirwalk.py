@@ -15,7 +15,9 @@ from .recognition import FileHandler, guess
 CrawlResultItem = FileHandler
 
 
-default_key = natsort.natsort_keygen()
+# default_key = natsort.natsort_keygen()
+def default_key(item):
+    return item
 
 
 def is_real_dir(p: Path) -> bool:
@@ -99,9 +101,8 @@ def _nextpath_inner(
     # will need to keep track of outstanding bits itself
     outstanding = outstanding.copy()
 
-    def process(contents, root, base, outstanding, n):
+    def process(contents, root, base, outstanding, n, cont):
         result = []
-        cont = False
         # TODO limit oversize since files a and z on top level may span the entire repository
         while contents and (len(result) < n or outstanding):
             # print(result, n, outstanding)
@@ -120,7 +121,6 @@ def _nextpath_inner(
             if is_real_dir(item):
                 cont = True
                 break
-
         return result, (len(contents) > 0 or cont)
 
     # We ascend from the depth of the continuation token up
@@ -137,7 +137,10 @@ def _nextpath_inner(
             target_dir = cont
             # TODO limit recursion depth
             # print(target_dir, os.listdir(target_dir))
-            contents = sorted((x for x in os.listdir(target_dir)), key=stable_key)
+            try:
+                contents = sorted((x for x in os.listdir(target_dir)), key=stable_key)
+            except PermissionError:
+                contents = []
             if contents:
                 return process(
                     contents=contents,
@@ -145,39 +148,43 @@ def _nextpath_inner(
                     base=subpath,
                     outstanding=outstanding,
                     n=n,
+                    cont=False,
                 )
-        # It is a file or doesn't exist
-        else:
-            # Look at contents one level up
-            containing_dir = cont.parent
-            # We list the containing dir
-            if is_real_dir(containing_dir):
-                contents = sorted(
-                    (x for x in os.listdir(containing_dir)),
-                    key=stable_key)
-                # We filter out everything smaller or equal to the matching
-                # level of our continuation token
-                comp_item = stable_key(continuation[len(continuation)-i-1])
+        # It is a file, doesn't exist, is not listable or is empty
+        # Look at contents one level up
+        containing_dir = cont.parent
+        # We list the containing dir
+        if is_real_dir(containing_dir):
+            contents = sorted(
+                (x for x in os.listdir(containing_dir)),
+                key=stable_key)
+            # We filter out everything smaller or equal to the matching
+            # level of our continuation token
+            comp_item = stable_key(continuation[len(continuation)-i-1])
 
-                idx = bisect.bisect(
-                    a=contents,
-                    x=comp_item,
-                    key=stable_key
+            idx = bisect.bisect(
+                a=contents,
+                x=comp_item,
+                key=stable_key
+            )
+            contents = contents[idx:]
+            if contents:
+                return process(
+                    contents=contents,
+                    root=root,
+                    base=subpath.parent,
+                    outstanding=outstanding,
+                    n=n,
+                    # We haven't ascended all the way up, more
+                    # work to do
+                    cont=(i < len(continuation) - 1),
                 )
-                contents = contents[idx:]
-                if contents:
-                    return process(
-                        contents=contents,
-                        root=root,
-                        base=subpath.parent,
-                        outstanding=outstanding,
-                        n=n,
-                    )
     # Apparently we didn't find anything
     return ([], False)
 
 
 def stringify(item):
+    return item
     if isinstance(item, int):
         return f"{item:020d}"
     elif isinstance(item, float):
@@ -197,7 +204,7 @@ def _mk_stable(key):
         # stringify() because otherwise e.g. natsort may return different types
         # for the items, leading to invalid comparisons.
         return tuple(stringify(k) for k in key(item)) + (str(item), )
-    return stable_key
+    return key
 
 
 def outer_key(item, key):
@@ -208,7 +215,87 @@ def outer_key(item, key):
     return tuple(key(p) for p in parts)
 
 
-def crawl(
+def crawl_file_stat(
+            root: Path | str, continuation: Path | str,
+            key: Callable = default_key, n: int = 1,
+            c_since: float | None = None, c_until: float | None = None,
+            m_since: float | None = None, m_until: float | None = None) -> tuple[dict[Path, CrawlResultItem], Path | None]:
+    # _nextpath_inner() stops returning entries when it encounters a directory
+    # since it will need to descend. That's why this outer function keeps
+    # calling _nextpath_inner() until our bucket is full
+    result = {}
+    root = Path(root).resolve(strict=True)
+    continuation = Path(continuation)
+    continuation = sanitize(root=root, path=continuation)
+
+    stable_key = _mk_stable(key)
+    outer = functools.partial(outer_key, key=stable_key)
+
+    def dict_item_key(item):
+        return outer(item[0])
+
+    continuation_parts = continuation.parts
+    if not continuation_parts:
+        # This will resolve to the root node in _nextpath_inner.
+        continuation_parts = ('', )
+    new_continuation = continuation
+    # TODO limit oversize since files a and z on top level may span the entire repository
+    # print("not finished")
+    finished = False
+    while len(result) < n:
+        missing = n-len(result)
+        pieces, cont = _nextpath_inner(
+            root=root, continuation=continuation_parts,
+            stable_key=stable_key,
+            outer_key=outer,
+            n=missing,
+            outstanding={},
+        )
+        # The inner function would have found more, we ar enot done
+        if cont is True:
+            # print("not finished because cont")
+            finished = False
+        # The inner function hit an end point and didn't return enough items.
+        # This will only persist if the while loop condition
+        # is not met anymore in the next pass
+        if cont is False and len(pieces) < missing:
+            # print("finished cont and missing?")
+            finished = True
+        # This one will stick since we exit the loop here
+        if len(pieces) == 0:
+            # print("finished, no pieces!")
+            finished = True
+            break
+        for piece in pieces:
+            new_continuation = piece
+            try:
+                stat = (root / piece).stat(follow_symlinks=False)
+                ignore = not matches_oai_pmh_datestamp_limits(
+                    stat,
+                    c_since=c_since,
+                    c_until=c_until,
+                    m_since=m_since,
+                    m_until=m_until,
+                )
+                if ignore:
+                    continue
+                result[piece] = stat
+            except PermissionError:
+                result[piece] = None
+        continuation_parts = Path(pieces[-1]).parts
+    result = OrderedDict(sorted(result.items(), key=dict_item_key))
+    if n == 0:
+        # No files processed, return input continuation
+        pass
+    elif finished:
+        # print("really finished")
+        # Finished processing all files
+        new_continuation = None
+    # else: keep new_continuation as the last file processed
+    return (result, new_continuation)
+
+
+def crawl_datasets(
             root: Path | str, continuation: Path | str,
             key: Callable = default_key, n: int = 1,
             c_since: float | None = None, c_until: float | None = None,
@@ -269,15 +356,18 @@ def crawl(
                 item=piece,
                 outer_key=outer,
             )
-            stat = (root / piece).stat(follow_symlinks=False)
-            ignore = ignore or not matches_oai_pmh_datestamp_limits(
-                stat,
-                c_since=c_since,
-                c_until=c_until,
-                m_since=m_since,
-                m_until=m_until,
-            )
-            if ignore:
+            try:
+                stat = (root / piece).stat(follow_symlinks=False)
+                ignore = ignore or not matches_oai_pmh_datestamp_limits(
+                    stat,
+                    c_since=c_since,
+                    c_until=c_until,
+                    m_since=m_since,
+                    m_until=m_until,
+                )
+                if ignore:
+                    continue
+            except PermissionError:
                 continue
             guesses = guess(root / piece)
             handler = FileHandler.create(root, piece, guesses)
@@ -337,3 +427,5 @@ def crawl(
         new_continuation = None
     # else: keep new_continuation as the last file processed
     return (result, new_continuation)
+
+
