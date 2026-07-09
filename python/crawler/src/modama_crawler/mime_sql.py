@@ -172,3 +172,100 @@ def sniff_paths_with_magic(paths: Iterable[str], possible: Optional[Sequence[Mim
             mime_type = None
         result[path] = mime_type
     return result
+
+
+def build_mime_filter_map(path_column: str = 'path') -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
+    """Build a mapping of MIME -> list[SQLPathFilter] including only SQL-convertible filters.
+
+    Each list is sorted by descending weight.
+    """
+    filters = collect_sql_path_filters(path_column=path_column)
+    mapping: dict[Mime.MIMEtype, List[SQLPathFilter]] = {}
+    for f in filters:
+        if not f.is_simple:
+            continue
+        mapping.setdefault(f.mime, []).append(f)
+
+    for lst in mapping.values():
+        lst.sort(key=lambda x: x.weight, reverse=True)
+    return mapping
+
+
+def ensure_dataset_tables(conn: sqlite3.Connection, dataset_table: str = 'datasets', mime_table: str = 'dataset_mimes') -> None:
+    """Create minimal `datasets` and `dataset_mimes` tables if they do not exist."""
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {dataset_table} (
+            id INTEGER PRIMARY KEY,
+            path TEXT UNIQUE
+        )
+        """
+    )
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {mime_table} (
+            dataset_id INTEGER,
+            mime TEXT,
+            weight INTEGER,
+            PRIMARY KEY(dataset_id, mime)
+        )
+        """
+    )
+    conn.commit()
+
+
+def apply_mime_prefilter(
+    conn: sqlite3.Connection,
+    source_table: str,
+    path_column: str = 'path',
+    dataset_table: str = 'datasets',
+    mime_table: str = 'dataset_mimes',
+    filters_map: Optional[dict[Mime.MIMEtype, List[SQLPathFilter]]] = None,
+) -> dict[str, int]:
+    """Apply SQL-based mime filters to `source_table` and populate dataset tables.
+
+    Returns a summary mapping mime-string -> matched count.
+    """
+    if filters_map is None:
+        filters_map = build_mime_filter_map(path_column=path_column)
+
+    ensure_dataset_tables(conn, dataset_table=dataset_table, mime_table=mime_table)
+    cur = conn.cursor()
+    summary: dict[str, int] = {}
+
+    for mime, filters in filters_map.items():
+        if not filters:
+            continue
+
+        where_clause, params = build_sql_where_clause(filters)
+        sql = f"SELECT {path_column} FROM {source_table} WHERE {where_clause}"
+        rows = [r[0] for r in conn.execute(sql, params).fetchall()]
+        if not rows:
+            summary[str(mime)] = 0
+            continue
+
+        top_weight = max(f.weight for f in filters)
+        mime_str = str(mime)
+        count = 0
+
+        for path in rows:
+            cur.execute(f'INSERT OR IGNORE INTO {dataset_table} (path) VALUES (?)', (path,))
+            cur.execute(f'SELECT id FROM {dataset_table} WHERE path = ?', (path,))
+            row = cur.fetchone()
+            if row is None:
+                # fallback: use lastrowid if available
+                dataset_id = cur.lastrowid
+            else:
+                dataset_id = row[0]
+
+            cur.execute(
+                f'INSERT OR REPLACE INTO {mime_table} (dataset_id, mime, weight) VALUES (?, ?, ?)',
+                (dataset_id, mime_str, top_weight),
+            )
+            count += 1
+
+        summary[mime_str] = count
+
+    conn.commit()
+    return summary
