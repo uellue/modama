@@ -189,24 +189,58 @@ def build_mime_filter_map(path_column: str = 'path') -> dict[Mime.MIMEtype, List
     return mapping
 
 
-def ensure_dataset_tables(conn: sqlite3.Connection, dataset_table: str = 'datasets', mime_table: str = 'dataset_mimes') -> None:
-    """Create minimal `datasets` and `dataset_mimes` tables if they do not exist."""
+def ensure_dataset_tables(
+    conn: sqlite3.Connection,
+    files_table: str = 'files',
+    datasets_table: str = 'datasets',
+    mimes_table: str = 'mimes',
+    files_in_datasets_table: str = 'files_in_datasets',
+) -> None:
+    """Create the 4-table MIME prefilter schema if it does not exist.
+
+    Schema:
+      files(path_id INTEGER PRIMARY KEY, path TEXT UNIQUE, mtime FLOAT)
+      datasets(dataset_id INTEGER PRIMARY KEY, path_id INTEGER UNIQUE, FK→files)
+      mimes(dataset_id INTEGER, mime TEXT, FK→datasets, UNIQUE(dataset_id, mime))
+      files_in_datasets(dataset_id INTEGER, path_id INTEGER, FK→datasets, FK→files, UNIQUE(dataset_id, path_id))
+    """
     cur = conn.cursor()
     cur.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {dataset_table} (
-            id INTEGER PRIMARY KEY,
-            path TEXT UNIQUE
+        CREATE TABLE IF NOT EXISTS {files_table} (
+            path_id INTEGER PRIMARY KEY,
+            path TEXT UNIQUE,
+            mtime REAL
         )
         """
     )
     cur.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {mime_table} (
+        CREATE TABLE IF NOT EXISTS {datasets_table} (
+            dataset_id INTEGER PRIMARY KEY,
+            path_id INTEGER UNIQUE,
+            FOREIGN KEY (path_id) REFERENCES {files_table}(path_id)
+        )
+        """
+    )
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {mimes_table} (
             dataset_id INTEGER,
             mime TEXT,
-            weight INTEGER,
-            PRIMARY KEY(dataset_id, mime)
+            FOREIGN KEY (dataset_id) REFERENCES {datasets_table}(dataset_id),
+            UNIQUE(dataset_id, mime)
+        )
+        """
+    )
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {files_in_datasets_table} (
+            dataset_id INTEGER,
+            path_id INTEGER,
+            FOREIGN KEY (dataset_id) REFERENCES {datasets_table}(dataset_id),
+            FOREIGN KEY (path_id) REFERENCES {files_table}(path_id),
+            UNIQUE(dataset_id, path_id)
         )
         """
     )
@@ -217,8 +251,10 @@ def apply_mime_prefilter(
     conn: sqlite3.Connection,
     source_table: str,
     path_column: str = 'path',
-    dataset_table: str = 'datasets',
-    mime_table: str = 'dataset_mimes',
+    files_table: str = 'files',
+    datasets_table: str = 'datasets',
+    mimes_table: str = 'mimes',
+    files_in_datasets_table: str = 'files_in_datasets',
     filters_map: Optional[dict[Mime.MIMEtype, List[SQLPathFilter]]] = None,
 ) -> dict[str, int]:
     """Apply SQL-based mime filters to `source_table` and populate dataset tables.
@@ -228,7 +264,13 @@ def apply_mime_prefilter(
     if filters_map is None:
         filters_map = build_mime_filter_map(path_column=path_column)
 
-    ensure_dataset_tables(conn, dataset_table=dataset_table, mime_table=mime_table)
+    ensure_dataset_tables(
+        conn,
+        files_table=files_table,
+        datasets_table=datasets_table,
+        mimes_table=mimes_table,
+        files_in_datasets_table=files_in_datasets_table,
+    )
     cur = conn.cursor()
     summary: dict[str, int] = {}
 
@@ -243,23 +285,38 @@ def apply_mime_prefilter(
             summary[str(mime)] = 0
             continue
 
-        top_weight = max(f.weight for f in filters)
         mime_str = str(mime)
         count = 0
 
         for path in rows:
-            cur.execute(f'INSERT OR IGNORE INTO {dataset_table} (path) VALUES (?)', (path,))
-            cur.execute(f'SELECT id FROM {dataset_table} WHERE path = ?', (path,))
+            # Ensure path exists in files table
+            cur.execute(f'INSERT OR IGNORE INTO {files_table} (path) VALUES (?)', (path,))
+            cur.execute(f'SELECT path_id FROM {files_table} WHERE path = ?', (path,))
             row = cur.fetchone()
             if row is None:
-                # fallback: use lastrowid if available
+                path_id = cur.lastrowid
+            else:
+                path_id = row[0]
+
+            # Insert into datasets
+            cur.execute(f'INSERT OR IGNORE INTO {datasets_table} (path_id) VALUES (?)', (path_id,))
+            cur.execute(f'SELECT dataset_id FROM {datasets_table} WHERE path_id = ?', (path_id,))
+            row = cur.fetchone()
+            if row is None:
                 dataset_id = cur.lastrowid
             else:
                 dataset_id = row[0]
 
+            # Insert into mimes
             cur.execute(
-                f'INSERT OR REPLACE INTO {mime_table} (dataset_id, mime, weight) VALUES (?, ?, ?)',
-                (dataset_id, mime_str, top_weight),
+                f'INSERT OR IGNORE INTO {mimes_table} (dataset_id, mime) VALUES (?, ?)',
+                (dataset_id, mime_str),
+            )
+
+            # Insert into files_in_datasets
+            cur.execute(
+                f'INSERT OR IGNORE INTO {files_in_datasets_table} (dataset_id, path_id) VALUES (?, ?)',
+                (dataset_id, path_id),
             )
             count += 1
 
@@ -271,22 +328,24 @@ def apply_mime_prefilter(
 
 def resolve_ambiguous_with_get_type2(
     conn: sqlite3.Connection,
-    dataset_table: str = 'datasets',
-    mime_table: str = 'dataset_mimes',
+    files_table: str = 'files',
+    datasets_table: str = 'datasets',
+    mimes_table: str = 'mimes',
 ) -> dict[str, int]:
     """Resolve ambiguous dataset MIME mappings using xdg.Mime.get_type2.
 
-    For datasets that have more than one mime candidate in `mime_table`, call
+    For datasets that have more than one mime candidate in `mimes_table`, call
     `Mime.get_type2(path)` and delete any entries that don't match the result.
     Returns a summary dict with counts: {'checked': n, 'resolved': m}.
     """
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT d.id, d.path
-        FROM {dataset_table} d
-        JOIN {mime_table} m ON d.id = m.dataset_id
-        GROUP BY d.id
+        SELECT d.dataset_id, f.path
+        FROM {datasets_table} d
+        JOIN {mimes_table} m ON d.dataset_id = m.dataset_id
+        JOIN {files_table} f ON d.path_id = f.path_id
+        GROUP BY d.dataset_id
         HAVING COUNT(m.mime) > 1
         """
     )
@@ -304,11 +363,11 @@ def resolve_ambiguous_with_get_type2(
             continue
         mt_str = str(mt)
         # Delete any candidate rows that don't match the resolved mime
-        cur.execute(f"DELETE FROM {mime_table} WHERE dataset_id = ? AND mime != ?", (dataset_id, mt_str))
+        cur.execute(f"DELETE FROM {mimes_table} WHERE dataset_id = ? AND mime != ?", (dataset_id, mt_str))
         # Ensure resolved mapping exists
-        cur.execute(f"SELECT 1 FROM {mime_table} WHERE dataset_id = ? AND mime = ?", (dataset_id, mt_str))
+        cur.execute(f"SELECT 1 FROM {mimes_table} WHERE dataset_id = ? AND mime = ?", (dataset_id, mt_str))
         if cur.fetchone() is None:
-            cur.execute(f"INSERT INTO {mime_table} (dataset_id, mime, weight) VALUES (?, ?, ?)", (dataset_id, mt_str, 0))
+            cur.execute(f"INSERT INTO {mimes_table} (dataset_id, mime) VALUES (?, ?)", (dataset_id, mt_str))
         resolved += 1
 
     conn.commit()
