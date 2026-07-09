@@ -108,3 +108,29 @@ def test_ensure_and_apply_prefilter():
     mime_values = {r[0] for r in mime_rows}
     assert any('image/png' in m for m in mime_values)
     assert any('text/plain' in m for m in mime_values)
+
+
+def test_resolve_ambiguous_with_get_type2(tmp_path: Path):
+    conn = sqlite3.connect(':memory:')
+    mime_sql.ensure_dataset_tables(conn, dataset_table='datasets', mime_table='dataset_mimes')
+
+    # Create a real PNG file so get_type2 can inspect contents
+    blob = tmp_path / 'amb.png'
+    blob.write_bytes(b'\x89PNG\r\n\x1a\n')
+
+    # Insert dataset and two candidate mimes for it
+    cur = conn.cursor()
+    cur.execute('INSERT INTO datasets (path) VALUES (?)', (str(blob),))
+    cur.execute('SELECT id FROM datasets WHERE path = ?', (str(blob),))
+    dataset_id = cur.fetchone()[0]
+    cur.execute('INSERT INTO dataset_mimes (dataset_id, mime, weight) VALUES (?, ?, ?)', (dataset_id, 'application/octet-stream', 10))
+    cur.execute('INSERT INTO dataset_mimes (dataset_id, mime, weight) VALUES (?, ?, ?)', (dataset_id, 'image/png', 50))
+    conn.commit()
+
+    summary = mime_sql.resolve_ambiguous_with_get_type2(conn, dataset_table='datasets', mime_table='dataset_mimes')
+    assert summary['checked'] == 1
+    assert summary['resolved'] == 1
+
+    rows = list(conn.execute('SELECT mime FROM dataset_mimes WHERE dataset_id = ?', (dataset_id,)).fetchall())
+    assert len(rows) == 1
+    assert rows[0][0] == 'image/png'

@@ -51,7 +51,12 @@ def _glob_to_like(pattern: str) -> Optional[str]:
     return ''.join(result)
 
 
-def _sql_filter_for_basename(pattern: str, case_sensitive: bool, path_column: str = 'path') -> Optional[SQLPathFilter]:
+def _sql_filter_for_basename(pattern: str, case_sensitive: bool, path_column: str = 'path') -> Optional[Tuple[str, Tuple[str, ...]]]:
+    """Return a (sql, params) tuple for a basename-anchored LIKE filter or None.
+
+    This helper only constructs the SQL expression and parameter tuple; callers
+    build higher-level `SQLPathFilter` objects as needed.
+    """
     like_pattern = _glob_to_like(pattern)
     if like_pattern is None:
         return None
@@ -67,29 +72,22 @@ def _sql_filter_for_basename(pattern: str, case_sensitive: bool, path_column: st
     escape_clause = " ESCAPE '\\'"
     sql = f'({path_expr} LIKE ?{escape_clause})'
 
-    return SQLPathFilter(
-        mime=Mime.MIMEtype('', ''),
-        weight=0,
-        pattern=pattern,
-        case_sensitive=case_sensitive,
-        sql=sql,
-        params=params,
-        is_simple=True,
-    )
+    return sql, params
 
 
 def _build_path_filter(pattern: str, case_sensitive: bool, mime: Mime.MIMEtype, weight: int, path_column: str = 'path') -> Optional[SQLPathFilter]:
-    filter_ = _sql_filter_for_basename(pattern, case_sensitive, path_column=path_column)
-    if filter_ is None:
+    result = _sql_filter_for_basename(pattern, case_sensitive, path_column=path_column)
+    if result is None:
         return None
+    sql, params = result
 
     return SQLPathFilter(
         mime=mime,
         weight=weight,
         pattern=pattern,
         case_sensitive=case_sensitive,
-        sql=filter_.sql,
-        params=filter_.params,
+        sql=sql,
+        params=params,
         is_simple=True,
     )
 
@@ -269,3 +267,49 @@ def apply_mime_prefilter(
 
     conn.commit()
     return summary
+
+
+def resolve_ambiguous_with_get_type2(
+    conn: sqlite3.Connection,
+    dataset_table: str = 'datasets',
+    mime_table: str = 'dataset_mimes',
+) -> dict[str, int]:
+    """Resolve ambiguous dataset MIME mappings using xdg.Mime.get_type2.
+
+    For datasets that have more than one mime candidate in `mime_table`, call
+    `Mime.get_type2(path)` and delete any entries that don't match the result.
+    Returns a summary dict with counts: {'checked': n, 'resolved': m}.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT d.id, d.path
+        FROM {dataset_table} d
+        JOIN {mime_table} m ON d.id = m.dataset_id
+        GROUP BY d.id
+        HAVING COUNT(m.mime) > 1
+        """
+    )
+    ambiguous = cur.fetchall()
+    checked = 0
+    resolved = 0
+
+    for dataset_id, path in ambiguous:
+        checked += 1
+        try:
+            mt = Mime.get_type2(path)
+        except Exception:
+            mt = None
+        if mt is None:
+            continue
+        mt_str = str(mt)
+        # Delete any candidate rows that don't match the resolved mime
+        cur.execute(f"DELETE FROM {mime_table} WHERE dataset_id = ? AND mime != ?", (dataset_id, mt_str))
+        # Ensure resolved mapping exists
+        cur.execute(f"SELECT 1 FROM {mime_table} WHERE dataset_id = ? AND mime = ?", (dataset_id, mt_str))
+        if cur.fetchone() is None:
+            cur.execute(f"INSERT INTO {mime_table} (dataset_id, mime, weight) VALUES (?, ?, ?)", (dataset_id, mt_str, 0))
+        resolved += 1
+
+    conn.commit()
+    return {"checked": checked, "resolved": resolved}
