@@ -25,9 +25,8 @@ import json
 
 from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
 
-from modama_crawler.repository import get_identifier, get_publisher, path_from_identifier
+from modama_crawler.repository import get_identifier, get_publisher, path_from_identifier, sanitize
 from modama_crawler.recognition import guess, FileHandler
-from modama_crawler.dirwalk import crawl_datasets, sanitize
 
 app = Flask(__name__)
 

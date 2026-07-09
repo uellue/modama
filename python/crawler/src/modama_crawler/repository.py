@@ -45,3 +45,16 @@ def path_from_identifier(identifier: str) -> str:
 # FIXME get from environment
 def get_publisher() -> str:
     return "ER-C"
+
+
+def sanitize(root: Path, path: Path) -> Path:
+    # Sanitize path elements
+    for p in path.parts:
+        if p in ('.', '..'):
+            raise ValueError(f'Path {path} contains "., .." path elements.')
+
+    # Sanitize path (II): Append to directory root, make absolute
+    # (don't resolve to not follow symlinks) and make sure it is relative to the
+    # root
+    path = (root / path).absolute().relative_to(root, walk_up=False)
+    return path
