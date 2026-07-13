@@ -23,7 +23,6 @@ def test_build_sql_where_clause():
             case_sensitive=False,
             sql="(LOWER(path) LIKE ? ESCAPE '\\')",
             params=("%/%.txt",),
-            is_simple=True,
         )
     ]
     sql, params = mime_sql.build_sql_where_clause(filters)
@@ -117,7 +116,7 @@ def test_ensure_and_apply_prefilter():
         mimes_table="mimes",
         files_in_datasets_table="files_in_datasets",
     )
-    mime_sql.apply_mime_prefilter(
+    mime_sql._apply_mime_prefilter(
         conn,
         files_table="repo_files",
         datasets_table="datasets",
@@ -166,7 +165,7 @@ def test_resolve_ambiguous_with_get_type2(tmp_path: Path):
     )
     conn.commit()
 
-    summary = mime_sql.resolve_ambiguous_with_get_type2(conn)
+    summary = mime_sql._resolve_ambiguous_with_get_type2(conn)
     assert summary["checked"] == 1
     assert summary["resolved"] == 1
 
@@ -177,3 +176,93 @@ def test_resolve_ambiguous_with_get_type2(tmp_path: Path):
     )
     assert len(rows) == 1
     assert rows[0][0] == "image/png"
+
+
+def test_apply_mime_prefilter_with_resolution(tmp_path: Path):
+    conn = sqlite3.connect(":memory:")
+    mime_sql.ensure_dataset_tables(conn)
+
+    # Create test files
+    png_file = tmp_path / "test.png"
+    png_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    txt_file = tmp_path / "test.txt"
+    txt_file.write_bytes(b"Hello, World!")
+
+    # Insert files into the files table
+    cur = conn.cursor()
+    cur.execute("INSERT INTO files (path) VALUES (?)", (str(png_file),))
+    cur.execute("INSERT INTO files (path) VALUES (?)", (str(txt_file),))
+    conn.commit()
+
+    # Build filters_map for testing
+    png_filter = mime_sql._build_path_filter(
+        "*.png", False, Mime.MIMEtype("image", "png"), 50
+    )
+    txt_filter = mime_sql._build_path_filter(
+        "*.txt", False, Mime.MIMEtype("text", "plain"), 50
+    )
+    filters_map = {
+        Mime.MIMEtype("image", "png"): [png_filter],
+        Mime.MIMEtype("text", "plain"): [txt_filter],
+    }
+
+    # Run the complete workflow
+    summary = mime_sql.apply_mime_prefilter_with_resolution(
+        conn, filters_map=filters_map
+    )
+
+    # Verify datasets were created
+    assert "datasets_created" in summary
+    assert summary["datasets_created"] == 2
+
+    res = conn.execute(
+        "SELECT * FROM datasets",
+    ).fetchall()
+    print("datasets", res)
+    assert res
+
+    res = conn.execute(
+        "SELECT * FROM files",
+    ).fetchall()
+    print("files", res)
+    assert res
+
+    res = conn.execute(
+        "SELECT * FROM files_in_datasets",
+    ).fetchall()
+    print("files_in_datasets", res)
+
+    res = conn.execute(
+        "SELECT * FROM mimes",
+    ).fetchall()
+    print("mimes", res)
+    assert res
+    # Verify MIME types were resolved correctly
+    png_mime_rows = list(
+        conn.execute(
+            "SELECT m.mime FROM mimes m JOIN datasets d ON m.dataset_id = d.dataset_id "
+            "JOIN files f ON d.path_id = f.path_id WHERE f.path = ?",
+            (str(png_file),),
+        ).fetchall()
+    )
+    assert len(png_mime_rows) == 1
+    assert png_mime_rows[0][0] == "image/png"
+
+    txt_mime_rows = list(
+        conn.execute(
+            "SELECT m.mime FROM mimes m JOIN datasets d ON m.dataset_id = d.dataset_id "
+            "JOIN files f ON d.path_id = f.path_id WHERE f.path = ?",
+            (str(txt_file),),
+        ).fetchall()
+    )
+    assert len(txt_mime_rows) == 1
+    assert txt_mime_rows[0][0] == "text/plain"
+
+    # Verify temporary table was cleaned up
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='mimes'")
+    assert cur.fetchone() is not None  # Main mimes table should exist
+    cur.execute(
+        "SELECT name FROM temp.sqlite_master WHERE type='table' AND name='mimes_asdf'"
+    )
+    assert cur.fetchone() is None  # Temp mimes table should not exist

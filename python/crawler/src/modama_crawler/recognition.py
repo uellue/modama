@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import pathlib
 from abc import ABC
-from typing import ClassVar, Dict, Sequence, Type, Iterable
+from typing import ClassVar, Dict, Sequence, Type, Iterable, Optional
 import datetime
 from functools import cache
 import os
 import glob
 import tempfile
+import sqlite3
 
 from xdg import Mime
 import magika
@@ -18,6 +19,74 @@ from .repository import get_identifier, get_publisher
 
 
 mgk = magika.Magika()
+
+
+def _get_mime_types_from_db(
+    conn: sqlite3.Connection, path: pathlib.Path
+) -> Sequence[Mime.MIMEtype]:
+    """Query MIME types for a path from the database.
+
+    Args:
+        conn: Database connection
+        path: Path to query
+
+    Returns:
+        List of MIME types, or empty list if path not found
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT m.mime FROM mimes m
+        JOIN datasets d ON m.dataset_id = d.dataset_id
+        JOIN files f ON d.path_id = f.path_id
+        WHERE f.path = ?
+        ORDER BY m.mime
+        """,
+        (str(path),),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return []
+
+    result = []
+    for (mime_str,) in rows:
+        try:
+            # Parse MIME type string (format: "type/subtype")
+            if "/" in mime_str:
+                media, subtype = mime_str.split("/", 1)
+                result.append(Mime.MIMEtype(media, subtype))
+            else:
+                result.append(Mime.MIMEtype(mime_str, ""))
+        except Exception:
+            # Skip invalid MIME types
+            continue
+    return result
+
+
+def _get_dataset_members_from_db(
+    conn: sqlite3.Connection, dataset_path: str
+) -> Sequence[pathlib.Path]:
+    """Get all member paths for a dataset from the database.
+
+    Args:
+        conn: Database connection
+        dataset_path: Path of the dataset
+
+    Returns:
+        List of member paths
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT f.path FROM files_in_datasets fid
+        JOIN files f ON fid.path_id = f.path_id
+        JOIN datasets d ON fid.dataset_id = d.dataset_id
+        WHERE f.path = ?
+        """,
+        (dataset_path,),
+    )
+    rows = cur.fetchall()
+    return [pathlib.Path(row[0]) for row in rows]
 
 
 class DatasetConsistencyError(RuntimeError):
@@ -47,11 +116,16 @@ class FileHandler(ABC):
                 cls._registry.setdefault(file_type, []).append(cls)
 
     def __init__(
-        self, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]
+        self,
+        root: pathlib.Path,
+        path: pathlib.Path,
+        guesses: Sequence[Mime.MIMEtype],
+        conn: Optional[sqlite3.Connection] = None,
     ):
         self.root = root
         self.path = path
         self.guesses = guesses
+        self.conn = conn
         self.abspath = self.root / self.path
         self.members = self._find_all_members()
 
@@ -74,10 +148,21 @@ class FileHandler(ABC):
 
     @classmethod
     def resolve(
-        cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]
+        cls,
+        root: pathlib.Path,
+        path: pathlib.Path,
+        guesses: Sequence[Mime.MIMEtype],
+        conn: Optional[sqlite3.Connection] = None,
     ) -> Type["FileHandler"]:
         path = pathlib.Path(path)
         root = pathlib.Path(root)
+
+        # If database connection is provided, try to get MIME types from database
+        if conn is not None:
+            db_guesses = _get_mime_types_from_db(conn, path)
+            if db_guesses:
+                guesses = db_guesses
+
         best_match: Type["FileHandler"] | None = None
         best_priority = -1
 
@@ -93,27 +178,24 @@ class FileHandler(ABC):
                 if priority > best_priority:
                     best_priority = priority
                     best_match = handler_cls
-        octet_stream = Mime.MIMEtype("application/octet-stream")
-        # If octet stream is an option, then directory, symlink or octet stream
-        # should have matched. Sth fundamental is amiss with the recognition
-        # setup
-        if best_match is None and octet_stream in guesses:
-            raise ValueError(
-                f"No handler matched for file types {guesses} and path {path}, not even octet stream."
-            )
-        # Let's try again: It should be a file and it should match octet stream as a fallback
-        elif best_match is None:
+
+        # If no match found, fall back to octet-stream
+        if best_match is None:
+            octet_stream = Mime.MIMEtype("application/octet-stream")
             return cls.resolve(root, path, [octet_stream])
-        # We found sth!
-        else:
-            return best_match
+
+        return best_match
 
     @classmethod
     def create(
-        cls, root: pathlib.Path, path: pathlib.Path, guesses: Sequence[Mime.MIMEtype]
+        cls,
+        root: pathlib.Path,
+        path: pathlib.Path,
+        guesses: Sequence[Mime.MIMEtype],
+        conn: Optional[sqlite3.Connection] = None,
     ) -> "FileHandler":
-        handler_cls = cls.resolve(root, path, guesses)
-        return handler_cls(root, path, guesses)
+        handler_cls = cls.resolve(root, path, guesses, conn)
+        return handler_cls(root, path, guesses, conn)
 
     @classmethod
     def matches(
@@ -154,6 +236,9 @@ class FileHandler(ABC):
                 )
 
     def _find_all_members(self) -> Iterable[pathlib.Path]:
+        # If database connection is available, query for dataset members
+        if self.conn is not None:
+            return _get_dataset_members_from_db(self.conn, str(self.path))
         return [self.path]
 
     @property
@@ -282,6 +367,13 @@ class EMPAD(FileHandler):
     )
 
     def _find_all_members(self):
+        # If database connection is available, use it
+        if self.conn is not None:
+            members = _get_dataset_members_from_db(self.conn, str(self.path))
+            if members:
+                return members
+
+        # Fall back to filesystem-based discovery
         if Mime.MIMEtype("application/x.empad+xml") in self.guesses:
             found_raw = self.__find_raw(self.abspath)
             if found_raw is None:

@@ -23,6 +23,7 @@ from urllib.parse import unquote_plus, quote_plus
 import pathlib
 from typing import Optional, Tuple
 import json
+import sqlite3
 
 from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
 
@@ -39,12 +40,25 @@ app = Flask(__name__)
 # Configuration
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
 ROOT_PATH = pathlib.Path(os.environ.get("OAI_ROOT_PATH", "/storage/er-c-data"))
+DB_PATH = os.environ.get("OAI_DB_PATH", "/storage/er-c-data/metadata.db")
 
 # XML Namespaces
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+
+
+def _get_db_connection() -> sqlite3.Connection:
+    """Get a read-only database connection.
+
+    Returns:
+        sqlite3.Connection: Database connection
+    """
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 
 # --- Helper Functions ---
 
@@ -137,43 +151,96 @@ def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
     return continuation, result
 
 
-def _get_crawl_results(
+def _query_datasets_from_db(
+    conn: sqlite3.Connection,
     continuation: Optional[pathlib.Path],
     from_: Optional[datetime],
     until: Optional[datetime],
-    n: int = BATCH_SIZE,
-) -> Tuple[dict, Optional[pathlib.Path]]:
-    """Get crawl results with optional date filtering.
+    batch_size: int,
+) -> Tuple[list[pathlib.Path], Optional[pathlib.Path]]:
+    """Query dataset paths from database with pagination and date filtering.
 
     Args:
-        continuation: Path continuation token from previous crawl
-        from_: Minimum date for selective harvesting (inclusive)
-        until: Maximum date for selective harvesting (inclusive)
-        n: Maximum number of records to return
+        conn: Database connection
+        continuation: Last path from previous batch (for pagination)
+        from_: Minimum mtime (inclusive)
+        until: Maximum mtime (exclusive)
+        batch_size: Maximum number of paths to return
 
     Returns:
-        Tuple of (records dict, new continuation path or None)
+        Tuple of (list of paths, next continuation path or None)
     """
-    c_since, c_until, m_since, m_until = _convert_to_timestamps(from_, until)
+    cur = conn.cursor()
 
-    if continuation is None:
-        continuation = pathlib.Path("")
+    # Build WHERE clause
+    where_clauses = []
+    params = []
 
-    def crawl_datasets(*args, **kwargs):
-        return []
+    # Pagination: paths greater than continuation
+    if continuation is not None:
+        where_clauses.append("f.path > ?")
+        params.append(str(continuation))
 
-    # Perform the crawl with date filtering
-    records, new_continuation = crawl_datasets(
-        root=ROOT_PATH,
-        continuation=continuation,
-        n=n,
-        c_since=c_since,
-        c_until=c_until,
-        m_since=m_since,
-        m_until=m_until,
-    )
+    # Date filtering on mtime
+    if from_ is not None:
+        where_clauses.append("f.mtime >= ?")
+        params.append(from_.timestamp())
 
-    return records, new_continuation
+    if until is not None:
+        # until is inclusive in OAI-PMH, but we make it exclusive for SQL
+        until_exclusive = until + timedelta(days=1)
+        where_clauses.append("f.mtime < ?")
+        params.append(until_exclusive.timestamp())
+
+    where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+    # Query for dataset paths (one path per dataset)
+    sql = f"""
+        SELECT DISTINCT f.path, f.mtime
+        FROM files f
+        JOIN datasets d ON f.path_id = d.path_id
+        WHERE {where_clause}
+        ORDER BY f.path
+        LIMIT ?
+    """
+    params.append(batch_size)
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+
+    if not rows:
+        return [], None
+
+    paths = [pathlib.Path(row["path"]) for row in rows]
+    next_path = paths[-1] if len(paths) == batch_size else None
+
+    return paths, next_path
+
+
+def _get_handler_for_path(
+    conn: sqlite3.Connection, root: pathlib.Path, path: pathlib.Path
+) -> FileHandler:
+    """Create a FileHandler for a path using database MIME types.
+
+    Args:
+        conn: Database connection
+        root: Root path
+        path: Path to create handler for
+
+    Returns:
+        FileHandler instance
+    """
+    # Try to get MIME types from database
+    from modama_crawler.recognition import _get_mime_types_from_db
+
+    db_guesses = _get_mime_types_from_db(conn, path)
+    if db_guesses:
+        guesses = db_guesses
+    else:
+        # Fall back to filesystem-based guessing
+        guesses = guess(root / path)
+
+    return FileHandler.create(root, path, guesses, conn)
 
 
 # --- OAI-PMH Server Implementation ---
@@ -182,7 +249,8 @@ def _get_crawl_results(
 class SimpleServer:
     """Simple OAI-PMH server with direct method implementations."""
 
-    def __init__(self, base_url: str = ""):
+    def __init__(self, conn: sqlite3.Connection, base_url: str = ""):
+        self.conn = conn
         self._base = base_url
 
     def identify(self) -> dict:
@@ -203,8 +271,7 @@ class SimpleServer:
         """Get a single record by identifier."""
         path = pathlib.Path(path_from_identifier(identifier))
         path = sanitize(root=ROOT_PATH, path=path)
-        guesses = guess(ROOT_PATH / path)
-        handler = FileHandler.create(ROOT_PATH, path, guesses)
+        handler = _get_handler_for_path(self.conn, ROOT_PATH, path)
 
         return {
             "header": self._make_header(handler),
@@ -224,20 +291,21 @@ class SimpleServer:
     ) -> Tuple[list, Optional[str]]:
         """List record headers with optional date filtering and pagination."""
         # Decode continuation token if present
-        cont_path = None
-        if continuation:
-            cont_path = continuation
+        cont_path = pathlib.Path(continuation) if continuation else None
 
-        # Get crawl results
-        records, new_continuation = _get_crawl_results(
-            continuation=cont_path, from_=from_, until=until, n=batch_size
+        # Query database for dataset paths
+        paths, next_path = _query_datasets_from_db(
+            self.conn, cont_path, from_, until, batch_size
         )
 
         # Build headers
-        headers = [self._make_header(handler) for handler in records.values()]
+        headers = []
+        for path in paths:
+            handler = _get_handler_for_path(self.conn, ROOT_PATH, path)
+            headers.append(self._make_header(handler))
 
         # Encode new resumption token
-        new_token = new_continuation
+        new_token = _encode_resumption_token(next_path) if next_path else None
 
         return headers, new_token
 
@@ -251,18 +319,17 @@ class SimpleServer:
     ) -> Tuple[list, Optional[str]]:
         """List full records with optional date filtering and pagination."""
         # Decode continuation token if present
-        cont_path = None
-        if continuation:
-            cont_path = continuation
+        cont_path = pathlib.Path(continuation) if continuation else None
 
-        # Get crawl results
-        records, new_continuation = _get_crawl_results(
-            continuation=cont_path, from_=from_, until=until, n=batch_size
+        # Query database for dataset paths
+        paths, next_path = _query_datasets_from_db(
+            self.conn, cont_path, from_, until, batch_size
         )
 
         # Build records
         recs = []
-        for handler in records.values():
+        for path in paths:
+            handler = _get_handler_for_path(self.conn, ROOT_PATH, path)
             recs.append(
                 {
                     "header": self._make_header(handler),
@@ -271,7 +338,7 @@ class SimpleServer:
             )
 
         # Encode new resumption token
-        new_token = _encode_resumption_token(new_continuation)
+        new_token = _encode_resumption_token(next_path) if next_path else None
 
         return recs, new_token
 
@@ -301,14 +368,17 @@ class SimpleServer:
         }
 
 
-# Instantiate server
-_server = SimpleServer()
+# Instantiate server with database connection
+_db_conn = _get_db_connection()
+_server = SimpleServer(_db_conn)
 
 
 # --- XML Response Generation ---
 
 
-def _make_oai_response(verb: str, children: list, request_args: dict = None) -> str:
+def _make_oai_response(
+    verb: str, children: list, request_args: Optional[dict] = None
+) -> str:
     """Generate OAI-PMH XML response."""
     nsmap = {
         None: OAI_NS,
@@ -527,7 +597,9 @@ def _handle_listidentifiers(args: dict) -> Response:
         )
 
     headers, new_token = _server.listIdentifiers(
-        from_=from_, until=until, continuation=continuation
+        from_=from_,
+        until=until,
+        continuation=str(continuation) if continuation else None,
     )
 
     # Encode resumption token with all parameters (except verb)
@@ -593,7 +665,7 @@ def _handle_listrecords(args: dict) -> Response:
         metadataPrefix=metadata_prefix,
         from_=from_,
         until=until,
-        continuation=continuation,
+        continuation=str(continuation) if continuation else None,
     )
 
     # Encode resumption token with all parameters (except verb)

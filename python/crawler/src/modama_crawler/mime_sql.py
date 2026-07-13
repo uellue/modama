@@ -18,7 +18,6 @@ class SQLPathFilter:
     case_sensitive: bool
     sql: str
     params: Tuple[str, ...]
-    is_simple: bool
 
 
 @dataclass(frozen=True)
@@ -92,7 +91,6 @@ def _build_path_filter(
         case_sensitive=case_sensitive,
         sql=sql,
         params=params,
-        is_simple=True,
     )
 
 
@@ -197,8 +195,6 @@ def build_mime_filter_map() -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
     filters = collect_sql_path_filters()
     mapping: dict[Mime.MIMEtype, List[SQLPathFilter]] = {}
     for f in filters:
-        if not f.is_simple:
-            continue
         mapping.setdefault(f.mime, []).append(f)
 
     for lst in mapping.values():
@@ -264,7 +260,7 @@ def ensure_dataset_tables(
     conn.commit()
 
 
-def apply_mime_prefilter(
+def _apply_mime_prefilter(
     conn: sqlite3.Connection,
     files_table: str = "files",
     datasets_table: str = "datasets",
@@ -279,17 +275,11 @@ def apply_mime_prefilter(
     if filters_map is None:
         filters_map = build_mime_filter_map()
 
-    ensure_dataset_tables(
-        conn,
-        files_table=files_table,
-        datasets_table=datasets_table,
-        mimes_table=mimes_table,
-        files_in_datasets_table=files_in_datasets_table,
-    )
     cur = conn.cursor()
     summary: dict[str, int] = {}
 
     for mime, filters in filters_map.items():
+        print(mime)
         if not filters:
             continue
 
@@ -299,7 +289,10 @@ def apply_mime_prefilter(
         # Create datasets for all matching paths (one dataset per file)
         cur.execute(
             f"INSERT OR IGNORE INTO {datasets_table} (path_id) "
-            f"SELECT path_id FROM {files_table} WHERE {where_clause}",
+            f"SELECT path_id FROM {files_table} WHERE ({where_clause}) "
+            # Only create datasets for paths that haven't been claimed
+            # by other datasets
+            "AND path_id not in (SELECT path_id FROM files_in_datasets)",
             params,
         )
 
@@ -309,27 +302,31 @@ def apply_mime_prefilter(
             f"SELECT d.dataset_id, ? "
             f"FROM {datasets_table} d "
             f"JOIN {files_table} f USING (path_id) "
-            f"WHERE {where_clause}",
+            f"WHERE ({where_clause}) ",
             (mime_str, *params),
         )
+        # print(mime_str, params)
+        # print(cur.execute(f"SELECT * FROM {mimes_table}").fetchall())
 
         # Link files to datasets in one go
-        cur.execute(
-            f"INSERT OR IGNORE INTO {files_in_datasets_table} (dataset_id, path_id) "
-            f"SELECT d.dataset_id, d.path_id "
-            f"FROM {datasets_table} d "
-            f"JOIN {files_table} f USING (path_id) "
-            f"WHERE {where_clause}",
-            params,
-        )
+        # After some consideration, only populate this table for paths other
+        # than the main path of the dataset.
+        # TODO to be implemented for multipart datasets
+        # cur.execute(
+        #     f"INSERT OR IGNORE INTO {files_in_datasets_table} (dataset_id, path_id) "
+        #     f"SELECT d.dataset_id, d.path_id "
+        #     f"FROM {datasets_table} d "
+        #     f"JOIN {files_table} f USING (path_id) "
+        #     f"WHERE {where_clause}",
+        #     params,
+        # )
 
         summary[mime_str] = cur.rowcount
-
-    conn.commit()
+        conn.commit()
     return summary
 
 
-def resolve_ambiguous_with_get_type2(
+def _resolve_ambiguous_with_get_type2(
     conn: sqlite3.Connection,
     files_table: str = "files",
     datasets_table: str = "datasets",
@@ -357,6 +354,7 @@ def resolve_ambiguous_with_get_type2(
     resolved = 0
 
     for dataset_id, path in ambiguous:
+        print(path)
         checked += 1
         try:
             mt = Mime.get_type2(path)
@@ -384,3 +382,101 @@ def resolve_ambiguous_with_get_type2(
 
     conn.commit()
     return {"checked": checked, "resolved": resolved}
+
+
+def apply_mime_prefilter_with_resolution(
+    conn: sqlite3.Connection,
+    files_table: str = "files",
+    datasets_table: str = "datasets",
+    mimes_table: str = "mimes",
+    files_in_datasets_table: str = "files_in_datasets",
+    filters_map: Optional[dict[Mime.MIMEtype, List[SQLPathFilter]]] = None,
+) -> dict[str, int]:
+    """Apply MIME prefilter and resolve ambiguities in a single pass.
+
+    This function performs the complete workflow:
+    1. Creates a temporary mimes table in the temp database
+    2. Applies MIME filters to match files
+    3. Resolves ambiguous MIME types using get_type2
+    4. Integrates the refined results into the actual mimes table
+    5. Drops the temporary mimes table
+
+    Args:
+        conn: SQLite database connection
+        files_table: Name of the files table
+        datasets_table: Name of the datasets table
+        mimes_table: Name of the mimes table
+        files_in_datasets_table: Name of the files_in_datasets table
+        filters_map: Optional mapping of MIME types to filters
+
+    Returns:
+        Summary dict with datasets_created count
+    """
+    cur = conn.cursor()
+
+    ensure_dataset_tables(
+        conn,
+        files_table=files_table,
+        datasets_table=datasets_table,
+        mimes_table=mimes_table,
+        files_in_datasets_table=files_in_datasets_table,
+    )
+
+    conn.commit()
+
+    # Step 1: Create temporary mimes table in temp database For some reason, the
+    # temp table name must not intersect with tables in the main schema,
+    # otherwise DROP TABLE deletes the contents of the other table.
+    # This smells like a bug in sqlite?
+    cur.execute(
+        """
+        CREATE TABLE temp.mimes_asdf (
+            dataset_id INTEGER,
+            mime TEXT,
+            UNIQUE(dataset_id, mime)
+        )
+        """
+    )
+
+    try:
+        # Step 2: Apply prefilter using temporary mimes table
+        _apply_mime_prefilter(
+            conn,
+            files_table=files_table,
+            datasets_table=datasets_table,
+            mimes_table="temp.mimes_asdf",
+            files_in_datasets_table=files_in_datasets_table,
+            filters_map=filters_map,
+        )
+
+        # Step 3: Resolve ambiguities in temporary mimes table
+        _resolve_ambiguous_with_get_type2(
+            conn,
+            files_table=files_table,
+            datasets_table=datasets_table,
+            mimes_table="temp.mimes_asdf",
+        )
+
+        # Step 4: Integrate results into actual mimes table
+        cur.execute(
+            f"""
+            INSERT OR IGNORE INTO {mimes_table} (dataset_id, mime)
+            SELECT dataset_id, mime FROM temp.mimes_asdf
+            """
+        )
+
+        # print("temp mimes", cur.execute("SELECT * FROM temp.mimes_asdf").fetchall())
+        # print("mimes", cur.execute("SELECT * FROM mimes").fetchall())
+
+        conn.commit()
+
+        # Return summary (count of datasets created)
+        cur.execute(f"SELECT COUNT(DISTINCT path_id) FROM {datasets_table}")
+        dataset_count = cur.fetchone()[0]
+
+        return {"datasets_created": dataset_count}
+
+    finally:
+        # Step 5: Drop temporary mimes table
+        cur.execute("DROP TABLE temp.mimes_asdf")
+        conn.commit()
