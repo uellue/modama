@@ -316,9 +316,9 @@ class SimpleServer:
             handler = _get_handler_for_path(conn, ROOT_PATH, path)
             headers.append(self._make_header(handler))
 
-        # Encode new resumption token with all parameters
-        from_str = from_.strftime("%Y-%m-%d") if from_ else None
-        until_str = until.strftime("%Y-%m-%d") if until else None
+        # Encode new resumption token with all parameters (preserve full datetime)
+        from_str = _format_datestamp(from_.timestamp()) if from_ else None
+        until_str = _format_datestamp(until.timestamp()) if until else None
         new_token = (
             _encode_resumption_token(next_path, metadataPrefix, from_str, until_str)
             if next_path
@@ -358,9 +358,9 @@ class SimpleServer:
                 }
             )
 
-        # Encode new resumption token with all parameters
-        from_str = from_.strftime("%Y-%m-%d") if from_ else None
-        until_str = until.strftime("%Y-%m-%d") if until else None
+        # Encode new resumption token with all parameters (preserve full datetime)
+        from_str = _format_datestamp(from_.timestamp()) if from_ else None
+        until_str = _format_datestamp(until.timestamp()) if until else None
         new_token = (
             _encode_resumption_token(next_path, metadataPrefix, from_str, until_str)
             if next_path
