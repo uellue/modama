@@ -249,9 +249,16 @@ def _get_handler_for_path(
 class SimpleServer:
     """Simple OAI-PMH server with direct method implementations."""
 
-    def __init__(self, conn: sqlite3.Connection, base_url: str = ""):
-        self.conn = conn
+    def __init__(self, base_url: str = ""):
         self._base = base_url
+
+    def _get_conn(self) -> sqlite3.Connection:
+        """Get a database connection for this request.
+
+        Returns:
+            sqlite3.Connection: Database connection
+        """
+        return _get_db_connection()
 
     def identify(self) -> dict:
         """Return repository identification information."""
@@ -271,7 +278,8 @@ class SimpleServer:
         """Get a single record by identifier."""
         path = pathlib.Path(path_from_identifier(identifier))
         path = sanitize(root=ROOT_PATH, path=path)
-        handler = _get_handler_for_path(self.conn, ROOT_PATH, path)
+        conn = self._get_conn()
+        handler = _get_handler_for_path(conn, ROOT_PATH, path)
 
         return {
             "header": self._make_header(handler),
@@ -293,15 +301,18 @@ class SimpleServer:
         # Decode continuation token if present
         cont_path = pathlib.Path(continuation) if continuation else None
 
+        # Get database connection for this request
+        conn = self._get_conn()
+
         # Query database for dataset paths
         paths, next_path = _query_datasets_from_db(
-            self.conn, cont_path, from_, until, batch_size
+            conn, cont_path, from_, until, batch_size
         )
 
         # Build headers
         headers = []
         for path in paths:
-            handler = _get_handler_for_path(self.conn, ROOT_PATH, path)
+            handler = _get_handler_for_path(conn, ROOT_PATH, path)
             headers.append(self._make_header(handler))
 
         # Encode new resumption token
@@ -321,15 +332,18 @@ class SimpleServer:
         # Decode continuation token if present
         cont_path = pathlib.Path(continuation) if continuation else None
 
+        # Get database connection for this request
+        conn = self._get_conn()
+
         # Query database for dataset paths
         paths, next_path = _query_datasets_from_db(
-            self.conn, cont_path, from_, until, batch_size
+            conn, cont_path, from_, until, batch_size
         )
 
         # Build records
         recs = []
         for path in paths:
-            handler = _get_handler_for_path(self.conn, ROOT_PATH, path)
+            handler = _get_handler_for_path(conn, ROOT_PATH, path)
             recs.append(
                 {
                     "header": self._make_header(handler),
@@ -368,9 +382,8 @@ class SimpleServer:
         }
 
 
-# Instantiate server with database connection
-_db_conn = _get_db_connection()
-_server = SimpleServer(_db_conn)
+# Instantiate server without connection - connection is created per request
+_server = SimpleServer()
 
 
 # --- XML Response Generation ---
