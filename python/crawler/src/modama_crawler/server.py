@@ -39,7 +39,10 @@ app = Flask(__name__)
 
 # Configuration
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
-ROOT_PATH = pathlib.Path(os.environ.get("OAI_ROOT_PATH", "/storage/er-c-data"))
+# DB_ROOT_PATH: Absolute path where files are stored in the database
+DB_ROOT_PATH = pathlib.Path(os.environ.get("OAI_DB_ROOT_PATH", "/storage/er-c-data"))
+# ROOT_PATH: Path relative to DB_ROOT_PATH that should be exposed to clients
+ROOT_PATH = pathlib.Path(os.environ.get("OAI_ROOT_PATH", ""))
 DB_PATH = os.environ.get("OAI_DB_PATH", "/storage/er-c-data/metadata.db")
 
 # XML Namespaces
@@ -168,7 +171,8 @@ def _query_datasets_from_db(
         batch_size: Maximum number of paths to return
 
     Returns:
-        Tuple of (list of paths, next continuation path or None)
+        Tuple of (list of relative paths, next continuation path or None)
+        Paths are relative to ROOT_PATH for client exposure.
     """
     cur = conn.cursor()
 
@@ -176,10 +180,17 @@ def _query_datasets_from_db(
     where_clauses = []
     params = []
 
-    # Pagination: paths greater than continuation
+    # Get the database root path prefix to strip
+    db_root_str = str(DB_ROOT_PATH)
+    if not db_root_str.endswith("/"):
+        db_root_str += "/"
+
+    # Pagination: paths greater than continuation (in database format)
     if continuation is not None:
+        # Convert relative continuation to absolute for database query
+        abs_continuation = DB_ROOT_PATH / continuation
         where_clauses.append("f.path > ?")
-        params.append(str(continuation))
+        params.append(str(abs_continuation))
 
     # Date filtering on mtime
     if from_ is not None:
@@ -195,6 +206,7 @@ def _query_datasets_from_db(
     where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
 
     # Query for dataset paths (one path per dataset)
+    # Return absolute paths from database, we'll convert to relative below
     sql = f"""
         SELECT DISTINCT f.path, f.mtime
         FROM files f
@@ -211,7 +223,22 @@ def _query_datasets_from_db(
     if not rows:
         return [], None
 
-    paths = [pathlib.Path(row["path"]) for row in rows]
+    # Convert absolute database paths to relative paths for client exposure
+    paths = []
+    for row in rows:
+        abs_path = pathlib.Path(row["path"])
+        # Strip the database root prefix
+        try:
+            rel_path = abs_path.relative_to(DB_ROOT_PATH)
+            # Further strip ROOT_PATH prefix if configured
+            if ROOT_PATH:
+                rel_path = rel_path.relative_to(ROOT_PATH)
+        except ValueError:
+            # Path is not under DB_ROOT_PATH, use as-is
+            rel_path = abs_path
+        paths.append(rel_path)
+
+    # For continuation, we need the last absolute path for database comparison
     next_path = paths[-1] if len(paths) == batch_size else None
 
     return paths, next_path
@@ -224,23 +251,28 @@ def _get_handler_for_path(
 
     Args:
         conn: Database connection
-        root: Root path
-        path: Path to create handler for
+        root: Root path (relative paths base, passed to FileHandler for compatibility)
+        path: Relative path to create handler for
 
     Returns:
         FileHandler instance
     """
-    # Try to get MIME types from database
+    # Convert relative path to absolute for database query and filesystem access
+    abs_path = DB_ROOT_PATH / path
+
+    # Try to get MIME types from database using absolute path
     from modama_crawler.recognition import _get_mime_types_from_db
 
-    db_guesses = _get_mime_types_from_db(conn, path)
+    db_guesses = _get_mime_types_from_db(conn, abs_path)
     if db_guesses:
         guesses = db_guesses
     else:
         # Fall back to filesystem-based guessing
-        guesses = guess(root / path)
+        guesses = guess(abs_path)
 
-    return FileHandler.create(root, path, guesses, conn)
+    # Create handler with absolute filesystem root (DB_ROOT_PATH) and relative path
+    # FileHandler will construct abspath as DB_ROOT_PATH / path
+    return FileHandler.create(DB_ROOT_PATH, path, guesses, conn)
 
 
 # --- OAI-PMH Server Implementation ---

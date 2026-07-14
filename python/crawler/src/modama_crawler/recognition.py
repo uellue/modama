@@ -28,7 +28,7 @@ def _get_mime_types_from_db(
 
     Args:
         conn: Database connection
-        path: Path to query
+        path: Absolute path to query (as stored in database)
 
     Returns:
         List of MIME types, or empty list if path not found
@@ -70,10 +70,10 @@ def _get_dataset_members_from_db(
 
     Args:
         conn: Database connection
-        dataset_path: Path of the dataset
+        dataset_path: Absolute path of the dataset (as stored in database)
 
     Returns:
-        List of member paths
+        List of member paths (relative to dataset root)
     """
     cur = conn.cursor()
     cur.execute(
@@ -86,6 +86,7 @@ def _get_dataset_members_from_db(
         (dataset_path,),
     )
     rows = cur.fetchall()
+    # Return paths as-is (they are absolute paths from database)
     return [pathlib.Path(row[0]) for row in rows]
 
 
@@ -158,8 +159,10 @@ class FileHandler(ABC):
         root = pathlib.Path(root)
 
         # If database connection is provided, try to get MIME types from database
+        # Use absolute path (root / path) since root is now the filesystem root
         if conn is not None:
-            db_guesses = _get_mime_types_from_db(conn, path)
+            abs_path = root / path
+            db_guesses = _get_mime_types_from_db(conn, abs_path)
             if db_guesses:
                 guesses = db_guesses
 
@@ -181,8 +184,7 @@ class FileHandler(ABC):
 
         # If no match found, fall back to octet-stream
         if best_match is None:
-            octet_stream = Mime.MIMEtype("application/octet-stream")
-            return cls.resolve(root, path, [octet_stream])
+            return OctetStream
 
         return best_match
 
@@ -238,7 +240,9 @@ class FileHandler(ABC):
     def _find_all_members(self) -> Iterable[pathlib.Path]:
         # If database connection is available, query for dataset members
         if self.conn is not None:
-            return _get_dataset_members_from_db(self.conn, str(self.path))
+            # self.path is relative, self.root is absolute (DB_ROOT_PATH)
+            abs_path = self.root / self.path
+            return _get_dataset_members_from_db(self.conn, str(abs_path))
         return [self.path]
 
     @property
