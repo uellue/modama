@@ -2,6 +2,14 @@ import pytest
 
 import os
 from importlib import reload
+from pathlib import Path
+import sqlite3
+from datetime import datetime
+from typing import Generator
+import threading
+import time
+import requests
+import tempfile
 
 import xdg
 
@@ -36,3 +44,224 @@ def install_handlers(tmp_path_factory):
     modama_crawler.recognition.FileHandler.install_mime_info()
     # Self-test: Make sure the MIME definition installation worked
     assert xdg.Mime.get_type_by_name("/home/whatever.modamatestfile") == CANARY_MIME
+
+
+# ============================================================================
+# Shared Fixtures for OAI-PMH Server Tests
+# ============================================================================
+
+
+@pytest.fixture
+def test_database(tmp_path) -> Generator[sqlite3.Connection, None, None]:
+    """Create an in-memory test database with schema and test data.
+
+    Sets up:
+    - 6 dataset paths with varying mtimes for pagination and date filtering tests
+    - MIME types for each dataset
+    - Paths are stored as absolute paths (tmp_path / relative_path)
+    """
+    from modama_crawler.mime_sql import ensure_dataset_tables
+
+    # Create in-memory database
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+
+    # Create schema using the official function
+    ensure_dataset_tables(conn)
+
+    # Test data: 6 datasets with different mtimes
+    # Date range for testing: 2024-06-01 to 2024-12-31
+    # Paths are relative, will be converted to absolute for database storage
+    relative_paths = [
+        "dataset-alpha/file1.txt",
+        "dataset-beta/file2.txt",
+        "dataset-gamma/file3.txt",
+        "dataset-delta/file4.txt",
+        "dataset-epsilon/file5.txt",
+        "dataset-zeta/file6.txt",
+    ]
+
+    cur = conn.cursor()
+
+    # Insert files with absolute paths
+    # Use specific dates to match test expectations:
+    # dataset-alpha: 2024-01-01 (before date filter range)
+    # dataset-beta: 2024-06-01 (at from_ boundary)
+    # dataset-gamma: 2024-06-15 (within range)
+    # dataset-delta: 2024-07-01 (within range)
+    # dataset-epsilon: 2024-12-31 23:59:59 (at until boundary)
+    # dataset-zeta: 2025-02-01 (after until boundary)
+    test_dates = [
+        datetime(2024, 1, 1),
+        datetime(2024, 6, 1),
+        datetime(2024, 6, 15),
+        datetime(2024, 7, 1),
+        datetime(2024, 12, 31, 23, 59, 59),
+        datetime(2025, 2, 1),
+    ]
+    mimes = [
+        "application/pdf",
+        "text/plain",
+        "image/jpeg",
+        "application/pdf",
+        "text/csv",
+        "application/zip",
+    ]
+
+    for i, rel_path in enumerate(relative_paths):
+        # Store as absolute path (will be stripped by server)
+        abs_path = str(tmp_path / rel_path)
+        mtime = test_dates[i].timestamp()
+        mime = mimes[i]
+        cur.execute(
+            "INSERT INTO files (path_id, path, mtime) VALUES (?, ?, ?)",
+            (i + 1, abs_path, mtime),
+        )
+        # Insert dataset
+        cur.execute(
+            "INSERT INTO datasets (dataset_id, path_id) VALUES (?, ?)", (i + 1, i + 1)
+        )
+        # Insert MIME type
+        cur.execute("INSERT INTO mimes (dataset_id, mime) VALUES (?, ?)", (i + 1, mime))
+        # Link file to dataset
+        cur.execute(
+            "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (?, ?)",
+            (i + 1, i + 1),
+        )
+
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def test_files(tmp_path) -> Path:
+    """Create temporary test files that match the database paths."""
+    # Create files for each dataset
+    test_paths = [
+        "dataset-alpha/file1.txt",
+        "dataset-beta/file2.txt",
+        "dataset-gamma/file3.txt",
+        "dataset-delta/file4.txt",
+        "dataset-epsilon/file5.txt",
+        "dataset-zeta/file6.txt",
+    ]
+
+    for path in test_paths:
+        file_path = tmp_path / path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(f"Content of {path}")
+
+    return tmp_path
+
+
+@pytest.fixture
+def running_http_server(test_database, test_files, monkeypatch):
+    """Start OAI-PMH server as HTTP server in background thread.
+
+    Yields the base URL of the running server (e.g., "http://127.0.0.1:12345/oai").
+    Server is automatically stopped when test completes.
+    """
+    from modama_crawler import server as server_module
+    from werkzeug.serving import make_server
+    from modama_crawler.mime_sql import ensure_dataset_tables
+
+    # Save original values
+    original_root = server_module.ROOT_PATH
+    original_db_root = server_module.DB_ROOT_PATH
+    original_db_path = server_module.DB_PATH
+
+    # Create a temporary directory and database file
+    temp_dir = tempfile.mkdtemp()
+    db_file_path = os.path.join(temp_dir, "metadata.db")
+
+    # Create database file with schema and data by copying from test_database
+    conn = sqlite3.connect(db_file_path)
+    conn.row_factory = sqlite3.Row
+
+    # Create schema
+    ensure_dataset_tables(conn)
+
+    # Copy data from test_database
+    cur = conn.cursor()
+    test_cur = test_database.cursor()
+
+    # Copy all tables
+    for table in ["files", "datasets", "mimes", "files_in_datasets"]:
+        test_cur.execute(f"SELECT * FROM {table}")
+        rows = test_cur.fetchall()
+        if rows:
+            # Get column names
+            columns = [desc[0] for desc in test_cur.description]
+            placeholders = ", ".join(["?" for _ in columns])
+            for row in rows:
+                cur.execute(f"INSERT INTO {table} VALUES ({placeholders})", row)
+
+    conn.commit()
+    conn.close()
+
+    # Configure for test with file-based database
+    # Monkeypatch DB_PATH directly since it's read at import time
+    server_module.DB_ROOT_PATH = test_files
+    server_module.ROOT_PATH = Path("")
+    server_module.DB_PATH = db_file_path
+
+    # Also set environment variable for good measure
+    monkeypatch.setenv("OAI_DB_PATH", db_file_path)
+
+    # Import Flask app after setting up environment
+    from modama_crawler.server import app
+
+    # Create server instance
+    server = make_server("127.0.0.1", 0, app, threaded=True)
+    port = server.server_address[1]
+
+    # Start server in background thread
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    # Wait for server to be ready
+    base_url = f"http://127.0.0.1:{port}/oai"
+
+    # Retry connection a few times
+    for i in range(10):
+        try:
+            response = requests.get(f"{base_url}?verb=Identify", timeout=1)
+            if response.status_code == 200:
+                break
+        except requests.ConnectionError:
+            time.sleep(0.1)
+
+    try:
+        yield base_url
+    finally:
+        # Shutdown server
+        server.shutdown()
+
+        # Cleanup temp database
+        try:
+            os.remove(db_file_path)
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+
+        # Restore original values
+        server_module.ROOT_PATH = original_root
+        server_module.DB_ROOT_PATH = original_db_root
+        server_module.DB_PATH = original_db_path
+
+
+@pytest.fixture
+def sickle_client(running_http_server):
+    """Create sickle client connected to test HTTP server."""
+    from sickle import Sickle
+
+    return Sickle(running_http_server)
+
+
+@pytest.fixture
+def oaipmh_client(running_http_server):
+    """Create oaipmh client connected to test HTTP server."""
+    from oaipmh.client import Client
+
+    return Client(running_http_server)
