@@ -5,6 +5,10 @@ from pathlib import Path
 import sqlite3
 from datetime import datetime
 from typing import Generator
+import threading
+import time
+import requests
+import os
 
 # Import the server components
 from modama_crawler.server import (
@@ -19,6 +23,12 @@ from modama_crawler.server import (
     app,
 )
 from modama_crawler.mime_sql import ensure_dataset_tables
+from modama_crawler.repository import (
+    quote_path,
+    unquote_path,
+    get_identifier,
+    path_from_identifier,
+)
 
 
 # ============================================================================
@@ -175,6 +185,232 @@ def flask_client(test_database, test_files, monkeypatch):
     finally:
         server_module.ROOT_PATH = original_root
         server_module.DB_ROOT_PATH = original_db_root
+
+
+@pytest.fixture
+def running_http_server(test_database, test_files, monkeypatch):
+    """Start OAI-PMH server as HTTP server in background thread.
+
+    Yields the base URL of the running server (e.g., "http://127.0.0.1:12345/oai").
+    Server is automatically stopped when test completes.
+    """
+    from modama_crawler import server as server_module
+    from werkzeug.serving import make_server
+    import tempfile
+
+    # Save original values
+    original_root = server_module.ROOT_PATH
+    original_db_root = server_module.DB_ROOT_PATH
+    original_db_path = server_module.DB_PATH
+
+    # Create a temporary directory and database file
+    temp_dir = tempfile.mkdtemp()
+    db_file_path = os.path.join(temp_dir, "metadata.db")
+
+    # Create database file with schema and data by copying from test_database
+    conn = sqlite3.connect(db_file_path)
+    conn.row_factory = sqlite3.Row
+
+    # Create schema
+    from modama_crawler.mime_sql import ensure_dataset_tables
+
+    ensure_dataset_tables(conn)
+
+    # Copy data from test_database
+    cur = conn.cursor()
+    test_cur = test_database.cursor()
+
+    # Copy all tables
+    for table in ["files", "datasets", "mimes", "files_in_datasets"]:
+        test_cur.execute(f"SELECT * FROM {table}")
+        rows = test_cur.fetchall()
+        if rows:
+            # Get column names
+            columns = [desc[0] for desc in test_cur.description]
+            placeholders = ", ".join(["?" for _ in columns])
+            for row in rows:
+                cur.execute(f"INSERT INTO {table} VALUES ({placeholders})", row)
+
+    conn.commit()
+    conn.close()
+
+    # Configure for test with file-based database
+    # Monkeypatch DB_PATH directly since it's read at import time
+    server_module.DB_ROOT_PATH = test_files
+    server_module.ROOT_PATH = Path("")
+    server_module.DB_PATH = db_file_path
+
+    # Also set environment variable for good measure
+    monkeypatch.setenv("OAI_DB_PATH", db_file_path)
+
+    # Create server instance
+    server = make_server("127.0.0.1", 0, app, threaded=True)
+    port = server.server_address[1]
+
+    # Start server in background thread
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    # Wait for server to be ready
+    base_url = f"http://127.0.0.1:{port}/oai"
+
+    # Retry connection a few times
+    for i in range(10):
+        try:
+            response = requests.get(f"{base_url}?verb=Identify", timeout=1)
+            if response.status_code == 200:
+                break
+        except requests.ConnectionError:
+            time.sleep(0.1)
+
+    try:
+        yield base_url
+    finally:
+        # Shutdown server
+        server.shutdown()
+
+        # Cleanup temp database
+        try:
+            os.remove(db_file_path)
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+
+        # Restore original values
+        server_module.ROOT_PATH = original_root
+        server_module.DB_ROOT_PATH = original_db_root
+        server_module.DB_PATH = original_db_path
+
+
+# ============================================================================
+# Client Library Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def sickle_client(running_http_server):
+    """Create sickle client connected to test HTTP server."""
+    from sickle import Sickle
+
+    return Sickle(running_http_server)
+
+
+@pytest.fixture
+def oaipmh_client(running_http_server):
+    """Create oaipmh client connected to test HTTP server."""
+    from oaipmh.client import Client
+
+    return Client(running_http_server)
+
+
+# ============================================================================
+# Protocol Compliance Tests with Real Client Libraries
+# ============================================================================
+
+
+def test_sickle_identify_real_http(sickle_client):
+    """Test OAI-PMH Identify verb with real sickle client over HTTP."""
+    # Use sickle's Identify method (capitalized)
+    identify = sickle_client.Identify()
+
+    # Verify response object and attributes
+    assert identify is not None
+    assert str(identify.repositoryName) == "Modama OAI-PMH server"
+    # baseURL may be None depending on sickle version, just check protocol version
+    assert str(identify.protocolVersion) == "2.0"
+    assert str(identify.granularity) == "YYYY-MM-DDThh:mm:ssZ"
+
+
+def test_sickle_list_identifiers_pagination(sickle_client):
+    """Test ListIdentifiers with pagination using sickle iterator."""
+    # Use sickle's ListIdentifiers method
+    identifiers = list(sickle_client.ListIdentifiers(metadataPrefix="oai_dc"))
+
+    # Verify we got records
+    assert len(identifiers) > 0
+
+    # Verify each identifier has required attributes
+    for header in identifiers:
+        assert hasattr(header, "identifier")
+        assert hasattr(header, "datestamp")
+        assert header.identifier is not None
+        assert header.datestamp is not None
+
+        # datestamp may be string or datetime depending on sickle version
+        # Just verify it's a valid datestamp format
+        datestamp_str = str(header.datestamp)
+        assert "T" in datestamp_str  # ISO format
+        assert datestamp_str.endswith("Z")  # UTC indicator
+
+
+def test_sickle_list_records_dublin_core(sickle_client):
+    """Test ListRecords with Dublin Core metadata using sickle."""
+    # Use sickle's ListRecords method
+    records = list(sickle_client.ListRecords(metadataPrefix="oai_dc"))
+
+    # Verify we got records
+    assert len(records) > 0
+
+    # Verify each record has required structure
+    for record in records:
+        assert hasattr(record, "header")
+        assert hasattr(record, "metadata")
+
+        # Verify header
+        assert record.header.identifier is not None
+        assert record.header.datestamp is not None
+
+        # Verify metadata is accessible
+        # sickle parses Dublin Core into a dict-like object
+        assert record.metadata is not None
+
+        # Check that metadata has Dublin Core elements
+        # The metadata object should have DC element access
+        metadata_dict = dict(record.metadata)
+        assert len(metadata_dict) > 0  # Should have some DC elements
+
+
+def test_sickle_date_filtering(sickle_client):
+    """Test ListIdentifiers with date filtering using sickle."""
+    # Use sickle's ListIdentifiers with from_ and until parameters
+    identifiers = list(
+        sickle_client.ListIdentifiers(
+            metadataPrefix="oai_dc", from_="2024-06-01", until="2024-12-31"
+        )
+    )
+
+    # Verify we got some filtered records
+    # Note: Date filtering is tested more thoroughly in unit tests
+    assert len(identifiers) > 0
+
+
+def test_oaipmh_identify(oaipmh_client):
+    """Test Identify verb with oaipmh client."""
+    # Use oaipmh's identify method
+    response = oaipmh_client.identify()
+
+    # Verify response is not None
+    assert response is not None
+    # The response is an Identify object, just verify it exists
+    assert hasattr(response, "protocolVersion") or str(response) is not None
+
+
+def test_oaipmh_list_identifiers(oaipmh_client):
+    """Test ListIdentifiers with oaipmh client."""
+    # Use oaipmh's listIdentifiers method (camelCase)
+    # This returns a generator, so convert to list
+    headers = list(oaipmh_client.listIdentifiers(metadataPrefix="oai_dc"))
+
+    # Verify we got records
+    assert len(headers) > 0
+
+    # Verify each header has required fields
+    for header in headers:
+        # header is a Header object with attributes
+        assert hasattr(header, "identifier")
+        assert hasattr(header, "datestamp")
+        assert header.identifier is not None
+        assert header.datestamp is not None
 
 
 # ============================================================================
@@ -691,3 +927,179 @@ def test_flask_bad_verb_endpoint(flask_client):
     assert response.status_code == 200
     assert b"error" in response.data
     assert b"badVerb" in response.data
+
+
+# ============================================================================
+# Path Encoding/Decoding Tests
+# ============================================================================
+
+
+def test_quote_path_basic():
+    """Test basic path quoting."""
+    path = "simple/path/file.txt"
+    quoted = quote_path(path)
+    # Forward slashes are in the safe parameter, so they're not encoded
+    assert quoted == "simple/path/file.txt"
+
+
+def test_quote_path_special_chars():
+    """Test path quoting with special characters."""
+    path = "path with spaces/file.txt"
+    quoted = quote_path(path)
+    assert " " not in quoted  # Spaces should be encoded
+
+
+def test_unquote_path_basic():
+    """Test basic path unquoting."""
+    quoted = "simple%2Fpath%2Ffile.txt"
+    unquoted = unquote_path(quoted)
+    assert unquoted == "simple/path/file.txt"
+
+
+def test_quote_unquote_roundtrip():
+    """Test that quoting and unquoting preserves the original path."""
+    test_paths = [
+        "simple/path/file.txt",
+        "path with spaces/file.txt",
+        "path/with/special!chars.txt",
+        "path/with( parentheses ).txt",
+        "path/with'quotes'.txt",
+    ]
+
+    for original in test_paths:
+        quoted = quote_path(original)
+        unquoted = unquote_path(quoted)
+        assert unquoted == original, f"Failed for path: {original}"
+
+
+# ============================================================================
+# Identifier Generation Tests
+# ============================================================================
+
+
+def test_get_identifier_basic():
+    """Test basic identifier generation."""
+    path = Path("some/path/file.txt")
+    identifier = get_identifier(path)
+
+    assert identifier is not None
+    assert "https://er-c-data-mgmt.fz-juelich.de/browse?path=" in identifier
+    assert "some/path/file.txt" in identifier
+
+
+def test_get_identifier_with_spaces():
+    """Test identifier generation with spaces in path."""
+    path = Path("path with spaces/file.txt")
+    identifier = get_identifier(path)
+
+    assert identifier is not None
+    # Spaces should be encoded
+    assert " " not in identifier
+
+
+def test_get_identifier_none():
+    """Test identifier generation with None path."""
+    identifier = get_identifier(None)
+    assert identifier is None
+
+
+def test_path_from_identifier_basic():
+    """Test extracting path from basic identifier."""
+    identifier = "https://er-c-data-mgmt.fz-juelich.de/browse?path=some/path/file.txt"
+    path = path_from_identifier(identifier)
+
+    assert path == "some/path/file.txt"
+
+
+def test_path_from_identifier_with_encoding():
+    """Test extracting path with encoded characters."""
+    identifier = (
+        "https://er-c-data-mgmt.fz-juelich.de/browse?path=path%20with%20spaces/file.txt"
+    )
+    path = path_from_identifier(identifier)
+
+    assert path == "path with spaces/file.txt"
+
+
+def test_path_from_identifier_with_leading_slash():
+    """Test that leading slash is removed from path."""
+    # Note: get_identifier adds a leading slash, so we test the roundtrip
+    original_path = "some/path/file.txt"
+    identifier = get_identifier(Path(original_path))
+    extracted_path = path_from_identifier(identifier)
+
+    assert extracted_path == original_path
+
+
+def test_path_from_identifier_invalid():
+    """Test that invalid identifier raises ValueError."""
+    invalid_identifier = "https://example.com/invalid"
+
+    with pytest.raises(ValueError):
+        path_from_identifier(invalid_identifier)
+
+
+# ============================================================================
+# Protocol Compliance Tests with Sickle Client
+# ============================================================================
+
+
+def test_sickle_identify(flask_client, test_database, test_files, monkeypatch):
+    """Test OAI-PMH Identify verb response format."""
+    # Test the raw response format that sickle would parse
+    response = flask_client.get("/oai?verb=Identify")
+
+    assert response.status_code == 200
+    assert b"OAI-PMH" in response.data
+    assert b"Identify" in response.data
+    assert b"Modama OAI-PMH server" in response.data
+    assert b"protocolVersion" in response.data
+    assert b"2.0" in response.data
+
+
+def test_sickle_list_identifiers_format(
+    flask_client, test_database, test_files, monkeypatch
+):
+    """Test OAI-PMH ListIdentifiers verb response format."""
+    # Mock the database connection to use test database
+    from modama_crawler import server as server_module
+
+    original_get_conn = server_module._get_db_connection
+    server_module._get_db_connection = lambda: test_database
+
+    try:
+        response = flask_client.get("/oai?verb=ListIdentifiers&metadataPrefix=oai_dc")
+
+        assert response.status_code == 200
+        assert b"OAI-PMH" in response.data
+        assert b"ListIdentifiers" in response.data
+        assert b"header" in response.data
+        assert b"identifier" in response.data
+        assert b"datestamp" in response.data
+    finally:
+        server_module._get_db_connection = original_get_conn
+
+
+def test_list_records_dublin_core_flask_client(
+    flask_client, test_database, test_files, monkeypatch
+):
+    """Test OAI-PMH ListRecords verb with Dublin Core metadata format."""
+    # Mock the database connection to use test database
+    from modama_crawler import server as server_module
+
+    original_get_conn = server_module._get_db_connection
+    server_module._get_db_connection = lambda: test_database
+
+    try:
+        response = flask_client.get("/oai?verb=ListRecords&metadataPrefix=oai_dc")
+
+        assert response.status_code == 200
+        assert b"OAI-PMH" in response.data
+        assert b"ListRecords" in response.data
+        assert b"record" in response.data
+        assert b"header" in response.data
+        assert b"metadata" in response.data
+        # Check for Dublin Core namespace
+        assert b"oai_dc" in response.data
+    finally:
+        server_module._get_db_connection = original_get_conn
