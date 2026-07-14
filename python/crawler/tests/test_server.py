@@ -16,6 +16,7 @@ from modama_crawler.server import (
     _parse_datestamp,
     _format_datestamp,
     _query_datasets_from_db,
+    app,
 )
 from modama_crawler.mime_sql import ensure_dataset_tables
 
@@ -150,6 +151,27 @@ def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
         server._test_conn = test_database
 
         return server
+    finally:
+        server_module.ROOT_PATH = original_root
+        server_module.DB_ROOT_PATH = original_db_root
+
+
+@pytest.fixture
+def flask_client(test_database, test_files, monkeypatch):
+    """Create a Flask test client configured with test database and files."""
+    from modama_crawler import server as server_module
+
+    original_root = server_module.ROOT_PATH
+    original_db_root = server_module.DB_ROOT_PATH
+
+    server_module.DB_ROOT_PATH = test_files
+    server_module.ROOT_PATH = Path("")
+    monkeypatch.setenv("OAI_DB_PATH", ":memory:")
+
+    try:
+        app.config["TESTING"] = True
+        client = app.test_client()
+        yield client
     finally:
         server_module.ROOT_PATH = original_root
         server_module.DB_ROOT_PATH = original_db_root
@@ -438,15 +460,9 @@ def test_query_datasets_from_db_empty_result(test_database, tmp_path):
 
 # ============================================================================
 # Integration Tests with SimpleServer
-# Note: These tests are currently skipped due to recursion issues in FileHandler
-# when the test files don't match expected recognition patterns.
-# TODO: Fix FileHandler recursion or provide proper test files with recognizable MIME types
 # ============================================================================
 
 
-@pytest.mark.skip(
-    reason="FileHandler recursion issue - needs proper test files with recognizable MIME types"
-)
 def test_list_identifiers_basic(server_with_db):
     """Test basic listIdentifiers with database."""
     # Mock the _get_conn method to use test database
@@ -470,9 +486,6 @@ def test_list_identifiers_basic(server_with_db):
         server_with_db._get_conn = original_get_conn
 
 
-@pytest.mark.skip(
-    reason="FileHandler recursion issue - needs proper test files with recognizable MIME types"
-)
 def test_list_identifiers_pagination(server_with_db):
     """Test listIdentifiers pagination."""
     server_with_db._get_conn = lambda: server_with_db._test_conn
@@ -515,9 +528,6 @@ def test_list_identifiers_pagination(server_with_db):
         server_with_db._get_conn = lambda: server_with_db._test_conn
 
 
-@pytest.mark.skip(
-    reason="FileHandler recursion issue - needs proper test files with recognizable MIME types"
-)
 def test_list_identifiers_date_filtering(server_with_db):
     """Test listIdentifiers with date filtering."""
     server_with_db._get_conn = lambda: server_with_db._test_conn
@@ -541,9 +551,6 @@ def test_list_identifiers_date_filtering(server_with_db):
         server_with_db._get_conn = lambda: server_with_db._test_conn
 
 
-@pytest.mark.skip(
-    reason="FileHandler recursion issue - needs proper test files with recognizable MIME types"
-)
 def test_list_records_basic(server_with_db):
     """Test basic listRecords with database."""
     server_with_db._get_conn = lambda: server_with_db._test_conn
@@ -565,9 +572,6 @@ def test_list_records_basic(server_with_db):
         server_with_db._get_conn = lambda: server_with_db._test_conn
 
 
-@pytest.mark.skip(
-    reason="FileHandler recursion issue - needs proper test files with recognizable MIME types"
-)
 def test_resumption_token_preserves_parameters(server_with_db):
     """Test that resumption token preserves metadataPrefix, from, and until."""
     server_with_db._get_conn = lambda: server_with_db._test_conn
@@ -601,3 +605,89 @@ def test_resumption_token_preserves_parameters(server_with_db):
         assert until_str.endswith("Z")  # UTC indicator
     finally:
         server_with_db._get_conn = lambda: server_with_db._test_conn
+
+
+# ============================================================================
+# Tests for Path Separation (DB_ROOT_PATH vs ROOT_PATH)
+# ============================================================================
+
+
+def test_path_separation_with_root_prefix(tmp_path, monkeypatch):
+    """Test that paths are correctly stripped when ROOT_PATH is configured."""
+    from modama_crawler import server as server_module
+    from modama_crawler.mime_sql import ensure_dataset_tables
+
+    # Create test database with absolute paths
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_dataset_tables(conn)
+
+    # Create test files
+    db_root = tmp_path / "storage" / "er-c-data"
+    db_root.mkdir(parents=True)
+
+    # Create a file at: db_root / "adhoc" / "absorption" / "file.txt"
+    test_file = db_root / "adhoc" / "absorption" / "file.txt"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text("test content")
+
+    # Insert into database with absolute path
+    cur = conn.cursor()
+    abs_path = str(test_file)
+    cur.execute(
+        "INSERT INTO files (path_id, path, mtime) VALUES (?, ?, ?)",
+        (1, abs_path, datetime(2024, 6, 1).timestamp()),
+    )
+    cur.execute("INSERT INTO datasets (dataset_id, path_id) VALUES (?, ?)", (1, 1))
+    cur.execute("INSERT INTO mimes (dataset_id, mime) VALUES (?, ?)", (1, "text/plain"))
+    cur.execute(
+        "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (?, ?)", (1, 1)
+    )
+    conn.commit()
+
+    # Configure server with ROOT_PATH = "adhoc"
+    original_db_root = server_module.DB_ROOT_PATH
+    original_root = server_module.ROOT_PATH
+
+    server_module.DB_ROOT_PATH = db_root
+    server_module.ROOT_PATH = Path("adhoc")
+
+    try:
+        # Query should return path relative to ROOT_PATH
+        paths, next_path = server_module._query_datasets_from_db(
+            conn, continuation=None, from_=None, until=None, batch_size=10
+        )
+
+        # Should return path relative to ROOT_PATH, not DB_ROOT_PATH
+        assert len(paths) == 1
+        assert (
+            str(paths[0]) == "absorption/file.txt"
+        )  # Stripped DB_ROOT_PATH and ROOT_PATH
+    finally:
+        server_module.DB_ROOT_PATH = original_db_root
+        server_module.ROOT_PATH = original_root
+        conn.close()
+
+
+# ============================================================================
+# Flask Endpoint Tests
+# ============================================================================
+
+
+def test_flask_identify_endpoint(flask_client):
+    """Test Flask endpoint for Identify verb."""
+    response = flask_client.get("/oai?verb=Identify")
+
+    assert response.status_code == 200
+    assert b"OAI-PMH" in response.data
+    assert b"Identify" in response.data
+    assert b"Modama OAI-PMH server" in response.data
+
+
+def test_flask_bad_verb_endpoint(flask_client):
+    """Test Flask endpoint with invalid verb."""
+    response = flask_client.get("/oai?verb=InvalidVerb")
+
+    assert response.status_code == 200
+    assert b"error" in response.data
+    assert b"badVerb" in response.data
