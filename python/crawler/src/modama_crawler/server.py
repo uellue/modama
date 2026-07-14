@@ -296,6 +296,7 @@ class SimpleServer:
         until: Optional[datetime] = None,
         continuation: Optional[str] = None,
         batch_size: int = BATCH_SIZE,
+        metadataPrefix: Optional[str] = None,
     ) -> Tuple[list, Optional[str]]:
         """List record headers with optional date filtering and pagination."""
         # Decode continuation token if present
@@ -315,8 +316,14 @@ class SimpleServer:
             handler = _get_handler_for_path(conn, ROOT_PATH, path)
             headers.append(self._make_header(handler))
 
-        # Encode new resumption token
-        new_token = _encode_resumption_token(next_path) if next_path else None
+        # Encode new resumption token with all parameters
+        from_str = from_.strftime("%Y-%m-%d") if from_ else None
+        until_str = until.strftime("%Y-%m-%d") if until else None
+        new_token = (
+            _encode_resumption_token(next_path, metadataPrefix, from_str, until_str)
+            if next_path
+            else None
+        )
 
         return headers, new_token
 
@@ -351,8 +358,14 @@ class SimpleServer:
                 }
             )
 
-        # Encode new resumption token
-        new_token = _encode_resumption_token(next_path) if next_path else None
+        # Encode new resumption token with all parameters
+        from_str = from_.strftime("%Y-%m-%d") if from_ else None
+        until_str = until.strftime("%Y-%m-%d") if until else None
+        new_token = (
+            _encode_resumption_token(next_path, metadataPrefix, from_str, until_str)
+            if next_path
+            else None
+        )
 
         return recs, new_token
 
@@ -609,18 +622,11 @@ def _handle_listidentifiers(args: dict) -> Response:
             mimetype="text/xml; charset=utf-8",
         )
 
-    headers, new_token = _server.listIdentifiers(
+    headers, encoded_token = _server.listIdentifiers(
         from_=from_,
         until=until,
         continuation=str(continuation) if continuation else None,
-    )
-
-    # Encode resumption token with all parameters (except verb)
-    encoded_token = _encode_resumption_token(
-        continuation=new_token,
         metadataPrefix=metadata_prefix,
-        from_=from_arg,
-        until=until_arg,
     )
 
     children = [_make_header_element(h) for h in headers]
@@ -674,19 +680,11 @@ def _handle_listrecords(args: dict) -> Response:
             mimetype="text/xml; charset=utf-8",
         )
 
-    records, new_token = _server.listRecords(
+    records, encoded_token = _server.listRecords(
         metadataPrefix=metadata_prefix,
         from_=from_,
         until=until,
         continuation=str(continuation) if continuation else None,
-    )
-
-    # Encode resumption token with all parameters (except verb)
-    encoded_token = _encode_resumption_token(
-        continuation=new_token,
-        metadataPrefix=metadata_prefix,
-        from_=from_arg,
-        until=until_arg,
     )
 
     children = [_make_record_element(r) for r in records]
