@@ -4,6 +4,13 @@ These tests verify that the server works correctly with the sickle OAI-PMH clien
 library over real HTTP connections.
 """
 
+from pathlib import Path
+
+from xdg import Mime
+
+from modama_crawler.repository import path_from_identifier, get_identifier
+from modama_crawler.server import _get_handler_for_path, _format_datestamp
+
 
 # ============================================================================
 # Protocol Compliance Tests with Sickle Client
@@ -64,6 +71,9 @@ def test_sickle_list_records_dublin_core(sickle_client, test_files, test_databas
 
         # Verify header
         assert record.header.identifier is not None
+        # May have other identifiers, but I guess at east the one in header and
+        # metadata should be consistent!
+        assert record.header.identifier in record.metadata["identifier"]
         assert record.header.datestamp is not None
 
         # Verify metadata is accessible
@@ -74,23 +84,47 @@ def test_sickle_list_records_dublin_core(sickle_client, test_files, test_databas
         metadata_dict = dict(record.metadata)
         assert len(metadata_dict) > 0  # Should have some DC elements
 
-        # Verify required Dublin Core fields are present
-        assert "title" in metadata_dict
-        assert "identifier" in metadata_dict
+        # Extract path from identifier
+        path_str = path_from_identifier(record.header.identifier)
+        path = Path(path_str)
+
+        # Extract MIME types from format field (guesses)
+        guesses = []
+        assert "format" in metadata_dict
+
+        formats = metadata_dict["format"]
+        assert isinstance(formats, list)
+
+        for fmt_str in formats:
+            assert isinstance(fmt_str, str)
+            guesses.append(Mime.MIMEtype(fmt_str))
+        assert len(guesses) > 0
+        # Instantiate FileHandler using the path and MIME type guesses from sickle
+        with test_database as conn:
+            handler = _get_handler_for_path(conn, test_files, path, guesses)
+            intersects = False
+            handler_formats = handler.get_formats()
+            for guess in guesses:
+                if str(guess) in handler_formats:
+                    intersects = True
+            assert intersects
+            # Verify the handler's path matches
+            assert handler.path == path
+            # Verify the handler's metadata matches what sickle returned
+            handler_titles = handler.get_titles()
+            assert handler_titles == metadata_dict["title"]
+
+            handler_identifiers = [get_identifier(handler.path)]
+            assert handler_identifiers[0] == metadata_dict["identifier"][0]
+
+            # Verify dates match
+            handler_dates = [_format_datestamp(d) for d in handler.get_dates()]
+            assert handler_dates == metadata_dict["date"]
 
         # Verify title is a non-empty list
         titles = metadata_dict["title"]
         assert isinstance(titles, list)
         assert len(titles) > 0
-        # Title should be the path (from handler.get_titles())
-        assert any(isinstance(t, str) and len(t) > 0 for t in titles)
-
-        # Verify identifier is present and properly formatted
-        identifiers = metadata_dict["identifier"]
-        assert isinstance(identifiers, list)
-        assert len(identifiers) > 0
-        # Identifier should contain the path identifier
-        assert any("path=" in str(iden) for iden in identifiers)
 
         # Verify other expected fields are present
         # (these come from FileHandler methods)
@@ -103,11 +137,6 @@ def test_sickle_list_records_dublin_core(sickle_client, test_files, test_databas
         assert isinstance(dates, list)
         assert len(dates) > 0
         assert all(isinstance(d, str) and "T" in d and d.endswith("Z") for d in dates)
-
-        # Format should be MIME types
-        formats = metadata_dict["format"]
-        assert isinstance(formats, list)
-        # Formats may be empty if no MIME types detected, but should be a list
 
         # Publisher should be present
         publishers = metadata_dict["publisher"]

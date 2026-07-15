@@ -27,6 +27,7 @@ from modama_crawler.server import (
     _query_datasets_from_db,
     app,
 )
+from modama_crawler import server as server_module
 from modama_crawler.mime_sql import ensure_dataset_tables
 from modama_crawler.repository import (
     quote_path,
@@ -45,7 +46,6 @@ from modama_crawler.repository import (
 def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
     """Create a SimpleServer configured to use the test database and files."""
     # Override ROOT_PATH and DB_ROOT_PATH for testing
-    from modama_crawler import server as server_module
 
     original_root = server_module.ROOT_PATH
     original_db_root = server_module.DB_ROOT_PATH
@@ -72,8 +72,6 @@ def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
 @pytest.fixture
 def flask_client(test_database, test_files, monkeypatch):
     """Create a Flask test client configured with test database and files."""
-    from modama_crawler import server as server_module
-
     original_root = server_module.ROOT_PATH
     original_db_root = server_module.DB_ROOT_PATH
 

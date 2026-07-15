@@ -21,7 +21,7 @@ import os
 from datetime import datetime, timedelta
 from urllib.parse import unquote_plus, quote_plus
 import pathlib
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 import json
 import sqlite3
 
@@ -33,7 +33,8 @@ from modama_crawler.repository import (
     path_from_identifier,
     sanitize,
 )
-from modama_crawler.recognition import guess, FileHandler
+from modama_crawler.recognition import guess, FileHandler, _get_mime_types_from_db
+from xdg import Mime
 
 app = Flask(__name__)
 
@@ -245,7 +246,10 @@ def _query_datasets_from_db(
 
 
 def _get_handler_for_path(
-    conn: sqlite3.Connection, root: pathlib.Path, path: pathlib.Path
+    conn: sqlite3.Connection,
+    root: pathlib.Path,
+    path: pathlib.Path,
+    guesses: Optional[Sequence[Mime.MIMEtype]] = None,
 ) -> FileHandler:
     """Create a FileHandler for a path using database MIME types.
 
@@ -253,6 +257,7 @@ def _get_handler_for_path(
         conn: Database connection
         root: Root path (relative paths base, passed to FileHandler for compatibility)
         path: Relative path to create handler for
+        guesses: Optional MIME type guesses (e.g., from client)
 
     Returns:
         FileHandler instance
@@ -261,12 +266,10 @@ def _get_handler_for_path(
     abs_path = DB_ROOT_PATH / path
 
     # Try to get MIME types from database using absolute path
-    from modama_crawler.recognition import _get_mime_types_from_db
-
     db_guesses = _get_mime_types_from_db(conn, abs_path)
     if db_guesses:
         guesses = db_guesses
-    else:
+    elif guesses is None:
         # Fall back to filesystem-based guessing
         guesses = guess(abs_path)
 

@@ -299,7 +299,7 @@ class FileHandler(ABC):
             "resourceType": g.subtype,
         }
 
-    def get_formats(self):
+    def get_formats(self) -> list[str]:
         result = []
         for g in self.get_mimes():
             str_g = str(g)
