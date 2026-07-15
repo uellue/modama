@@ -263,5 +263,11 @@ def sickle_client(running_http_server):
 def oaipmh_client(running_http_server):
     """Create oaipmh client connected to test HTTP server."""
     from oaipmh.client import Client
+    from oaipmh.metadata import global_metadata_registry, oai_dc_reader
+
+    # Register the oai_dc reader with the global metadata registry
+    # This is needed because oaipmh doesn't register it by default
+    if not global_metadata_registry.hasReader("oai_dc"):
+        global_metadata_registry.registerReader("oai_dc", oai_dc_reader)
 
     return Client(running_http_server)
