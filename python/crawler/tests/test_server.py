@@ -196,6 +196,35 @@ def test_oai_response_structure():
     assert b"<baseURL>http://test.org</baseURL>" in xml
 
 
+def test_http_endpoint_namespaces(flask_client):
+    """Test that actual HTTP endpoint returns correct namespace declarations.
+
+    This integration test verifies that the Flask endpoint properly includes
+    all required namespaces in the XML response.
+    """
+    response = flask_client.get("/oai?verb=Identify")
+
+    assert response.status_code == 200
+    assert (
+        b"text/xml" in response.content_type.encode()
+        or b"xml" in response.content_type.lower()
+    )
+
+    xml_content = response.data
+
+    # Check that the root element has the correct namespace declarations
+    assert b'xmlns="http://www.openarchives.org/OAI/2.0/"' in xml_content
+    assert b'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' in xml_content
+    assert (
+        b'xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/ http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd"'
+        in xml_content
+    )
+
+    # Also verify the response has expected content
+    assert b"<Identify>" in xml_content
+    assert b"<repositoryName>" in xml_content
+
+
 # ============================================================================
 # Database Query Tests
 # ============================================================================

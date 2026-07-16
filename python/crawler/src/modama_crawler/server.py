@@ -450,6 +450,10 @@ def _make_oai_response(
 
     root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
 
+    # Add schemaLocation attribute to root element
+    schema_location = f"{OAI_NS} http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd"
+    root.set(f"{{{XSI_NS}}}schemaLocation", schema_location)
+
     # Response date
     response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
     response_date.text = _format_datestamp(datetime.now().timestamp())
@@ -793,4 +797,4 @@ def _make_record_element(record: dict) -> etree._Element:
 
 
 if __name__ == "__main__":
-    app.run(port=8000, debug=True)
+    app.run(port=7654, debug=True)
