@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pathlib
-from abc import ABC
 from typing import ClassVar, Dict, Sequence, Type, Iterable, Optional
 import datetime
 from functools import cache
@@ -9,6 +8,7 @@ import os
 import glob
 import tempfile
 import sqlite3
+import inspect
 
 from xdg import Mime
 import magika
@@ -101,11 +101,11 @@ def guess(path: pathlib.Path) -> Sequence[Mime.MIMEtype]:
         result.append(res)
     mgk_res = mgk.identify_path(path)
     if mgk_res.status is magika.Status.OK:
-        result.append(mgk_res.output.mime_type)
+        result.append(Mime.MIMEtype(mgk_res.output.mime_type))
     return result
 
 
-class FileHandler(ABC):
+class FileHandler:
     _registry: ClassVar[Dict[Mime.MIMEtype, list[Type["FileHandler"]]]] = {}
 
     file_types: ClassVar[tuple[Mime.MIMEtype, ...]] = (Mime.MIMEtype("", ""),)
@@ -291,6 +291,29 @@ class FileHandler(ABC):
             abspath = self.root / member
             mtime = max(mtime, abspath.stat().st_mtime)
         return mtime
+
+    @classmethod
+    def source_mtime(cls) -> float:
+        # Unix timestamp, safe to assume nothing here is older
+        result = 0.0
+        # A bit questionable, but let's assume only the files containing the
+        # ancestry influence the result...
+        for parent in cls.__mro__:
+            try:
+                file = inspect.getfile(parent)
+                mtime = os.stat(file).st_mtime
+                result = max(result, mtime)
+            # Couldn't get source, e.g. builtin
+            except TypeError, FileNotFoundError, PermissionError:
+                continue
+        return result
+
+    @classmethod
+    def youngest_source_mtime(cls) -> float:
+        classes = set()
+        for classlist in cls._registry.values():
+            classes.update(classlist)
+        return max(c.source_mtime() for c in classes)
 
     def get_resource_type(self):
         g = self.get_mimes()[0]

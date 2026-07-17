@@ -17,3 +17,6 @@
 [submodule "prototypes/EOSC-Data-Commons/metadata-crawlers"]
 	path = prototypes/EOSC-Data-Commons/metadata-crawlers
 	url = https://github.com/EOSC-Data-Commons/metadata-crawlers
+[submodule "prototypes/EOSC-Data-Commons/data-commons-search"]
+	path = prototypes/EOSC-Data-Commons/data-commons-search
+	url = https://github.com/EOSC-Data-Commons/data-commons-search

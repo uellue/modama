@@ -24,6 +24,7 @@ import pathlib
 from typing import Optional, Sequence, Tuple
 import json
 import sqlite3
+import warnings
 
 from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
 
@@ -385,13 +386,16 @@ class SimpleServer:
         # Build records
         recs = []
         for path in paths:
-            handler = _get_handler_for_path(conn, ROOT_PATH, path)
-            recs.append(
-                {
-                    "header": self._make_header(handler),
-                    "metadata": self._make_metadata(handler),
-                }
-            )
+            try:
+                handler = _get_handler_for_path(conn, ROOT_PATH, path)
+                recs.append(
+                    {
+                        "header": self._make_header(handler),
+                        "metadata": self._make_metadata(handler),
+                    }
+                )
+            except FileNotFoundError as e:
+                warnings.warn(f"Exception: {e}")
 
         # Encode new resumption token with all parameters (preserve full datetime)
         from_str = _format_datestamp(from_.timestamp()) if from_ else None
