@@ -10,10 +10,17 @@ from typing import NamedTuple, TypedDict, final
 
 import pamela
 import posix1e  # pylibacl, needs libacl1-dev, https://pylibacl.k1024.org/
+
+# from dotenv import load_dotenv
 from modama_common.fs import is_immutable, set_immutable
 from permissions_client.schema import ADHOC, SerializedProject
 
-BASE_PATH = "/data/"
+# Load environment variables from .env file
+# load_dotenv()
+
+# Data root path configuration
+MODAMA_DATA_ROOT = os.environ.get("MODAMA_DATA_ROOT", "/data")
+BASE_PATH = MODAMA_DATA_ROOT
 
 ADHOC_PATH = os.path.join(BASE_PATH, ADHOC)
 SHARING_PATH = os.path.join(BASE_PATH, "sharing")
