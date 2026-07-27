@@ -191,13 +191,15 @@ def build_mime_filter_map() -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
 
 def _apply_mime_prefilter(
     conn: psycopg.Connection,
-    files_table: str = "files",
-    datasets_table: str = "datasets",
     mimes_table: str = "mimes",
-    files_in_datasets_table: str = "files_in_datasets",
     filters_map: Optional[dict[Mime.MIMEtype, List[SQLPathFilter]]] = None,
 ) -> dict[str, int]:
-    """Apply SQL-based mime filters to `files_table` and populate dataset tables.
+    """Apply SQL-based mime filters to files table and populate dataset tables.
+
+    Args:
+        conn: PostgreSQL database connection
+        mimes_table: Name of the mimes table to use (default: "mimes")
+        filters_map: Optional mapping of MIME types to filters
 
     Returns a summary mapping mime-string -> matched count.
     """
@@ -217,41 +219,28 @@ def _apply_mime_prefilter(
 
         # Create datasets for all matching paths (one dataset per file)
         cur.execute(
-            f"INSERT INTO {datasets_table} (path_id) "
-            f"SELECT path_id FROM {files_table} WHERE ({where_clause}) "
-            # Only create datasets for paths that haven't been claimed
-            # by other datasets
-            "AND path_id not in (SELECT path_id FROM files_in_datasets) "
-            f"AND path_id not in (SELECT path_id FROM {datasets_table} ) "
-            "ON CONFLICT (path_id) DO NOTHING",
+            f"""
+            INSERT INTO datasets (path_id) 
+            SELECT path_id FROM files WHERE ({where_clause}) 
+            AND path_id not in (SELECT path_id FROM files_in_datasets) 
+            AND path_id not in (SELECT path_id FROM datasets)
+            ON CONFLICT (path_id) DO NOTHING
+            """,
             params,
         )
 
         # Assign MIME type to all newly created datasets in one go
         cur.execute(
-            f"INSERT INTO {mimes_table} (dataset_id, mime) "
-            f"SELECT d.dataset_id, %s "
-            f"FROM {datasets_table} d "
-            f"JOIN {files_table} f USING (path_id) "
-            f"WHERE ({where_clause}) "
-            "ON CONFLICT (dataset_id, mime) DO NOTHING",
+            f"""
+            INSERT INTO {mimes_table} (dataset_id, mime) 
+            SELECT d.dataset_id, %s 
+            FROM datasets d 
+            JOIN files f USING (path_id) 
+            WHERE ({where_clause}) 
+            ON CONFLICT (dataset_id, mime) DO NOTHING
+            """,
             (mime_str, *params),
         )
-        # print(mime_str, params)
-        # print(cur.execute(f"SELECT * FROM {mimes_table}").fetchall())
-
-        # Link files to datasets in one go
-        # After some consideration, only populate this table for paths other
-        # than the main path of the dataset.
-        # TODO to be implemented for multipart datasets
-        # cur.execute(
-        #     f"INSERT OR IGNORE INTO {files_in_datasets_table} (dataset_id, path_id) "
-        #     f"SELECT d.dataset_id, d.path_id "
-        #     f"FROM {datasets_table} d "
-        #     f"JOIN {files_table} f USING (path_id) "
-        #     f"WHERE {where_clause}",
-        #     params,
-        # )
 
         summary[mime_str] = cur.rowcount
         conn.commit()
@@ -260,23 +249,26 @@ def _apply_mime_prefilter(
 
 def _resolve_ambiguous_with_get_type2(
     conn: psycopg.Connection,
-    files_table: str = "files",
-    datasets_table: str = "datasets",
     mimes_table: str = "mimes",
 ) -> dict[str, int]:
     """Resolve ambiguous dataset MIME mappings using xdg.Mime.get_type2.
 
-    For datasets that have more than one mime candidate in `mimes_table`, call
+    For datasets that have more than one mime candidate in mimes table, call
     `Mime.get_type2(path)` and delete any entries that don't match the result.
+
+    Args:
+        conn: PostgreSQL database connection
+        mimes_table: Name of the mimes table to use (default: "mimes")
+
     Returns a summary dict with counts: {'checked': n, 'resolved': m}.
     """
     cur = conn.cursor()
     cur.execute(
         f"""
         SELECT d.dataset_id, f.path
-        FROM {datasets_table} d
+        FROM datasets d
         JOIN {mimes_table} m ON d.dataset_id = m.dataset_id
-        JOIN {files_table} f ON d.path_id = f.path_id
+        JOIN files f ON d.path_id = f.path_id
         GROUP BY d.dataset_id, f.path
         HAVING COUNT(m.mime) > 1
         """
@@ -320,10 +312,6 @@ def _resolve_ambiguous_with_get_type2(
 
 def apply_mime_prefilter_with_resolution(
     conn: psycopg.Connection,
-    files_table: str = "files",
-    datasets_table: str = "datasets",
-    mimes_table: str = "mimes",
-    files_in_datasets_table: str = "files_in_datasets",
     filters_map: Optional[dict[Mime.MIMEtype, List[SQLPathFilter]]] = None,
 ) -> dict[str, int]:
     """Apply MIME prefilter and resolve ambiguities in a single pass.
@@ -336,11 +324,7 @@ def apply_mime_prefilter_with_resolution(
     5. Drops the temporary mimes table
 
     Args:
-        conn: SQLite database connection
-        files_table: Name of the files table
-        datasets_table: Name of the datasets table
-        mimes_table: Name of the mimes table
-        files_in_datasets_table: Name of the files_in_datasets table
+        conn: PostgreSQL database connection
         filters_map: Optional mapping of MIME types to filters
 
     Returns:
@@ -349,7 +333,6 @@ def apply_mime_prefilter_with_resolution(
     cur = conn.cursor()
 
     # Step 1: Create temporary mimes table
-    # Use TEMP TABLE syntax for PostgreSQL compatibility
     cur.execute(
         """
         CREATE TEMP TABLE mimes_temp (
@@ -364,37 +347,29 @@ def apply_mime_prefilter_with_resolution(
         # Step 2: Apply prefilter using temporary mimes table
         _apply_mime_prefilter(
             conn,
-            files_table=files_table,
-            datasets_table=datasets_table,
             mimes_table="mimes_temp",
-            files_in_datasets_table=files_in_datasets_table,
             filters_map=filters_map,
         )
 
         # Step 3: Resolve ambiguities in temporary mimes table
         _resolve_ambiguous_with_get_type2(
             conn,
-            files_table=files_table,
-            datasets_table=datasets_table,
             mimes_table="mimes_temp",
         )
 
         # Step 4: Integrate results into actual mimes table
         cur.execute(
-            f"""
-            INSERT INTO {mimes_table} (dataset_id, mime)
+            """
+            INSERT INTO mimes (dataset_id, mime)
             SELECT dataset_id, mime FROM mimes_temp
             ON CONFLICT (dataset_id, mime) DO NOTHING
             """
         )
 
-        # print("temp mimes", cur.execute("SELECT * FROM temp.mimes_asdf").fetchall())
-        # print("mimes", cur.execute("SELECT * FROM mimes").fetchall())
-
         conn.commit()
 
         # Return summary (count of datasets created)
-        cur.execute(f"SELECT COUNT(DISTINCT path_id) AS cnt FROM {datasets_table}")
+        cur.execute("SELECT COUNT(DISTINCT path_id) AS cnt FROM datasets")
         dataset_count = cur.fetchone()["cnt"]
 
         return {"datasets_created": dataset_count}
