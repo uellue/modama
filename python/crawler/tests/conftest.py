@@ -3,13 +3,12 @@ import pytest
 import os
 from importlib import reload
 from pathlib import Path
-import sqlite3
+import psycopg
 from datetime import datetime
 from typing import Generator
 import threading
 import time
 import requests
-import tempfile
 
 import xdg
 
@@ -47,13 +46,29 @@ def install_handlers(tmp_path_factory):
 
 
 # ============================================================================
+# Fixtures for Unit Tests (no full test data needed)
+# ============================================================================
+
+
+@pytest.fixture
+def pg_unit_test(postgresql):
+    """Simple PostgreSQL connection for unit tests that don't need test data.
+
+    Returns a fresh connection with row factory set.
+    """
+    conn = postgresql
+    conn.row_factory = psycopg.rows.dict_row
+    return conn
+
+
+# ============================================================================
 # Shared Fixtures for OAI-PMH Server Tests
 # ============================================================================
 
 
 @pytest.fixture
-def test_database(tmp_path) -> Generator[sqlite3.Connection, None, None]:
-    """Create an in-memory test database with schema and test data.
+def test_database(postgresql, tmp_path) -> Generator[psycopg.Connection, None, None]:
+    """Create a PostgreSQL test database with schema and test data.
 
     Sets up:
     - 6 dataset paths with varying mtimes for pagination and date filtering tests
@@ -62,9 +77,9 @@ def test_database(tmp_path) -> Generator[sqlite3.Connection, None, None]:
     """
     from modama_crawler.mime_sql import ensure_dataset_tables
 
-    # Create in-memory database
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    # Use the postgresql fixture connection
+    conn = postgresql
+    conn.row_factory = psycopg.rows.dict_row
 
     # Create schema using the official function
     ensure_dataset_tables(conn)
@@ -114,24 +129,25 @@ def test_database(tmp_path) -> Generator[sqlite3.Connection, None, None]:
         mtime = test_dates[i].timestamp()
         mime = mimes[i]
         cur.execute(
-            "INSERT INTO files (path_id, path, mtime) VALUES (?, ?, ?)",
+            "INSERT INTO files (path_id, path, mtime) VALUES (%s, %s, %s)",
             (i + 1, abs_path, mtime),
         )
         # Insert dataset
         cur.execute(
-            "INSERT INTO datasets (dataset_id, path_id) VALUES (?, ?)", (i + 1, i + 1)
+            "INSERT INTO datasets (dataset_id, path_id) VALUES (%s, %s)", (i + 1, i + 1)
         )
         # Insert MIME type
-        cur.execute("INSERT INTO mimes (dataset_id, mime) VALUES (?, ?)", (i + 1, mime))
+        cur.execute(
+            "INSERT INTO mimes (dataset_id, mime) VALUES (%s, %s)", (i + 1, mime)
+        )
         # Link file to dataset
         cur.execute(
-            "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (?, ?)",
+            "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (%s, %s)",
             (i + 1, i + 1),
         )
 
     conn.commit()
     yield conn
-    conn.close()
 
 
 @pytest.fixture
@@ -164,50 +180,25 @@ def running_http_server(test_database, test_files, monkeypatch):
     """
     from modama_crawler import server as server_module
     from werkzeug.serving import make_server
-    from modama_crawler.mime_sql import ensure_dataset_tables
 
     # Save original values
     original_root = server_module.ROOT_PATH
     original_db_root = server_module.DB_ROOT_PATH
-    original_db_path = server_module.DB_PATH
 
-    # Create a temporary directory and database file
-    temp_dir = tempfile.mkdtemp()
-    db_file_path = os.path.join(temp_dir, "metadata.db")
-
-    # Create database file with schema and data by copying from test_database
-    conn = sqlite3.connect(db_file_path)
-    conn.row_factory = sqlite3.Row
-
-    # Create schema
-    ensure_dataset_tables(conn)
-
-    # Copy data from test_database
-    cur = conn.cursor()
-    test_cur = test_database.cursor()
-
-    # Copy all tables
-    for table in ["files", "datasets", "mimes", "files_in_datasets"]:
-        test_cur.execute(f"SELECT * FROM {table}")
-        rows = test_cur.fetchall()
-        if rows:
-            # Get column names
-            columns = [desc[0] for desc in test_cur.description]
-            placeholders = ", ".join(["?" for _ in columns])
-            for row in rows:
-                cur.execute(f"INSERT INTO {table} VALUES ({placeholders})", row)
-
-    conn.commit()
-    conn.close()
-
-    # Configure for test with file-based database
-    # Monkeypatch DB_PATH directly since it's read at import time
+    # Configure for test with PostgreSQL database
+    # Monkeypatch configuration directly
     server_module.DB_ROOT_PATH = test_files
     server_module.ROOT_PATH = Path("")
-    server_module.DB_PATH = db_file_path
 
-    # Also set environment variable for good measure
-    monkeypatch.setenv("OAI_DB_PATH", db_file_path)
+    # Set PostgreSQL environment variables for testing
+    # Get connection info from test_database fixture
+    monkeypatch.setenv("MODAMA_CRAWLER_DB", test_database.info.dbname)
+    monkeypatch.setenv("POSTGRES_ADDRESS", test_database.info.host)
+    monkeypatch.setenv("POSTGRES_PORT", str(test_database.info.port))
+    monkeypatch.setenv("POSTGRES_ADMIN", test_database.info.user)
+    # Password may be empty for local test databases
+    if hasattr(test_database.info, "password") and test_database.info.password:
+        monkeypatch.setenv("POSTGRES_PASSWORD", test_database.info.password)
 
     # Import Flask app after setting up environment
     from modama_crawler.server import app
@@ -238,17 +229,9 @@ def running_http_server(test_database, test_files, monkeypatch):
         # Shutdown server
         server.shutdown()
 
-        # Cleanup temp database
-        try:
-            os.remove(db_file_path)
-            os.rmdir(temp_dir)
-        except Exception:
-            pass
-
         # Restore original values
         server_module.ROOT_PATH = original_root
         server_module.DB_ROOT_PATH = original_db_root
-        server_module.DB_PATH = original_db_path
 
 
 @pytest.fixture

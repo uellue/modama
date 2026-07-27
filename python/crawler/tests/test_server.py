@@ -12,7 +12,7 @@ Shared fixtures are defined in conftest.py and available to all test files.
 
 import pytest
 from pathlib import Path
-import sqlite3
+import psycopg
 from datetime import datetime
 
 # Import the server components
@@ -54,14 +54,16 @@ def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
     server_module.DB_ROOT_PATH = test_files
     # Set ROOT_PATH to empty (no additional prefix to strip)
     server_module.ROOT_PATH = Path("")
-    monkeypatch.setenv("OAI_DB_PATH", ":memory:")  # Will use test_database directly
+
+    # Monkeypatch _get_db_connection to return test_database
+    def mock_get_db_connection():
+        return test_database
+
+    monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
 
     try:
         # Create server instance
         server = SimpleServer(base_url="http://test.local/oai")
-
-        # Store database connection for tests to use
-        server._test_conn = test_database
 
         return server
     finally:
@@ -77,7 +79,12 @@ def flask_client(test_database, test_files, monkeypatch):
 
     server_module.DB_ROOT_PATH = test_files
     server_module.ROOT_PATH = Path("")
-    monkeypatch.setenv("OAI_DB_PATH", ":memory:")
+
+    # Monkeypatch _get_db_connection to return test_database
+    def mock_get_db_connection():
+        return test_database
+
+    monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
 
     try:
         app.config["TESTING"] = True
@@ -550,13 +557,13 @@ def test_resumption_token_preserves_parameters(server_with_db):
 # ============================================================================
 
 
-def test_path_separation_with_root_prefix(tmp_path, monkeypatch):
+def test_path_separation_with_root_prefix(tmp_path, monkeypatch, pg_unit_test):
     """Test that paths are correctly stripped when ROOT_PATH is configured."""
     from modama_crawler import server as server_module
 
     # Create test database with absolute paths
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    conn = pg_unit_test
+    conn.row_factory = psycopg.rows.dict_row
     ensure_dataset_tables(conn)
 
     # Create test files
@@ -572,13 +579,15 @@ def test_path_separation_with_root_prefix(tmp_path, monkeypatch):
     cur = conn.cursor()
     abs_path = str(test_file)
     cur.execute(
-        "INSERT INTO files (path_id, path, mtime) VALUES (?, ?, ?)",
+        "INSERT INTO files (path_id, path, mtime) VALUES (%s, %s, %s)",
         (1, abs_path, datetime(2024, 6, 1).timestamp()),
     )
-    cur.execute("INSERT INTO datasets (dataset_id, path_id) VALUES (?, ?)", (1, 1))
-    cur.execute("INSERT INTO mimes (dataset_id, mime) VALUES (?, ?)", (1, "text/plain"))
+    cur.execute("INSERT INTO datasets (dataset_id, path_id) VALUES (%s, %s)", (1, 1))
     cur.execute(
-        "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (?, ?)", (1, 1)
+        "INSERT INTO mimes (dataset_id, mime) VALUES (%s, %s)", (1, "text/plain")
+    )
+    cur.execute(
+        "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (%s, %s)", (1, 1)
     )
     conn.commit()
 
@@ -603,7 +612,6 @@ def test_path_separation_with_root_prefix(tmp_path, monkeypatch):
     finally:
         server_module.DB_ROOT_PATH = original_db_root
         server_module.ROOT_PATH = original_root
-        conn.close()
 
 
 # ============================================================================

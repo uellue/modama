@@ -16,3 +16,4 @@ frontend_auth_spike.md
 cargo-git
 /deploy/testconf/secrets/CA/
 /deploy/.env
+.env

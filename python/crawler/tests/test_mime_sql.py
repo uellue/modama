@@ -1,10 +1,9 @@
-import sqlite3
 from pathlib import Path
 
 import xdg
 from xdg import Mime
 
-from modama_crawler import mime_sql
+from modama_crawler import mime_sql, database
 
 
 def test_glob_to_like_simple():
@@ -21,12 +20,12 @@ def test_build_sql_where_clause():
             weight=50,
             pattern="*.txt",
             case_sensitive=False,
-            sql="(LOWER(path) LIKE ? ESCAPE '\\')",
+            sql="(LOWER(path) LIKE %s ESCAPE '\\')",
             params=("%/%.txt",),
         )
     ]
     sql, params = mime_sql.build_sql_where_clause(filters)
-    assert "LOWER(path) LIKE ?" in sql
+    assert "LOWER(path) LIKE %s" in sql
     assert params == ("%/%.txt",)
 
 
@@ -37,23 +36,27 @@ def test_collect_sql_path_filters():
     assert any(f.pattern.startswith("*.") for f in filters)
 
 
-def test_query_matching_paths_and_summarize_candidates():
-    conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE files (path TEXT, mime TEXT, weight INTEGER)")
-    conn.executemany(
-        "INSERT INTO files (path, mime, weight) VALUES (?, ?, ?)",
+def test_query_matching_paths_and_summarize_candidates(pg_unit_test):
+    conn = pg_unit_test
+    # Create a temp table with the schema expected by query_matching_paths
+    # (path, mime, weight) - this is different from the actual files table schema
+    conn.execute("CREATE TEMP TABLE test_files (path TEXT, mime TEXT, weight INTEGER)")
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO test_files (path, mime, weight) VALUES (%s, %s, %s)",
         [
             ("a/b/foo.txt", "text/plain", 50),
             ("c/d/bar.png", "image/png", 50),
             ("README", "text/x-readme", 10),
         ],
     )
+    conn.commit()
 
     filters = [
         mime_sql._build_path_filter("*.txt", False, Mime.MIMEtype("text", "plain"), 50),
         mime_sql._build_path_filter("*.png", False, Mime.MIMEtype("image", "png"), 50),
     ]
-    rows = mime_sql.query_matching_paths(conn, "files", filters=filters)
+    rows = mime_sql.query_matching_paths(conn, "test_files", filters=filters)
     assert rows
 
     summary = mime_sql.summarize_candidates(rows)
@@ -85,17 +88,28 @@ def test_build_mime_filter_map():
     assert any(m in mapping for m in collected_mimes)
 
 
-def test_ensure_and_apply_prefilter():
-    conn = sqlite3.connect(":memory:")
-    # Use a different name for the source table to avoid colliding with the
-    # prefilter's own 'files' table created by ensure_dataset_tables.
-    # The source table must have path_id (like the files table) since
-    # apply_mime_prefilter assumes source_table == files_table.
+def test_ensure_and_apply_prefilter(pg_unit_test, tmp_path: Path):
+    conn = pg_unit_test
+    # Create all tables as temp tables to avoid FK constraint issues in PostgreSQL
+    # (permanent tables cannot have FK to temp tables)
     conn.execute(
-        "CREATE TABLE repo_files (path_id INTEGER PRIMARY KEY, path TEXT UNIQUE, mtime REAL)"
+        "CREATE TEMP TABLE repo_files (path_id SERIAL PRIMARY KEY, path TEXT UNIQUE, mtime REAL)"
     )
-    paths = ["/x/img/photo.png", "/x/doc/report.txt", "/README"]
-    conn.executemany("INSERT INTO repo_files (path) VALUES (?)", [(p,) for p in paths])
+    conn.execute(
+        "CREATE TEMP TABLE datasets (dataset_id SERIAL PRIMARY KEY, path_id INTEGER UNIQUE, FOREIGN KEY (path_id) REFERENCES repo_files(path_id))"
+    )
+    conn.execute(
+        "CREATE TEMP TABLE mimes (dataset_id INTEGER, mime TEXT, FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id), UNIQUE(dataset_id, mime))"
+    )
+    conn.execute(
+        "CREATE TEMP TABLE files_in_datasets (dataset_id INTEGER, path_id INTEGER, FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id), FOREIGN KEY (path_id) REFERENCES repo_files(path_id), UNIQUE(dataset_id, path_id))"
+    )
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO repo_files (path) VALUES (%s)",
+        [("/x/img/photo.png",), ("/x/doc/report.txt",), ("/README",)],
+    )
+    conn.commit()
 
     # Build a small filters_map for predictable behavior
     png_filter = mime_sql._build_path_filter(
@@ -109,13 +123,14 @@ def test_ensure_and_apply_prefilter():
         Mime.MIMEtype("text", "plain"): [txt_filter],
     }
 
-    mime_sql.ensure_dataset_tables(
-        conn,
-        files_table="repo_files",
-        datasets_table="datasets",
-        mimes_table="mimes",
-        files_in_datasets_table="files_in_datasets",
-    )
+    # Skip ensure_dataset_tables since we created the temp tables manually above
+    # mime_sql.ensure_dataset_tables(
+    #     conn,
+    #     files_table="repo_files",
+    #     datasets_table="datasets",
+    #     mimes_table="mimes",
+    #     files_in_datasets_table="files_in_datasets",
+    # )
     mime_sql._apply_mime_prefilter(
         conn,
         files_table="repo_files",
@@ -135,14 +150,14 @@ def test_ensure_and_apply_prefilter():
 
     # Verify mime mappings for known types exist
     mime_rows = list(conn.execute("SELECT mime FROM mimes").fetchall())
-    mime_values = {r[0] for r in mime_rows}
+    mime_values = {r["mime"] for r in mime_rows}
     assert any("image/png" in m for m in mime_values)
     assert any("text/plain" in m for m in mime_values)
 
 
-def test_resolve_ambiguous_with_get_type2(tmp_path: Path):
-    conn = sqlite3.connect(":memory:")
-    mime_sql.ensure_dataset_tables(conn)
+def test_resolve_ambiguous_with_get_type2(pg_unit_test, tmp_path: Path):
+    conn = pg_unit_test
+    database.ensure_dataset_tables(conn)
 
     # Create a real PNG file so get_type2 can inspect contents
     blob = tmp_path / "amb.png"
@@ -150,18 +165,19 @@ def test_resolve_ambiguous_with_get_type2(tmp_path: Path):
 
     # Insert into files, datasets, and two candidate mimes
     cur = conn.cursor()
-    cur.execute("INSERT INTO files (path) VALUES (?)", (str(blob),))
-    cur.execute("SELECT path_id FROM files WHERE path = ?", (str(blob),))
-    path_id = cur.fetchone()[0]
-    cur.execute("INSERT INTO datasets (path_id) VALUES (?)", (path_id,))
-    cur.execute("SELECT dataset_id FROM datasets WHERE path_id = ?", (path_id,))
-    dataset_id = cur.fetchone()[0]
+    cur.execute("INSERT INTO files (path) VALUES (%s)", (str(blob),))
+    cur.execute("SELECT path_id FROM files WHERE path = %s", (str(blob),))
+    path_id = cur.fetchone()["path_id"]
+    cur.execute("INSERT INTO datasets (path_id) VALUES (%s)", (path_id,))
+    cur.execute("SELECT dataset_id FROM datasets WHERE path_id = %s", (path_id,))
+    dataset_id = cur.fetchone()["dataset_id"]
     cur.execute(
-        "INSERT INTO mimes (dataset_id, mime) VALUES (?, ?)",
+        "INSERT INTO mimes (dataset_id, mime) VALUES (%s, %s)",
         (dataset_id, "application/octet-stream"),
     )
     cur.execute(
-        "INSERT INTO mimes (dataset_id, mime) VALUES (?, ?)", (dataset_id, "image/png")
+        "INSERT INTO mimes (dataset_id, mime) VALUES (%s, %s)",
+        (dataset_id, "image/png"),
     )
     conn.commit()
 
@@ -171,16 +187,16 @@ def test_resolve_ambiguous_with_get_type2(tmp_path: Path):
 
     rows = list(
         conn.execute(
-            "SELECT mime FROM mimes WHERE dataset_id = ?", (dataset_id,)
+            "SELECT mime FROM mimes WHERE dataset_id = %s", (dataset_id,)
         ).fetchall()
     )
     assert len(rows) == 1
-    assert rows[0][0] == "image/png"
+    assert rows[0]["mime"] == "image/png"
 
 
-def test_apply_mime_prefilter_with_resolution(tmp_path: Path):
-    conn = sqlite3.connect(":memory:")
-    mime_sql.ensure_dataset_tables(conn)
+def test_apply_mime_prefilter_with_resolution(pg_unit_test, tmp_path: Path):
+    conn = pg_unit_test
+    database.ensure_dataset_tables(conn)
 
     # Create test files
     png_file = tmp_path / "test.png"
@@ -191,8 +207,8 @@ def test_apply_mime_prefilter_with_resolution(tmp_path: Path):
 
     # Insert files into the files table
     cur = conn.cursor()
-    cur.execute("INSERT INTO files (path) VALUES (?)", (str(png_file),))
-    cur.execute("INSERT INTO files (path) VALUES (?)", (str(txt_file),))
+    cur.execute("INSERT INTO files (path) VALUES (%s)", (str(png_file),))
+    cur.execute("INSERT INTO files (path) VALUES (%s)", (str(txt_file),))
     conn.commit()
 
     # Build filters_map for testing
@@ -242,27 +258,27 @@ def test_apply_mime_prefilter_with_resolution(tmp_path: Path):
     png_mime_rows = list(
         conn.execute(
             "SELECT m.mime FROM mimes m JOIN datasets d ON m.dataset_id = d.dataset_id "
-            "JOIN files f ON d.path_id = f.path_id WHERE f.path = ?",
+            "JOIN files f ON d.path_id = f.path_id WHERE f.path = %s",
             (str(png_file),),
         ).fetchall()
     )
     assert len(png_mime_rows) == 1
-    assert png_mime_rows[0][0] == "image/png"
+    assert png_mime_rows[0]["mime"] == "image/png"
 
     txt_mime_rows = list(
         conn.execute(
             "SELECT m.mime FROM mimes m JOIN datasets d ON m.dataset_id = d.dataset_id "
-            "JOIN files f ON d.path_id = f.path_id WHERE f.path = ?",
+            "JOIN files f ON d.path_id = f.path_id WHERE f.path = %s",
             (str(txt_file),),
         ).fetchall()
     )
     assert len(txt_mime_rows) == 1
-    assert txt_mime_rows[0][0] == "text/plain"
+    assert txt_mime_rows[0]["mime"] == "text/plain"
 
     # Verify temporary table was cleaned up
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='mimes'")
+    cur.execute("SELECT tablename FROM pg_tables WHERE tablename = 'mimes'")
     assert cur.fetchone() is not None  # Main mimes table should exist
     cur.execute(
-        "SELECT name FROM temp.sqlite_master WHERE type='table' AND name='mimes_asdf'"
+        "SELECT tablename FROM pg_tables WHERE tablename = 'mimes_temp' AND schemaname = 'pg_temp'"
     )
     assert cur.fetchone() is None  # Temp mimes table should not exist

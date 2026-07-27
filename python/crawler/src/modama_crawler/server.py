@@ -23,10 +23,14 @@ from urllib.parse import unquote_plus, quote_plus
 import pathlib
 from typing import Optional, Sequence, Tuple
 import json
-import sqlite3
 import warnings
 
+import psycopg
+from psycopg.rows import dict_row
+from dotenv import load_dotenv
+
 from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
+from xdg import Mime
 
 from modama_crawler.repository import (
     get_identifier,
@@ -35,17 +39,24 @@ from modama_crawler.repository import (
     sanitize,
 )
 from modama_crawler.recognition import guess, FileHandler, _get_mime_types_from_db
-from xdg import Mime
 
-app = Flask(__name__)
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configuration
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
-# DB_ROOT_PATH: Absolute path where files are stored in the database
-DB_ROOT_PATH = pathlib.Path(os.environ.get("OAI_DB_ROOT_PATH", "/storage/er-c-data"))
-# ROOT_PATH: Path relative to DB_ROOT_PATH that should be exposed to clients
-ROOT_PATH = pathlib.Path(os.environ.get("OAI_ROOT_PATH", ""))
-DB_PATH = os.environ.get("OAI_DB_PATH", "/storage/er-c-data/metadata.db")
+# MODAMA_DATA_ROOT: Absolute path where files are stored in the database and on filesystem
+MODAMA_DATA_ROOT = pathlib.Path(
+    os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data")
+)
+
+# PostgreSQL configuration
+DB_NAME = os.environ.get("MODAMA_CRAWLER_DB", "modama_crawler")
+POSTGRES_ADMIN = os.environ.get("POSTGRES_ADMIN", "postgres")
+POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "")
+POSTGRES_ADDRESS = os.environ.get("POSTGRES_ADDRESS", "localhost")
+POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
 
 # XML Namespaces
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
@@ -53,15 +64,18 @@ OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 
+app = Flask(__name__)
 
-def _get_db_connection() -> sqlite3.Connection:
-    """Get a read-only database connection.
+
+def _get_db_connection() -> psycopg.Connection:
+    """Get a database connection to PostgreSQL.
 
     Returns:
-        sqlite3.Connection: Database connection
+        psycopg.Connection: Database connection
     """
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn_string = f"postgresql://{POSTGRES_ADMIN}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{DB_NAME}"
+    conn = psycopg.connect(conn_string)
+    conn.row_factory = dict_row
     return conn
 
 
@@ -157,7 +171,7 @@ def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
 
 
 def _query_datasets_from_db(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     continuation: Optional[pathlib.Path],
     from_: Optional[datetime],
     until: Optional[datetime],
@@ -174,7 +188,7 @@ def _query_datasets_from_db(
 
     Returns:
         Tuple of (list of relative paths, next continuation path or None)
-        Paths are relative to ROOT_PATH for client exposure.
+        Paths are relative to MODAMA_DATA_ROOT for client exposure.
     """
     cur = conn.cursor()
 
@@ -183,26 +197,26 @@ def _query_datasets_from_db(
     params = []
 
     # Get the database root path prefix to strip
-    db_root_str = str(DB_ROOT_PATH)
+    db_root_str = str(MODAMA_DATA_ROOT)
     if not db_root_str.endswith("/"):
         db_root_str += "/"
 
     # Pagination: paths greater than continuation (in database format)
     if continuation is not None:
         # Convert relative continuation to absolute for database query
-        abs_continuation = DB_ROOT_PATH / continuation
-        where_clauses.append("f.path > ?")
+        abs_continuation = MODAMA_DATA_ROOT / continuation
+        where_clauses.append("f.path > %s")
         params.append(str(abs_continuation))
 
     # Date filtering on mtime
     if from_ is not None:
-        where_clauses.append("f.mtime >= ?")
+        where_clauses.append("f.mtime >= %s")
         params.append(from_.timestamp())
 
     if until is not None:
         # until is inclusive in OAI-PMH, but we make it exclusive for SQL
         until_exclusive = until + timedelta(days=1)
-        where_clauses.append("f.mtime < ?")
+        where_clauses.append("f.mtime < %s")
         params.append(until_exclusive.timestamp())
 
     where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
@@ -215,7 +229,7 @@ def _query_datasets_from_db(
         JOIN datasets d ON f.path_id = d.path_id
         WHERE {where_clause}
         ORDER BY f.path
-        LIMIT ?
+        LIMIT %s
     """
     params.append(batch_size)
 
@@ -231,12 +245,9 @@ def _query_datasets_from_db(
         abs_path = pathlib.Path(row["path"])
         # Strip the database root prefix
         try:
-            rel_path = abs_path.relative_to(DB_ROOT_PATH)
-            # Further strip ROOT_PATH prefix if configured
-            if ROOT_PATH:
-                rel_path = rel_path.relative_to(ROOT_PATH)
+            rel_path = abs_path.relative_to(MODAMA_DATA_ROOT)
         except ValueError:
-            # Path is not under DB_ROOT_PATH, use as-is
+            # Path is not under MODAMA_DATA_ROOT, use as-is
             rel_path = abs_path
         paths.append(rel_path)
 
@@ -247,7 +258,7 @@ def _query_datasets_from_db(
 
 
 def _get_handler_for_path(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     root: pathlib.Path,
     path: pathlib.Path,
     guesses: Optional[Sequence[Mime.MIMEtype]] = None,
@@ -264,7 +275,7 @@ def _get_handler_for_path(
         FileHandler instance
     """
     # Convert relative path to absolute for database query and filesystem access
-    abs_path = DB_ROOT_PATH / path
+    abs_path = MODAMA_DATA_ROOT / path
 
     # Try to get MIME types from database using absolute path
     db_guesses = _get_mime_types_from_db(conn, abs_path)
@@ -274,9 +285,9 @@ def _get_handler_for_path(
         # Fall back to filesystem-based guessing
         guesses = guess(abs_path)
 
-    # Create handler with absolute filesystem root (DB_ROOT_PATH) and relative path
-    # FileHandler will construct abspath as DB_ROOT_PATH / path
-    return FileHandler.create(DB_ROOT_PATH, path, guesses, conn)
+    # Create handler with absolute filesystem root (MODAMA_DATA_ROOT) and relative path
+    # FileHandler will construct abspath as MODAMA_DATA_ROOT / path
+    return FileHandler.create(MODAMA_DATA_ROOT, path, guesses, conn)
 
 
 # --- OAI-PMH Server Implementation ---
@@ -288,11 +299,11 @@ class SimpleServer:
     def __init__(self, base_url: str = ""):
         self._base = base_url
 
-    def _get_conn(self) -> sqlite3.Connection:
+    def _get_conn(self) -> psycopg.Connection:
         """Get a database connection for this request.
 
         Returns:
-            sqlite3.Connection: Database connection
+            psycopg.Connection: Database connection
         """
         return _get_db_connection()
 
@@ -313,9 +324,9 @@ class SimpleServer:
     def getRecord(self, identifier: str) -> dict:
         """Get a single record by identifier."""
         path = pathlib.Path(path_from_identifier(identifier))
-        path = sanitize(root=ROOT_PATH, path=path)
+        path = sanitize(root=MODAMA_DATA_ROOT, path=path)
         conn = self._get_conn()
-        handler = _get_handler_for_path(conn, ROOT_PATH, path)
+        handler = _get_handler_for_path(conn, MODAMA_DATA_ROOT, path)
 
         return {
             "header": self._make_header(handler),
@@ -349,7 +360,7 @@ class SimpleServer:
         # Build headers
         headers = []
         for path in paths:
-            handler = _get_handler_for_path(conn, ROOT_PATH, path)
+            handler = _get_handler_for_path(conn, MODAMA_DATA_ROOT, path)
             headers.append(self._make_header(handler))
 
         # Encode new resumption token with all parameters (preserve full datetime)
@@ -387,7 +398,7 @@ class SimpleServer:
         recs = []
         for path in paths:
             try:
-                handler = _get_handler_for_path(conn, ROOT_PATH, path)
+                handler = _get_handler_for_path(conn, MODAMA_DATA_ROOT, path)
                 recs.append(
                     {
                         "header": self._make_header(handler),

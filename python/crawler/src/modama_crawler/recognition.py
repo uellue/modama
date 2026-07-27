@@ -7,8 +7,9 @@ from functools import cache
 import os
 import glob
 import tempfile
-import sqlite3
 import inspect
+
+import psycopg
 
 from xdg import Mime
 import magika
@@ -22,7 +23,7 @@ mgk = magika.Magika()
 
 
 def _get_mime_types_from_db(
-    conn: sqlite3.Connection, path: pathlib.Path
+    conn: psycopg.Connection, path: pathlib.Path
 ) -> Sequence[Mime.MIMEtype]:
     """Query MIME types for a path from the database.
 
@@ -39,7 +40,7 @@ def _get_mime_types_from_db(
         SELECT m.mime FROM mimes m
         JOIN datasets d ON m.dataset_id = d.dataset_id
         JOIN files f ON d.path_id = f.path_id
-        WHERE f.path = ?
+        WHERE f.path = %s
         ORDER BY m.mime
         """,
         (str(path),),
@@ -64,7 +65,7 @@ def _get_mime_types_from_db(
 
 
 def _get_dataset_members_from_db(
-    conn: sqlite3.Connection, dataset_path: str
+    conn: psycopg.Connection, dataset_path: str
 ) -> Sequence[pathlib.Path]:
     """Get all member paths for a dataset from the database.
 
@@ -81,7 +82,7 @@ def _get_dataset_members_from_db(
         SELECT f.path FROM files_in_datasets fid
         JOIN files f ON fid.path_id = f.path_id
         JOIN datasets d ON fid.dataset_id = d.dataset_id
-        WHERE f.path = ?
+        WHERE f.path = %s
         """,
         (dataset_path,),
     )
@@ -121,7 +122,7 @@ class FileHandler:
         root: pathlib.Path,
         path: pathlib.Path,
         guesses: Sequence[Mime.MIMEtype],
-        conn: Optional[sqlite3.Connection] = None,
+        conn: Optional[psycopg.Connection] = None,
     ):
         self.root = root
         self.path = path
@@ -153,7 +154,7 @@ class FileHandler:
         root: pathlib.Path,
         path: pathlib.Path,
         guesses: Sequence[Mime.MIMEtype],
-        conn: Optional[sqlite3.Connection] = None,
+        conn: Optional[psycopg.Connection] = None,
     ) -> Type["FileHandler"]:
         path = pathlib.Path(path)
         root = pathlib.Path(root)
@@ -194,7 +195,7 @@ class FileHandler:
         root: pathlib.Path,
         path: pathlib.Path,
         guesses: Sequence[Mime.MIMEtype],
-        conn: Optional[sqlite3.Connection] = None,
+        conn: Optional[psycopg.Connection] = None,
     ) -> "FileHandler":
         handler_cls = cls.resolve(root, path, guesses, conn)
         return handler_cls(root, path, guesses, conn)

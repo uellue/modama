@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-import sqlite3
+import psycopg
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from xdg import Mime
+
 
 SQL_ESCAPE_RE = re.compile(r"([%_\\])")
 
@@ -71,7 +72,7 @@ def _sql_filter_for_basename(
 
     params = (f"%/{like_expr}",)
     escape_clause = " ESCAPE '\\'"
-    sql = f"({path_expr} LIKE ?{escape_clause})"
+    sql = f"({path_expr} LIKE %s{escape_clause})"
 
     return sql, params
 
@@ -123,7 +124,7 @@ def build_sql_where_clause(
 
 
 def query_matching_paths(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     table_name: str,
     filters: Optional[Sequence[SQLPathFilter]] = None,
 ) -> List[Tuple[str, str, int]]:
@@ -133,7 +134,9 @@ def query_matching_paths(
     where_clause, params = build_sql_where_clause(filters)
     sql = f"SELECT path, mime, weight FROM {table_name} WHERE {where_clause}"
     cursor = conn.execute(sql, params)
-    return cursor.fetchall()
+    # Convert dict rows to tuples for compatibility with summarize_candidates
+    rows = cursor.fetchall()
+    return [(row["path"], row["mime"], row["weight"]) for row in rows]
 
 
 def resolve_name_matches(path: str) -> Sequence[Tuple[Mime.MIMEtype, int]]:
@@ -202,66 +205,8 @@ def build_mime_filter_map() -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
     return mapping
 
 
-def ensure_dataset_tables(
-    conn: sqlite3.Connection,
-    files_table: str = "files",
-    datasets_table: str = "datasets",
-    mimes_table: str = "mimes",
-    files_in_datasets_table: str = "files_in_datasets",
-) -> None:
-    """Create the 4-table MIME prefilter schema if it does not exist.
-
-    Schema:
-      files(path_id INTEGER PRIMARY KEY, path TEXT UNIQUE, mtime FLOAT)
-      datasets(dataset_id INTEGER PRIMARY KEY, path_id INTEGER UNIQUE, FK→files)
-      mimes(dataset_id INTEGER, mime TEXT, FK→datasets, UNIQUE(dataset_id, mime))
-      files_in_datasets(dataset_id INTEGER, path_id INTEGER, FK→datasets, FK→files, UNIQUE(dataset_id, path_id))
-    """
-    cur = conn.cursor()
-    cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {files_table} (
-            path_id INTEGER PRIMARY KEY,
-            path TEXT UNIQUE,
-            mtime REAL
-        )
-        """
-    )
-    cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {datasets_table} (
-            dataset_id INTEGER PRIMARY KEY,
-            path_id INTEGER UNIQUE,
-            FOREIGN KEY (path_id) REFERENCES {files_table}(path_id)
-        )
-        """
-    )
-    cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {mimes_table} (
-            dataset_id INTEGER,
-            mime TEXT,
-            FOREIGN KEY (dataset_id) REFERENCES {datasets_table}(dataset_id),
-            UNIQUE(dataset_id, mime)
-        )
-        """
-    )
-    cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {files_in_datasets_table} (
-            dataset_id INTEGER,
-            path_id INTEGER,
-            FOREIGN KEY (dataset_id) REFERENCES {datasets_table}(dataset_id),
-            FOREIGN KEY (path_id) REFERENCES {files_table}(path_id),
-            UNIQUE(dataset_id, path_id)
-        )
-        """
-    )
-    conn.commit()
-
-
 def _apply_mime_prefilter(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     files_table: str = "files",
     datasets_table: str = "datasets",
     mimes_table: str = "mimes",
@@ -288,21 +233,23 @@ def _apply_mime_prefilter(
 
         # Create datasets for all matching paths (one dataset per file)
         cur.execute(
-            f"INSERT OR IGNORE INTO {datasets_table} (path_id) "
+            f"INSERT INTO {datasets_table} (path_id) "
             f"SELECT path_id FROM {files_table} WHERE ({where_clause}) "
             # Only create datasets for paths that haven't been claimed
             # by other datasets
-            "AND path_id not in (SELECT path_id FROM files_in_datasets)",
+            "AND path_id not in (SELECT path_id FROM files_in_datasets) "
+            "ON CONFLICT (path_id) DO NOTHING",
             params,
         )
 
         # Assign MIME type to all newly created datasets in one go
         cur.execute(
-            f"INSERT OR IGNORE INTO {mimes_table} (dataset_id, mime) "
-            f"SELECT d.dataset_id, ? "
+            f"INSERT INTO {mimes_table} (dataset_id, mime) "
+            f"SELECT d.dataset_id, %s "
             f"FROM {datasets_table} d "
             f"JOIN {files_table} f USING (path_id) "
-            f"WHERE ({where_clause}) ",
+            f"WHERE ({where_clause}) "
+            "ON CONFLICT (dataset_id, mime) DO NOTHING",
             (mime_str, *params),
         )
         # print(mime_str, params)
@@ -327,7 +274,7 @@ def _apply_mime_prefilter(
 
 
 def _resolve_ambiguous_with_get_type2(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     files_table: str = "files",
     datasets_table: str = "datasets",
     mimes_table: str = "mimes",
@@ -345,7 +292,7 @@ def _resolve_ambiguous_with_get_type2(
         FROM {datasets_table} d
         JOIN {mimes_table} m ON d.dataset_id = m.dataset_id
         JOIN {files_table} f ON d.path_id = f.path_id
-        GROUP BY d.dataset_id
+        GROUP BY d.dataset_id, f.path
         HAVING COUNT(m.mime) > 1
         """
     )
@@ -353,7 +300,9 @@ def _resolve_ambiguous_with_get_type2(
     checked = 0
     resolved = 0
 
-    for dataset_id, path in ambiguous:
+    for row in ambiguous:
+        dataset_id = row["dataset_id"]
+        path = row["path"]
         print(path)
         checked += 1
         try:
@@ -365,17 +314,17 @@ def _resolve_ambiguous_with_get_type2(
         mt_str = str(mt)
         # Delete any candidate rows that don't match the resolved mime
         cur.execute(
-            f"DELETE FROM {mimes_table} WHERE dataset_id = ? AND mime != ?",
+            f"DELETE FROM {mimes_table} WHERE dataset_id = %s AND mime != %s",
             (dataset_id, mt_str),
         )
         # Ensure resolved mapping exists
         cur.execute(
-            f"SELECT 1 FROM {mimes_table} WHERE dataset_id = ? AND mime = ?",
+            f"SELECT 1 FROM {mimes_table} WHERE dataset_id = %s AND mime = %s",
             (dataset_id, mt_str),
         )
         if cur.fetchone() is None:
             cur.execute(
-                f"INSERT INTO {mimes_table} (dataset_id, mime) VALUES (?, ?)",
+                f"INSERT INTO {mimes_table} (dataset_id, mime) VALUES (%s, %s)",
                 (dataset_id, mt_str),
             )
         resolved += 1
@@ -385,7 +334,7 @@ def _resolve_ambiguous_with_get_type2(
 
 
 def apply_mime_prefilter_with_resolution(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     files_table: str = "files",
     datasets_table: str = "datasets",
     mimes_table: str = "mimes",
@@ -414,23 +363,11 @@ def apply_mime_prefilter_with_resolution(
     """
     cur = conn.cursor()
 
-    ensure_dataset_tables(
-        conn,
-        files_table=files_table,
-        datasets_table=datasets_table,
-        mimes_table=mimes_table,
-        files_in_datasets_table=files_in_datasets_table,
-    )
-
-    conn.commit()
-
-    # Step 1: Create temporary mimes table in temp database For some reason, the
-    # temp table name must not intersect with tables in the main schema,
-    # otherwise DROP TABLE deletes the contents of the other table.
-    # This smells like a bug in sqlite?
+    # Step 1: Create temporary mimes table
+    # Use TEMP TABLE syntax for PostgreSQL compatibility
     cur.execute(
         """
-        CREATE TABLE temp.mimes_asdf (
+        CREATE TEMP TABLE mimes_temp (
             dataset_id INTEGER,
             mime TEXT,
             UNIQUE(dataset_id, mime)
@@ -444,7 +381,7 @@ def apply_mime_prefilter_with_resolution(
             conn,
             files_table=files_table,
             datasets_table=datasets_table,
-            mimes_table="temp.mimes_asdf",
+            mimes_table="mimes_temp",
             files_in_datasets_table=files_in_datasets_table,
             filters_map=filters_map,
         )
@@ -454,14 +391,15 @@ def apply_mime_prefilter_with_resolution(
             conn,
             files_table=files_table,
             datasets_table=datasets_table,
-            mimes_table="temp.mimes_asdf",
+            mimes_table="mimes_temp",
         )
 
         # Step 4: Integrate results into actual mimes table
         cur.execute(
             f"""
-            INSERT OR IGNORE INTO {mimes_table} (dataset_id, mime)
-            SELECT dataset_id, mime FROM temp.mimes_asdf
+            INSERT INTO {mimes_table} (dataset_id, mime)
+            SELECT dataset_id, mime FROM mimes_temp
+            ON CONFLICT (dataset_id, mime) DO NOTHING
             """
         )
 
@@ -471,12 +409,12 @@ def apply_mime_prefilter_with_resolution(
         conn.commit()
 
         # Return summary (count of datasets created)
-        cur.execute(f"SELECT COUNT(DISTINCT path_id) FROM {datasets_table}")
-        dataset_count = cur.fetchone()[0]
+        cur.execute(f"SELECT COUNT(DISTINCT path_id) AS cnt FROM {datasets_table}")
+        dataset_count = cur.fetchone()["cnt"]
 
         return {"datasets_created": dataset_count}
 
     finally:
         # Step 5: Drop temporary mimes table
-        cur.execute("DROP TABLE temp.mimes_asdf")
+        cur.execute("DROP TABLE IF EXISTS mimes_temp")
         conn.commit()
