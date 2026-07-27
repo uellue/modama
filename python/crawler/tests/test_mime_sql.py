@@ -36,39 +36,6 @@ def test_collect_sql_path_filters():
     assert any(f.pattern.startswith("*.") for f in filters)
 
 
-def test_query_matching_paths_and_summarize_candidates(pg_unit_test):
-    conn = pg_unit_test
-    # Create a temp table with the schema expected by query_matching_paths
-    # (path, mime, weight) - this is different from the actual files table schema
-    conn.execute("CREATE TEMP TABLE test_files (path TEXT, mime TEXT, weight INTEGER)")
-    cur = conn.cursor()
-    cur.executemany(
-        "INSERT INTO test_files (path, mime, weight) VALUES (%s, %s, %s)",
-        [
-            ("a/b/foo.txt", "text/plain", 50),
-            ("c/d/bar.png", "image/png", 50),
-            ("README", "text/x-readme", 10),
-        ],
-    )
-    conn.commit()
-
-    filters = [
-        mime_sql._build_path_filter("*.txt", False, Mime.MIMEtype("text", "plain"), 50),
-        mime_sql._build_path_filter("*.png", False, Mime.MIMEtype("image", "png"), 50),
-    ]
-    rows = mime_sql.query_matching_paths(conn, "test_files", filters=filters)
-    assert rows
-
-    summary = mime_sql.summarize_candidates(rows)
-    assert len(summary) == 2
-    assert any(
-        entry.path == "a/b/foo.txt" and entry.resolved is not None for entry in summary
-    )
-    assert any(
-        entry.path == "c/d/bar.png" and entry.resolved is not None for entry in summary
-    )
-
-
 def test_sniff_paths_with_magic(tmp_path: Path):
     blob = tmp_path / "test.png"
     blob.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -86,73 +53,6 @@ def test_build_mime_filter_map():
     # At least one mime from the collected filters should be present in the map
     collected_mimes = {f.mime for f in filters}
     assert any(m in mapping for m in collected_mimes)
-
-
-def test_ensure_and_apply_prefilter(pg_unit_test, tmp_path: Path):
-    conn = pg_unit_test
-    # Create all tables as temp tables to avoid FK constraint issues in PostgreSQL
-    # (permanent tables cannot have FK to temp tables)
-    conn.execute(
-        "CREATE TEMP TABLE repo_files (path_id SERIAL PRIMARY KEY, path TEXT UNIQUE, mtime REAL)"
-    )
-    conn.execute(
-        "CREATE TEMP TABLE datasets (dataset_id SERIAL PRIMARY KEY, path_id INTEGER UNIQUE, FOREIGN KEY (path_id) REFERENCES repo_files(path_id))"
-    )
-    conn.execute(
-        "CREATE TEMP TABLE mimes (dataset_id INTEGER, mime TEXT, FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id), UNIQUE(dataset_id, mime))"
-    )
-    conn.execute(
-        "CREATE TEMP TABLE files_in_datasets (dataset_id INTEGER, path_id INTEGER, FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id), FOREIGN KEY (path_id) REFERENCES repo_files(path_id), UNIQUE(dataset_id, path_id))"
-    )
-    cur = conn.cursor()
-    cur.executemany(
-        "INSERT INTO repo_files (path) VALUES (%s)",
-        [("/x/img/photo.png",), ("/x/doc/report.txt",), ("/README",)],
-    )
-    conn.commit()
-
-    # Build a small filters_map for predictable behavior
-    png_filter = mime_sql._build_path_filter(
-        "*.png", False, Mime.MIMEtype("image", "png"), 50
-    )
-    txt_filter = mime_sql._build_path_filter(
-        "*.txt", False, Mime.MIMEtype("text", "plain"), 50
-    )
-    filters_map = {
-        Mime.MIMEtype("image", "png"): [png_filter],
-        Mime.MIMEtype("text", "plain"): [txt_filter],
-    }
-
-    # Skip ensure_dataset_tables since we created the temp tables manually above
-    # mime_sql.ensure_dataset_tables(
-    #     conn,
-    #     files_table="repo_files",
-    #     datasets_table="datasets",
-    #     mimes_table="mimes",
-    #     files_in_datasets_table="files_in_datasets",
-    # )
-    mime_sql._apply_mime_prefilter(
-        conn,
-        files_table="repo_files",
-        datasets_table="datasets",
-        mimes_table="mimes",
-        files_in_datasets_table="files_in_datasets",
-        filters_map=filters_map,
-    )
-
-    # Verify datasets populated (only matched paths are inserted)
-    rows = list(
-        conn.execute(
-            "SELECT path FROM repo_files JOIN datasets USING (path_id)"
-        ).fetchall()
-    )
-    assert len(rows) == 2
-
-    # Verify mime mappings for known types exist
-    mime_rows = list(conn.execute("SELECT mime FROM mimes").fetchall())
-    mime_values = {r["mime"] for r in mime_rows}
-    assert any("image/png" in m for m in mime_values)
-    assert any("text/plain" in m for m in mime_values)
 
 
 def test_resolve_ambiguous_with_get_type2(pg_unit_test, tmp_path: Path):

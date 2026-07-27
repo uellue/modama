@@ -123,22 +123,6 @@ def build_sql_where_clause(
     return " OR ".join(pieces), tuple(params)
 
 
-def query_matching_paths(
-    conn: psycopg.Connection,
-    table_name: str,
-    filters: Optional[Sequence[SQLPathFilter]] = None,
-) -> List[Tuple[str, str, int]]:
-    if filters is None:
-        filters = collect_sql_path_filters()
-
-    where_clause, params = build_sql_where_clause(filters)
-    sql = f"SELECT path, mime, weight FROM {table_name} WHERE {where_clause}"
-    cursor = conn.execute(sql, params)
-    # Convert dict rows to tuples for compatibility with summarize_candidates
-    rows = cursor.fetchall()
-    return [(row["path"], row["mime"], row["weight"]) for row in rows]
-
-
 def resolve_name_matches(path: str) -> Sequence[Tuple[Mime.MIMEtype, int]]:
     Mime.update_cache()
     return list(Mime.globs.all_matches(path))
@@ -238,6 +222,7 @@ def _apply_mime_prefilter(
             # Only create datasets for paths that haven't been claimed
             # by other datasets
             "AND path_id not in (SELECT path_id FROM files_in_datasets) "
+            f"AND path_id not in (SELECT path_id FROM {datasets_table} ) "
             "ON CONFLICT (path_id) DO NOTHING",
             params,
         )
