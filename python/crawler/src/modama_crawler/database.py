@@ -27,13 +27,7 @@ def get_connection_string() -> str:
     return f"postgresql://{POSTGRES_ADMIN}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{DB_NAME}"
 
 
-def ensure_dataset_tables(
-    conn: psycopg.Connection,
-    files_table: str = "files",
-    datasets_table: str = "datasets",
-    mimes_table: str = "mimes",
-    files_in_datasets_table: str = "files_in_datasets",
-) -> None:
+def ensure_dataset_tables(conn: psycopg.Connection) -> None:
     """Create the 4-table MIME prefilter schema if it does not exist.
 
     Schema:
@@ -44,8 +38,8 @@ def ensure_dataset_tables(
     """
     cur = conn.cursor()
     cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {files_table} (
+        """
+        CREATE TABLE IF NOT EXISTS files (
             path_id SERIAL PRIMARY KEY,
             path TEXT UNIQUE,
             mtime REAL
@@ -53,31 +47,31 @@ def ensure_dataset_tables(
         """
     )
     cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {datasets_table} (
+        """
+        CREATE TABLE IF NOT EXISTS datasets (
             dataset_id SERIAL PRIMARY KEY,
             path_id INTEGER UNIQUE,
-            FOREIGN KEY (path_id) REFERENCES {files_table}(path_id)
+            FOREIGN KEY (path_id) REFERENCES files(path_id)
         )
         """
     )
     cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {mimes_table} (
+        """
+        CREATE TABLE IF NOT EXISTS mimes (
             dataset_id INTEGER,
             mime TEXT,
-            FOREIGN KEY (dataset_id) REFERENCES {datasets_table}(dataset_id),
+            FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id),
             UNIQUE(dataset_id, mime)
         )
         """
     )
     cur.execute(
-        f"""
-        CREATE TABLE IF NOT EXISTS {files_in_datasets_table} (
+        """
+        CREATE TABLE IF NOT EXISTS files_in_datasets (
             dataset_id INTEGER,
             path_id INTEGER,
-            FOREIGN KEY (dataset_id) REFERENCES {datasets_table}(dataset_id),
-            FOREIGN KEY (path_id) REFERENCES {files_table}(path_id),
+            FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id),
+            FOREIGN KEY (path_id) REFERENCES files(path_id),
             UNIQUE(dataset_id, path_id)
         )
         """

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import psycopg
+from psycopg import sql
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
 
@@ -219,26 +220,29 @@ def _apply_mime_prefilter(
 
         # Create datasets for all matching paths (one dataset per file)
         cur.execute(
-            f"""
+            sql.SQL("""
             INSERT INTO datasets (path_id) 
             SELECT path_id FROM files WHERE ({where_clause}) 
             AND path_id not in (SELECT path_id FROM files_in_datasets) 
             AND path_id not in (SELECT path_id FROM datasets)
             ON CONFLICT (path_id) DO NOTHING
-            """,
+            """).format(where_clause=sql.SQL(where_clause)),
             params,
         )
 
         # Assign MIME type to all newly created datasets in one go
         cur.execute(
-            f"""
+            sql.SQL("""
             INSERT INTO {mimes_table} (dataset_id, mime) 
             SELECT d.dataset_id, %s 
             FROM datasets d 
             JOIN files f USING (path_id) 
             WHERE ({where_clause}) 
             ON CONFLICT (dataset_id, mime) DO NOTHING
-            """,
+            """).format(
+                mimes_table=sql.Identifier(mimes_table),
+                where_clause=sql.SQL(where_clause),
+            ),
             (mime_str, *params),
         )
 
@@ -264,14 +268,14 @@ def _resolve_ambiguous_with_get_type2(
     """
     cur = conn.cursor()
     cur.execute(
-        f"""
+        sql.SQL("""
         SELECT d.dataset_id, f.path
         FROM datasets d
         JOIN {mimes_table} m ON d.dataset_id = m.dataset_id
         JOIN files f ON d.path_id = f.path_id
         GROUP BY d.dataset_id, f.path
         HAVING COUNT(m.mime) > 1
-        """
+        """).format(mimes_table=sql.Identifier(mimes_table))
     )
     ambiguous = cur.fetchall()
     checked = 0
@@ -291,17 +295,23 @@ def _resolve_ambiguous_with_get_type2(
         mt_str = str(mt)
         # Delete any candidate rows that don't match the resolved mime
         cur.execute(
-            f"DELETE FROM {mimes_table} WHERE dataset_id = %s AND mime != %s",
+            sql.SQL(
+                "DELETE FROM {mimes_table} WHERE dataset_id = %s AND mime != %s"
+            ).format(mimes_table=sql.Identifier(mimes_table)),
             (dataset_id, mt_str),
         )
         # Ensure resolved mapping exists
         cur.execute(
-            f"SELECT 1 FROM {mimes_table} WHERE dataset_id = %s AND mime = %s",
+            sql.SQL(
+                "SELECT 1 FROM {mimes_table} WHERE dataset_id = %s AND mime = %s"
+            ).format(mimes_table=sql.Identifier(mimes_table)),
             (dataset_id, mt_str),
         )
         if cur.fetchone() is None:
             cur.execute(
-                f"INSERT INTO {mimes_table} (dataset_id, mime) VALUES (%s, %s)",
+                sql.SQL(
+                    "INSERT INTO {mimes_table} (dataset_id, mime) VALUES (%s, %s)"
+                ).format(mimes_table=sql.Identifier(mimes_table)),
                 (dataset_id, mt_str),
             )
         resolved += 1
