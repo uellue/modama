@@ -5,6 +5,7 @@ import psycopg
 from psycopg import sql
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
+from contextlib import contextmanager
 
 from xdg import Mime
 
@@ -190,6 +191,24 @@ def build_mime_filter_map() -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
     return mapping
 
 
+@contextmanager
+def mime_filtering(conn):
+    cur = conn.cursor()
+
+    # Step 1: Create temporary mimes table
+    cur.execute(
+        """
+        CREATE TEMP TABLE mimes_temp ( 
+            LIKE mimes INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES
+        )
+        """
+    )
+    try:
+        yield
+    finally:
+        cur.execute("DROP TABLE IF EXISTS mimes_temp")
+
+
 def _apply_mime_prefilter(
     conn: psycopg.Connection,
     mimes_table: str = "mimes",
@@ -223,8 +242,8 @@ def _apply_mime_prefilter(
             sql.SQL("""
             INSERT INTO datasets (path_id) 
             SELECT path_id FROM files WHERE ({where_clause}) 
-            AND path_id not in (SELECT path_id FROM files_in_datasets) 
-            AND path_id not in (SELECT path_id FROM datasets)
+            AND path_id NOT IN (SELECT path_id FROM files_in_datasets) 
+            AND path_id NOT IN (SELECT path_id FROM datasets)
             ON CONFLICT (path_id) DO NOTHING
             """).format(where_clause=sql.SQL(where_clause)),
             params,
@@ -237,7 +256,9 @@ def _apply_mime_prefilter(
             SELECT d.dataset_id, %s 
             FROM datasets d 
             JOIN files f USING (path_id) 
-            WHERE ({where_clause}) 
+            WHERE ({where_clause})
+            AND path_id NOT IN (SELECT path_id FROM files_in_datasets) 
+            AND path IN (SELECT path FROM crawl)
             ON CONFLICT (dataset_id, mime) DO NOTHING
             """).format(
                 mimes_table=sql.Identifier(mimes_table),
@@ -342,18 +363,7 @@ def apply_mime_prefilter_with_resolution(
     """
     cur = conn.cursor()
 
-    # Step 1: Create temporary mimes table
-    cur.execute(
-        """
-        CREATE TEMP TABLE mimes_temp (
-            dataset_id INTEGER,
-            mime TEXT,
-            UNIQUE(dataset_id, mime)
-        )
-        """
-    )
-
-    try:
+    with mime_filtering(conn):
         # Step 2: Apply prefilter using temporary mimes table
         _apply_mime_prefilter(
             conn,
@@ -383,8 +393,3 @@ def apply_mime_prefilter_with_resolution(
         dataset_count = cur.fetchone()["cnt"]
 
         return {"datasets_created": dataset_count}
-
-    finally:
-        # Step 5: Drop temporary mimes table
-        cur.execute("DROP TABLE IF EXISTS mimes_temp")
-        conn.commit()

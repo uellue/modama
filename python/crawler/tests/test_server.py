@@ -28,7 +28,7 @@ from modama_crawler.server import (
     app,
 )
 from modama_crawler import server as server_module
-from modama_crawler.mime_sql import ensure_dataset_tables
+from modama_crawler.database import ensure_dataset_tables
 from modama_crawler.repository import (
     quote_path,
     unquote_path,
@@ -74,25 +74,17 @@ def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
 @pytest.fixture
 def flask_client(test_database, test_files, monkeypatch):
     """Create a Flask test client configured with test database and files."""
-    original_root = server_module.ROOT_PATH
-    original_db_root = server_module.DB_ROOT_PATH
-
-    server_module.DB_ROOT_PATH = test_files
-    server_module.ROOT_PATH = Path("")
 
     # Monkeypatch _get_db_connection to return test_database
     def mock_get_db_connection():
         return test_database
 
     monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
+    monkeypatch.setattr(server_module, "MODAMA_DATA_ROOT", test_files)
 
-    try:
-        app.config["TESTING"] = True
-        client = app.test_client()
-        yield client
-    finally:
-        server_module.ROOT_PATH = original_root
-        server_module.DB_ROOT_PATH = original_db_root
+    app.config["TESTING"] = True
+    client = app.test_client()
+    yield client
 
 
 # ============================================================================
@@ -592,11 +584,9 @@ def test_path_separation_with_root_prefix(tmp_path, monkeypatch, pg_unit_test):
     conn.commit()
 
     # Configure server with ROOT_PATH = "adhoc"
-    original_db_root = server_module.DB_ROOT_PATH
-    original_root = server_module.ROOT_PATH
+    original_db_root = server_module.MODAMA_DATA_ROOT
 
-    server_module.DB_ROOT_PATH = db_root
-    server_module.ROOT_PATH = Path("adhoc")
+    server_module.MODAMA_DATA_ROOT = db_root
 
     try:
         # Query should return path relative to ROOT_PATH
@@ -604,14 +594,12 @@ def test_path_separation_with_root_prefix(tmp_path, monkeypatch, pg_unit_test):
             conn, continuation=None, from_=None, until=None, batch_size=10
         )
 
-        # Should return path relative to ROOT_PATH, not DB_ROOT_PATH
         assert len(paths) == 1
         assert (
             str(paths[0]) == "absorption/file.txt"
         )  # Stripped DB_ROOT_PATH and ROOT_PATH
     finally:
-        server_module.DB_ROOT_PATH = original_db_root
-        server_module.ROOT_PATH = original_root
+        server_module.MODAMA_DATA_ROOT = original_db_root
 
 
 # ============================================================================

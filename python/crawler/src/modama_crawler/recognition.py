@@ -314,6 +314,7 @@ class FileHandler:
         classes = set()
         for classlist in cls._registry.values():
             classes.update(classlist)
+        # print(classes)
         return max(c.source_mtime() for c in classes)
 
     def get_resource_type(self):

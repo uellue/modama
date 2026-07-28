@@ -111,22 +111,26 @@ def test_apply_mime_prefilter_with_resolution(pg_unit_test, tmp_path: Path):
     cur.execute("INSERT INTO files (path) VALUES (%s)", (str(txt_file),))
     conn.commit()
 
-    # Build filters_map for testing
-    png_filter = mime_sql._build_path_filter(
-        "*.png", False, Mime.MIMEtype("image", "png"), 50
-    )
-    txt_filter = mime_sql._build_path_filter(
-        "*.txt", False, Mime.MIMEtype("text", "plain"), 50
-    )
-    filters_map = {
-        Mime.MIMEtype("image", "png"): [png_filter],
-        Mime.MIMEtype("text", "plain"): [txt_filter],
-    }
+    with database.crawling(conn):
+        cur.execute("INSERT INTO crawl (path) VALUES (%s)", (str(png_file),))
+        cur.execute("INSERT INTO crawl (path) VALUES (%s)", (str(txt_file),))
 
-    # Run the complete workflow
-    summary = mime_sql.apply_mime_prefilter_with_resolution(
-        conn, filters_map=filters_map
-    )
+        # Build filters_map for testing
+        png_filter = mime_sql._build_path_filter(
+            "*.png", False, Mime.MIMEtype("image", "png"), 50
+        )
+        txt_filter = mime_sql._build_path_filter(
+            "*.txt", False, Mime.MIMEtype("text", "plain"), 50
+        )
+        filters_map = {
+            Mime.MIMEtype("image", "png"): [png_filter],
+            Mime.MIMEtype("text", "plain"): [txt_filter],
+        }
+
+        # Run the complete workflow
+        summary = mime_sql.apply_mime_prefilter_with_resolution(
+            conn, filters_map=filters_map
+        )
 
     # Verify datasets were created
     assert "datasets_created" in summary

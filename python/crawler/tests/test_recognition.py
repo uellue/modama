@@ -178,12 +178,12 @@ def test_source_mtime():
     # Unix timestamp, 0 is far enough in the past
     max_mtime = 0.0
     now = time.time()
-    for cls in FileHandler, OctetStream, EMPAD, Directory, Symlink:
+    for cls in FileHandler, OctetStream, Directory, Symlink, EMPAD:
         mtime = cls.source_mtime()
         # Plausibility
         # 16th of July 2026, yesterday at time of writing
         assert mtime >= 1784213173
         assert mtime < now
         max_mtime = max(max_mtime, mtime)
-
+    print(max_mtime, FileHandler.youngest_source_mtime(), now)
     assert max_mtime == FileHandler.youngest_source_mtime()

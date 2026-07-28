@@ -14,6 +14,7 @@ import xdg
 
 # Import crawler classes
 import modama_crawler.recognition
+from modama_crawler.database import ensure_dataset_tables
 
 
 # MIME for self test
@@ -75,7 +76,6 @@ def test_database(postgresql, tmp_path) -> Generator[psycopg.Connection, None, N
     - MIME types for each dataset
     - Paths are stored as absolute paths (tmp_path / relative_path)
     """
-    from modama_crawler.mime_sql import ensure_dataset_tables
 
     # Use the postgresql fixture connection
     conn = postgresql

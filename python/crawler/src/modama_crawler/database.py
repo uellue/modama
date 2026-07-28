@@ -1,8 +1,12 @@
 from pathlib import Path
 import os
+from contextlib import contextmanager
+from typing import Optional
 
 import psycopg
 from dotenv import load_dotenv
+
+from .mime_sql import apply_mime_prefilter_with_resolution
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,6 +29,22 @@ def get_connection_string() -> str:
         str: PostgreSQL connection string
     """
     return f"postgresql://{POSTGRES_ADMIN}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{DB_NAME}"
+
+
+@contextmanager
+def crawling(conn):
+    cur = conn.cursor()
+    # Create temporary crawl table with same schema as files
+    cur.execute(
+        """
+        CREATE TEMP TABLE crawl ( LIKE files INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES )
+        ON COMMIT PRESERVE ROWS
+        """
+    )
+    try:
+        yield
+    finally:
+        cur.execute("DROP TABLE IF EXISTS crawl")
 
 
 def crawl_repository(
@@ -50,28 +70,18 @@ def crawl_repository(
         the data to the permanent files table.
     """
     cur = conn.cursor()
-
-    # Create temporary crawl table with same schema as files
-    cur.execute(
-        """
-        CREATE TEMP TABLE crawl (
-            path TEXT UNIQUE,
-            mtime REAL
-        ) ON COMMIT PRESERVE ROWS
-        """
-    )
-
-    # Collect all entries
-    entries: list[tuple[str, float]] = []
+    total = 0
 
     for root, dirs, files in os.walk(root_path, followlinks=False):
+        # Collect all entries
+        entries: list[tuple[str, float, float]] = []
         # Process directories
         for d in dirs:
             dir_path = Path(root) / d
             try:
                 stat_info = dir_path.stat(follow_symlinks=False)
                 mtime = max(stat_info.st_mtime, stat_info.st_ctime)
-                entries.append((str(dir_path), mtime))
+                entries.append((str(dir_path), mtime, mtime))
             except (PermissionError, FileNotFoundError):
                 continue
 
@@ -81,19 +91,22 @@ def crawl_repository(
             try:
                 stat_info = file_path.stat(follow_symlinks=False)
                 mtime = max(stat_info.st_mtime, stat_info.st_ctime)
-                entries.append((str(file_path), mtime))
+                entries.append((str(file_path), mtime, mtime))
             except (PermissionError, FileNotFoundError):
                 continue
 
-    # Batch insert into crawl table
-    if entries:
-        cur.executemany(
-            "INSERT INTO crawl (path, mtime) VALUES (%s, %s)",
-            entries,
-        )
+        # Batch insert into crawl table
+        if entries:
+            cur.executemany(
+                "INSERT INTO crawl (path, mtime) VALUES (%s, %s) "
+                "ON CONFLICT (path) DO UPDATE "
+                "SET mtime = %s",
+                entries,
+            )
 
-    conn.commit()
-    return len(entries)
+        conn.commit()
+        total += len(entries)
+    return total
 
 
 def populate_files_from_crawl(conn: psycopg.Connection) -> tuple[int, int]:
@@ -106,35 +119,96 @@ def populate_files_from_crawl(conn: psycopg.Connection) -> tuple[int, int]:
         conn: PostgreSQL database connection
 
     Returns:
-        tuple: (number of files inserted, number of directories inserted)
+        number of files inserted
 
     Note:
         TODO: For incremental updates, add logic to:
         - Detect modified files (present in both crawl and files with different mtime)
-        - Detect deleted files (present in files but not in crawl)
         - Update mtimes for modified files
         - Handle deleted files and their references (TODO: update dataset mtimes)
         - Re-run MIME matching for modified files (TODO: call apply_mime_prefilter_with_resolution selectively)
     """
     cur = conn.cursor()
 
+    # Remove deleted files from database
+    # Foreign key constraints should take care of everything that references these files
+    cur.execute(
+        """
+        DELETE FROM files
+        WHERE files.path NOT IN (SELECT path FROM crawl)
+        """
+    )
+    # Ignore everything that is unchanged
+    cur.execute(
+        """
+        DELETE FROM crawl
+        WHERE (crawl.path, crawl.mtime) IN (SELECT path, mtime FROM files)
+        """
+    )
     # Insert all files from crawl into files table
     cur.execute(
         """
         INSERT INTO files (path, mtime)
         SELECT path, mtime FROM crawl
-        ON CONFLICT (path) DO NOTHING
+        ON CONFLICT (path) DO UPDATE
+        SET mtime = EXCLUDED.mtime WHERE files.mtime != EXCLUDED.mtime
         """
     )
     files_inserted = cur.rowcount
 
     conn.commit()
+    return files_inserted
 
-    # Drop the temporary crawl table
-    cur.execute("DROP TABLE IF EXISTS crawl")
-    conn.commit()
 
-    return files_inserted, 0  # Directories are also inserted into files table
+def crawl_and_populate(
+    conn: psycopg.Connection,
+    root_path: Optional[Path] = None,
+    filters_map: Optional[dict] = None,
+) -> dict:
+    """Perform complete crawling and database population workflow.
+
+    This function orchestrates the complete initial population workflow:
+    1. Crawl the filesystem and populate temporary crawl table
+    2. Transfer entries from crawl table to files table
+    3. Run MIME prefilter with resolution to create datasets and mimes entries
+
+    Args:
+        conn: PostgreSQL database connection
+        root_path: Root directory to crawl (defaults to MODAMA_DATA_ROOT)
+        filters_map: Optional mapping of MIME types to filters for apply_mime_prefilter_with_resolution
+
+    Returns:
+        dict: Summary with counts:
+            - 'crawled': number of entries crawled
+            - 'files_inserted': number of files inserted into files table
+            - 'datasets_created': number of datasets created by MIME prefilter
+
+    Note:
+        This is designed for initial population only. For incremental updates,
+        see TODO comments in populate_files_from_crawl() for future enhancements.
+    """
+    # Create temporary crawl table with same schema as files
+    with crawling(conn):
+        # Step 1: Crawl the repository
+        crawled_count = crawl_repository(conn, root_path=root_path)
+        conn.commit()
+
+        # Step 2: Transfer to permanent files table
+        files_inserted = populate_files_from_crawl(conn)
+        conn.commit()
+
+        # Step 3: Apply MIME prefilter to create datasets and mimes
+        mime_summary = apply_mime_prefilter_with_resolution(
+            conn, filters_map=filters_map
+        )
+        conn.commit()
+        datasets_created = mime_summary.get("datasets_created", 0)
+
+        return {
+            "crawled": crawled_count,
+            "files_inserted": files_inserted,
+            "datasets_created": datasets_created,
+        }
 
 
 def ensure_dataset_tables(conn: psycopg.Connection) -> None:
