@@ -98,28 +98,6 @@ def _format_datestamp(timestamp: float) -> str:
     return datetime_to_datestamp(datetime.fromtimestamp(timestamp))
 
 
-def _convert_to_timestamps(
-    from_: Optional[datetime], until: Optional[datetime]
-) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-    """Convert OAI-PMH datestamps to filesystem timestamps for filtering.
-
-    Returns (c_since, c_until, m_since, m_until) for creation and modification times.
-    """
-    c_since = c_until = m_since = m_until = None
-
-    if from_ is not None:
-        m_since = from_.timestamp()
-        c_since = from_.timestamp()
-
-    if until is not None:
-        # until is inclusive, so add one day to make it exclusive for filtering
-        until_exclusive = until + timedelta(days=1)
-        m_until = until_exclusive.timestamp()
-        c_until = until_exclusive.timestamp()
-
-    return c_since, c_until, m_since, m_until
-
-
 def _encode_resumption_token(
     continuation: Optional[pathlib.Path],
     metadataPrefix: Optional[str] = None,
@@ -170,93 +148,6 @@ def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
     return continuation, result
 
 
-def _query_datasets_from_db(
-    conn: psycopg.Connection,
-    continuation: Optional[pathlib.Path],
-    from_: Optional[datetime],
-    until: Optional[datetime],
-    batch_size: int,
-) -> Tuple[list[pathlib.Path], Optional[pathlib.Path]]:
-    """Query dataset paths from database with pagination and date filtering.
-
-    Args:
-        conn: Database connection
-        continuation: Last path from previous batch (for pagination)
-        from_: Minimum mtime (inclusive)
-        until: Maximum mtime (exclusive)
-        batch_size: Maximum number of paths to return
-
-    Returns:
-        Tuple of (list of relative paths, next continuation path or None)
-        Paths are relative to MODAMA_DATA_ROOT for client exposure.
-    """
-    cur = conn.cursor()
-
-    # Build WHERE clause
-    where_clauses = []
-    params = []
-
-    # Get the database root path prefix to strip
-    db_root_str = str(MODAMA_DATA_ROOT)
-    if not db_root_str.endswith("/"):
-        db_root_str += "/"
-
-    # Pagination: paths greater than continuation (in database format)
-    if continuation is not None:
-        # Convert relative continuation to absolute for database query
-        abs_continuation = MODAMA_DATA_ROOT / continuation
-        where_clauses.append("f.path > %s")
-        params.append(str(abs_continuation))
-
-    # Date filtering on mtime
-    if from_ is not None:
-        where_clauses.append("f.mtime >= %s")
-        params.append(from_.timestamp())
-
-    if until is not None:
-        # until is inclusive in OAI-PMH, but we make it exclusive for SQL
-        until_exclusive = until + timedelta(days=1)
-        where_clauses.append("f.mtime < %s")
-        params.append(until_exclusive.timestamp())
-
-    where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
-
-    # Query for dataset paths (one path per dataset)
-    # Return absolute paths from database, we'll convert to relative below
-    sql = f"""
-        SELECT DISTINCT f.path, f.mtime
-        FROM files f
-        JOIN datasets d ON f.path_id = d.path_id
-        WHERE {where_clause}
-        ORDER BY f.path
-        LIMIT %s
-    """
-    params.append(batch_size)
-
-    cur.execute(sql, params)
-    rows = cur.fetchall()
-
-    if not rows:
-        return [], None
-
-    # Convert absolute database paths to relative paths for client exposure
-    paths = []
-    for row in rows:
-        abs_path = pathlib.Path(row["path"])
-        # Strip the database root prefix
-        try:
-            rel_path = abs_path.relative_to(MODAMA_DATA_ROOT)
-        except ValueError:
-            # Path is not under MODAMA_DATA_ROOT, use as-is
-            rel_path = abs_path
-        paths.append(rel_path)
-
-    # For continuation, we need the last absolute path for database comparison
-    next_path = paths[-1] if len(paths) == batch_size else None
-
-    return paths, next_path
-
-
 def _get_handler_for_path(
     conn: psycopg.Connection,
     root: pathlib.Path,
@@ -267,7 +158,7 @@ def _get_handler_for_path(
 
     Args:
         conn: Database connection
-        root: Root path (relative paths base, passed to FileHandler for compatibility)
+        root: Root path for data storage
         path: Relative path to create handler for
         guesses: Optional MIME type guesses (e.g., from client)
 
@@ -275,7 +166,7 @@ def _get_handler_for_path(
         FileHandler instance
     """
     # Convert relative path to absolute for database query and filesystem access
-    abs_path = MODAMA_DATA_ROOT / path
+    abs_path = root / path
 
     # Try to get MIME types from database using absolute path
     db_guesses = _get_mime_types_from_db(conn, abs_path)
@@ -285,9 +176,9 @@ def _get_handler_for_path(
         # Fall back to filesystem-based guessing
         guesses = guess(abs_path)
 
-    # Create handler with absolute filesystem root (MODAMA_DATA_ROOT) and relative path
-    # FileHandler will construct abspath as MODAMA_DATA_ROOT / path
-    return FileHandler.create(MODAMA_DATA_ROOT, path, guesses, conn)
+    # Create handler with absolute filesystem root and relative path
+    # FileHandler will construct abspath as root / path
+    return FileHandler.create(root, path, guesses, conn)
 
 
 # --- OAI-PMH Server Implementation ---
@@ -296,8 +187,9 @@ def _get_handler_for_path(
 class SimpleServer:
     """Simple OAI-PMH server with direct method implementations."""
 
-    def __init__(self, base_url: str = ""):
+    def __init__(self, base_url: str = "", root: pathlib.Path = MODAMA_DATA_ROOT):
         self._base = base_url
+        self._root = root
 
     def _get_conn(self) -> psycopg.Connection:
         """Get a database connection for this request.
@@ -324,9 +216,9 @@ class SimpleServer:
     def getRecord(self, identifier: str) -> dict:
         """Get a single record by identifier."""
         path = pathlib.Path(path_from_identifier(identifier))
-        path = sanitize(root=MODAMA_DATA_ROOT, path=path)
+        path = sanitize(root=self._root, path=path)
         conn = self._get_conn()
-        handler = _get_handler_for_path(conn, MODAMA_DATA_ROOT, path)
+        handler = _get_handler_for_path(conn, self._root, path)
 
         return {
             "header": self._make_header(handler),
@@ -353,14 +245,14 @@ class SimpleServer:
         conn = self._get_conn()
 
         # Query database for dataset paths
-        paths, next_path = _query_datasets_from_db(
-            conn, cont_path, from_, until, batch_size
+        paths, next_path = self._query_datasets_from_db(
+            cont_path, from_, until, batch_size
         )
 
         # Build headers
         headers = []
         for path in paths:
-            handler = _get_handler_for_path(conn, MODAMA_DATA_ROOT, path)
+            handler = _get_handler_for_path(conn, self._root, path)
             headers.append(self._make_header(handler))
 
         # Encode new resumption token with all parameters (preserve full datetime)
@@ -390,15 +282,15 @@ class SimpleServer:
         conn = self._get_conn()
 
         # Query database for dataset paths
-        paths, next_path = _query_datasets_from_db(
-            conn, cont_path, from_, until, batch_size
+        paths, next_path = self._query_datasets_from_db(
+            cont_path, from_, until, batch_size
         )
 
         # Build records
         recs = []
         for path in paths:
             try:
-                handler = _get_handler_for_path(conn, MODAMA_DATA_ROOT, path)
+                handler = _get_handler_for_path(conn, self._root, path)
                 recs.append(
                     {
                         "header": self._make_header(handler),
@@ -423,6 +315,91 @@ class SimpleServer:
         """List available sets (empty for this implementation)."""
         return []
 
+    def _query_datasets_from_db(
+        self,
+        continuation: Optional[pathlib.Path],
+        from_: Optional[datetime],
+        until: Optional[datetime],
+        batch_size: int,
+    ) -> Tuple[list[pathlib.Path], Optional[pathlib.Path]]:
+        """Query dataset paths from database with pagination and date filtering.
+
+        Args:
+            continuation: Last path from previous batch (for pagination)
+            from_: Minimum mtime (inclusive)
+            until: Maximum mtime (exclusive)
+            batch_size: Maximum number of paths to return
+
+        Returns:
+            Tuple of (list of relative paths, next continuation path or None)
+            Paths are relative to self._root for client exposure.
+        """
+        cur = self._get_conn().cursor()
+
+        # Build WHERE clause
+        where_clauses = []
+        params = []
+
+        # Get the database root path prefix to strip
+        db_root_str = str(self._root)
+        if not db_root_str.endswith("/"):
+            db_root_str += "/"
+
+        # Pagination: paths greater than continuation (in database format)
+        if continuation is not None:
+            # Convert relative continuation to absolute for database query
+            abs_continuation = self._root / continuation
+            where_clauses.append("f.path > %s")
+            params.append(str(abs_continuation))
+
+        # Date filtering on mtime
+        if from_ is not None:
+            where_clauses.append("f.mtime >= %s")
+            params.append(from_.timestamp())
+
+        if until is not None:
+            # until is inclusive in OAI-PMH, but we make it exclusive for SQL
+            until_exclusive = until + timedelta(days=1)
+            where_clauses.append("f.mtime < %s")
+            params.append(until_exclusive.timestamp())
+
+        where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+        # Query for dataset paths (one path per dataset)
+        # Return absolute paths from database, we'll convert to relative below
+        sql = f"""
+            SELECT DISTINCT f.path, f.mtime
+            FROM files f
+            JOIN datasets d ON f.path_id = d.path_id
+            WHERE {where_clause}
+            ORDER BY f.path
+            LIMIT %s
+        """
+        params.append(batch_size)
+
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+        if not rows:
+            return [], None
+
+        # Convert absolute database paths to relative paths for client exposure
+        paths = []
+        for row in rows:
+            abs_path = pathlib.Path(row["path"])
+            # Strip the database root prefix
+            try:
+                rel_path = abs_path.relative_to(self._root)
+            except ValueError:
+                # Path is not under self._root, use as-is
+                rel_path = abs_path
+            paths.append(rel_path)
+
+        # For continuation, we need the last absolute path for database comparison
+        next_path = paths[-1] if len(paths) == batch_size else None
+
+        return paths, next_path
+
     def _make_header(self, handler: FileHandler) -> dict:
         """Create header dict from FileHandler."""
         return {
@@ -446,7 +423,7 @@ class SimpleServer:
 
 
 # Instantiate server without connection - connection is created per request
-_server = SimpleServer()
+_server = SimpleServer(root=MODAMA_DATA_ROOT)
 
 
 # --- XML Response Generation ---
