@@ -18,11 +18,12 @@ from datetime import datetime
 from modama_crawler.server import (
     OAIFileDBBackend,
     OAIServer,
+    PostgresConfig,
+    create_app,
     _encode_resumption_token,
     _decode_resumption_token,
     _parse_datestamp,
     _format_datestamp,
-    app,
 )
 from modama_crawler import server as server_module
 
@@ -68,14 +69,23 @@ def oai_server_with_db(test_database, test_files, monkeypatch) -> OAIServer:
 def flask_client(test_database, test_files, monkeypatch):
     """Create a Flask test client configured with test database and files."""
 
-    # Monkeypatch _get_db_connection to return test_database
-    def mock_get_db_connection():
-        return test_database
+    # Create app using factory pattern (no monkeypatching needed)
+    db_config = PostgresConfig(
+        name=test_database.info.dbname,
+        admin=test_database.info.user,
+        password=test_database.info.password or "",
+        address=test_database.info.host,
+        port=str(test_database.info.port),
+    )
 
-    monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
-    monkeypatch.setattr(server_module, "MODAMA_DATA_ROOT", test_files)
+    config_dict = {
+        "TESTING": True,
+        "DB_ROOT_PATH": test_files,
+        "MODAMA_DATA_ROOT": test_files,
+        "OAI_BASE_URL": "http://test.local/oai",
+    }
 
-    app.config["TESTING"] = True
+    app = create_app(config=config_dict, db_config=db_config)
     client = app.test_client()
     yield client
 

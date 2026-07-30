@@ -762,6 +762,7 @@ class OAIServer:
 def create_app(
     config: Optional[dict] = None,
     backend: Optional["OAIFileDBBackend"] = None,
+    db_config: Optional[PostgresConfig] = None,
 ) -> Flask:
     """Create and configure the OAI-PMH Flask application.
 
@@ -769,10 +770,16 @@ def create_app(
         config: Optional dictionary of configuration values
         backend: Optional pre-configured backend instance. If not provided,
                  a new one will be created using config or defaults.
+        db_config: Optional PostgresConfig for database connection. If provided,
+                   will override the global postgres_config for this app instance.
 
     Returns:
         Configured Flask app instance
     """
+    # Update global postgres_config if db_config is provided
+    if db_config is not None:
+        globals()["postgres_config"] = db_config
+
     # Apply configuration override
     if config is None:
         config = {}

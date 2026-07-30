@@ -178,30 +178,23 @@ def running_http_server(test_database, test_files, monkeypatch):
     Yields the base URL of the running server (e.g., "http://127.0.0.1:12345/oai").
     Server is automatically stopped when test completes.
     """
-    from modama_crawler import server as server_module
+    from modama_crawler.server import create_app, PostgresConfig
     from werkzeug.serving import make_server
 
-    # Save original values
-    original_root = server_module.ROOT_PATH
-    original_db_root = server_module.DB_ROOT_PATH
+    # Create PostgreSQL config from test_database fixture
+    db_config = PostgresConfig(
+        name=test_database.info.dbname,
+        admin=test_database.info.user,
+        password=test_database.info.password or "",
+        address=test_database.info.host,
+        port=str(test_database.info.port),
+    )
 
-    # Configure for test with PostgreSQL database
-    # Monkeypatch configuration directly
-    server_module.DB_ROOT_PATH = test_files
-    server_module.ROOT_PATH = Path("")
+    # Configure backend for testing
+    config_dict = {"TESTING": True, "DB_ROOT_PATH": test_files, "ROOT_PATH": Path("")}
 
-    # Set PostgreSQL environment variables for testing
-    # Get connection info from test_database fixture
-    monkeypatch.setenv("MODAMA_CRAWLER_DB", test_database.info.dbname)
-    monkeypatch.setenv("POSTGRES_ADDRESS", test_database.info.host)
-    monkeypatch.setenv("POSTGRES_PORT", str(test_database.info.port))
-    monkeypatch.setenv("POSTGRES_ADMIN", test_database.info.user)
-    # Password may be empty for local test databases
-    if hasattr(test_database.info, "password") and test_database.info.password:
-        monkeypatch.setenv("POSTGRES_PASSWORD", test_database.info.password)
-
-    # Import Flask app after setting up environment
-    from modama_crawler.server import app
+    # Create app with direct configuration (no environment monkeypatching needed)
+    app = create_app(config=config_dict, db_config=db_config)
 
     # Create server instance
     server = make_server("127.0.0.1", 0, app, threaded=True)
@@ -228,10 +221,6 @@ def running_http_server(test_database, test_files, monkeypatch):
     finally:
         # Shutdown server
         server.shutdown()
-
-        # Restore original values
-        server_module.ROOT_PATH = original_root
-        server_module.DB_ROOT_PATH = original_db_root
 
 
 @pytest.fixture
