@@ -78,8 +78,6 @@ OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 
-app = Flask(__name__)
-
 
 def _get_db_connection() -> psycopg.Connection:
     """Establish database connection using PostgresConfig.
@@ -761,53 +759,90 @@ class OAIServer:
         )
 
 
-# Create server instance
-_server = OAIServer(_backend)
+def create_app(
+    config: Optional[dict] = None,
+    backend: Optional["OAIFileDBBackend"] = None,
+) -> Flask:
+    """Create and configure the OAI-PMH Flask application.
 
+    Args:
+        config: Optional dictionary of configuration values
+        backend: Optional pre-configured backend instance. If not provided,
+                 a new one will be created using config or defaults.
 
-# --- Flask Endpoint ---
+    Returns:
+        Configured Flask app instance
+    """
+    # Apply configuration override
+    if config is None:
+        config = {}
 
+    app = Flask(__name__)
+    app.config.update(config)
 
-@app.route("/oai", methods=["GET", "POST"])
-def oai_endpoint():
-    """Handle OAI-PMH requests."""
-    params = request.args if request.method == "GET" else request.form
-    request_args = {str(k): str(v) for k, v in params.items()}
+    # Set defaults if not configured
+    app.config.setdefault("BATCH_SIZE", BATCH_SIZE)
+    app.config.setdefault("MODAMA_DATA_ROOT", MODAMA_DATA_ROOT)
+    app.config.setdefault("OAI_BASE_URL", "")
 
-    verb = request_args.get("verb")
-    if not verb:
-        return Response(
-            _server._make_error("badVerb", "Missing verb parameter"),
-            mimetype="text/xml; charset=utf-8",
+    # Create or use provided backend
+    if backend is None:
+        backend_root = pathlib.Path(app.config["MODAMA_DATA_ROOT"])
+        backend = OAIFileDBBackend(
+            base_url=app.config["OAI_BASE_URL"], root=backend_root
         )
 
-    # Add base URL to request args
-    request_args["base_url"] = request.url.split("?")[0]
+    app.config["oai_backend"] = backend
 
-    try:
-        if verb == "Identify":
-            return _server.handle_identify(request_args)
-        elif verb == "GetRecord":
-            return _server.handle_getrecord(request_args)
-        elif verb == "ListMetadataFormats":
-            return _server.handle_listmetadataformats(request_args)
-        elif verb == "ListIdentifiers":
-            return _server.handle_listidentifiers(request_args)
-        elif verb == "ListRecords":
-            return _server.handle_listrecords(request_args)
-        elif verb == "ListSets":
-            return _server.handle_listsets(request_args)
-        else:
+    # Create server instance for this app
+    _server = OAIServer(backend, base_url=app.config["OAI_BASE_URL"])
+
+    @app.route("/oai", methods=["GET", "POST"])
+    def oai_endpoint():
+        """Handle OAI-PMH requests."""
+        params = request.args if request.method == "GET" else request.form
+        request_args = {str(k): str(v) for k, v in params.items()}
+
+        verb = request_args.get("verb")
+        if not verb:
             return Response(
-                _server._make_error("badVerb", f"Unknown verb: {verb}"),
+                _server._make_error("badVerb", "Missing verb parameter"),
                 mimetype="text/xml; charset=utf-8",
             )
-    except Exception as e:
-        raise
-        return Response(
-            _server._make_error("badArgument", str(e)),
-            mimetype="text/xml; charset=utf-8",
-        )
+
+        # Add base URL to request args
+        request_args["base_url"] = request.url.split("?")[0]
+
+        try:
+            if verb == "Identify":
+                return _server.handle_identify(request_args)
+            elif verb == "GetRecord":
+                return _server.handle_getrecord(request_args)
+            elif verb == "ListMetadataFormats":
+                return _server.handle_listmetadataformats(request_args)
+            elif verb == "ListIdentifiers":
+                return _server.handle_listidentifiers(request_args)
+            elif verb == "ListRecords":
+                return _server.handle_listrecords(request_args)
+            elif verb == "ListSets":
+                return _server.handle_listsets(request_args)
+            else:
+                return Response(
+                    _server._make_error("badVerb", f"Unknown verb: {verb}"),
+                    mimetype="text/xml; charset=utf-8",
+                )
+        except Exception as e:
+            raise
+            return Response(
+                _server._make_error("badArgument", str(e)),
+                mimetype="text/xml; charset=utf-8",
+            )
+
+    return app
+
+
+# Expose default app for backward compatibility (legacy usage)
+app = create_app()
 
 
 if __name__ == "__main__":
