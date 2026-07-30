@@ -10,6 +10,7 @@ import tempfile
 import inspect
 
 import psycopg
+from psycopg.rows import dict_row
 
 from xdg import Mime
 import magika
@@ -34,7 +35,7 @@ def _get_mime_types_from_db(
     Returns:
         List of MIME types, or empty list if path not found
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
     cur.execute(
         """
         SELECT m.mime FROM mimes m
@@ -76,7 +77,7 @@ def _get_dataset_members_from_db(
     Returns:
         List of member paths (relative to dataset root)
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
     cur.execute(
         """
         SELECT f.path FROM files_in_datasets fid

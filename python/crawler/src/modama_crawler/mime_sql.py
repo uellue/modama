@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import psycopg
 from psycopg import sql
+from psycopg.rows import dict_row
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
 from contextlib import contextmanager
@@ -193,7 +194,7 @@ def build_mime_filter_map() -> dict[Mime.MIMEtype, List[SQLPathFilter]]:
 
 @contextmanager
 def mime_filtering(conn):
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
 
     # Step 1: Create temporary mimes table
     cur.execute(
@@ -226,7 +227,7 @@ def _apply_mime_prefilter(
     if filters_map is None:
         filters_map = build_mime_filter_map()
 
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
     summary: dict[str, int] = {}
 
     for mime, filters in filters_map.items():
@@ -287,7 +288,7 @@ def _resolve_ambiguous_with_get_type2(
 
     Returns a summary dict with counts: {'checked': n, 'resolved': m}.
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
     cur.execute(
         sql.SQL("""
         SELECT d.dataset_id, f.path
@@ -361,7 +362,7 @@ def apply_mime_prefilter_with_resolution(
     Returns:
         Summary dict with datasets_created count
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
 
     with mime_filtering(conn):
         # Step 2: Apply prefilter using temporary mimes table

@@ -171,14 +171,15 @@ def test_files(tmp_path) -> Path:
     return tmp_path
 
 
-@pytest.fixture
-def running_http_server(test_database, test_files, monkeypatch):
+@pytest.fixture(scope="session")
+def running_http_server(test_database, test_files):
     """Start OAI-PMH server as HTTP server in background thread.
 
     Yields the base URL of the running server (e.g., "http://127.0.0.1:12345/oai").
     Server is automatically stopped when test completes.
     """
     from modama_crawler.server import create_app, PostgresConfig
+    from psycopg_pool import ConnectionPool
     from werkzeug.serving import make_server
 
     # Create PostgreSQL config from test_database fixture
@@ -190,11 +191,17 @@ def running_http_server(test_database, test_files, monkeypatch):
         port=str(test_database.info.port),
     )
 
+    pool = ConnectionPool(
+        conninfo=db_config.connection_string(),
+        min_size=1,
+        max_size=2,
+    )
+
     # Configure backend for testing
     config_dict = {"TESTING": True, "DB_ROOT_PATH": test_files, "ROOT_PATH": Path("")}
 
     # Create app with direct configuration (no environment monkeypatching needed)
-    app = create_app(config=config_dict, db_config=db_config)
+    app = create_app(pool=pool, config=config_dict)
 
     # Create server instance
     server = make_server("127.0.0.1", 0, app, threaded=True)

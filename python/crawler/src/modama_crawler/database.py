@@ -1,9 +1,11 @@
 from pathlib import Path
 import os
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Mapping
+from dataclasses import dataclass
 
 import psycopg
+from psycopg.rows import dict_row
 from dotenv import load_dotenv
 
 from .mime_sql import apply_mime_prefilter_with_resolution
@@ -14,26 +16,43 @@ load_dotenv()
 # Data root path configuration
 MODAMA_DATA_ROOT = Path(os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data"))
 
-# PostgreSQL configuration
-DB_NAME = os.environ.get("MODAMA_CRAWLER_DB", "modama_crawler")
-POSTGRES_ADMIN = os.environ.get("POSTGRES_ADMIN", "postgres")
-POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "")
-POSTGRES_ADDRESS = os.environ.get("POSTGRES_ADDRESS", "localhost")
-POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
 
+@dataclass
+class PostgresConfig:
+    """PostgreSQL database configuration."""
 
-def get_connection_string() -> str:
-    """Build PostgreSQL connection string from environment variables.
+    name: str
+    admin: str
+    password: str
+    address: str
+    port: str
 
-    Returns:
-        str: PostgreSQL connection string
-    """
-    return f"postgresql://{POSTGRES_ADMIN}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{DB_NAME}"
+    def connection_string(self) -> str:
+        """Return PostgreSQL connection string."""
+        return f"postgresql://{self.admin}:{self.password}@{self.address}:{self.port}/{self.name}"
+
+    @classmethod
+    def from_env(cls, env: Mapping = os.environ) -> "PostgresConfig":
+        """Create a PostgresConfig instance from environment variables.
+
+        Args:
+            env: Mapping containing environment variables. Defaults to os.environ
+
+        Returns:
+            PostgresConfig with values from environment or defaults
+        """
+        return cls(
+            name=env.get("MODAMA_CRAWLER_DB", "modama_crawler"),
+            admin=env.get("POSTGRES_ADMIN", "postgres"),
+            password=env.get("POSTGRES_PASSWORD", ""),
+            address=env.get("POSTGRES_ADDRESS", "localhost"),
+            port=env.get("POSTGRES_PORT", "5432"),
+        )
 
 
 @contextmanager
 def crawling(conn):
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
     # Create temporary crawl table with same schema as files
     cur.execute(
         """
@@ -69,7 +88,7 @@ def crawl_repository(
         connection. The caller should call populate_files_from_crawl() to transfer
         the data to the permanent files table.
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
     total = 0
 
     for root, dirs, files in os.walk(root_path, followlinks=False):
@@ -128,7 +147,7 @@ def populate_files_from_crawl(conn: psycopg.Connection) -> tuple[int, int]:
         - Handle deleted files and their references (TODO: update dataset mtimes)
         - Re-run MIME matching for modified files (TODO: call apply_mime_prefilter_with_resolution selectively)
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
 
     # Remove deleted files from database
     # Foreign key constraints should take care of everything that references these files
@@ -220,7 +239,7 @@ def ensure_dataset_tables(conn: psycopg.Connection) -> None:
       mimes(dataset_id INTEGER, mime TEXT, FK→datasets, UNIQUE(dataset_id, mime))
       files_in_datasets(dataset_id INTEGER, path_id INTEGER, FK→datasets, FK→files, UNIQUE(dataset_id, path_id))
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=dict_row)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS files (

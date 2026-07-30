@@ -13,6 +13,7 @@ Shared fixtures are defined in conftest.py and available to all test files.
 import pytest
 from pathlib import Path
 from datetime import datetime
+from psycopg_pool import ConnectionPool
 
 # Import the server components
 from modama_crawler.server import (
@@ -25,7 +26,6 @@ from modama_crawler.server import (
     _parse_datestamp,
     _format_datestamp,
 )
-from modama_crawler import server as server_module
 
 
 # ============================================================================
@@ -34,33 +34,52 @@ from modama_crawler import server as server_module
 
 
 @pytest.fixture
-def server_with_db(test_database, test_files, monkeypatch) -> OAIFileDBBackend:
+def server_with_db(test_database, test_files) -> OAIFileDBBackend:
     """Create a SimpleServer configured to use the test database and files."""
+    from psycopg_pool import ConnectionPool
 
-    # Monkeypatch _get_db_connection to return test_database
-    def mock_get_db_connection():
-        return test_database
+    # Use connection pool with test database
+    db_config = PostgresConfig(
+        name=test_database.info.dbname,
+        admin=test_database.info.user,
+        password=test_database.info.password or "",
+        address=test_database.info.host,
+        port=str(test_database.info.port),
+    )
 
-    monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
+    pool = ConnectionPool(
+        conninfo=db_config.connection_string(),
+        min_size=1,
+        max_size=2,
+    )
 
     # Create server instance with explicit root = test_files
-    backend = OAIFileDBBackend(base_url="http://test.local/oai", root=test_files)
+    backend = OAIFileDBBackend(pool=pool, root=test_files)
 
     return backend
 
 
 @pytest.fixture
-def oai_server_with_db(test_database, test_files, monkeypatch) -> OAIServer:
+def oai_server_with_db(test_database, test_files) -> OAIServer:
     """Create an OAIServer configured to use the test database and files."""
+    from psycopg_pool import ConnectionPool
 
-    # Monkeypatch _get_db_connection to return test_database
-    def mock_get_db_connection():
-        return test_database
+    # Use connection pool with test database
+    db_config = PostgresConfig(
+        name=test_database.info.dbname,
+        admin=test_database.info.user,
+        password=test_database.info.password or "",
+        address=test_database.info.host,
+        port=str(test_database.info.port),
+    )
 
-    monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
-    monkeypatch.setattr(server_module, "MODAMA_DATA_ROOT", test_files)
+    pool = ConnectionPool(
+        conninfo=db_config.connection_string(),
+        min_size=1,
+        max_size=2,
+    )
 
-    backend = OAIFileDBBackend(base_url="http://test.local/oai", root=test_files)
+    backend = OAIFileDBBackend(pool=pool, root=test_files)
     server = OAIServer(backend=backend, base_url="http://test.local/oai")
     return server
 
@@ -69,13 +88,11 @@ def oai_server_with_db(test_database, test_files, monkeypatch) -> OAIServer:
 def flask_client(test_database, test_files, monkeypatch):
     """Create a Flask test client configured with test database and files."""
 
-    # Create app using factory pattern (no monkeypatching needed)
-    db_config = PostgresConfig(
-        name=test_database.info.dbname,
-        admin=test_database.info.user,
-        password=test_database.info.password or "",
-        address=test_database.info.host,
-        port=str(test_database.info.port),
+    # Use connection pool from test(Database)
+    pool = ConnectionPool(
+        conninfo=PostgresConfig.from_env().connection_string(),
+        min_size=1,
+        max_size=2,
     )
 
     config_dict = {
@@ -85,7 +102,7 @@ def flask_client(test_database, test_files, monkeypatch):
         "OAI_BASE_URL": "http://test.local/oai",
     }
 
-    app = create_app(config=config_dict, db_config=db_config)
+    app = create_app(pool=pool, config=config_dict)
     client = app.test_client()
     yield client
 
@@ -141,11 +158,13 @@ def test_datestamp_conversion():
 
 def test_server_identify():
     """Test Identify verb."""
-    backend = OAIFileDBBackend(base_url="http://example.org/oai")
+    from psycopg_pool import ConnectionPool
+
+    pool = ConnectionPool(conninfo="dbname=test", open=True)
+    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
     info = backend.identify()
 
     assert info["repositoryName"] == "Modama OAI-PMH server"
-    assert info["baseURL"] == "http://example.org/oai"
     assert info["protocolVersion"] == "2.0"
     assert info["deletedRecord"] == "no"
     assert info["granularity"] == "YYYY-MM-DDThh:mm:ssZ"
@@ -154,7 +173,10 @@ def test_server_identify():
 
 def test_server_list_metadata_formats():
     """Test ListMetadataFormats verb."""
-    backend = OAIFileDBBackend()
+    from psycopg_pool import ConnectionPool
+
+    pool = ConnectionPool(conninfo="dbname=test", open=True)
+    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
     formats = backend.listMetadataFormats()
 
     assert len(formats) == 1
@@ -165,7 +187,10 @@ def test_server_list_metadata_formats():
 
 def test_server_list_sets():
     """Test ListSets verb."""
-    backend = OAIFileDBBackend()
+    from psycopg_pool import ConnectionPool
+
+    pool = ConnectionPool(conninfo="dbname=test", open=True)
+    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
     sets = backend.listSets()
 
     assert sets == []
@@ -173,8 +198,11 @@ def test_server_list_sets():
 
 def test_error_response():
     """Test error response generation."""
+    from psycopg_pool import ConnectionPool
+
     # Test using the backend instance
-    backend = OAIFileDBBackend()
+    pool = ConnectionPool(conninfo="dbname=test", open=True)
+    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
     server = OAIServer(backend=backend)
     error_xml = server._make_error("badVerb", "Missing verb parameter")
 
@@ -186,8 +214,11 @@ def test_error_response():
 
 def test_oai_response_structure():
     """Test OAI-PMH response structure."""
+    from psycopg_pool import ConnectionPool
+
     # Create a server instance to access the method
-    backend = OAIFileDBBackend()
+    pool = ConnectionPool(conninfo="dbname=test", open=True)
+    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
     server = OAIServer(backend=backend)
     children = [{"repositoryName": "Test Repository"}, {"baseURL": "http://test.org"}]
     args = {"verb": "Identify", "base_url": "http://test.org"}

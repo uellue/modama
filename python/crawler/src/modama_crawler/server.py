@@ -15,7 +15,6 @@ Run:
 Then access: http://localhost:8000/oai?verb=Identify
 """
 
-from dataclasses import dataclass
 from flask import Flask, request, Response
 from lxml import etree
 import os
@@ -28,6 +27,7 @@ import warnings
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
 
 from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
@@ -40,56 +40,23 @@ from modama_crawler.repository import (
     sanitize,
 )
 from modama_crawler.recognition import guess, FileHandler, _get_mime_types_from_db
+from .database import PostgresConfig
 
 
 # Load environment variables from .env file
 load_dotenv()
 
-
-@dataclass
-class PostgresConfig:
-    """PostgreSQL database configuration."""
-
-    name: str = os.environ.get("MODAMA_CRAWLER_DB", "modama_crawler")
-    admin: str = os.environ.get("POSTGRES_ADMIN", "postgres")
-    password: str = os.environ.get("POSTGRES_PASSWORD", "")
-    address: str = os.environ.get("POSTGRES_ADDRESS", "localhost")
-    port: str = os.environ.get("POSTGRES_PORT", "5432")
-
-    def connection_string(self) -> str:
-        """Return PostgreSQL connection string."""
-        return f"postgresql://{self.admin}:{self.password}@{self.address}:{self.port}/{self.name}"
-
-
 # Configuration
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
 # MODAMA_DATA_ROOT: Absolute path where files are stored in the database and on filesystem
-MODAMA_DATA_ROOT = pathlib.Path(
-    os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data")
-)
 
-# PostgreSQL configuration (now handled in PostgresConfig dataclass)
-# DB_NAME, POSTGRES_ADMIN, etc. are now attributes of the config object
-postgres_config = PostgresConfig()
+# PostgreSQL configuration is now handled via PostgresConfig dataclass passed to create_app
 
 # XML Namespaces
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
-
-
-def _get_db_connection() -> psycopg.Connection:
-    """Establish database connection using PostgresConfig.
-
-    Returns:
-        psycopg.Connection: Database connection
-    """
-    conn_string = postgres_config.connection_string()
-    conn = psycopg.connect(conn_string)
-    conn.row_factory = dict_row
-    return conn
-
 
 # --- Helper Functions ---
 
@@ -166,17 +133,10 @@ def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
 class OAIFileDBBackend:
     """OAI-PMH backend that reads from file system and database."""
 
-    def __init__(self, base_url: str = "", root: pathlib.Path = MODAMA_DATA_ROOT):
-        self._base = base_url
+    def __init__(self, pool: ConnectionPool, root: pathlib.Path):
+        self._pool = pool
+
         self._root = root
-
-    def _get_conn(self) -> psycopg.Connection:
-        """Get a database connection for this request.
-
-        Returns:
-            psycopg.Connection: Database connection
-        """
-        return _get_db_connection()
 
     def _get_handler_for_path(
         self,
@@ -209,13 +169,22 @@ class OAIFileDBBackend:
         # FileHandler will construct abspath as root / path
         return FileHandler.create(self._root, path, guesses, conn)
 
-    def identify(self) -> dict:
-        """Return repository identification information."""
+    def identify(self, admin_email: Optional[str] = None) -> dict:
+        """Return repository identification information.
+
+        Args:
+            admin_email: Optional admin email to override environment default
+
+        Returns:
+            Dictionary with identifies information
+        """
+        if admin_email is None:
+            admin_email = os.environ.get("OAI_ADMIN_EMAIL", "admin@example.org")
+
         return {
             "repositoryName": "Modama OAI-PMH server",
-            "baseURL": self._base,
             "protocolVersion": "2.0",
-            "adminEmails": [os.environ.get("OAI_ADMIN_EMAIL", "admin@example.org")],
+            "adminEmails": [admin_email],
             "earliestDatestamp": datetime.fromtimestamp(0),
             "deletedRecord": "no",
             "granularity": "YYYY-MM-DDThh:mm:ssZ",
@@ -225,15 +194,15 @@ class OAIFileDBBackend:
 
     def getRecord(self, identifier: str) -> dict:
         """Get a single record by identifier."""
-        path = pathlib.Path(path_from_identifier(identifier))
-        path = sanitize(root=self._root, path=path)
-        conn = self._get_conn()
-        handler = self._get_handler_for_path(conn, path)
+        with self._pool.connection() as conn:
+            path = pathlib.Path(path_from_identifier(identifier))
+            path = sanitize(root=self._root, path=path)
+            handler = self._get_handler_for_path(conn, path)
 
-        return {
-            "header": self._make_header(handler),
-            "metadata": self._make_metadata(handler),
-        }
+            return {
+                "header": self._make_header(handler),
+                "metadata": self._make_metadata(handler),
+            }
 
     def listMetadataFormats(self) -> list:
         """List available metadata formats."""
@@ -252,18 +221,17 @@ class OAIFileDBBackend:
         cont_path = pathlib.Path(continuation) if continuation else None
 
         # Get database connection for this request
-        conn = self._get_conn()
+        with self._pool.connection() as conn:
+            # Query database for dataset paths
+            paths, next_path = self._query_datasets_from_db(
+                cont_path, from_, until, batch_size
+            )
 
-        # Query database for dataset paths
-        paths, next_path = self._query_datasets_from_db(
-            cont_path, from_, until, batch_size
-        )
-
-        # Build headers
-        headers = []
-        for path in paths:
-            handler = self._get_handler_for_path(conn, path)
-            headers.append(self._make_header(handler))
+            # Build headers
+            headers = []
+            for path in paths:
+                handler = self._get_handler_for_path(conn, path)
+                headers.append(self._make_header(handler))
 
         # Encode new resumption token with all parameters (preserve full datetime)
         from_str = _format_datestamp(from_.timestamp()) if from_ else None
@@ -288,27 +256,25 @@ class OAIFileDBBackend:
         # Decode continuation token if present
         cont_path = pathlib.Path(continuation) if continuation else None
 
-        # Get database connection for this request
-        conn = self._get_conn()
+        # Query database for dataset paths using connection pool
+        with self._pool.connection() as conn:
+            paths, next_path = self._query_datasets_from_db(
+                cont_path, from_, until, batch_size
+            )
 
-        # Query database for dataset paths
-        paths, next_path = self._query_datasets_from_db(
-            cont_path, from_, until, batch_size
-        )
-
-        # Build records
-        recs = []
-        for path in paths:
-            try:
-                handler = self._get_handler_for_path(conn, path)
-                recs.append(
-                    {
-                        "header": self._make_header(handler),
-                        "metadata": self._make_metadata(handler),
-                    }
-                )
-            except FileNotFoundError as e:
-                warnings.warn(f"Exception: {e}")
+            # Build records
+            recs = []
+            for path in paths:
+                try:
+                    handler = self._get_handler_for_path(conn, path)
+                    recs.append(
+                        {
+                            "header": self._make_header(handler),
+                            "metadata": self._make_metadata(handler),
+                        }
+                    )
+                except FileNotFoundError as e:
+                    warnings.warn(f"Exception: {e}")
 
         # Encode new resumption token with all parameters (preserve full datetime)
         from_str = _format_datestamp(from_.timestamp()) if from_ else None
@@ -344,69 +310,70 @@ class OAIFileDBBackend:
             Tuple of (list of relative paths, next continuation path or None)
             Paths are relative to self._root for client exposure.
         """
-        cur = self._get_conn().cursor()
+        with self._pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
 
-        # Build WHERE clause
-        where_clauses = []
-        params = []
+            # Build WHERE clause
+            where_clauses = []
+            params = []
 
-        # Get the database root path prefix to strip
-        db_root_str = str(self._root)
-        if not db_root_str.endswith("/"):
-            db_root_str += "/"
+            # Get the database root path prefix to strip
+            db_root_str = str(self._root)
+            if not db_root_str.endswith("/"):
+                db_root_str += "/"
 
-        # Pagination: paths greater than continuation (in database format)
-        if continuation is not None:
-            # Convert relative continuation to absolute for database query
-            abs_continuation = self._root / continuation
-            where_clauses.append("f.path > %s")
-            params.append(str(abs_continuation))
+            # Pagination: paths greater than continuation (in database format)
+            if continuation is not None:
+                # Convert relative continuation to absolute for database query
+                abs_continuation = self._root / continuation
+                where_clauses.append("f.path > %s")
+                params.append(str(abs_continuation))
 
-        # Date filtering on mtime
-        if from_ is not None:
-            where_clauses.append("f.mtime >= %s")
-            params.append(from_.timestamp())
+            # Date filtering on mtime
+            if from_ is not None:
+                where_clauses.append("f.mtime >= %s")
+                params.append(from_.timestamp())
 
-        if until is not None:
-            # until is inclusive in OAI-PMH, but we make it exclusive for SQL
-            until_exclusive = until + timedelta(days=1)
-            where_clauses.append("f.mtime < %s")
-            params.append(until_exclusive.timestamp())
+            if until is not None:
+                # until is inclusive in OAI-PMH, but we make it exclusive for SQL
+                until_exclusive = until + timedelta(days=1)
+                where_clauses.append("f.mtime < %s")
+                params.append(until_exclusive.timestamp())
 
-        where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
+            where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-        # Query for dataset paths (one path per dataset)
-        # Return absolute paths from database, we'll convert to relative below
-        sql = f"""
-            SELECT DISTINCT f.path, f.mtime
-            FROM files f
-            JOIN datasets d ON f.path_id = d.path_id
-            WHERE {where_clause}
-            ORDER BY f.path
-            LIMIT %s
-        """
-        params.append(batch_size)
+            # Query for dataset paths (one path per dataset)
+            # Return absolute paths from database, we'll convert to relative below
+            sql = f"""
+                SELECT DISTINCT f.path, f.mtime
+                FROM files f
+                JOIN datasets d ON f.path_id = d.path_id
+                WHERE {where_clause}
+                ORDER BY f.path
+                LIMIT %s
+            """
+            params.append(batch_size)
 
-        cur.execute(sql, params)
-        rows = cur.fetchall()
+            cur.execute(sql, params)
+            rows = cur.fetchall()
 
-        if not rows:
-            return [], None
+            if not rows:
+                return [], None
 
-        # Convert absolute database paths to relative paths for client exposure
-        paths = []
-        for row in rows:
-            abs_path = pathlib.Path(row["path"])
-            # Strip the database root prefix
-            try:
-                rel_path = abs_path.relative_to(self._root)
-            except ValueError:
-                # Path is not under self._root, use as-is
-                rel_path = abs_path
-            paths.append(rel_path)
+            # Convert absolute database paths to relative paths for client exposure
+            paths = []
+            for row in rows:
+                abs_path = pathlib.Path(row["path"])
+                # Strip the database root prefix
+                try:
+                    rel_path = abs_path.relative_to(self._root)
+                except ValueError:
+                    # Path is not under self._root, use as-is
+                    rel_path = abs_path
+                paths.append(rel_path)
 
-        # For continuation, we need the last absolute path for database comparison
-        next_path = paths[-1] if len(paths) == batch_size else None
+            # For continuation, we need the last absolute path for database comparison
+            next_path = paths[-1] if len(paths) == batch_size else None
 
         return paths, next_path
 
@@ -430,9 +397,6 @@ class OAIFileDBBackend:
             "description": handler.get_descriptions(),
             "publisher": [get_publisher()],
         }
-
-
-_backend = OAIFileDBBackend(root=MODAMA_DATA_ROOT)
 
 
 class OAIServer:
@@ -578,10 +542,11 @@ class OAIServer:
 
     def handle_identify(self, args: dict) -> Response:
         """Handle Identify verb."""
-        info = self._backend.identify()
+        admin_email = os.environ.get("OAI_ADMIN_EMAIL", "admin@example.org")
+        info = self._backend.identify(admin_email=admin_email)
         children = [
             {"repositoryName": info["repositoryName"]},
-            {"baseURL": info["baseURL"]},
+            {"baseURL": self._base_url},
             {"protocolVersion": info["protocolVersion"]},
             {"adminEmails": [{"adminEmail": email} for email in info["adminEmails"]]},
             {
@@ -760,46 +725,36 @@ class OAIServer:
 
 
 def create_app(
+    pool: ConnectionPool,
+    root: Optional[pathlib.Path] = None,
     config: Optional[dict] = None,
-    backend: Optional["OAIFileDBBackend"] = None,
-    db_config: Optional[PostgresConfig] = None,
 ) -> Flask:
     """Create and configure the OAI-PMH Flask application.
 
     Args:
         config: Optional dictionary of configuration values
-        backend: Optional pre-configured backend instance. If not provided,
-                 a new one will be created using config or defaults.
         db_config: Optional PostgresConfig for database connection. If provided,
                    will override the global postgres_config for this app instance.
 
     Returns:
         Configured Flask app instance
     """
-    # Update global postgres_config if db_config is provided
-    if db_config is not None:
-        globals()["postgres_config"] = db_config
-
     # Apply configuration override
     if config is None:
         config = {}
+
+    if root is None:
+        root = pathlib.Path(os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data"))
 
     app = Flask(__name__)
     app.config.update(config)
 
     # Set defaults if not configured
     app.config.setdefault("BATCH_SIZE", BATCH_SIZE)
-    app.config.setdefault("MODAMA_DATA_ROOT", MODAMA_DATA_ROOT)
+    app.config.setdefault("MODAMA_DATA_ROOT", root)
     app.config.setdefault("OAI_BASE_URL", "")
 
-    # Create or use provided backend
-    if backend is None:
-        backend_root = pathlib.Path(app.config["MODAMA_DATA_ROOT"])
-        backend = OAIFileDBBackend(
-            base_url=app.config["OAI_BASE_URL"], root=backend_root
-        )
-
-    app.config["oai_backend"] = backend
+    backend = OAIFileDBBackend(pool=pool, root=app.config["MODAMA_DATA_ROOT"])
 
     # Create server instance for this app
     _server = OAIServer(backend, base_url=app.config["OAI_BASE_URL"])
@@ -848,9 +803,13 @@ def create_app(
     return app
 
 
-# Expose default app for backward compatibility (legacy usage)
-app = create_app()
-
-
 if __name__ == "__main__":
-    app.run(port=7654, debug=True)
+    with ConnectionPool(
+        conninfo=PostgresConfig.from_env().connection_string(),
+        open=True,
+    ) as pool:
+        # Expose default app for backward compatibility (legacy usage)
+        app = create_app(
+            pool=pool,
+        )
+        app.run(port=7654, debug=True)
