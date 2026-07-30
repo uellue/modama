@@ -16,9 +16,8 @@ from datetime import datetime
 
 # Import the server components
 from modama_crawler.server import (
-    SimpleServer,
-    _make_oai_response,
-    _make_error,
+    OAIFileDBBackend,
+    OAIServer,
     _encode_resumption_token,
     _decode_resumption_token,
     _parse_datestamp,
@@ -34,7 +33,7 @@ from modama_crawler import server as server_module
 
 
 @pytest.fixture
-def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
+def server_with_db(test_database, test_files, monkeypatch) -> OAIFileDBBackend:
     """Create a SimpleServer configured to use the test database and files."""
 
     # Monkeypatch _get_db_connection to return test_database
@@ -44,8 +43,24 @@ def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
     monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
 
     # Create server instance with explicit root = test_files
-    server = SimpleServer(base_url="http://test.local/oai", root=test_files)
+    backend = OAIFileDBBackend(base_url="http://test.local/oai", root=test_files)
 
+    return backend
+
+
+@pytest.fixture
+def oai_server_with_db(test_database, test_files, monkeypatch) -> OAIServer:
+    """Create an OAIServer configured to use the test database and files."""
+
+    # Monkeypatch _get_db_connection to return test_database
+    def mock_get_db_connection():
+        return test_database
+
+    monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
+    monkeypatch.setattr(server_module, "MODAMA_DATA_ROOT", test_files)
+
+    backend = OAIFileDBBackend(base_url="http://test.local/oai", root=test_files)
+    server = OAIServer(backend=backend, base_url="http://test.local/oai")
     return server
 
 
@@ -116,8 +131,8 @@ def test_datestamp_conversion():
 
 def test_server_identify():
     """Test Identify verb."""
-    server = SimpleServer(base_url="http://example.org/oai")
-    info = server.identify()
+    backend = OAIFileDBBackend(base_url="http://example.org/oai")
+    info = backend.identify()
 
     assert info["repositoryName"] == "Modama OAI-PMH server"
     assert info["baseURL"] == "http://example.org/oai"
@@ -129,8 +144,8 @@ def test_server_identify():
 
 def test_server_list_metadata_formats():
     """Test ListMetadataFormats verb."""
-    server = SimpleServer()
-    formats = server.listMetadataFormats()
+    backend = OAIFileDBBackend()
+    formats = backend.listMetadataFormats()
 
     assert len(formats) == 1
     assert formats[0][0] == "oai_dc"
@@ -140,15 +155,18 @@ def test_server_list_metadata_formats():
 
 def test_server_list_sets():
     """Test ListSets verb."""
-    server = SimpleServer()
-    sets = server.listSets()
+    backend = OAIFileDBBackend()
+    sets = backend.listSets()
 
     assert sets == []
 
 
 def test_error_response():
     """Test error response generation."""
-    error_xml = _make_error("badVerb", "Missing verb parameter")
+    # Test using the backend instance
+    backend = OAIFileDBBackend()
+    server = OAIServer(backend=backend)
+    error_xml = server._make_error("badVerb", "Missing verb parameter")
 
     assert b"<error" in error_xml
     assert b'code="badVerb"' in error_xml
@@ -158,10 +176,13 @@ def test_error_response():
 
 def test_oai_response_structure():
     """Test OAI-PMH response structure."""
+    # Create a server instance to access the method
+    backend = OAIFileDBBackend()
+    server = OAIServer(backend=backend)
     children = [{"repositoryName": "Test Repository"}, {"baseURL": "http://test.org"}]
     args = {"verb": "Identify", "base_url": "http://test.org"}
 
-    xml = _make_oai_response("Identify", children, args)
+    xml = server._make_oai_response("Identify", children, args)
 
     # Check XML structure
     assert b"<?xml version" in xml
@@ -200,6 +221,62 @@ def test_http_endpoint_namespaces(flask_client):
     # Also verify the response has expected content
     assert b"<Identify>" in xml_content
     assert b"<repositoryName>" in xml_content
+
+
+def test_http_endpoint_identify(flask_client):
+    """Test Identify verb via HTTP endpoint."""
+    response = flask_client.get("/oai?verb=Identify")
+
+    assert response.status_code == 200
+
+    xml_content = response.data
+
+    # Check for expected XML elements
+    assert b"<repositoryName>Modama OAI-PMH server</repositoryName>" in xml_content
+    assert b"<baseURL" in xml_content
+    assert b"<protocolVersion>2.0</protocolVersion>" in xml_content
+
+
+def test_http_endpoint_list_metadata_formats(flask_client):
+    """Test ListMetadataFormats verb via HTTP endpoint."""
+    response = flask_client.get("/oai?verb=ListMetadataFormats")
+
+    assert response.status_code == 200
+
+    xml_content = response.data
+
+    # Check for expected XML elements
+    assert b"<metadataFormat>" in xml_content
+    assert b"<metadataPrefix>oai_dc</metadataPrefix>" in xml_content
+    assert (
+        b"<schema>http://www.openarchives.org/OAI/2.0/oai_dc.xsd</schema>"
+        in xml_content
+    )
+
+
+def test_http_endpoint_list_sets(flask_client):
+    """Test ListSets verb via HTTP endpoint."""
+    response = flask_client.get("/oai?verb=ListSets")
+
+    assert response.status_code == 200
+
+    xml_content = response.data
+
+    # Check for expected XML elements
+    assert b"<sets>" in xml_content or b"</ListSets>" in xml_content
+
+
+def test_http_endpoint_bad_verb(flask_client):
+    """Test bad verb error handling via HTTP endpoint."""
+    response = flask_client.get("/oai?verb=BadVerb")
+
+    assert response.status_code == 200
+
+    xml_content = response.data
+
+    # Check for error response
+    assert b"<error" in xml_content
+    assert b'code="badVerb"' in xml_content
 
 
 # ============================================================================

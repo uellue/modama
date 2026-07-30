@@ -151,8 +151,8 @@ def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
 # --- OAI-PMH Server Implementation ---
 
 
-class SimpleServer:
-    """Simple OAI-PMH server with direct method implementations."""
+class OAIFileDBBackend:
+    """OAI-PMH backend that reads from file system and database."""
 
     def __init__(self, base_url: str = "", root: pathlib.Path = MODAMA_DATA_ROOT):
         self._base = base_url
@@ -420,95 +420,335 @@ class SimpleServer:
         }
 
 
-# Instantiate server without connection - connection is created per request
-_server = SimpleServer(root=MODAMA_DATA_ROOT)
+_backend = OAIFileDBBackend(root=MODAMA_DATA_ROOT)
 
 
-# --- XML Response Generation ---
+class OAIServer:
+    """OAI-PMH server that handles all HTTP request processing and XML generation."""
 
+    def __init__(self, backend: OAIFileDBBackend, base_url: str = ""):
+        self._backend = backend
+        self._base_url = base_url
 
-def _make_oai_response(
-    verb: str, children: list, request_args: Optional[dict] = None
-) -> str:
-    """Generate OAI-PMH XML response."""
-    nsmap = {
-        None: OAI_NS,
-        "oai_dc": OAI_DC_NS,
-        "dc": DC_NS,
-        "xsi": XSI_NS,
-    }
+    # --- XML Response Generation ---
 
-    root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
+    def _make_oai_response(
+        self, verb: str, children: list, request_args: Optional[dict] = None
+    ) -> str:
+        """Generate OAI-PMH XML response."""
+        nsmap = {
+            None: OAI_NS,
+            "oai_dc": OAI_DC_NS,
+            "dc": DC_NS,
+            "xsi": XSI_NS,
+        }
 
-    # Add schemaLocation attribute to root element
-    schema_location = f"{OAI_NS} http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd"
-    root.set(f"{{{XSI_NS}}}schemaLocation", schema_location)
+        root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
 
-    # Response date
-    response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
-    response_date.text = _format_datestamp(datetime.now().timestamp())
+        # Add schemaLocation attribute to root element
+        schema_location = f"{OAI_NS} http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd"
+        root.set(f"{{{XSI_NS}}}schemaLocation", schema_location)
 
-    # Request
-    request_elem = etree.SubElement(root, f"{{{OAI_NS}}}request")
-    request_elem.set(f"{{{XSI_NS}}}type", "xsd:anyURI")
-    request_elem.text = request_args.get("base_url", "")
-    for key, value in request_args.items():
-        # base_url is passed as value, not attribute
-        if key not in ("base_url",) and value:
-            request_elem.set(key, quote_plus(value))
+        # Response date
+        response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
+        response_date.text = _format_datestamp(datetime.now().timestamp())
 
-    # Verb element
-    verb_elem = etree.SubElement(root, f"{{{OAI_NS}}}{verb}")
+        # Request
+        request_elem = etree.SubElement(root, f"{{{OAI_NS}}}request")
+        request_elem.set(f"{{{XSI_NS}}}type", "xsd:anyURI")
+        request_elem.text = request_args.get("base_url", "")
+        for key, value in request_args.items():
+            # base_url is passed as value, not attribute
+            if key not in ("base_url",) and value:
+                request_elem.set(key, quote_plus(value))
 
-    # Add children
-    for child in children:
-        if isinstance(child, etree._Element):
-            verb_elem.append(child)
-        elif isinstance(child, dict):
-            _add_dict_to_element(verb_elem, child)
+        # Verb element
+        verb_elem = etree.SubElement(root, f"{{{OAI_NS}}}{verb}")
+        # Add empty text to prevent lxml from using self-closing tags for empty elements
+        verb_elem.text = ""
 
-    return etree.tostring(
-        root, xml_declaration=True, encoding="UTF-8", pretty_print=True
-    )
+        # Add children
+        for child in children:
+            if isinstance(child, etree._Element):
+                verb_elem.append(child)
+            elif isinstance(child, dict):
+                self._add_dict_to_element(verb_elem, child)
 
+        return etree.tostring(
+            root, xml_declaration=True, encoding="UTF-8", pretty_print=True
+        )
 
-def _add_dict_to_element(parent: etree._Element, data: dict, tag_prefix: str = ""):
-    """Recursively add dictionary data to XML element."""
-    for key, value in data.items():
-        if isinstance(value, dict):
-            child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-            _add_dict_to_element(child, value)
-        elif isinstance(value, list):
-            for item in value:
-                if isinstance(item, dict):
-                    child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-                    _add_dict_to_element(child, item)
+    def _add_dict_to_element(
+        self, parent: etree._Element, data: dict, tag_prefix: str = ""
+    ):
+        """Recursively add dictionary data to XML element."""
+        for key, value in data.items():
+            if isinstance(value, dict):
+                child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
+                self._add_dict_to_element(child, value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
+                        self._add_dict_to_element(child, item)
+                    else:
+                        child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
+                        child.text = str(item)
+            else:
+                child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
+                child.text = str(value)
+
+    def _make_error(self, code: str, message: str) -> str:
+        """Generate OAI-PMH error response."""
+        nsmap = {None: OAI_NS}
+        root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
+
+        response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
+        response_date.text = _format_datestamp(datetime.now().timestamp())
+
+        request_elem = etree.SubElement(root, f"{{{OAI_NS}}}request")
+        request_elem.text = ""
+
+        error = etree.SubElement(root, f"{{{OAI_NS}}}error")
+        error.set("code", code)
+        error.text = message
+
+        return etree.tostring(
+            root, xml_declaration=True, encoding="UTF-8", pretty_print=True
+        )
+
+    def _make_header_element(self, header: dict) -> etree._Element:
+        """Create header XML element."""
+        header_elem = etree.Element(f"{{{OAI_NS}}}header")
+        if header.get("isDeleted"):
+            header_elem.set("status", "deleted")
+
+        id_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}identifier")
+        id_elem.text = header["identifier"]
+
+        datestamp_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}datestamp")
+        datestamp_elem.text = header["datestamp"]
+
+        for set_spec in header.get("setSpec", []):
+            set_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}setSpec")
+            set_elem.text = set_spec
+
+        return header_elem
+
+    def _make_record_element(self, record: dict) -> etree._Element:
+        """Create record XML element with header and metadata."""
+        record_elem = etree.Element(f"{{{OAI_NS}}}record")
+
+        # Add header
+        record_elem.append(self._make_header_element(record["header"]))
+
+        # Add metadata
+        if "metadata" in record:
+            metadata_elem = etree.SubElement(record_elem, f"{{{OAI_NS}}}metadata")
+            oai_dc_elem = etree.SubElement(
+                metadata_elem,
+                f"{{{OAI_DC_NS}}}dc",
+                nsmap={"oai_dc": OAI_DC_NS, "dc": DC_NS},
+            )
+
+            for key, value in record["metadata"].items():
+                if isinstance(value, list):
+                    for item in value:
+                        dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
+                        dc_elem.text = str(item)
                 else:
-                    child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-                    child.text = str(item)
+                    dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
+                    dc_elem.text = str(value)
+
+        return record_elem
+
+    # --- OAI-PMH Verb Handlers ---
+
+    def handle_identify(self, args: dict) -> Response:
+        """Handle Identify verb."""
+        info = self._backend.identify()
+        children = [
+            {"repositoryName": info["repositoryName"]},
+            {"baseURL": info["baseURL"]},
+            {"protocolVersion": info["protocolVersion"]},
+            {"adminEmails": [{"adminEmail": email} for email in info["adminEmails"]]},
+            {
+                "earliestDatestamp": _format_datestamp(
+                    info["earliestDatestamp"].timestamp()
+                )
+            },
+            {"deletedRecord": info["deletedRecord"]},
+            {"granularity": info["granularity"]},
+            {"compression": [{"compression": c} for c in info["compression"]]},
+        ]
+        return Response(
+            self._make_oai_response("Identify", children, args),
+            mimetype="text/xml; charset=utf-8",
+        )
+
+    def handle_getrecord(self, args: dict) -> Response:
+        """Handle GetRecord verb."""
+        identifier = args.get("identifier")
+        if not identifier:
+            return Response(
+                self._make_error("badArgument", "Missing identifier parameter"),
+                mimetype="text/xml; charset=utf-8",
+            )
+
+        record = self._backend.getRecord(identifier)
+        children = [self._make_record_element(record)]
+
+        return Response(
+            self._make_oai_response("GetRecord", children, args),
+            mimetype="text/xml; charset=utf-8",
+        )
+
+    def handle_listmetadataformats(self, args: dict) -> Response:
+        """Handle ListMetadataFormats verb."""
+        formats = self._backend.listMetadataFormats()
+        children = [
+            {
+                "metadataFormat": {
+                    "metadataPrefix": fmt[0],
+                    "schema": fmt[1],
+                    "metadataNamespace": fmt[2],
+                }
+            }
+            for fmt in formats
+        ]
+
+        return Response(
+            self._make_oai_response("ListMetadataFormats", children, args),
+            mimetype="text/xml; charset=utf-8",
+        )
+
+    def handle_listidentifiers(self, args: dict) -> Response:
+        """Handle ListIdentifiers verb."""
+        resumption_token = args.get("resumptionToken")
+        from_arg = args.get("from")
+        until_arg = args.get("until")
+        metadata_prefix_arg = args.get("metadataPrefix")
+
+        # If resumptionToken is present, decode it and use those parameters
+        if resumption_token:
+            continuation, token_params = _decode_resumption_token(resumption_token)
+
+            # Check for conflicting parameters
+            if from_arg or until_arg or metadata_prefix_arg:
+                return Response(
+                    self._make_error(
+                        "badArgument",
+                        "Cannot mix resumptionToken with from, until, or metadataPrefix parameters",
+                    ),
+                    mimetype="text/xml; charset=utf-8",
+                )
+
+            # Use parameters from resumption token
+            from_ = _parse_datestamp(token_params.get("from"))
+            until = _parse_datestamp(token_params.get("until"))
+            metadata_prefix = token_params.get("metadataPrefix")
         else:
-            child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-            child.text = str(value)
+            # Use provided parameters
+            continuation = None
+            from_ = _parse_datestamp(from_arg)
+            until = _parse_datestamp(until_arg)
+            metadata_prefix = metadata_prefix_arg
+
+        # Validate metadataPrefix (required for ListIdentifiers in OAI-PMH 2.0)
+        if not metadata_prefix:
+            return Response(
+                self._make_error("badArgument", "Missing metadataPrefix parameter"),
+                mimetype="text/xml; charset=utf-8",
+            )
+
+        headers, encoded_token = self._backend.listIdentifiers(
+            from_=from_,
+            until=until,
+            continuation=str(continuation) if continuation else None,
+            metadataPrefix=metadata_prefix,
+        )
+
+        children = [self._make_header_element(h) for h in headers]
+
+        # Add resumption token if present
+        if encoded_token:
+            children.append({"resumptionToken": encoded_token})
+
+        return Response(
+            self._make_oai_response("ListIdentifiers", children, args),
+            mimetype="text/xml; charset=utf-8",
+        )
+
+    def handle_listrecords(self, args: dict) -> Response:
+        """Handle ListRecords verb."""
+        resumption_token = args.get("resumptionToken")
+        from_arg = args.get("from")
+        until_arg = args.get("until")
+        metadata_prefix_arg = args.get("metadataPrefix")
+
+        # If resumptionToken is present, decode it and use those parameters
+        if resumption_token:
+            continuation, token_params = _decode_resumption_token(resumption_token)
+
+            # Check for conflicting parameters
+            if from_arg or until_arg or metadata_prefix_arg:
+                return Response(
+                    self._make_error(
+                        "badArgument",
+                        "Cannot mix resumptionToken with from, until, or metadataPrefix parameters",
+                    ),
+                    mimetype="text/xml; charset=utf-8",
+                )
+
+            # Use parameters from resumption token
+            from_ = _parse_datestamp(token_params.get("from"))
+            until = _parse_datestamp(token_params.get("until"))
+            metadata_prefix = token_params.get("metadataPrefix")
+        else:
+            # Use provided parameters
+            continuation = None
+            from_ = _parse_datestamp(from_arg)
+            until = _parse_datestamp(until_arg)
+            metadata_prefix = metadata_prefix_arg
+
+        # Validate metadataPrefix
+        if not metadata_prefix:
+            return Response(
+                self._make_error("badArgument", "Missing metadataPrefix parameter"),
+                mimetype="text/xml; charset=utf-8",
+            )
+
+        records, encoded_token = self._backend.listRecords(
+            metadataPrefix=metadata_prefix,
+            from_=from_,
+            until=until,
+            continuation=str(continuation) if continuation else None,
+        )
+
+        children = [self._make_record_element(r) for r in records]
+
+        # Add resumption token if present
+        if encoded_token:
+            children.append({"resumptionToken": encoded_token})
+
+        return Response(
+            self._make_oai_response("ListRecords", children, args),
+            mimetype="text/xml; charset=utf-8",
+        )
+
+    def handle_listsets(self, args: dict) -> Response:
+        """Handle ListSets verb."""
+        sets = self._backend.listSets()
+        children = [{"set": {}} for _ in sets]  # Empty sets list
+
+        return Response(
+            self._make_oai_response("ListSets", children, args),
+            mimetype="text/xml; charset=utf-8",
+        )
 
 
-def _make_error(code: str, message: str) -> str:
-    """Generate OAI-PMH error response."""
-    nsmap = {None: OAI_NS}
-    root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
-
-    response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
-    response_date.text = _format_datestamp(datetime.now().timestamp())
-
-    request_elem = etree.SubElement(root, f"{{{OAI_NS}}}request")
-    request_elem.text = ""
-
-    error = etree.SubElement(root, f"{{{OAI_NS}}}error")
-    error.set("code", code)
-    error.text = message
-
-    return etree.tostring(
-        root, xml_declaration=True, encoding="UTF-8", pretty_print=True
-    )
+# Create server instance
+_server = OAIServer(_backend)
 
 
 # --- Flask Endpoint ---
@@ -523,7 +763,7 @@ def oai_endpoint():
     verb = request_args.get("verb")
     if not verb:
         return Response(
-            _make_error("badVerb", "Missing verb parameter"),
+            _server._make_error("badVerb", "Missing verb parameter"),
             mimetype="text/xml; charset=utf-8",
         )
 
@@ -532,258 +772,28 @@ def oai_endpoint():
 
     try:
         if verb == "Identify":
-            return _handle_identify(request_args)
+            return _server.handle_identify(request_args)
         elif verb == "GetRecord":
-            return _handle_getrecord(request_args)
+            return _server.handle_getrecord(request_args)
         elif verb == "ListMetadataFormats":
-            return _handle_listmetadataformats(request_args)
+            return _server.handle_listmetadataformats(request_args)
         elif verb == "ListIdentifiers":
-            return _handle_listidentifiers(request_args)
+            return _server.handle_listidentifiers(request_args)
         elif verb == "ListRecords":
-            return _handle_listrecords(request_args)
+            return _server.handle_listrecords(request_args)
         elif verb == "ListSets":
-            return _handle_listsets(request_args)
+            return _server.handle_listsets(request_args)
         else:
             return Response(
-                _make_error("badVerb", f"Unknown verb: {verb}"),
+                _server._make_error("badVerb", f"Unknown verb: {verb}"),
                 mimetype="text/xml; charset=utf-8",
             )
     except Exception as e:
         raise
         return Response(
-            _make_error("badArgument", str(e)), mimetype="text/xml; charset=utf-8"
-        )
-
-
-def _handle_identify(args: dict) -> Response:
-    """Handle Identify verb."""
-    info = _server.identify()
-    children = [
-        {"repositoryName": info["repositoryName"]},
-        {"baseURL": info["baseURL"]},
-        {"protocolVersion": info["protocolVersion"]},
-        {"adminEmails": [{"adminEmail": email} for email in info["adminEmails"]]},
-        {"earliestDatestamp": _format_datestamp(info["earliestDatestamp"].timestamp())},
-        {"deletedRecord": info["deletedRecord"]},
-        {"granularity": info["granularity"]},
-        {"compression": [{"compression": c} for c in info["compression"]]},
-    ]
-    return Response(
-        _make_oai_response("Identify", children, args),
-        mimetype="text/xml; charset=utf-8",
-    )
-
-
-def _handle_getrecord(args: dict) -> Response:
-    """Handle GetRecord verb."""
-    identifier = args.get("identifier")
-    if not identifier:
-        return Response(
-            _make_error("badArgument", "Missing identifier parameter"),
+            _server._make_error("badArgument", str(e)),
             mimetype="text/xml; charset=utf-8",
         )
-
-    record = _server.getRecord(identifier)
-    children = [_make_record_element(record)]
-
-    return Response(
-        _make_oai_response("GetRecord", children, args),
-        mimetype="text/xml; charset=utf-8",
-    )
-
-
-def _handle_listmetadataformats(args: dict) -> Response:
-    """Handle ListMetadataFormats verb."""
-    formats = _server.listMetadataFormats()
-    children = [
-        {
-            "metadataFormat": {
-                "metadataPrefix": fmt[0],
-                "schema": fmt[1],
-                "metadataNamespace": fmt[2],
-            }
-        }
-        for fmt in formats
-    ]
-
-    return Response(
-        _make_oai_response("ListMetadataFormats", children, args),
-        mimetype="text/xml; charset=utf-8",
-    )
-
-
-def _handle_listidentifiers(args: dict) -> Response:
-    """Handle ListIdentifiers verb."""
-    resumption_token = args.get("resumptionToken")
-    from_arg = args.get("from")
-    until_arg = args.get("until")
-    metadata_prefix_arg = args.get("metadataPrefix")
-
-    # If resumptionToken is present, decode it and use those parameters
-    if resumption_token:
-        continuation, token_params = _decode_resumption_token(resumption_token)
-
-        # Check for conflicting parameters
-        if from_arg or until_arg or metadata_prefix_arg:
-            return Response(
-                _make_error(
-                    "badArgument",
-                    "Cannot mix resumptionToken with from, until, or metadataPrefix parameters",
-                ),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        # Use parameters from resumption token
-        from_ = _parse_datestamp(token_params.get("from"))
-        until = _parse_datestamp(token_params.get("until"))
-        metadata_prefix = token_params.get("metadataPrefix")
-    else:
-        # Use provided parameters
-        continuation = None
-        from_ = _parse_datestamp(from_arg)
-        until = _parse_datestamp(until_arg)
-        metadata_prefix = metadata_prefix_arg
-
-    # Validate metadataPrefix (required for ListIdentifiers in OAI-PMH 2.0)
-    if not metadata_prefix:
-        return Response(
-            _make_error("badArgument", "Missing metadataPrefix parameter"),
-            mimetype="text/xml; charset=utf-8",
-        )
-
-    headers, encoded_token = _server.listIdentifiers(
-        from_=from_,
-        until=until,
-        continuation=str(continuation) if continuation else None,
-        metadataPrefix=metadata_prefix,
-    )
-
-    children = [_make_header_element(h) for h in headers]
-
-    # Add resumption token if present
-    if encoded_token:
-        children.append({"resumptionToken": encoded_token})
-
-    return Response(
-        _make_oai_response("ListIdentifiers", children, args),
-        mimetype="text/xml; charset=utf-8",
-    )
-
-
-def _handle_listrecords(args: dict) -> Response:
-    """Handle ListRecords verb."""
-    resumption_token = args.get("resumptionToken")
-    from_arg = args.get("from")
-    until_arg = args.get("until")
-    metadata_prefix_arg = args.get("metadataPrefix")
-
-    # If resumptionToken is present, decode it and use those parameters
-    if resumption_token:
-        continuation, token_params = _decode_resumption_token(resumption_token)
-
-        # Check for conflicting parameters
-        if from_arg or until_arg or metadata_prefix_arg:
-            return Response(
-                _make_error(
-                    "badArgument",
-                    "Cannot mix resumptionToken with from, until, or metadataPrefix parameters",
-                ),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        # Use parameters from resumption token
-        from_ = _parse_datestamp(token_params.get("from"))
-        until = _parse_datestamp(token_params.get("until"))
-        metadata_prefix = token_params.get("metadataPrefix")
-    else:
-        # Use provided parameters
-        continuation = None
-        from_ = _parse_datestamp(from_arg)
-        until = _parse_datestamp(until_arg)
-        metadata_prefix = metadata_prefix_arg
-
-    # Validate metadataPrefix
-    if not metadata_prefix:
-        return Response(
-            _make_error("badArgument", "Missing metadataPrefix parameter"),
-            mimetype="text/xml; charset=utf-8",
-        )
-
-    records, encoded_token = _server.listRecords(
-        metadataPrefix=metadata_prefix,
-        from_=from_,
-        until=until,
-        continuation=str(continuation) if continuation else None,
-    )
-
-    children = [_make_record_element(r) for r in records]
-
-    # Add resumption token if present
-    if encoded_token:
-        children.append({"resumptionToken": encoded_token})
-
-    return Response(
-        _make_oai_response("ListRecords", children, args),
-        mimetype="text/xml; charset=utf-8",
-    )
-
-
-def _handle_listsets(args: dict) -> Response:
-    """Handle ListSets verb."""
-    sets = _server.listSets()
-    children = [{"set": {}} for _ in sets]  # Empty sets list
-
-    return Response(
-        _make_oai_response("ListSets", children, args),
-        mimetype="text/xml; charset=utf-8",
-    )
-
-
-def _make_header_element(header: dict) -> etree._Element:
-    """Create header XML element."""
-    header_elem = etree.Element(f"{{{OAI_NS}}}header")
-    if header.get("isDeleted"):
-        header_elem.set("status", "deleted")
-
-    id_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}identifier")
-    id_elem.text = header["identifier"]
-
-    datestamp_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}datestamp")
-    datestamp_elem.text = header["datestamp"]
-
-    for set_spec in header.get("setSpec", []):
-        set_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}setSpec")
-        set_elem.text = set_spec
-
-    return header_elem
-
-
-def _make_record_element(record: dict) -> etree._Element:
-    """Create record XML element with header and metadata."""
-    record_elem = etree.Element(f"{{{OAI_NS}}}record")
-
-    # Add header
-    record_elem.append(_make_header_element(record["header"]))
-
-    # Add metadata
-    if "metadata" in record:
-        metadata_elem = etree.SubElement(record_elem, f"{{{OAI_NS}}}metadata")
-        oai_dc_elem = etree.SubElement(
-            metadata_elem,
-            f"{{{OAI_DC_NS}}}dc",
-            nsmap={"oai_dc": OAI_DC_NS, "dc": DC_NS},
-        )
-
-        for key, value in record["metadata"].items():
-            if isinstance(value, list):
-                for item in value:
-                    dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                    dc_elem.text = str(item)
-            else:
-                dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                dc_elem.text = str(value)
-
-    return record_elem
 
 
 if __name__ == "__main__":
