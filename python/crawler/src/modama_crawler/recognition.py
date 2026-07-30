@@ -270,7 +270,7 @@ class FileHandler:
     def get_year(self):
         return str(datetime.datetime.fromtimestamp(self.stat.st_ctime).year)
 
-    def get_dates(self):
+    def get_dates(self) -> Sequence[float]:
         return [self.mtime]
 
     def get_descriptions(self):

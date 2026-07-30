@@ -554,7 +554,7 @@ def test_resumption_token_preserves_parameters(server_with_db):
     until_dt = datetime(2024, 12, 31)
 
     # First request
-    headers1, token1 = server_with_db.listIdentifiers(
+    headers1, next_path = server_with_db.listIdentifiers(
         from_=from_dt,
         until=until_dt,
         continuation=None,
@@ -562,10 +562,17 @@ def test_resumption_token_preserves_parameters(server_with_db):
         metadataPrefix="oai_dc",
     )
 
-    assert token1 is not None
+    assert next_path is not None
+
+    # Encode token the way the server does
+    from_str_token = _format_datestamp(from_dt.timestamp()) if from_dt else None
+    until_str_token = _format_datestamp(until_dt.timestamp()) if until_dt else None
+    encoded_token = _encode_resumption_token(
+        next_path, "oai_dc", from_str_token, until_str_token
+    )
 
     # Decode token and verify parameters
-    continuation, params = _decode_resumption_token(token1)
+    continuation, params = _decode_resumption_token(encoded_token)
     assert continuation is not None
     assert params["metadataPrefix"] == "oai_dc"
     assert "from" in params

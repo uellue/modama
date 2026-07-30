@@ -17,7 +17,7 @@ Then access: http://localhost:8000/oai?verb=Identify
 
 from flask import Flask, request, Response
 from lxml import etree
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote_plus, quote_plus
 import pathlib
 from typing import Optional, Sequence, Tuple
@@ -70,9 +70,23 @@ def _parse_datestamp(s: Optional[str]) -> Optional[datetime]:
     raise TypeError(f"Unsupported datestamp value: {s!r}")
 
 
-def _format_datestamp(timestamp: float) -> str:
-    """Format timestamp as OAI-PMH datestamp."""
-    return datetime_to_datestamp(datetime.fromtimestamp(timestamp))
+def _format_datestamp(datestamp) -> str:
+    """Format date as OAI-PMH datestamp.
+
+    Accepts either a datetime object, Unix timestamp (int/float), or already-formatted string.
+    Converts timezone-aware datetimes and timestamps to naive UTC datetimes for OAI-PMH compatibility.
+    """
+    if isinstance(datestamp, datetime):
+        # Convert timezone-aware to naive UTC
+        if datestamp.tzinfo is not None:
+            datestamp = datestamp.astimezone(timezone.utc).replace(tzinfo=None)
+        return datetime_to_datestamp(datestamp)
+    elif isinstance(datestamp, (int, float)):
+        # Assume it's a Unix timestamp
+        return datetime_to_datestamp(datetime.fromtimestamp(datestamp))
+    else:
+        # Already a formatted string, return as-is
+        return datestamp
 
 
 def _encode_resumption_token(
@@ -208,16 +222,7 @@ class OAIFileDBBackend:
                 handler = self._get_handler_for_path(conn, path)
                 headers.append(self._make_header(handler))
 
-        # Encode new resumption token with all parameters (preserve full datetime)
-        from_str = _format_datestamp(from_.timestamp()) if from_ else None
-        until_str = _format_datestamp(until.timestamp()) if until else None
-        new_token = (
-            _encode_resumption_token(next_path, metadataPrefix, from_str, until_str)
-            if next_path
-            else None
-        )
-
-        return headers, new_token
+        return headers, next_path
 
     def listRecords(
         self,
@@ -251,16 +256,7 @@ class OAIFileDBBackend:
                 except FileNotFoundError as e:
                     warnings.warn(f"Exception: {e}")
 
-        # Encode new resumption token with all parameters (preserve full datetime)
-        from_str = _format_datestamp(from_.timestamp()) if from_ else None
-        until_str = _format_datestamp(until.timestamp()) if until else None
-        new_token = (
-            _encode_resumption_token(next_path, metadataPrefix, from_str, until_str)
-            if next_path
-            else None
-        )
-
-        return recs, new_token
+        return recs, next_path
 
     def listSets(self) -> list:
         """List available sets (empty for this implementation)."""
@@ -357,20 +353,26 @@ class OAIFileDBBackend:
         return paths, next_path
 
     def _make_header(self, handler: FileHandler) -> dict:
-        """Create header dict from FileHandler."""
+        """Create header dict from FileHandler.
+
+        Returns Unix timestamp (float) for datestamp.
+        """
         return {
             "identifier": get_identifier(handler.path),
-            "datestamp": _format_datestamp(handler.mtime),
+            "datestamp": handler.mtime,
             "setSpec": [],
             "isDeleted": False,
         }
 
     def _make_metadata(self, handler: FileHandler) -> dict:
-        """Create metadata dict (oai_dc) from FileHandler."""
+        """Create metadata dict (oai_dc) from FileHandler.
+
+        Returns list of Unix timestamps (floats) for date field.
+        """
         return {
             "title": handler.get_titles(),
             "creator": handler.get_creators(),
-            "date": [_format_datestamp(d) for d in handler.get_dates()],
+            "date": handler.get_dates(),
             "format": handler.get_formats(),
             "identifier": [get_identifier(handler.path)],
             "description": handler.get_descriptions(),
@@ -506,7 +508,11 @@ class OAIServer:
         id_elem.text = header["identifier"]
 
         datestamp_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}datestamp")
-        datestamp_elem.text = header["datestamp"]
+        # Handle both datetime objects (from backend) and formatted strings
+        if isinstance(header["datestamp"], datetime):
+            datestamp_elem.text = _format_datestamp(header["datestamp"])
+        else:
+            datestamp_elem.text = header["datestamp"]
 
         for set_spec in header.get("setSpec", []):
             set_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}setSpec")
@@ -534,10 +540,18 @@ class OAIServer:
                 if isinstance(value, list):
                     for item in value:
                         dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                        dc_elem.text = str(item)
+                        # Format datetime objects for OAI-PMH
+                        if isinstance(item, datetime):
+                            dc_elem.text = _format_datestamp(item)
+                        else:
+                            dc_elem.text = str(item)
                 else:
                     dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                    dc_elem.text = str(value)
+                    # Format datetime objects for OAI-PMH
+                    if isinstance(value, datetime):
+                        dc_elem.text = _format_datestamp(value)
+                    else:
+                        dc_elem.text = str(value)
 
         return record_elem
 
@@ -551,11 +565,7 @@ class OAIServer:
             {"baseURL": self._config.base_url},
             {"protocolVersion": info["protocolVersion"]},
             {"adminEmails": [{"adminEmail": email} for email in info["adminEmails"]]},
-            {
-                "earliestDatestamp": _format_datestamp(
-                    info["earliestDatestamp"].timestamp()
-                )
-            },
+            {"earliestDatestamp": _format_datestamp(info["earliestDatestamp"])},
             {"deletedRecord": info["deletedRecord"]},
             {"granularity": info["granularity"]},
             {"compression": [{"compression": c} for c in info["compression"]]},
@@ -640,7 +650,7 @@ class OAIServer:
                 mimetype="text/xml; charset=utf-8",
             )
 
-        headers, encoded_token = self._backend.listIdentifiers(
+        headers, next_path = self._backend.listIdentifiers(
             from_=from_,
             until=until,
             continuation=str(continuation) if continuation else None,
@@ -649,8 +659,13 @@ class OAIServer:
 
         children = [self._make_header_element(h) for h in headers]
 
-        # Add resumption token if present
-        if encoded_token:
+        # Encode and add resumption token if present
+        if next_path:
+            from_str = _format_datestamp(from_.timestamp()) if from_ else None
+            until_str = _format_datestamp(until.timestamp()) if until else None
+            encoded_token = _encode_resumption_token(
+                next_path, metadata_prefix, from_str, until_str
+            )
             children.append({"resumptionToken": encoded_token})
 
         return Response(
@@ -697,7 +712,7 @@ class OAIServer:
                 mimetype="text/xml; charset=utf-8",
             )
 
-        records, encoded_token = self._backend.listRecords(
+        records, next_path = self._backend.listRecords(
             metadataPrefix=metadata_prefix,
             from_=from_,
             until=until,
@@ -706,8 +721,13 @@ class OAIServer:
 
         children = [self._make_record_element(r) for r in records]
 
-        # Add resumption token if present
-        if encoded_token:
+        # Encode and add resumption token if present
+        if next_path:
+            from_str = _format_datestamp(from_.timestamp()) if from_ else None
+            until_str = _format_datestamp(until.timestamp()) if until else None
+            encoded_token = _encode_resumption_token(
+                next_path, metadata_prefix, from_str, until_str
+            )
             children.append({"resumptionToken": encoded_token})
 
         return Response(
