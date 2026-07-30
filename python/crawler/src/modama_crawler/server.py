@@ -15,6 +15,7 @@ Run:
 Then access: http://localhost:8000/oai?verb=Identify
 """
 
+from dataclasses import dataclass
 from flask import Flask, request, Response
 from lxml import etree
 import os
@@ -44,6 +45,22 @@ from modama_crawler.recognition import guess, FileHandler, _get_mime_types_from_
 # Load environment variables from .env file
 load_dotenv()
 
+
+@dataclass
+class PostgresConfig:
+    """PostgreSQL database configuration."""
+
+    name: str = os.environ.get("MODAMA_CRAWLER_DB", "modama_crawler")
+    admin: str = os.environ.get("POSTGRES_ADMIN", "postgres")
+    password: str = os.environ.get("POSTGRES_PASSWORD", "")
+    address: str = os.environ.get("POSTGRES_ADDRESS", "localhost")
+    port: str = os.environ.get("POSTGRES_PORT", "5432")
+
+    def connection_string(self) -> str:
+        """Return PostgreSQL connection string."""
+        return f"postgresql://{self.admin}:{self.password}@{self.address}:{self.port}/{self.name}"
+
+
 # Configuration
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
 # MODAMA_DATA_ROOT: Absolute path where files are stored in the database and on filesystem
@@ -51,12 +68,9 @@ MODAMA_DATA_ROOT = pathlib.Path(
     os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data")
 )
 
-# PostgreSQL configuration
-DB_NAME = os.environ.get("MODAMA_CRAWLER_DB", "modama_crawler")
-POSTGRES_ADMIN = os.environ.get("POSTGRES_ADMIN", "postgres")
-POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "")
-POSTGRES_ADDRESS = os.environ.get("POSTGRES_ADDRESS", "localhost")
-POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
+# PostgreSQL configuration (now handled in PostgresConfig dataclass)
+# DB_NAME, POSTGRES_ADMIN, etc. are now attributes of the config object
+postgres_config = PostgresConfig()
 
 # XML Namespaces
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
@@ -68,12 +82,12 @@ app = Flask(__name__)
 
 
 def _get_db_connection() -> psycopg.Connection:
-    """Get a database connection to PostgreSQL.
+    """Establish database connection using PostgresConfig.
 
     Returns:
         psycopg.Connection: Database connection
     """
-    conn_string = f"postgresql://{POSTGRES_ADMIN}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{DB_NAME}"
+    conn_string = postgres_config.connection_string()
     conn = psycopg.connect(conn_string)
     conn.row_factory = dict_row
     return conn
