@@ -4,43 +4,32 @@ This document helps AI coding agents quickly understand and be productive in the
 
 ## Quick Start
 
-### Environment Setup (CRITICAL)
+### Build/Test Commands
 
-**Always use the correct Python environment:**
-- This project requires Python 3.14+ as specified in `pyproject.toml`
-- VS Code is configured to use Conda for environment management
-- Never run tests, installations, or any commands with system Python or base conda
+```bash
+# Install dependencies (from within python/crawler directory)
+pip install -e ".[test]"
 
-**To determine and verify your environment:**
+# Run all tests
+pytest
 
-1. **Check VS Code's Python interpreter setting:**
-   - Open Command Palette (Ctrl+Shift+P) → "Python: Select Interpreter"
-   - Look for a path like `/home/weber/miniforge3/envs/*/bin/python`
-   - This tells you which conda environment is configured
+# Run specific test file
+pytest tests/test_server.py
+pytest tests/test_database.py
+pytest tests/test_recognition.py
 
-2. **Verify the environment before running commands:**
-   ```bash
-   # Check current Python path (VS Code should show this in status bar)
-   which python
-   
-   # If not in the correct environment, activate it:
-   conda activate crawler314  # or whatever your environment is named
-   
-   # Verify Python version (should be 3.14.x):
-   python --version
-   ```
+# Run with verbose output
+pytest -v
 
-3. **When in doubt, use your VS Code terminal** - The integrated terminal should already have the correct environment active
+# Run tests matching pattern
+pytest -k "test_name_pattern"
+```
 
-4. **Explicitly prefix commands if uncertainty persists:**
-   ```bash
-   # Replace <ENV_PATH> with the path shown by `which python`:
-   /home/weber/miniforge3/envs/crawler314/bin/python -m pip install ...
-   /home/weber/miniforge3/envs/crawler314/bin/pytest tests/
-   ```
+### Environment Setup
 
-**⚠️ Common mistake to avoid:**
-Running `pip install pytest` or `python pytest tests/` in the wrong environment (e.g., base conda) will fail because dependencies like `psycopg`, `flask`, and `pytest-postgresql` are only installed in the project's specific conda environment.
+1. Copy `.env.example` to `.env`
+2. Fill in PostgreSQL connection details (see `.env.example`)
+3. The crawler uses the `crawler314` conda environment with Python 3.14+
 
 ## Architecture Overview
 

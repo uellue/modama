@@ -17,7 +17,6 @@ Then access: http://localhost:8000/oai?verb=Identify
 
 from flask import Flask, request, Response
 from lxml import etree
-import os
 from datetime import datetime, timedelta
 from urllib.parse import unquote_plus, quote_plus
 import pathlib
@@ -38,6 +37,7 @@ from modama_crawler.repository import (
     get_publisher,
     path_from_identifier,
     sanitize,
+    RepositoryConfig,
 )
 from modama_crawler.recognition import guess, FileHandler, _get_mime_types_from_db
 from .database import PostgresConfig
@@ -46,8 +46,6 @@ from .database import PostgresConfig
 # Load environment variables from .env file
 load_dotenv()
 
-# Configuration
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 10))
 # MODAMA_DATA_ROOT: Absolute path where files are stored in the database and on filesystem
 
 # PostgreSQL configuration is now handled via PostgresConfig dataclass passed to create_app
@@ -169,26 +167,23 @@ class OAIFileDBBackend:
         # FileHandler will construct abspath as root / path
         return FileHandler.create(self._root, path, guesses, conn)
 
-    def identify(self, admin_email: Optional[str] = None) -> dict:
+    def identify(self, config: RepositoryConfig) -> dict:
         """Return repository identification information.
 
         Args:
-            admin_email: Optional admin email to override environment default
+            config: RepositoryConfig instance with all repository parameters
 
         Returns:
             Dictionary with identifies information
         """
-        if admin_email is None:
-            admin_email = os.environ.get("OAI_ADMIN_EMAIL", "admin@example.org")
-
         return {
-            "repositoryName": "Modama OAI-PMH server",
+            "repositoryName": config.repository_name,
             "protocolVersion": "2.0",
-            "adminEmails": [admin_email],
-            "earliestDatestamp": datetime.fromtimestamp(0),
-            "deletedRecord": "no",
-            "granularity": "YYYY-MM-DDThh:mm:ssZ",
-            "compression": ["identity"],
+            "adminEmails": [config.admin_email],
+            "earliestDatestamp": config.earliest_datestamp,
+            "deletedRecord": "no" if self.supports_deleted_records() else "no",
+            "granularity": config.granularity,
+            "compression": config.compression,
             "descriptions": [],
         }
 
@@ -213,7 +208,7 @@ class OAIFileDBBackend:
         from_: Optional[datetime] = None,
         until: Optional[datetime] = None,
         continuation: Optional[str] = None,
-        batch_size: int = BATCH_SIZE,
+        batch_size: int = 10,
         metadataPrefix: Optional[str] = None,
     ) -> Tuple[list, Optional[str]]:
         """List record headers with optional date filtering and pagination."""
@@ -250,7 +245,7 @@ class OAIFileDBBackend:
         from_: Optional[datetime] = None,
         until: Optional[datetime] = None,
         continuation: Optional[str] = None,
-        batch_size: int = BATCH_SIZE,
+        batch_size: int = 10,
     ) -> Tuple[list, Optional[str]]:
         """List full records with optional date filtering and pagination."""
         # Decode continuation token if present
@@ -290,6 +285,10 @@ class OAIFileDBBackend:
     def listSets(self) -> list:
         """List available sets (empty for this implementation)."""
         return []
+
+    def supports_deleted_records(self) -> bool:
+        """Return whether this backend supports deleted records."""
+        return False
 
     def _query_datasets_from_db(
         self,
@@ -402,9 +401,9 @@ class OAIFileDBBackend:
 class OAIServer:
     """OAI-PMH server that handles all HTTP request processing and XML generation."""
 
-    def __init__(self, backend: OAIFileDBBackend, base_url: str = ""):
+    def __init__(self, backend: OAIFileDBBackend, config: RepositoryConfig):
         self._backend = backend
-        self._base_url = base_url
+        self._config = config
 
     # --- XML Response Generation ---
 
@@ -542,11 +541,10 @@ class OAIServer:
 
     def handle_identify(self, args: dict) -> Response:
         """Handle Identify verb."""
-        admin_email = os.environ.get("OAI_ADMIN_EMAIL", "admin@example.org")
-        info = self._backend.identify(admin_email=admin_email)
+        info = self._backend.identify(self._config)
         children = [
             {"repositoryName": info["repositoryName"]},
-            {"baseURL": self._base_url},
+            {"baseURL": self._config.base_url},
             {"protocolVersion": info["protocolVersion"]},
             {"adminEmails": [{"adminEmail": email} for email in info["adminEmails"]]},
             {
@@ -726,7 +724,7 @@ class OAIServer:
 
 def create_app(
     pool: ConnectionPool,
-    root: Optional[pathlib.Path] = None,
+    repo_config: Optional[RepositoryConfig] = None,
     config: Optional[dict] = None,
 ) -> Flask:
     """Create and configure the OAI-PMH Flask application.
@@ -743,21 +741,17 @@ def create_app(
     if config is None:
         config = {}
 
-    if root is None:
-        root = pathlib.Path(os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data"))
+    if repo_config is None:
+        # Create RepositoryConfig from environment variables
+        repo_config = RepositoryConfig.from_env()
 
     app = Flask(__name__)
     app.config.update(config)
 
-    # Set defaults if not configured
-    app.config.setdefault("BATCH_SIZE", BATCH_SIZE)
-    app.config.setdefault("MODAMA_DATA_ROOT", root)
-    app.config.setdefault("OAI_BASE_URL", "")
-
     backend = OAIFileDBBackend(pool=pool, root=app.config["MODAMA_DATA_ROOT"])
 
     # Create server instance for this app
-    _server = OAIServer(backend, base_url=app.config["OAI_BASE_URL"])
+    _server = OAIServer(backend, config=repo_config)
 
     @app.route("/oai", methods=["GET", "POST"])
     def oai_endpoint():

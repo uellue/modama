@@ -159,10 +159,12 @@ def test_datestamp_conversion():
 def test_server_identify():
     """Test Identify verb."""
     from psycopg_pool import ConnectionPool
+    from modama_crawler.repository import RepositoryConfig
 
     pool = ConnectionPool(conninfo="dbname=test", open=True)
-    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
-    info = backend.identify()
+    config = RepositoryConfig.from_env()
+    backend = OAIFileDBBackend(pool=pool, root=config.data_root)
+    info = backend.identify(config)
 
     assert info["repositoryName"] == "Modama OAI-PMH server"
     assert info["protocolVersion"] == "2.0"
@@ -199,11 +201,13 @@ def test_server_list_sets():
 def test_error_response():
     """Test error response generation."""
     from psycopg_pool import ConnectionPool
+    from modama_crawler.repository import RepositoryConfig
 
     # Test using the backend instance
     pool = ConnectionPool(conninfo="dbname=test", open=True)
-    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
-    server = OAIServer(backend=backend)
+    config = RepositoryConfig.from_env()
+    backend = OAIFileDBBackend(pool=pool, root=config.data_root)
+    server = OAIServer(backend=backend, config=config)
     error_xml = server._make_error("badVerb", "Missing verb parameter")
 
     assert b"<error" in error_xml
@@ -215,11 +219,13 @@ def test_error_response():
 def test_oai_response_structure():
     """Test OAI-PMH response structure."""
     from psycopg_pool import ConnectionPool
+    from modama_crawler.repository import RepositoryConfig
 
     # Create a server instance to access the method
     pool = ConnectionPool(conninfo="dbname=test", open=True)
-    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
-    server = OAIServer(backend=backend)
+    config = RepositoryConfig.from_env()
+    backend = OAIFileDBBackend(pool=pool, root=config.data_root)
+    server = OAIServer(backend=backend, config=config)
     children = [{"repositoryName": "Test Repository"}, {"baseURL": "http://test.org"}]
     args = {"verb": "Identify", "base_url": "http://test.org"}
 
