@@ -89,56 +89,6 @@ def _format_datestamp(datestamp) -> str:
         return datestamp
 
 
-def _encode_resumption_token(
-    continuation: Optional[pathlib.Path],
-    metadataPrefix: Optional[str] = None,
-    from_: Optional[str] = None,
-    until: Optional[str] = None,
-) -> Optional[str]:
-    """Encode resumption token with continuation path and request parameters.
-
-    Following OAI-PMH spec, the resumptionToken encodes all parameters except verb.
-    All special characters are URL-encoded so the token can be pasted directly into a URL.
-    Uses quote_plus to ensure proper encoding for query string parameters.
-    """
-    if continuation is None:
-        return None
-
-    token_data = {"continuation": str(continuation)}
-    if metadataPrefix:
-        token_data["metadataPrefix"] = metadataPrefix
-    if from_:
-        token_data["from"] = from_
-    if until:
-        token_data["until"] = until
-
-    as_json = json.dumps(token_data)
-    return quote_plus(as_json)
-
-
-def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
-    """Decode resumption token to continuation path and parameters.
-
-    The token is URL-encoded with quote_plus, so we use unquote_plus to decode.
-    """
-
-    unquoted = unquote_plus(token)
-
-    as_data = json.loads(unquoted)
-
-    keys = "continuation", "metadataPrefix", "from", "until"
-    result = {}
-
-    for key in keys:
-        try:
-            result[key] = as_data.pop(key)
-        except KeyError:
-            pass
-    continuation_str = result.pop("continuation", "")
-    continuation = pathlib.Path(continuation_str) if continuation_str else None
-    return continuation, result
-
-
 # --- OAI-PMH Server Implementation ---
 
 
@@ -411,6 +361,57 @@ class OAIServer:
             "baseURL": self._config.base_url,
         }
 
+    # --- Resumption Token Helpers ---
+
+    @staticmethod
+    def _encode_resumption_token(
+        continuation: Optional[pathlib.Path],
+        metadataPrefix: Optional[str] = None,
+        from_: Optional[str] = None,
+        until: Optional[str] = None,
+    ) -> Optional[str]:
+        """Encode resumption token with continuation path and request parameters.
+
+        Following OAI-PMH spec, the resumptionToken encodes all parameters except verb.
+        All special characters are URL-encoded so the token can be pasted directly into a URL.
+        Uses quote_plus to ensure proper encoding for query string parameters.
+        """
+        if continuation is None:
+            return None
+
+        token_data = {"continuation": str(continuation)}
+        if metadataPrefix:
+            token_data["metadataPrefix"] = metadataPrefix
+        if from_:
+            token_data["from"] = from_
+        if until:
+            token_data["until"] = until
+
+        as_json = json.dumps(token_data)
+        return quote_plus(as_json)
+
+    @staticmethod
+    def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
+        """Decode resumption token to continuation path and parameters.
+
+        The token is URL-encoded with quote_plus, so we use unquote_plus to decode.
+        """
+        unquoted = unquote_plus(token)
+
+        as_data = json.loads(unquoted)
+
+        keys = "continuation", "metadataPrefix", "from", "until"
+        result = {}
+
+        for key in keys:
+            try:
+                result[key] = as_data.pop(key)
+            except KeyError:
+                pass
+        continuation_str = result.pop("continuation", "")
+        continuation = pathlib.Path(continuation_str) if continuation_str else None
+        return continuation, result
+
     # --- XML Response Generation ---
 
     def _make_oai_response(
@@ -633,7 +634,7 @@ class OAIServer:
 
         # If resumptionToken is present, decode it and use those parameters
         if resumption_token:
-            continuation, token_params = _decode_resumption_token(resumption_token)
+            continuation, token_params = self._decode_resumption_token(resumption_token)
 
             # Check for conflicting parameters
             if from_arg or until_arg or metadata_prefix_arg:
@@ -676,7 +677,7 @@ class OAIServer:
         if next_path:
             from_str = _format_datestamp(from_.timestamp()) if from_ else None
             until_str = _format_datestamp(until.timestamp()) if until else None
-            encoded_token = _encode_resumption_token(
+            encoded_token = self._encode_resumption_token(
                 next_path, metadata_prefix, from_str, until_str
             )
             children.append({"resumptionToken": encoded_token})

@@ -21,8 +21,6 @@ from modama_crawler.server import (
     OAIServer,
     PostgresConfig,
     create_app,
-    _encode_resumption_token,
-    _decode_resumption_token,
     _parse_datestamp,
     _format_datestamp,
 )
@@ -113,28 +111,30 @@ def flask_client(test_database, test_files, monkeypatch):
 def test_resumption_token_encoding():
     """Test resumption token encoding and decoding."""
     # Test with continuation path and metadataPrefix
-    token = _encode_resumption_token(Path("some/path"), metadataPrefix="oai_dc")
+    token = OAIServer._encode_resumption_token(
+        Path("some/path"), metadataPrefix="oai_dc"
+    )
     assert token is not None
-    continuation, params = _decode_resumption_token(token)
+    continuation, params = OAIServer._decode_resumption_token(token)
     assert str(continuation) == "some/path"
     assert params["metadataPrefix"] == "oai_dc"
 
     # Test with all parameters
-    token = _encode_resumption_token(
+    token = OAIServer._encode_resumption_token(
         Path("another/path"),
         metadataPrefix="oai_dc",
         from_="2024-01-01T00:00:00Z",
         until="2024-12-31T23:59:59Z",
     )
     assert token is not None
-    continuation, params = _decode_resumption_token(token)
+    continuation, params = OAIServer._decode_resumption_token(token)
     assert str(continuation) == "another/path"
     assert params["metadataPrefix"] == "oai_dc"
     assert params["from"] == "2024-01-01T00:00:00Z"
     assert params["until"] == "2024-12-31T23:59:59Z"
 
     # Test with None continuation
-    token = _encode_resumption_token(None)
+    token = OAIServer._encode_resumption_token(None)
     assert token is None
 
 
@@ -567,12 +567,12 @@ def test_resumption_token_preserves_parameters(server_with_db):
     # Encode token the way the server does
     from_str_token = _format_datestamp(from_dt.timestamp()) if from_dt else None
     until_str_token = _format_datestamp(until_dt.timestamp()) if until_dt else None
-    encoded_token = _encode_resumption_token(
+    encoded_token = OAIServer._encode_resumption_token(
         next_path, "oai_dc", from_str_token, until_str_token
     )
 
     # Decode token and verify parameters
-    continuation, params = _decode_resumption_token(encoded_token)
+    continuation, params = OAIServer._decode_resumption_token(encoded_token)
     assert continuation is not None
     assert params["metadataPrefix"] == "oai_dc"
     assert "from" in params
