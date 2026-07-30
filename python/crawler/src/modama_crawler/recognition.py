@@ -88,7 +88,7 @@ def _get_dataset_members_from_db(
     )
     rows = cur.fetchall()
     # Return paths as-is (they are absolute paths from database)
-    return [pathlib.Path(row[0]) for row in rows]
+    return [pathlib.Path(row["path"]) for row in rows]
 
 
 class DatasetConsistencyError(RuntimeError):

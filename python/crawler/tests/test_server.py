@@ -12,7 +12,6 @@ Shared fixtures are defined in conftest.py and available to all test files.
 
 import pytest
 from pathlib import Path
-import psycopg
 from datetime import datetime
 
 # Import the server components
@@ -24,17 +23,9 @@ from modama_crawler.server import (
     _decode_resumption_token,
     _parse_datestamp,
     _format_datestamp,
-    _query_datasets_from_db,
     app,
 )
 from modama_crawler import server as server_module
-from modama_crawler.database import ensure_dataset_tables
-from modama_crawler.repository import (
-    quote_path,
-    unquote_path,
-    get_identifier,
-    path_from_identifier,
-)
 
 
 # ============================================================================
@@ -45,15 +36,6 @@ from modama_crawler.repository import (
 @pytest.fixture
 def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
     """Create a SimpleServer configured to use the test database and files."""
-    # Override ROOT_PATH and DB_ROOT_PATH for testing
-
-    original_root = server_module.ROOT_PATH
-    original_db_root = server_module.DB_ROOT_PATH
-
-    # Set DB_ROOT_PATH to test_files (where files are stored)
-    server_module.DB_ROOT_PATH = test_files
-    # Set ROOT_PATH to empty (no additional prefix to strip)
-    server_module.ROOT_PATH = Path("")
 
     # Monkeypatch _get_db_connection to return test_database
     def mock_get_db_connection():
@@ -61,14 +43,10 @@ def server_with_db(test_database, test_files, monkeypatch) -> SimpleServer:
 
     monkeypatch.setattr(server_module, "_get_db_connection", mock_get_db_connection)
 
-    try:
-        # Create server instance
-        server = SimpleServer(base_url="http://test.local/oai")
+    # Create server instance with explicit root = test_files
+    server = SimpleServer(base_url="http://test.local/oai", root=test_files)
 
-        return server
-    finally:
-        server_module.ROOT_PATH = original_root
-        server_module.DB_ROOT_PATH = original_db_root
+    return server
 
 
 @pytest.fixture
@@ -229,10 +207,10 @@ def test_http_endpoint_namespaces(flask_client):
 # ============================================================================
 
 
-def test_query_datasets_from_db_basic(test_database):
+def test_query_datasets_from_db_basic(server_with_db):
     """Test basic database query without filters."""
-    paths, next_path = _query_datasets_from_db(
-        test_database, continuation=None, from_=None, until=None, batch_size=10
+    paths, next_path = server_with_db._query_datasets_from_db(
+        continuation=None, from_=None, until=None, batch_size=10
     )
 
     # Should get all 6 paths
@@ -240,159 +218,116 @@ def test_query_datasets_from_db_basic(test_database):
     assert next_path is None  # All records returned, no continuation
 
 
-def test_query_datasets_from_db_pagination(test_database, tmp_path):
+def test_query_datasets_from_db_pagination(server_with_db):
     """Test pagination with batch_size."""
-    # Set DB_ROOT_PATH to tmp_path so paths can be stripped correctly
-    from modama_crawler import server as server_module
+    # server_with_db._root is already set to test_files from fixture
 
-    original_db_root = server_module.DB_ROOT_PATH
-    server_module.DB_ROOT_PATH = tmp_path
+    # First batch
+    paths1, next_path1 = server_with_db._query_datasets_from_db(
+        continuation=None, from_=None, until=None, batch_size=2
+    )
+    assert len(paths1) == 2
+    assert str(paths1[0]) == "dataset-alpha/file1.txt"
+    assert str(paths1[1]) == "dataset-beta/file2.txt"
+    assert next_path1 is not None  # More records available
 
-    try:
-        # First batch
-        paths1, next_path1 = _query_datasets_from_db(
-            test_database, continuation=None, from_=None, until=None, batch_size=2
-        )
-        assert len(paths1) == 2
-        assert str(paths1[0]) == "dataset-alpha/file1.txt"
-        assert str(paths1[1]) == "dataset-beta/file2.txt"
-        assert next_path1 is not None  # More records available
+    # Second batch
+    paths2, next_path2 = server_with_db._query_datasets_from_db(
+        continuation=next_path1, from_=None, until=None, batch_size=2
+    )
+    assert len(paths2) == 2
+    assert str(paths2[0]) == "dataset-delta/file4.txt"
+    assert str(paths2[1]) == "dataset-epsilon/file5.txt"
+    assert next_path2 is not None
 
-        # Second batch
-        paths2, next_path2 = _query_datasets_from_db(
-            test_database, continuation=next_path1, from_=None, until=None, batch_size=2
-        )
-        assert len(paths2) == 2
-        assert str(paths2[0]) == "dataset-delta/file4.txt"
-        assert str(paths2[1]) == "dataset-epsilon/file5.txt"
-        assert next_path2 is not None
+    # Third batch (last) - still returns next_path because len == batch_size
+    # The actual end is detected when the next query returns empty results
+    paths3, next_path3 = server_with_db._query_datasets_from_db(
+        continuation=next_path2, from_=None, until=None, batch_size=2
+    )
+    assert len(paths3) == 2
+    assert str(paths3[0]) == "dataset-gamma/file3.txt"
+    assert str(paths3[1]) == "dataset-zeta/file6.txt"
+    assert next_path3 is not None  # Last path returned, but we need to try again
 
-        # Third batch (last) - still returns next_path because len == batch_size
-        # The actual end is detected when the next query returns empty results
-        paths3, next_path3 = _query_datasets_from_db(
-            test_database, continuation=next_path2, from_=None, until=None, batch_size=2
-        )
-        assert len(paths3) == 2
-        assert str(paths3[0]) == "dataset-gamma/file3.txt"
-        assert str(paths3[1]) == "dataset-zeta/file6.txt"
-        assert next_path3 is not None  # Last path returned, but we need to try again
-
-        # Fourth query - should return empty
-        paths4, next_path4 = _query_datasets_from_db(
-            test_database, continuation=next_path3, from_=None, until=None, batch_size=2
-        )
-        assert len(paths4) == 0
-        assert next_path4 is None
-    finally:
-        server_module.DB_ROOT_PATH = original_db_root  # No more records
+    # Fourth query - should return empty
+    paths4, next_path4 = server_with_db._query_datasets_from_db(
+        continuation=next_path3, from_=None, until=None, batch_size=2
+    )
+    assert len(paths4) == 0
+    assert next_path4 is None
 
 
-def test_query_datasets_from_db_date_filtering(test_database, tmp_path):
+def test_query_datasets_from_db_date_filtering(server_with_db):
     """Test date filtering with from_ and until."""
-    # Set DB_ROOT_PATH to tmp_path
-    from modama_crawler import server as server_module
+    # Filter to date range: 2024-06-01 to 2024-12-31
+    # Using the exact timestamps from the database fixture for accurate testing
+    # epsilon has timestamp: datetime(2024, 12, 31, 23, 59, 59)
+    from_dt = datetime(2024, 6, 1)  # dataset-beta is at 2024-06-01 (inclusive)
+    until_dt = datetime(2024, 12, 31, 23, 59, 59)  # epsilon at exactly this time
 
-    original_db_root = server_module.DB_ROOT_PATH
-    server_module.DB_ROOT_PATH = tmp_path
+    paths, next_path = server_with_db._query_datasets_from_db(
+        continuation=None,
+        from_=from_dt,
+        until=until_dt,
+        batch_size=10,
+    )
 
-    try:
-        # Filter to date range: 2024-06-01 to 2024-12-31
-        from_dt = datetime(2024, 6, 1)
-        until_dt = datetime(2024, 12, 31)
-
-        paths, next_path = _query_datasets_from_db(
-            test_database,
-            continuation=None,
-            from_=from_dt,
-            until=until_dt,
-            batch_size=10,
-        )
-
-        # Should get 4 records (ordered by path): beta, delta, epsilon, gamma
-        assert len(paths) == 4
-        assert str(paths[0]) == "dataset-beta/file2.txt"
-        assert str(paths[1]) == "dataset-delta/file4.txt"
-        assert str(paths[2]) == "dataset-epsilon/file5.txt"
-        assert str(paths[3]) == "dataset-gamma/file3.txt"
-        assert next_path is None
-    finally:
-        server_module.DB_ROOT_PATH = original_db_root
+    # Should get 4 records (ordered by path alphabetically): beta, delta, epsilon, gamma
+    assert len(paths) == 4
+    assert str(paths[0]) == "dataset-beta/file2.txt"
+    assert str(paths[1]) == "dataset-delta/file4.txt"
+    assert str(paths[2]) == "dataset-epsilon/file5.txt"
+    assert str(paths[3]) == "dataset-gamma/file3.txt"
+    assert next_path is None
 
 
-def test_query_datasets_from_db_from_boundary(test_database, tmp_path):
+def test_query_datasets_from_db_from_boundary(server_with_db):
     """Test that from_ is inclusive (boundary condition)."""
-    # Set DB_ROOT_PATH to tmp_path
-    from modama_crawler import server as server_module
+    # from_ at exact boundary: 2024-06-01 (dataset-beta)
+    from_dt = datetime(2024, 6, 1)
 
-    original_db_root = server_module.DB_ROOT_PATH
-    server_module.DB_ROOT_PATH = tmp_path
+    paths, _ = server_with_db._query_datasets_from_db(
+        continuation=None, from_=from_dt, until=None, batch_size=10
+    )
 
-    try:
-        # from_ at exact boundary: 2024-06-01 (dataset-beta)
-        from_dt = datetime(2024, 6, 1)
-
-        paths, _ = _query_datasets_from_db(
-            test_database, continuation=None, from_=from_dt, until=None, batch_size=10
-        )
-
-        # Should include dataset-beta (at boundary) and all after
-        assert len(paths) == 5
-        assert str(paths[0]) == "dataset-beta/file2.txt"
-    finally:
-        server_module.DB_ROOT_PATH = original_db_root
+    # Should include dataset-beta (at boundary) and all after
+    assert len(paths) == 5
+    assert str(paths[0]) == "dataset-beta/file2.txt"
 
 
-def test_query_datasets_from_db_until_boundary(test_database, tmp_path):
+def test_query_datasets_from_db_until_boundary(server_with_db):
     """Test that until is inclusive in OAI-PMH (boundary condition)."""
-    # Set DB_ROOT_PATH to tmp_path
-    from modama_crawler import server as server_module
+    # until at exact boundary: 2024-12-31 23:59:59 (dataset-epsilon)
+    until_dt = datetime(2024, 12, 31, 23, 59, 59)
 
-    original_db_root = server_module.DB_ROOT_PATH
-    server_module.DB_ROOT_PATH = tmp_path
+    paths, _ = server_with_db._query_datasets_from_db(
+        continuation=None, from_=None, until=until_dt, batch_size=10
+    )
 
-    try:
-        # until at exact boundary: 2024-12-31 23:59:59 (dataset-epsilon)
-        until_dt = datetime(2024, 12, 31, 23, 59, 59)
-
-        paths, _ = _query_datasets_from_db(
-            test_database, continuation=None, from_=None, until=until_dt, batch_size=10
-        )
-
-        # Should include dataset-epsilon (at boundary) and all before it in time
-        # Results are ordered by path, so we check count and that epsilon is included
-        assert len(paths) == 5
-        path_strings = [str(p) for p in paths]
-        assert "dataset-epsilon/file5.txt" in path_strings
-        assert "dataset-zeta/file6.txt" not in path_strings  # Excluded (after until)
-    finally:
-        server_module.DB_ROOT_PATH = original_db_root
+    # Should include dataset-epsilon (at boundary) and all before it in time
+    # Results are ordered by path, so we check count and that epsilon is included
+    assert len(paths) == 5
+    path_strings = [str(p) for p in paths]
+    assert "dataset-epsilon/file5.txt" in path_strings
+    assert "dataset-zeta/file6.txt" not in path_strings  # Excluded (after until)
 
 
-def test_query_datasets_from_db_empty_result(test_database, tmp_path):
+def test_query_datasets_from_db_empty_result(server_with_db):
     """Test query with no matching results."""
-    # Set DB_ROOT_PATH to tmp_path
-    from modama_crawler import server as server_module
+    # Date range with no data
+    from_dt = datetime(2023, 1, 1)
+    until_dt = datetime(2023, 12, 31)
 
-    original_db_root = server_module.DB_ROOT_PATH
-    server_module.DB_ROOT_PATH = tmp_path
+    paths, next_path = server_with_db._query_datasets_from_db(
+        continuation=None,
+        from_=from_dt,
+        until=until_dt,
+        batch_size=10,
+    )
 
-    try:
-        # Date range with no data
-        from_dt = datetime(2023, 1, 1)
-        until_dt = datetime(2023, 12, 31)
-
-        paths, next_path = _query_datasets_from_db(
-            test_database,
-            continuation=None,
-            from_=from_dt,
-            until=until_dt,
-            batch_size=10,
-        )
-
-        assert len(paths) == 0
-        assert next_path is None
-    finally:
-        server_module.DB_ROOT_PATH = original_db_root
+    assert len(paths) == 0
+    assert next_path is None
 
 
 # ============================================================================
@@ -402,335 +337,116 @@ def test_query_datasets_from_db_empty_result(test_database, tmp_path):
 
 def test_list_identifiers_basic(server_with_db):
     """Test basic listIdentifiers with database."""
-    # Mock the _get_conn method to use test database
-    original_get_conn = server_with_db._get_conn
-    server_with_db._get_conn = lambda: server_with_db._test_conn
+    headers, token = server_with_db.listIdentifiers(
+        from_=None,
+        until=None,
+        continuation=None,
+        batch_size=2,
+        metadataPrefix="oai_dc",
+    )
 
-    try:
-        headers, token = server_with_db.listIdentifiers(
-            from_=None,
-            until=None,
-            continuation=None,
-            batch_size=2,
-            metadataPrefix="oai_dc",
-        )
-
-        assert len(headers) == 2
-        assert "identifier" in headers[0]
-        assert "datestamp" in headers[0]
-        assert token is not None  # More records available
-    finally:
-        server_with_db._get_conn = original_get_conn
+    assert len(headers) == 2
+    assert "identifier" in headers[0]
+    assert "datestamp" in headers[0]
+    assert token is not None  # More records available
 
 
 def test_list_identifiers_pagination(server_with_db):
     """Test listIdentifiers pagination."""
-    server_with_db._get_conn = lambda: server_with_db._test_conn
+    # First batch
+    headers1, token1 = server_with_db.listIdentifiers(
+        from_=None,
+        until=None,
+        continuation=None,
+        batch_size=2,
+        metadataPrefix="oai_dc",
+    )
+    assert len(headers1) == 2
+    assert token1 is not None
 
-    try:
-        # First batch
-        headers1, token1 = server_with_db.listIdentifiers(
-            from_=None,
-            until=None,
-            continuation=None,
-            batch_size=2,
-            metadataPrefix="oai_dc",
-        )
-        assert len(headers1) == 2
-        assert token1 is not None
+    # Second batch
+    headers2, token2 = server_with_db.listIdentifiers(
+        from_=None,
+        until=None,
+        continuation=token1,
+        batch_size=2,
+        metadataPrefix="oai_dc",
+    )
+    assert len(headers2) == 2
+    assert token2 is not None
 
-        # Second batch
-        headers2, token2 = server_with_db.listIdentifiers(
-            from_=None,
-            until=None,
-            continuation=token1,
-            batch_size=2,
-            metadataPrefix="oai_dc",
-        )
-        assert len(headers2) == 2
-        assert token2 is not None
-
-        # Third batch
-        headers3, token3 = server_with_db.listIdentifiers(
-            from_=None,
-            until=None,
-            continuation=token2,
-            batch_size=2,
-            metadataPrefix="oai_dc",
-        )
-        assert len(headers3) == 2
-        # Last batch may or may not have token depending on implementation
-        # (token is set when len == batch_size, even if it's the last batch)
-    finally:
-        server_with_db._get_conn = lambda: server_with_db._test_conn
+    # Third batch
+    headers3, token3 = server_with_db.listIdentifiers(
+        from_=None,
+        until=None,
+        continuation=token2,
+        batch_size=2,
+        metadataPrefix="oai_dc",
+    )
+    assert len(headers3) == 2
+    # Last batch may or may not have token depending on implementation
+    # (token is set when len == batch_size, even if it's the last batch)
 
 
 def test_list_identifiers_date_filtering(server_with_db):
     """Test listIdentifiers with date filtering."""
-    server_with_db._get_conn = lambda: server_with_db._test_conn
+    from_dt = datetime(2024, 6, 1)
+    until_dt = datetime(2024, 12, 31, 23, 59, 59)
 
-    try:
-        from_dt = datetime(2024, 6, 1)
-        until_dt = datetime(2024, 12, 31)
+    headers, token = server_with_db.listIdentifiers(
+        from_=from_dt,
+        until=until_dt,
+        continuation=None,
+        batch_size=10,
+        metadataPrefix="oai_dc",
+    )
 
-        headers, token = server_with_db.listIdentifiers(
-            from_=from_dt,
-            until=until_dt,
-            continuation=None,
-            batch_size=10,
-            metadataPrefix="oai_dc",
-        )
-
-        # Should get 4 records
-        assert len(headers) == 4
-        assert token is None  # All records returned
-    finally:
-        server_with_db._get_conn = lambda: server_with_db._test_conn
+    # Should get 4 records
+    assert len(headers) == 4
+    assert token is None  # All records returned
 
 
 def test_list_records_basic(server_with_db):
     """Test basic listRecords with database."""
-    server_with_db._get_conn = lambda: server_with_db._test_conn
+    records, token = server_with_db.listRecords(
+        metadataPrefix="oai_dc",
+        from_=None,
+        until=None,
+        continuation=None,
+        batch_size=2,
+    )
 
-    try:
-        records, token = server_with_db.listRecords(
-            metadataPrefix="oai_dc",
-            from_=None,
-            until=None,
-            continuation=None,
-            batch_size=2,
-        )
-
-        assert len(records) == 2
-        assert "header" in records[0]
-        assert "metadata" in records[0]
-        assert token is not None
-    finally:
-        server_with_db._get_conn = lambda: server_with_db._test_conn
+    assert len(records) == 2
+    assert "header" in records[0]
+    assert "metadata" in records[0]
+    assert token is not None
 
 
 def test_resumption_token_preserves_parameters(server_with_db):
     """Test that resumption token preserves metadataPrefix, from, and until."""
-    server_with_db._get_conn = lambda: server_with_db._test_conn
+    from_dt = datetime(2024, 6, 1)
+    until_dt = datetime(2024, 12, 31)
 
-    try:
-        from_dt = datetime(2024, 6, 1)
-        until_dt = datetime(2024, 12, 31)
-
-        # First request
-        headers1, token1 = server_with_db.listIdentifiers(
-            from_=from_dt,
-            until=until_dt,
-            continuation=None,
-            batch_size=2,
-            metadataPrefix="oai_dc",
-        )
-
-        assert token1 is not None
-
-        # Decode token and verify parameters
-        continuation, params = _decode_resumption_token(token1)
-        assert continuation is not None
-        assert params["metadataPrefix"] == "oai_dc"
-        assert "from" in params
-        assert "until" in params
-
-        # Verify date format is OAI-PMH compliant
-        from_str = params["from"]
-        until_str = params["until"]
-        assert from_str.endswith("Z")  # UTC indicator
-        assert until_str.endswith("Z")  # UTC indicator
-    finally:
-        server_with_db._get_conn = lambda: server_with_db._test_conn
-
-
-# ============================================================================
-# Tests for Path Separation (DB_ROOT_PATH vs ROOT_PATH)
-# ============================================================================
-
-
-def test_path_separation_with_root_prefix(tmp_path, monkeypatch, pg_unit_test):
-    """Test that paths are correctly stripped when ROOT_PATH is configured."""
-    from modama_crawler import server as server_module
-
-    # Create test database with absolute paths
-    conn = pg_unit_test
-    conn.row_factory = psycopg.rows.dict_row
-    ensure_dataset_tables(conn)
-
-    # Create test files
-    db_root = tmp_path / "storage" / "er-c-data"
-    db_root.mkdir(parents=True)
-
-    # Create a file at: db_root / "adhoc" / "absorption" / "file.txt"
-    test_file = db_root / "adhoc" / "absorption" / "file.txt"
-    test_file.parent.mkdir(parents=True, exist_ok=True)
-    test_file.write_text("test content")
-
-    # Insert into database with absolute path
-    cur = conn.cursor()
-    abs_path = str(test_file)
-    cur.execute(
-        "INSERT INTO files (path_id, path, mtime) VALUES (%s, %s, %s)",
-        (1, abs_path, datetime(2024, 6, 1).timestamp()),
+    # First request
+    headers1, token1 = server_with_db.listIdentifiers(
+        from_=from_dt,
+        until=until_dt,
+        continuation=None,
+        batch_size=2,
+        metadataPrefix="oai_dc",
     )
-    cur.execute("INSERT INTO datasets (dataset_id, path_id) VALUES (%s, %s)", (1, 1))
-    cur.execute(
-        "INSERT INTO mimes (dataset_id, mime) VALUES (%s, %s)", (1, "text/plain")
-    )
-    cur.execute(
-        "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (%s, %s)", (1, 1)
-    )
-    conn.commit()
 
-    # Configure server with ROOT_PATH = "adhoc"
-    original_db_root = server_module.MODAMA_DATA_ROOT
+    assert token1 is not None
 
-    server_module.MODAMA_DATA_ROOT = db_root
+    # Decode token and verify parameters
+    continuation, params = _decode_resumption_token(token1)
+    assert continuation is not None
+    assert params["metadataPrefix"] == "oai_dc"
+    assert "from" in params
+    assert "until" in params
 
-    try:
-        # Query should return path relative to ROOT_PATH
-        paths, next_path = server_module._query_datasets_from_db(
-            conn, continuation=None, from_=None, until=None, batch_size=10
-        )
-
-        assert len(paths) == 1
-        assert (
-            str(paths[0]) == "absorption/file.txt"
-        )  # Stripped DB_ROOT_PATH and ROOT_PATH
-    finally:
-        server_module.MODAMA_DATA_ROOT = original_db_root
-
-
-# ============================================================================
-# Flask Endpoint Tests
-# ============================================================================
-
-
-def test_flask_identify_endpoint(flask_client):
-    """Test Flask endpoint for Identify verb."""
-    response = flask_client.get("/oai?verb=Identify")
-
-    assert response.status_code == 200
-    assert b"OAI-PMH" in response.data
-    assert b"Identify" in response.data
-    assert b"Modama OAI-PMH server" in response.data
-
-
-def test_flask_bad_verb_endpoint(flask_client):
-    """Test Flask endpoint with invalid verb."""
-    response = flask_client.get("/oai?verb=InvalidVerb")
-
-    assert response.status_code == 200
-    assert b"error" in response.data
-    assert b"badVerb" in response.data
-
-
-# ============================================================================
-# Path Encoding/Decoding Tests
-# ============================================================================
-
-
-def test_quote_path_basic():
-    """Test basic path quoting."""
-    path = "simple/path/file.txt"
-    quoted = quote_path(path)
-    # Forward slashes are in the safe parameter, so they're not encoded
-    assert quoted == "simple/path/file.txt"
-
-
-def test_quote_path_special_chars():
-    """Test path quoting with special characters."""
-    path = "path with spaces/file.txt"
-    quoted = quote_path(path)
-    assert " " not in quoted  # Spaces should be encoded
-
-
-def test_unquote_path_basic():
-    """Test basic path unquoting."""
-    quoted = "simple%2Fpath%2Ffile.txt"
-    unquoted = unquote_path(quoted)
-    assert unquoted == "simple/path/file.txt"
-
-
-def test_quote_unquote_roundtrip():
-    """Test that quoting and unquoting preserves the original path."""
-    test_paths = [
-        "simple/path/file.txt",
-        "path with spaces/file.txt",
-        "path/with/special!chars.txt",
-        "path/with( parentheses ).txt",
-        "path/with'quotes'.txt",
-    ]
-
-    for original in test_paths:
-        quoted = quote_path(original)
-        unquoted = unquote_path(quoted)
-        assert unquoted == original, f"Failed for path: {original}"
-
-
-# ============================================================================
-# Identifier Generation Tests
-# ============================================================================
-
-
-def test_get_identifier_basic():
-    """Test basic identifier generation."""
-    path = Path("some/path/file.txt")
-    identifier = get_identifier(path)
-
-    assert identifier is not None
-    assert "https://er-c-data-mgmt.fz-juelich.de/browse?path=" in identifier
-    assert "some/path/file.txt" in identifier
-
-
-def test_get_identifier_with_spaces():
-    """Test identifier generation with spaces in path."""
-    path = Path("path with spaces/file.txt")
-    identifier = get_identifier(path)
-
-    assert identifier is not None
-    # Spaces should be encoded
-    assert " " not in identifier
-
-
-def test_get_identifier_none():
-    """Test identifier generation with None path."""
-    identifier = get_identifier(None)
-    assert identifier is None
-
-
-def test_path_from_identifier_basic():
-    """Test extracting path from basic identifier."""
-    identifier = "https://er-c-data-mgmt.fz-juelich.de/browse?path=some/path/file.txt"
-    path = path_from_identifier(identifier)
-
-    assert path == "some/path/file.txt"
-
-
-def test_path_from_identifier_with_encoding():
-    """Test extracting path with encoded characters."""
-    identifier = (
-        "https://er-c-data-mgmt.fz-juelich.de/browse?path=path%20with%20spaces/file.txt"
-    )
-    path = path_from_identifier(identifier)
-
-    assert path == "path with spaces/file.txt"
-
-
-def test_path_from_identifier_with_leading_slash():
-    """Test that leading slash is removed from path."""
-    # Note: get_identifier adds a leading slash, so we test the roundtrip
-    original_path = "some/path/file.txt"
-    identifier = get_identifier(Path(original_path))
-    extracted_path = path_from_identifier(identifier)
-
-    assert extracted_path == original_path
-
-
-def test_path_from_identifier_invalid():
-    """Test that invalid identifier raises ValueError."""
-    invalid_identifier = "https://example.com/invalid"
-
-    with pytest.raises(ValueError):
-        path_from_identifier(invalid_identifier)
+    # Verify date format is OAI-PMH compliant
+    from_str = params["from"]
+    until_str = params["until"]
+    assert from_str.endswith("Z")  # UTC indicator
+    assert until_str.endswith("Z")  # UTC indicator

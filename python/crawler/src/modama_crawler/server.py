@@ -148,39 +148,6 @@ def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
     return continuation, result
 
 
-def _get_handler_for_path(
-    conn: psycopg.Connection,
-    root: pathlib.Path,
-    path: pathlib.Path,
-    guesses: Optional[Sequence[Mime.MIMEtype]] = None,
-) -> FileHandler:
-    """Create a FileHandler for a path using database MIME types.
-
-    Args:
-        conn: Database connection
-        root: Root path for data storage
-        path: Relative path to create handler for
-        guesses: Optional MIME type guesses (e.g., from client)
-
-    Returns:
-        FileHandler instance
-    """
-    # Convert relative path to absolute for database query and filesystem access
-    abs_path = root / path
-
-    # Try to get MIME types from database using absolute path
-    db_guesses = _get_mime_types_from_db(conn, abs_path)
-    if db_guesses:
-        guesses = db_guesses
-    elif guesses is None:
-        # Fall back to filesystem-based guessing
-        guesses = guess(abs_path)
-
-    # Create handler with absolute filesystem root and relative path
-    # FileHandler will construct abspath as root / path
-    return FileHandler.create(root, path, guesses, conn)
-
-
 # --- OAI-PMH Server Implementation ---
 
 
@@ -198,6 +165,37 @@ class SimpleServer:
             psycopg.Connection: Database connection
         """
         return _get_db_connection()
+
+    def _get_handler_for_path(
+        self,
+        conn: psycopg.Connection,
+        path: pathlib.Path,
+        guesses: Optional[Sequence[Mime.MIMEtype]] = None,
+    ) -> FileHandler:
+        """Create a FileHandler for a path using database MIME types.
+
+        Args:
+            conn: Database connection
+            path: Relative path to create handler for
+            guesses: Optional MIME type guesses (e.g., from client)
+
+        Returns:
+            FileHandler instance
+        """
+        # Convert relative path to absolute for database query and filesystem access
+        abs_path = self._root / path
+
+        # Try to get MIME types from database using absolute path
+        db_guesses = _get_mime_types_from_db(conn, abs_path)
+        if db_guesses:
+            guesses = db_guesses
+        elif guesses is None:
+            # Fall back to filesystem-based guessing
+            guesses = guess(abs_path)
+
+        # Create handler with absolute filesystem root and relative path
+        # FileHandler will construct abspath as root / path
+        return FileHandler.create(self._root, path, guesses, conn)
 
     def identify(self) -> dict:
         """Return repository identification information."""
@@ -218,7 +216,7 @@ class SimpleServer:
         path = pathlib.Path(path_from_identifier(identifier))
         path = sanitize(root=self._root, path=path)
         conn = self._get_conn()
-        handler = _get_handler_for_path(conn, self._root, path)
+        handler = self._get_handler_for_path(conn, path)
 
         return {
             "header": self._make_header(handler),
@@ -252,7 +250,7 @@ class SimpleServer:
         # Build headers
         headers = []
         for path in paths:
-            handler = _get_handler_for_path(conn, self._root, path)
+            handler = self._get_handler_for_path(conn, path)
             headers.append(self._make_header(handler))
 
         # Encode new resumption token with all parameters (preserve full datetime)
@@ -290,7 +288,7 @@ class SimpleServer:
         recs = []
         for path in paths:
             try:
-                handler = _get_handler_for_path(conn, self._root, path)
+                handler = self._get_handler_for_path(conn, path)
                 recs.append(
                     {
                         "header": self._make_header(handler),
