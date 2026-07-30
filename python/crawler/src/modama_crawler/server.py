@@ -611,8 +611,21 @@ class OAIServer:
             mimetype="text/xml; charset=utf-8",
         )
 
-    def handle_listidentifiers(self, args: dict) -> Response:
-        """Handle ListIdentifiers verb."""
+    def _process_list_verb(
+        self,
+        verb: str,
+        backend_method: callable,
+        make_element: callable,
+        args: dict,
+    ) -> Response:
+        """Common logic for ListIdentifiers and ListRecords verbs.
+
+        Args:
+            verb: OAI-PMH verb name ("ListIdentifiers" or "ListRecords")
+            backend_method: Backend method to call (listIdentifiers or listRecords)
+            make_element: Function to convert items to XML elements
+            args: Request arguments
+        """
         resumption_token = args.get("resumptionToken")
         from_arg = args.get("from")
         until_arg = args.get("until")
@@ -650,14 +663,14 @@ class OAIServer:
                 mimetype="text/xml; charset=utf-8",
             )
 
-        headers, next_path = self._backend.listIdentifiers(
+        items, next_path = backend_method(
+            metadataPrefix=metadata_prefix,
             from_=from_,
             until=until,
             continuation=str(continuation) if continuation else None,
-            metadataPrefix=metadata_prefix,
         )
 
-        children = [self._make_header_element(h) for h in headers]
+        children = [make_element(item) for item in items]
 
         # Encode and add resumption token if present
         if next_path:
@@ -669,70 +682,26 @@ class OAIServer:
             children.append({"resumptionToken": encoded_token})
 
         return Response(
-            self._make_oai_response("ListIdentifiers", children, args),
+            self._make_oai_response(verb, children, args),
             mimetype="text/xml; charset=utf-8",
+        )
+
+    def handle_listidentifiers(self, args: dict) -> Response:
+        """Handle ListIdentifiers verb."""
+        return self._process_list_verb(
+            "ListIdentifiers",
+            self._backend.listIdentifiers,
+            self._make_header_element,
+            args,
         )
 
     def handle_listrecords(self, args: dict) -> Response:
         """Handle ListRecords verb."""
-        resumption_token = args.get("resumptionToken")
-        from_arg = args.get("from")
-        until_arg = args.get("until")
-        metadata_prefix_arg = args.get("metadataPrefix")
-
-        # If resumptionToken is present, decode it and use those parameters
-        if resumption_token:
-            continuation, token_params = _decode_resumption_token(resumption_token)
-
-            # Check for conflicting parameters
-            if from_arg or until_arg or metadata_prefix_arg:
-                return Response(
-                    self._make_error(
-                        "badArgument",
-                        "Cannot mix resumptionToken with from, until, or metadataPrefix parameters",
-                    ),
-                    mimetype="text/xml; charset=utf-8",
-                )
-
-            # Use parameters from resumption token
-            from_ = _parse_datestamp(token_params.get("from"))
-            until = _parse_datestamp(token_params.get("until"))
-            metadata_prefix = token_params.get("metadataPrefix")
-        else:
-            # Use provided parameters
-            continuation = None
-            from_ = _parse_datestamp(from_arg)
-            until = _parse_datestamp(until_arg)
-            metadata_prefix = metadata_prefix_arg
-
-        # Validate metadataPrefix
-        if not metadata_prefix:
-            return Response(
-                self._make_error("badArgument", "Missing metadataPrefix parameter"),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        records, next_path = self._backend.listRecords(
-            metadataPrefix=metadata_prefix,
-            from_=from_,
-            until=until,
-            continuation=str(continuation) if continuation else None,
-        )
-
-        children = [self._make_record_element(r) for r in records]
-
-        # Encode and add resumption token if present
-        if next_path:
-            from_str = _format_datestamp(from_.timestamp()) if from_ else None
-            until_str = _format_datestamp(until.timestamp()) if until else None
-            encoded_token = _encode_resumption_token(
-                next_path, metadata_prefix, from_str, until_str
-            )
-            children.append({"resumptionToken": encoded_token})
-
-        return Response(
-            self._make_oai_response("ListRecords", children, args),
-            mimetype="text/xml; charset=utf-8",
+        return self._process_list_verb(
+            "ListRecords",
+            self._backend.listRecords,
+            self._make_record_element,
+            args,
         )
 
     def handle_listsets(self, args: dict) -> Response:
