@@ -160,11 +160,13 @@ def test_server_identify():
     """Test Identify verb."""
     from psycopg_pool import ConnectionPool
     from modama_crawler.repository import RepositoryConfig
+    from modama_crawler.server import OAIServer
 
     pool = ConnectionPool(conninfo="dbname=test", open=True)
     config = RepositoryConfig.from_env()
     backend = OAIFileDBBackend(pool=pool, root=config.data_root)
-    info = backend.identify(config)
+    server = OAIServer(backend, config)
+    info = server.identify()
 
     assert info["repositoryName"] == "Modama OAI-PMH server"
     assert info["protocolVersion"] == "2.0"

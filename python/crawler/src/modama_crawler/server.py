@@ -167,26 +167,6 @@ class OAIFileDBBackend:
         # FileHandler will construct abspath as root / path
         return FileHandler.create(self._root, path, guesses, conn)
 
-    def identify(self, config: RepositoryConfig) -> dict:
-        """Return repository identification information.
-
-        Args:
-            config: RepositoryConfig instance with all repository parameters
-
-        Returns:
-            Dictionary with identifies information
-        """
-        return {
-            "repositoryName": config.repository_name,
-            "protocolVersion": "2.0",
-            "adminEmails": [config.admin_email],
-            "earliestDatestamp": config.earliest_datestamp,
-            "deletedRecord": "no" if self.supports_deleted_records() else "no",
-            "granularity": config.granularity,
-            "compression": config.compression,
-            "descriptions": [],
-        }
-
     def getRecord(self, identifier: str) -> dict:
         """Get a single record by identifier."""
         with self._pool.connection() as conn:
@@ -405,6 +385,30 @@ class OAIServer:
         self._backend = backend
         self._config = config
 
+    # --- OAI-PMH Protocol Methods ---
+
+    def identify(self) -> dict:
+        """Return repository identification information for OAI-PMH Identify response.
+
+        This method implements the OAI-PMH Identify verb directly using the
+        RepositoryConfig, separating protocol concerns from data storage concerns.
+
+        Returns:
+            Dictionary containing all Identify response fields
+        """
+        return {
+            "repositoryName": self._config.repository_name,
+            "protocolVersion": "2.0",
+            "adminEmails": [self._config.admin_email],
+            "earliestDatestamp": self._config.earliest_datestamp,
+            "deletedRecord": "yes"
+            if self._backend.supports_deleted_records()
+            else "no",
+            "granularity": self._config.granularity,
+            "compression": self._config.compression,
+            "baseURL": self._config.base_url,
+        }
+
     # --- XML Response Generation ---
 
     def _make_oai_response(
@@ -541,7 +545,7 @@ class OAIServer:
 
     def handle_identify(self, args: dict) -> Response:
         """Handle Identify verb."""
-        info = self._backend.identify(self._config)
+        info = self.identify()
         children = [
             {"repositoryName": info["repositoryName"]},
             {"baseURL": self._config.base_url},
