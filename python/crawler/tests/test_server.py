@@ -51,27 +51,15 @@ def validate_dc_date(date_value: str):
     According to Dublin Core and OAI-PMH specifications, dates should follow
     ISO 8601 format with UTC timezone indicator (Z suffix).
 
-    Acceptable formats:
-    - YYYY-MM-DDThh:mm:ssZ (full datetime)
-    - YYYY-MM-DD (date only)
-    - YYYY-MM (year-month only)
-    - YYYY (year only)
+    For consistency in this test suite, only the full datetime format is accepted:
+    - YYYY-MM-DDThh:mm:ssZ (full datetime with seconds granularity)
+
+    This matches the W3C Date-Time Format (W3CDTF) profile of ISO 8601.
     """
-    # Regular expression for W3C Date-Time Format (ISO 8601 profile)
-    # Matches: YYYY-MM-DDThh:mm:ssZ
-    w3c_datetime_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+    pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 
-    # Regular expression for date-only formats
-    date_patterns = [
-        r"^\d{4}$",  # YYYY
-        r"^\d{4}-\d{2}$",  # YYYY-MM
-        r"^\d{4}-\d{2}-\d{2}$",  # YYYY-MM-DD
-        w3c_datetime_pattern,  # YYYY-MM-DDThh:mm:ssZ
-    ]
-
-    for pattern in date_patterns:
-        if re.match(pattern, date_value):
-            return True
+    if re.match(pattern, date_value):
+        return True
 
     # If none matched, it's invalid
     return False
@@ -476,7 +464,6 @@ def test_list_identifiers_date_filtering(backend_with_db):
 def test_list_records_basic(backend_with_db):
     """Test basic listRecords with database."""
     records, token = backend_with_db.listRecords(
-        metadataPrefix="oai_dc",
         from_=None,
         until=None,
         continuation=None,

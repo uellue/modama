@@ -207,6 +207,9 @@ class OAIFileDBBackend:
         """Return whether this backend supports deleted records."""
         return False
 
+    def granularity(self) -> str:
+        return "YYYY-MM-DDThh:mm:ssZ"
+
     def _query_datasets_from_db(
         self,
         continuation: Optional[pathlib.Path],
@@ -347,9 +350,8 @@ class OAIServer:
             "deletedRecord": "yes"
             if self._backend.supports_deleted_records()
             else "no",
-            "granularity": self._config.granularity,
+            "granularity": self._backend.granularity(),
             "compression": self._config.compression,
-            "baseURL": self._config.base_url,
         }
 
     # --- Resumption Token Helpers ---
@@ -553,7 +555,7 @@ class OAIServer:
         info = self.identify()
         children = [
             {"repositoryName": info["repositoryName"]},
-            {"baseURL": self._config.base_url},
+            {"baseURL": args["base_url"]},
             {"protocolVersion": info["protocolVersion"]},
             {"adminEmails": [{"adminEmail": email} for email in info["adminEmails"]]},
             {"earliestDatestamp": _format_datestamp(info["earliestDatestamp"])},

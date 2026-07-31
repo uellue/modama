@@ -15,6 +15,7 @@ import xdg
 # Import crawler classes
 import modama_crawler.recognition
 from modama_crawler.database import ensure_dataset_tables
+from modama_crawler.repository import RepositoryConfig
 
 
 # MIME for self test
@@ -171,8 +172,18 @@ def test_files(tmp_path) -> Path:
     return tmp_path
 
 
+@pytest.fixture
+def repo_config(test_files):
+    return RepositoryConfig(
+        admin_email="email@example.com",
+        repository_name="Modama test repository",
+        earliest_datestamp=datetime.fromtimestamp(0.0),
+        data_root=test_files,
+    )
+
+
 @pytest.fixture()
-def running_http_server(test_database, test_files):
+def running_http_server(test_database, repo_config):
     """Start OAI-PMH server as HTTP server in background thread.
 
     Yields the base URL of the running server (e.g., "http://127.0.0.1:12345/oai").
@@ -192,10 +203,10 @@ def running_http_server(test_database, test_files):
     )
 
     # Configure backend for testing
-    config_dict = {"TESTING": True, "DB_ROOT_PATH": test_files, "ROOT_PATH": Path("")}
+    config_dict = {"TESTING": True}
 
     # Create app with direct configuration (no environment monkeypatching needed)
-    app = create_app(pool=pool, config=config_dict)
+    app = create_app(pool=pool, config=config_dict, repo_config=repo_config)
 
     # Create server instance
     server = make_server("127.0.0.1", 0, app, threaded=True)

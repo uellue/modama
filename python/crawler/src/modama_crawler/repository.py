@@ -68,13 +68,14 @@ class RepositoryConfig:
     """Configuration for the OAI-PMH repository."""
 
     admin_email: str
-    base_url: str
     repository_name: str
     earliest_datestamp: datetime  # Changed from timestamp to datetime
-    granularity: str
-    compression: list
+    # FUTURE: How to integrate that with compression capability of WSGI and/or
+    # reverse proxy? A bit weird in OAI-PMH that they bypass the normal HTTP
+    # transfer encoding (?) and compression negotiation here
+    compression: tuple = ("identity",)
     batch_size: int = 10
-    data_root: Path = Path("/storage/er-c-data")
+    data_root: Path = Path("/data")
 
     @classmethod
     def from_env(cls, base_url_optional: bool = True) -> "RepositoryConfig":
@@ -108,21 +109,15 @@ class RepositoryConfig:
         except ValueError:
             earliest_datestamp = dt_type.fromtimestamp(0)  # fallback to epoch
 
-        granularity = os.environ.get("OAI_GRANULARITY", "YYYY-MM-DDThh:mm:ssZ")
-        compression_str = os.environ.get("OAI_COMPRESSION", "identity")
-        compression = [c.strip() for c in compression_str.split(",") if c.strip()]
         batch_size = int(os.environ.get("BATCH_SIZE", 10))
 
-        data_root_str = os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data")
+        data_root_str = os.environ.get("MODAMA_DATA_ROOT", "/data")
         data_root = Path(data_root_str)
 
         return cls(
             admin_email=admin_email,
-            base_url=base_url or "",
             repository_name=repository_name,
             earliest_datestamp=earliest_datestamp,
-            granularity=granularity,
-            compression=compression,
             batch_size=batch_size,
             data_root=data_root,
         )

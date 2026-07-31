@@ -242,7 +242,7 @@ class FileHandler:
     def _find_all_members(self) -> Iterable[pathlib.Path]:
         # If database connection is available, query for dataset members
         if self.conn is not None:
-            # self.path is relative, self.root is absolute (DB_ROOT_PATH)
+            # self.path is relative, self.root is absolute
             abs_path = self.root / self.path
             return _get_dataset_members_from_db(self.conn, str(abs_path))
         return [self.path]
