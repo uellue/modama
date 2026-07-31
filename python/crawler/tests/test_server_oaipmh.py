@@ -249,7 +249,8 @@ def test_oaipmh_list_records_with_sets(oaipmh_client):
 
     # This repository does not support sets
     try:
-        list(oaipmh_client.listRecords(metadataPrefix="oai_dc", set="some_set"))
+        res = list(oaipmh_client.listRecords(metadataPrefix="oai_dc", set="some_set"))
+        print(res)
         pytest.fail("Expected error when using set on non-set-supporting repository")
     except Exception as e:
         # Should get some kind of error about noSetHierarchy or invalid set

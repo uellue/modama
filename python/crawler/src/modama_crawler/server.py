@@ -166,8 +166,22 @@ class OAIFileDBBackend:
         until: Optional[datetime] = None,
         continuation: Optional[str] = None,
         batch_size: int = 10,
+        set_spec: Optional[str] = None,
     ) -> Tuple[list, Optional[pathlib.Path]]:
-        """List record headers with optional date filtering and pagination."""
+        """List record headers with optional date filtering and pagination.
+
+        Args:
+            from_: Minimum mtime (inclusive)
+            until: Maximum mtime (exclusive)
+            continuation: Last path from previous batch (for pagination)
+            batch_size: Maximum number of paths to return
+            set_spec: Set specification to filter by (not supported - ignored)
+
+        Returns:
+            Tuple of (list of headers, next continuation path or None)
+        """
+        if set_spec is not None and not self.listSets():
+            raise ValueError("Sets are not implemented in this backend")
         # Decode continuation token if present
         cont_path = pathlib.Path(continuation) if continuation else None
         next_path = None
@@ -192,8 +206,22 @@ class OAIFileDBBackend:
         until: Optional[datetime] = None,
         continuation: Optional[str] = None,
         batch_size: int = 10,
+        set_spec: Optional[str] = None,
     ) -> Tuple[list, Optional[str]]:
-        """List full records with optional date filtering and pagination."""
+        """List full records with optional date filtering and pagination.
+
+        Args:
+            from_: Minimum mtime (inclusive)
+            until: Maximum mtime (exclusive)
+            continuation: Last path from previous batch (for pagination)
+            batch_size: Maximum number of paths to return
+            set_spec: Set specification to filter by (not supported - ignored)
+
+        Returns:
+            Tuple of (list of records, next continuation or None)
+        """
+        if set_spec is not None and not self.listSets():
+            raise ValueError("Sets are not implemented in this backend")
         # Decode continuation token if present
         cont_path = pathlib.Path(continuation) if continuation else None
 
@@ -698,6 +726,7 @@ class OAIServer:
         from_arg = args.get("from")
         until_arg = args.get("until")
         metadata_prefix_arg = args.get("metadataPrefix")
+        set_arg = args.get("set")
 
         # If resumptionToken is present, decode it and use those parameters
         if resumption_token:
@@ -731,10 +760,23 @@ class OAIServer:
                 mimetype="text/xml; charset=utf-8",
             )
 
+        # Check if set argument is provided but repository doesn't support sets
+        # Per OAI-PMH spec, this should return noSetHierarchy error
+        if set_arg:
+            sets = self._backend.listSets()
+            if not sets:
+                return Response(
+                    self._make_error(
+                        "noSetHierarchy", "This repository does not support sets"
+                    ),
+                    mimetype="text/xml; charset=utf-8",
+                )
+
         items, next_path = backend_method(
             from_=from_,
             until=until,
             continuation=str(continuation) if continuation else None,
+            set_spec=set_arg if set_arg else None,
         )
 
         children = [make_element(item) for item in items]
