@@ -171,7 +171,7 @@ def test_files(tmp_path) -> Path:
     return tmp_path
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def running_http_server(test_database, test_files):
     """Start OAI-PMH server as HTTP server in background thread.
 

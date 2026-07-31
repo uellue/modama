@@ -9,7 +9,7 @@ from pathlib import Path
 from xdg import Mime
 
 from modama_crawler.repository import path_from_identifier, get_identifier
-from modama_crawler.server import _get_handler_for_path, _format_datestamp
+from modama_crawler.server import _format_datestamp
 
 
 # ============================================================================
@@ -46,7 +46,9 @@ def test_oaipmh_list_identifiers(oaipmh_client):
         assert header.datestamp is not None
 
 
-def test_oaipmh_list_records_dublin_core(oaipmh_client, test_files, test_database):
+def test_oaipmh_list_records_dublin_core(
+    oaipmh_client, test_files, test_database, backend_with_db
+):
     """Test ListRecords with Dublin Core metadata using oaipmh.
 
     Verifies that the metadata parsed by oaipmh matches what the server generates
@@ -106,7 +108,9 @@ def test_oaipmh_list_records_dublin_core(oaipmh_client, test_files, test_databas
 
         # Instantiate FileHandler using the path and MIME type guesses from oaipmh
         with test_database as conn:
-            handler = _get_handler_for_path(conn, test_files, path, guesses)
+            handler = backend_with_db._get_handler_for_path(
+                conn, test_files, path, guesses
+            )
 
             # Verify MIME type intersection
             intersects = False
