@@ -36,6 +36,31 @@ sys.path.insert(0, str(Path(__file__).parent))
 from schemas import get_schema_path
 
 
+class LocalSchemaResolver(etree.Resolver):
+    """Custom resolver that maps external schema references to local files.
+
+    This resolver handles:
+    - oai_dc.xsd imports (simpledc20021212.xsd)
+    - simpledc20021212.xsd imports (xml.xsd from W3C)
+    """
+
+    def resolve(self, system_url, public_id, context):
+        url_str = str(system_url) if system_url else ""
+        schemas_path = get_schema_path("")
+
+        # Map Dublin Core schema to local file
+        if "simpledc20021212.xsd" in url_str:
+            return self.resolve_filename(
+                str(schemas_path / "simpledc20021212.xsd"), context
+            )
+
+        # Map W3C XML namespace schema to local file
+        if "xml.xsd" in url_str:
+            return self.resolve_filename(str(schemas_path / "xml.xsd"), context)
+
+        return None
+
+
 def pretty_print_xml_response(response):
     """Pretty-print an XML response if content-type indicates XML."""
     if "xml" in response.headers.get("content-type", "").lower():
@@ -628,3 +653,20 @@ def test_request_list_records(running_http_server):
                 assert False, (
                     f"Dublin Core metadata does not validate against oai_dc.xsd: {e}"
                 )
+
+    # Validate the entire OAI-PMH response document against OAI-PMH.xsd
+    oai_pmh_schema_path = get_schema_path("oai-pmh-oai-dc.xsd")
+
+    # Create resolver for full document validation
+    parser = etree.XMLParser()
+    parser.resolvers.add(LocalSchemaResolver())
+
+    try:
+        oai_pmh_doc = etree.parse(str(oai_pmh_schema_path), parser)
+        oai_pmh_schema = etree.XMLSchema(oai_pmh_doc)
+
+        # Parse the entire response and validate
+        doc = etree.fromstring(response.content)
+        oai_pmh_schema.assertValid(doc)
+    except etree.DocumentInvalid as e:
+        assert False, f"OAI-PMH response does not validate against OAI-PMH.xsd: {e}"

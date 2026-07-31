@@ -5,6 +5,14 @@ from pathlib import Path
 
 
 # Schema URLs for OAI-PMH and Dublin Core
+
+# Additional schemas for combined validation
+COMBINED_SCHEMAS = {
+    # Combined OAI-PMH + oai_dc schema for full document validation
+    # This imports both OAI-PMH.xsd and oai_dc.xsd to enable cross-namespace validation
+    "oai-pmh-oai-dc.xsd": None,  # Local file, not downloaded from internet
+}
+
 SCHEMAS = {
     "OAI-PMH.xsd": "http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd",
     "oai_dc.xsd": "http://www.openarchives.org/OAI/2.0/oai_dc.xsd",
