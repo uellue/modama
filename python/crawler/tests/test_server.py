@@ -136,6 +136,93 @@ def validate_dc_date_in_response(root: ET.Element, ns: dict) -> list[str]:
     return valid_dates
 
 
+def validate_dc_format(date_value: str):
+    """Validate that a Dublin Core format value is a valid MIME type.
+
+    According to IETF RFC 2046, MIME types follow the pattern:
+    type/subtype where type and subtype are alphanumeric strings
+    possibly containing + or - characters.
+
+    Examples of valid MIME types:
+    - text/plain
+    - image/jpeg
+    - application/json
+    - application/octet-stream
+    """
+    # Valid MIME type pattern (simplified)
+    # Type: starts with alphanumeric, can contain +, -, .
+    # Subtype: same rules as type
+    mime_pattern = r"^[a-zA-Z0-9][a-zA-Z0-9+\-\.]*/[a-zA-Z0-9][a-zA-Z0-9+\-\.]*$"
+
+    if re.match(mime_pattern, date_value):
+        return True
+
+    # If it doesn't match, it's invalid
+    return False
+
+
+def validate_dc_format_in_response(root: ET.Element, ns: dict) -> list[str]:
+    """Find and validate all dc:format elements contain valid MIME types.
+
+    Args:
+        root: The parsed XML document root element
+        ns: Namespace dictionary for XPath queries
+
+    Returns:
+        List of valid format values
+
+    Raises:
+        AssertionError if any metadata block lacks a valid MIME type in format elements
+    """
+    # Extract all oai_dc:dc elements (each represents a metadata block)
+    dc_elements = root.findall(".//oai_dc:dc", ns)
+
+    assert len(dc_elements) > 0, "No oai_dc:dc metadata blocks found in response"
+
+    valid_formats = []
+
+    for i, dc_elem in enumerate(dc_elements):
+        # Find all format elements within this specific dc element
+        format_elements = dc_elem.findall("dc:format", ns)
+
+        # Check if this metadata block has any format elements
+        has_format_element = len(format_elements) > 0
+
+        # Track if at least one format in this block is valid
+        block_has_valid_format = False
+
+        for format_elem in format_elements:
+            format_value = format_elem.text
+
+            if format_value is None:
+                continue
+
+            # Validate that it's a proper MIME type (not just "mime/" or incomplete)
+            is_valid = validate_dc_format(format_value)
+            if is_valid:
+                valid_formats.append(format_value)
+                block_has_valid_format = True
+
+        # Each metadata block must have at least one valid MIME type
+        if has_format_element and not block_has_valid_format:
+            assert False, (
+                f"Metadata block {i + 1} has format elements but none are valid MIME types. "
+                f"Found {[e.text for e in format_elements if e.text is not None]}"
+            )
+
+        if has_format_element and not block_has_valid_format:
+            assert False, (
+                f"Metadata block {i + 1} has no format elements. "
+                f"All metadata blocks must have at least one dc:format element with a valid MIME type."
+            )
+
+    assert len(valid_formats) > 0, (
+        f"No valid MIME type found in any dc:format elements across {len(dc_elements)} metadata block(s)"
+    )
+
+    return valid_formats
+
+
 def validate_dublin_core_metadata(root: ET.Element, ns: dict) -> None:
     """Validate all metadata elements against oai_dc.xsd schema.
 
@@ -685,6 +772,10 @@ def test_request_list_records(running_http_server):
 
     # Validate dc:date elements in the response
     validate_dc_date_in_response(root, ns)
+
+    # Validate we have at least some MIME types
+    # as format specifiers
+    validate_dc_format_in_response(root, ns)
 
     # Validate Dublin Core metadata content against oai_dc.xsd
     validate_dublin_core_metadata(root, ns)

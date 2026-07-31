@@ -277,7 +277,7 @@ class FileHandler:
         return [self.mtime]
 
     def get_descriptions(self):
-        return [", ".join(f"'{str(m)}'" for m in self.members)]
+        return [", ".join(f"'{str(m.relative_to(self.root))}'" for m in self.members)]
 
     @property
     @cache
