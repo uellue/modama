@@ -125,6 +125,25 @@ class OAIFileDBBackend:
         # FileHandler will construct abspath as root / path
         return FileHandler.create(self._root, path, guesses, conn)
 
+    def _get_oldest_db_mtime(self) -> float:
+        """Get the minimum mtime of all files from the database.
+
+        Args:
+            conn: Database connection
+
+        Returns:
+            mtime as floating point Unix timestamp
+        """
+        with self._pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            cur.execute(
+                """
+                SELECT MIN(f.mtime) AS mtime FROM files f WHERE True
+                """
+            )
+            rows = cur.fetchall()
+            return min(row["mtime"] for row in rows)
+
     def getRecord(self, identifier: str) -> dict:
         """Get a single record by identifier."""
         with self._pool.connection() as conn:
@@ -357,7 +376,15 @@ class OAIServer:
             "repositoryName": self._config.repository_name,
             "protocolVersion": "2.0",
             "adminEmails": [self._config.admin_email],
-            "earliestDatestamp": self._config.earliest_datestamp,
+            "earliestDatestamp": min(
+                self._config.earliest_datestamp,
+                datetime.fromtimestamp(
+                    FileHandler.youngest_source_mtime(), tz=timezone.utc
+                ),
+                datetime.fromtimestamp(
+                    self._backend._get_oldest_db_mtime(), tz=timezone.utc
+                ),
+            ),
             "deletedRecord": "yes"
             if self._backend.supports_deleted_records()
             else "no",

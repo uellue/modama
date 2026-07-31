@@ -186,6 +186,7 @@ def test_source_mtime():
     # Unix timestamp, 0 is far enough in the past
     max_mtime = 0.0
     now = time.time()
+    min_mtime = now
     for cls in FileHandler, OctetStream, Directory, Symlink, EMPAD:
         mtime = cls.source_mtime()
         # Plausibility
@@ -194,8 +195,16 @@ def test_source_mtime():
         assert mtime < now
         print(mtime)
         max_mtime = max(max_mtime, mtime)
-    print(max_mtime, FileHandler.youngest_source_mtime(), now)
+        min_mtime = min(min_mtime, mtime)
+    print(
+        max_mtime,
+        FileHandler.youngest_source_mtime(),
+        min_mtime,
+        FileHandler.oldest_source_mtime(),
+        now,
+    )
     assert max_mtime == FileHandler.youngest_source_mtime()
+    assert min_mtime == FileHandler.oldest_source_mtime()
 
 
 def test_database_mtime(test_database, test_files):

@@ -102,9 +102,7 @@ def _get_dataset_members_from_db(
     return [pathlib.Path(row["path"]) for row in rows]
 
 
-def _get_dataset_mtime_from_db(
-    conn: psycopg.Connection, dataset_path: str
-) -> Sequence[pathlib.Path]:
+def _get_dataset_mtime_from_db(conn: psycopg.Connection, dataset_path: str) -> float:
     """Get the maximum mtime of all files in a dataset from the database.
 
     Args:
@@ -130,6 +128,25 @@ def _get_dataset_mtime_from_db(
     )
     rows = cur.fetchall()
     return max(row["mtime"] for row in rows)
+
+
+def get_oldest_mtime_from_db(conn: psycopg.Connection, dataset_path: str) -> float:
+    """Get the minimum mtime of all files from the database.
+
+    Args:
+        conn: Database connection
+
+    Returns:
+        mtime as floating point Unix timestamp
+    """
+    cur = conn.cursor(row_factory=dict_row)
+    cur.execute(
+        """
+        SELECT MIN(f.mtime) AS mtime FROM files
+        """
+    )
+    rows = cur.fetchall()
+    return min(row["mtime"] for row in rows)
 
 
 class DatasetConsistencyError(RuntimeError):
@@ -350,6 +367,7 @@ class FileHandler:
         return result
 
     @classmethod
+    @cache
     def youngest_source_mtime(cls) -> float:
         classes = set()
         for classlist in cls._registry.values():
@@ -358,6 +376,17 @@ class FileHandler:
         # for c in classes:
         #     print(c, c.source_mtime())
         return max(c.source_mtime() for c in classes)
+
+    @classmethod
+    @cache
+    def oldest_source_mtime(cls) -> float:
+        classes = set()
+        for classlist in cls._registry.values():
+            classes.update(classlist)
+        # print(classes)
+        # for c in classes:
+        #     print(c, c.source_mtime())
+        return min(c.source_mtime() for c in classes)
 
     def get_resource_type(self):
         g = self.get_mimes()[0]
