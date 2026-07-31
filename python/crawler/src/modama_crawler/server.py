@@ -251,14 +251,24 @@ class OAIFileDBBackend:
 
             # Date filtering on mtime
             if from_ is not None:
+                from_ts = from_.timestamp()
+                # include all records if the FileHandler source code has been modified since
+                if from_ts < FileHandler.youngest_source_mtime():
+                    from_ts = 0.0
                 where_clauses.append("f.mtime >= %s")
-                params.append(from_.timestamp())
+                params.append(from_ts)
 
             if until is not None:
                 # until is inclusive in OAI-PMH, but we make it exclusive for SQL
-                until_exclusive = until + timedelta(days=1)
+                # We work with seconds resolution
+                until_exclusive = until + timedelta(seconds=1)
+                until_ts = until_exclusive.timestamp()
+                # Skip all records if the file handler source code has been modified,
+                # meaning all records are younger
+                if until_ts < FileHandler.youngest_source_mtime():
+                    until_ts = 0.0
                 where_clauses.append("f.mtime < %s")
-                params.append(until_exclusive.timestamp())
+                params.append(until_ts)
 
             where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
 
@@ -304,7 +314,7 @@ class OAIFileDBBackend:
         """
         return {
             "identifier": get_identifier(handler.path),
-            "datestamp": handler.mtime,
+            "datestamp": max(handler.db_mtime, handler.source_mtime()),
             "setSpec": [],
             "isDeleted": False,
         }
