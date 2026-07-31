@@ -15,6 +15,7 @@ from pathlib import Path
 from datetime import datetime
 import re
 import requests
+import xml.etree.ElementTree as ET
 
 from psycopg_pool import ConnectionPool
 from lxml import etree
@@ -95,6 +96,116 @@ def validate_dc_date(date_value: str):
 
     # If none matched, it's invalid
     return False
+
+
+def validate_dc_date_in_response(root: ET.Element, ns: dict) -> list[str]:
+    """Find and validate all dc:date elements in the response.
+
+    Args:
+        root: The parsed XML document root element
+        ns: Namespace dictionary for XPath queries
+
+    Returns:
+        List of valid date values
+
+    Raises:
+        AssertionError if any date is invalid or contains a Unix timestamp
+    """
+    # Extract all dc:date elements from metadata
+    date_elements = root.findall(".//oai_dc:dc/dc:date", ns)
+
+    assert len(date_elements) > 0, "No dc:date elements found in response"
+
+    valid_dates = []
+    for date_elem in date_elements:
+        date_value = date_elem.text
+
+        # Check that it's not a raw timestamp (which would indicate the bug)
+        # Timestamps are numeric strings like "1785494744.596561"
+        assert not re.match(r"^\d+\.?\d*$", date_value), (
+            f"dc:date contains a Unix timestamp instead of ISO 8601 format: {date_value}"
+        )
+
+        # Validate the format
+        is_valid = validate_dc_date(date_value)
+        assert is_valid, (
+            f"dc:date '{date_value}' does not match Dublin Core/ISO 8601 format"
+        )
+        valid_dates.append(date_value)
+
+    return valid_dates
+
+
+def validate_dublin_core_metadata(root: ET.Element, ns: dict) -> None:
+    """Validate all metadata elements against oai_dc.xsd schema.
+
+    Args:
+        root: The parsed XML document root element
+        ns: Namespace dictionary for XPath queries
+
+    Raises:
+        AssertionError if metadata does not validate against oai_dc.xsd
+    """
+    # Get schema path for metadata validation
+    oai_dc_schema_path = get_schema_path("oai_dc.xsd")
+
+    # Extract the metadata element and validate it against oai_dc.xsd
+    metadata_elements = root.findall(".//oai:metadata", ns)
+
+    parser = etree.XMLParser()
+    parser.resolvers.add(LocalSchemaResolver())
+
+    for metadata_elem in metadata_elements:
+        # The child of metadata should be oai_dc:dc
+        if len(metadata_elem) > 0:
+            dc_elem = metadata_elem[0]
+
+            # Create a wrapper element in the oai_dc namespace with name 'dc'
+            wrapped = etree.Element("{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
+
+            # Copy attributes and children from dc_elem to wrapped
+            wrapped.attrib.update(dc_elem.attrib)
+            for child in dc_elem:
+                wrapped.append(child)
+
+            # Convert to string and validate
+            dc_xml_str = etree.tostring(wrapped, encoding="unicode")
+
+            try:
+                oai_dc_doc = etree.parse(str(oai_dc_schema_path), parser)
+                oai_dc_schema = etree.XMLSchema(oai_dc_doc)
+                doc = etree.fromstring(dc_xml_str)
+                oai_dc_schema.assertValid(doc)
+            except etree.DocumentInvalid as e:
+                assert False, (
+                    f"Dublin Core metadata does not validate against oai_dc.xsd: {e}"
+                )
+
+
+def validate_oai_pmh_response(response_content: bytes) -> None:
+    """Validate the entire OAI-PMH response document against combined schema.
+
+    Args:
+        response_content: The raw XML response content as bytes
+
+    Raises:
+        AssertionError if response does not validate against OAI-PMH.xsd
+    """
+    # Validate the entire OAI-PMH response document against OAI-PMH.xsd
+    oai_pmh_schema_path = get_schema_path("oai-pmh-oai-dc.xsd")
+
+    parser = etree.XMLParser()
+    parser.resolvers.add(LocalSchemaResolver())
+
+    try:
+        oai_pmh_doc = etree.parse(str(oai_pmh_schema_path), parser)
+        oai_pmh_schema = etree.XMLSchema(oai_pmh_doc)
+
+        # Parse the entire response and validate
+        doc = etree.fromstring(response_content)
+        oai_pmh_schema.assertValid(doc)
+    except etree.DocumentInvalid as e:
+        assert False, f"OAI-PMH response does not validate against OAI-PMH.xsd: {e}"
 
 
 # ============================================================================
@@ -557,10 +668,9 @@ def test_request_list_records(running_http_server):
     assert b"<ListRecords>" in response.content
     assert b"<record>" in response.content
 
-    # Parse XML and validate dc:date values
-    import xml.etree.ElementTree as ET
+    # Parse XML and validate using lxml.etree for schema validation
 
-    root = ET.fromstring(response.content)
+    root = etree.fromstring(response.content)
 
     # Define namespaces
     ns = {
@@ -573,82 +683,11 @@ def test_request_list_records(running_http_server):
     for prefix, uri in ns.items():
         ET.register_namespace(prefix, uri)
 
-    # Extract all dc:date elements from metadata
-    date_elements = root.findall(".//oai_dc:dc/dc:date", ns)
+    # Validate dc:date elements in the response
+    validate_dc_date_in_response(root, ns)
 
-    assert len(date_elements) > 0, "No dc:date elements found in response"
+    # Validate Dublin Core metadata content against oai_dc.xsd
+    validate_dublin_core_metadata(root, ns)
 
-    # Validate each date value
-    for date_elem in date_elements:
-        date_value = date_elem.text
-
-        # Check that it's not a raw timestamp (which would indicate the bug)
-        # Timestamps are numeric strings like "1785494744.596561"
-        assert not re.match(r"^\d+\.?\d*$", date_value), (
-            f"dc:date contains a Unix timestamp instead of ISO 8601 format: {date_value}"
-        )
-
-        # Validate the format
-        is_valid = validate_dc_date(date_value)
-        assert is_valid, (
-            f"dc:date '{date_value}' does not match Dublin Core/ISO 8601 format"
-        )
-
-    # Note: Full OAI-PMH.xsd validation of the entire response is complex because
-    # it requires importing multiple schemas (oai_dc, simpledc20021212) and resolving
-    # cross-namespace references. Instead, we validate:
-    # 1. dc:date format compliance with validate_dc_date()
-    # 2. Dublin Core metadata content against oai_dc.xsd using local schema files
-
-    # Get schema paths for metadata validation
-    oai_dc_schema_path = get_schema_path("oai_dc.xsd")
-
-    # Extract the metadata element and validate it against oai_dc.xsd
-    metadata_elements = root.findall(".//oai:metadata", ns)
-
-    for metadata_elem in metadata_elements:
-        # The child of metadata should be oai_dc:dc
-        if len(metadata_elem) > 0:
-            dc_elem = metadata_elem[0]
-
-            # Create a validation document with just the DC element
-            # to validate against oai_dc.xsd
-            # Create a wrapper element in the oai_dc namespace with name 'dc'
-            wrapped = ET.Element("{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
-
-            # Copy attributes and children from dc_elem to wrapped
-            wrapped.attrib.update(dc_elem.attrib)
-            for child in dc_elem:
-                wrapped.append(child)
-
-            # Convert to string and validate
-            dc_xml_str = ET.tostring(wrapped, encoding="unicode")
-
-            parser = etree.XMLParser()
-            parser.resolvers.add(LocalSchemaResolver())
-
-            try:
-                oai_dc_doc = etree.parse(str(oai_dc_schema_path), parser)
-                oai_dc_schema = etree.XMLSchema(oai_dc_doc)
-                doc = etree.fromstring(dc_xml_str)
-                oai_dc_schema.assertValid(doc)
-            except etree.DocumentInvalid as e:
-                assert False, (
-                    f"Dublin Core metadata does not validate against oai_dc.xsd: {e}"
-                )
-
-    # Validate the entire OAI-PMH response document against OAI-PMH.xsd
-    oai_pmh_schema_path = get_schema_path("oai-pmh-oai-dc.xsd")
-
-    parser = etree.XMLParser()
-    parser.resolvers.add(LocalSchemaResolver())
-
-    try:
-        oai_pmh_doc = etree.parse(str(oai_pmh_schema_path), parser)
-        oai_pmh_schema = etree.XMLSchema(oai_pmh_doc)
-
-        # Parse the entire response and validate
-        doc = etree.fromstring(response.content)
-        oai_pmh_schema.assertValid(doc)
-    except etree.DocumentInvalid as e:
-        assert False, f"OAI-PMH response does not validate against OAI-PMH.xsd: {e}"
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
