@@ -17,6 +17,7 @@ import re
 import requests
 
 from psycopg_pool import ConnectionPool
+from lxml import etree
 
 # Import the server components
 from modama_crawler.server import (
@@ -27,6 +28,12 @@ from modama_crawler.server import (
     _parse_datestamp,
     _format_datestamp,
 )
+
+# Import schemas module for XSD validation (absolute import from tests)
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent))
+from schemas import get_schema_path
 
 
 def pretty_print_xml_response(response):
@@ -561,3 +568,63 @@ def test_request_list_records(running_http_server):
         assert is_valid, (
             f"dc:date '{date_value}' does not match Dublin Core/ISO 8601 format"
         )
+
+    # Note: Full OAI-PMH.xsd validation of the entire response is complex because
+    # it requires importing multiple schemas (oai_dc, simpledc20021212) and resolving
+    # cross-namespace references. Instead, we validate:
+    # 1. dc:date format compliance with validate_dc_date()
+    # 2. Dublin Core metadata content against oai_dc.xsd using local schema files
+
+    # Get schema paths for metadata validation
+    oai_dc_schema_path = get_schema_path("oai_dc.xsd")
+
+    # Extract the metadata element and validate it against oai_dc.xsd
+    metadata_elements = root.findall(".//oai:metadata", ns)
+
+    for metadata_elem in metadata_elements:
+        # The child of metadata should be oai_dc:dc
+        if len(metadata_elem) > 0:
+            dc_elem = metadata_elem[0]
+
+            # Create a validation document with just the DC element
+            # to validate against oai_dc.xsd
+            # Create a wrapper element in the oai_dc namespace with name 'dc'
+            wrapped = ET.Element("{http://www.openarchives.org/OAI/2.0/oai_dc/}dc")
+
+            # Copy attributes and children from dc_elem to wrapped
+            wrapped.attrib.update(dc_elem.attrib)
+            for child in dc_elem:
+                wrapped.append(child)
+
+            # Convert to string and validate
+            dc_xml_str = ET.tostring(wrapped, encoding="unicode")
+
+            # Create a custom resolver to map external schema references to local files
+            class LocalSchemaResolver(etree.Resolver):
+                def resolve(self, system_url, public_id, context):
+                    url_str = str(system_url) if system_url else ""
+                    schemas_path = get_schema_path("")
+                    # Map Dublin Core schema to local file
+                    if "simpledc20021212.xsd" in url_str:
+                        return self.resolve_filename(
+                            str(schemas_path / "simpledc20021212.xsd"), context
+                        )
+                    # Map W3C XML namespace schema to local file
+                    if "xml.xsd" in url_str:
+                        return self.resolve_filename(
+                            str(schemas_path / "xml.xsd"), context
+                        )
+                    return None
+
+            parser = etree.XMLParser()
+            parser.resolvers.add(LocalSchemaResolver())
+
+            try:
+                oai_dc_doc = etree.parse(str(oai_dc_schema_path), parser)
+                oai_dc_schema = etree.XMLSchema(oai_dc_doc)
+                doc = etree.fromstring(dc_xml_str)
+                oai_dc_schema.assertValid(doc)
+            except etree.DocumentInvalid as e:
+                assert False, (
+                    f"Dublin Core metadata does not validate against oai_dc.xsd: {e}"
+                )

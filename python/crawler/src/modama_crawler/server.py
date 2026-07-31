@@ -55,6 +55,7 @@ OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+XSD_NS = "http://www.w3.org/2001/XMLSchema"  # Required for xsi:type="xsd:anyURI"
 
 # --- Helper Functions ---
 
@@ -416,6 +417,7 @@ class OAIServer:
             "oai_dc": OAI_DC_NS,
             "dc": DC_NS,
             "xsi": XSI_NS,
+            "xsd": XSD_NS,  # Required for xsi:type="xsd:anyURI"
         }
 
         root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
@@ -428,9 +430,8 @@ class OAIServer:
         response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
         response_date.text = _format_datestamp(datetime.now().timestamp())
 
-        # Request
+        # Request - No xsi:type needed; element definition already specifies simpleContent with anyURI base
         request_elem = etree.SubElement(root, f"{{{OAI_NS}}}request")
-        request_elem.set(f"{{{XSI_NS}}}type", "xsd:anyURI")
         request_elem.text = request_args.get("base_url", "")
         for key, value in request_args.items():
             # base_url is passed as value, not attribute
