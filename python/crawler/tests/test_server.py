@@ -152,8 +152,8 @@ def test_datestamp_conversion():
     formatted = _format_datestamp(timestamp)
     assert formatted == "2024-01-15T10:30:00Z"
 
-    # Test None
-    assert _parse_datestamp(None) is None
+    with pytest.raises(TypeError):
+        _parse_datestamp(None)
 
 
 def test_server_identify():

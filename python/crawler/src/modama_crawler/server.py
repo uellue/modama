@@ -59,21 +59,17 @@ XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 # --- Helper Functions ---
 
 
-def _parse_datestamp(s: Optional[str]) -> Optional[datetime]:
+def _parse_datestamp(s: str) -> datetime:
     """Parse OAI-PMH datestamp string to datetime."""
-    if s is None:
-        return None
-    if isinstance(s, datetime):
-        return s
     if isinstance(s, str):
         return datestamp_to_datetime(s)
     raise TypeError(f"Unsupported datestamp value: {s!r}")
 
 
-def _format_datestamp(datestamp) -> str:
+def _format_datestamp(datestamp: datetime | float | int) -> str:
     """Format date as OAI-PMH datestamp.
 
-    Accepts either a datetime object, Unix timestamp (int/float), or already-formatted string.
+    Accepts either a datetime object, or Unix timestamp (int/float)
     Converts timezone-aware datetimes and timestamps to naive UTC datetimes for OAI-PMH compatibility.
     """
     if isinstance(datestamp, datetime):
@@ -85,8 +81,7 @@ def _format_datestamp(datestamp) -> str:
         # Assume it's a Unix timestamp
         return datetime_to_datestamp(datetime.fromtimestamp(datestamp))
     else:
-        # Already a formatted string, return as-is
-        return datestamp
+        raise TypeError(f"Invalid argument {datestamp} {type(datestamp)}")
 
 
 # --- OAI-PMH Server Implementation ---
