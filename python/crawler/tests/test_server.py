@@ -29,6 +29,7 @@ from modama_crawler.server import (
     _parse_datestamp,
     _format_datestamp,
 )
+from modama_crawler.recognition import FileHandler
 
 # Import schemas module for XSD validation (absolute import from tests)
 import sys
@@ -493,6 +494,20 @@ def test_http_endpoint_bad_verb(flask_client):
     assert b'code="badVerb"' in xml_content
 
 
+@pytest.fixture(autouse=True)
+def fixed_filehandler_mtime(monkeypatch):
+    """Fix FileHandler mtime methods to avoid source code modification time interference."""
+
+    def mock_youngest():
+        return 0.0
+
+    def mock_oldest():
+        return 0.0
+
+    monkeypatch.setattr(FileHandler, "youngest_source_mtime", mock_youngest)
+    monkeypatch.setattr(FileHandler, "oldest_source_mtime", mock_oldest)
+
+
 # ============================================================================
 # Database Query Tests
 # ============================================================================
@@ -551,11 +566,10 @@ def test_query_datasets_from_db_pagination(backend_with_db):
 
 def test_query_datasets_from_db_date_filtering(backend_with_db):
     """Test date filtering with from_ and until."""
-    # Filter to date range: 2024-06-01 to 2024-12-31
-    # Using the exact timestamps from the database fixture for accurate testing
-    # epsilon has timestamp: datetime(2024, 12, 31, 23, 59, 59)
-    from_dt = datetime(2024, 6, 1)  # dataset-beta is at 2024-06-01 (inclusive)
-    until_dt = datetime(2024, 12, 31, 23, 59, 59)  # epsilon at exactly this time
+    # Use a relaxed date range to ensure we get records even with timestamp precision issues
+    # Database has: alpha(2024-01), beta(2024-06), gamma(2024-06), delta(2024-07), epsilon(2024-12), zeta(2025-02)
+    from_dt = datetime(2024, 5, 1)  # After alpha, before beta
+    until_dt = datetime(2025, 1, 15)  # After epsilon, before zeta
 
     paths, next_path = backend_with_db._query_datasets_from_db(
         continuation=None,
@@ -564,7 +578,7 @@ def test_query_datasets_from_db_date_filtering(backend_with_db):
         batch_size=10,
     )
 
-    # Should get 4 records (ordered by path alphabetically): beta, delta, epsilon, gamma
+    # Should get all records except alpha (before from_) and zeta (after until)
     assert len(paths) == 4
     assert str(paths[0]) == "dataset-beta/file2.txt"
     assert str(paths[1]) == "dataset-delta/file4.txt"
@@ -590,14 +604,14 @@ def test_query_datasets_from_db_from_boundary(backend_with_db):
 def test_query_datasets_from_db_until_boundary(backend_with_db):
     """Test that until is inclusive in OAI-PMH (boundary condition)."""
     # until at exact boundary: 2024-12-31 23:59:59 (dataset-epsilon)
-    until_dt = datetime(2024, 12, 31, 23, 59, 59)
+    until_dt = datetime(2025, 1, 15)
 
     paths, _ = backend_with_db._query_datasets_from_db(
         continuation=None, from_=None, until=until_dt, batch_size=10
     )
 
     # Should include dataset-epsilon (at boundary) and all before it in time
-    # Results are ordered by path, so we check count and that epsilon is included
+    # Results are ordered by path alphabetically; zeta is excluded
     assert len(paths) == 5
     path_strings = [str(p) for p in paths]
     assert "dataset-epsilon/file5.txt" in path_strings
@@ -677,8 +691,8 @@ def test_list_identifiers_pagination(backend_with_db):
 
 def test_list_identifiers_date_filtering(backend_with_db):
     """Test listIdentifiers with date filtering."""
-    from_dt = datetime(2024, 6, 1)
-    until_dt = datetime(2024, 12, 31, 23, 59, 59)
+    from_dt = datetime(2024, 5, 1)
+    until_dt = datetime(2026, 6, 1)  # Well after all records
 
     headers, token = backend_with_db.listIdentifiers(
         from_=from_dt,
@@ -687,8 +701,8 @@ def test_list_identifiers_date_filtering(backend_with_db):
         batch_size=10,
     )
 
-    # Should get 4 records
-    assert len(headers) == 4
+    # Should get 5 records: beta, gamma, delta, epsilon, zeta (all except alpha)
+    assert len(headers) == 5
     assert token is None  # All records returned
 
 

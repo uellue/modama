@@ -377,9 +377,9 @@ class OAIServer:
             "protocolVersion": "2.0",
             "adminEmails": [self._config.admin_email],
             "earliestDatestamp": min(
-                self._config.earliest_datestamp,
+                self._config.earliest_datestamp.astimezone(timezone.utc),
                 datetime.fromtimestamp(
-                    FileHandler.youngest_source_mtime(), tz=timezone.utc
+                    FileHandler.oldest_source_mtime(), tz=timezone.utc
                 ),
                 datetime.fromtimestamp(
                     self._backend._get_oldest_db_mtime(), tz=timezone.utc
