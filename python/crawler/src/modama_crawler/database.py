@@ -49,6 +49,16 @@ class PostgresConfig:
             port=env.get("POSTGRES_PORT", "5432"),
         )
 
+    @classmethod
+    def from_conninfo(cls, conninfo: psycopg.ConnectionInfo):
+        return cls(
+            name=conninfo.dbname,
+            admin=conninfo.user,
+            password=conninfo.password or "",
+            address=conninfo.host,
+            port=str(conninfo.port),
+        )
+
 
 @contextmanager
 def crawling(conn):

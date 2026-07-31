@@ -32,24 +32,17 @@ from modama_crawler.server import (
 
 
 @pytest.fixture
-def flask_client(test_database, test_files, monkeypatch):
+def flask_client(test_database):
     """Create a Flask test client configured with test database and files."""
 
     # Use connection pool from test(Database)
     pool = ConnectionPool(
-        conninfo=PostgresConfig.from_env().connection_string(),
+        conninfo=PostgresConfig.from_conninfo(test_database.info).connection_string(),
         min_size=1,
         max_size=2,
     )
 
-    config_dict = {
-        "TESTING": True,
-        "DB_ROOT_PATH": test_files,
-        "MODAMA_DATA_ROOT": test_files,
-        "OAI_BASE_URL": "http://test.local/oai",
-    }
-
-    app = create_app(pool=pool, config=config_dict)
+    app = create_app(pool=pool)
     client = app.test_client()
     yield client
 

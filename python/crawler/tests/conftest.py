@@ -183,13 +183,7 @@ def running_http_server(test_database, test_files):
     from werkzeug.serving import make_server
 
     # Create PostgreSQL config from test_database fixture
-    db_config = PostgresConfig(
-        name=test_database.info.dbname,
-        admin=test_database.info.user,
-        password=test_database.info.password or "",
-        address=test_database.info.host,
-        port=str(test_database.info.port),
-    )
+    db_config = PostgresConfig.from_conninfo(test_database.info)
 
     pool = ConnectionPool(
         conninfo=db_config.connection_string(),
@@ -262,13 +256,7 @@ def backend_with_db(test_database, test_files):
     from modama_crawler.server import OAIFileDBBackend, PostgresConfig
 
     # Use connection pool with test database
-    db_config = PostgresConfig(
-        name=test_database.info.dbname,
-        admin=test_database.info.user,
-        password=test_database.info.password or "",
-        address=test_database.info.host,
-        port=str(test_database.info.port),
-    )
+    db_config = PostgresConfig.from_conninfo(test_database.info)
 
     pool = ConnectionPool(
         conninfo=db_config.connection_string(),

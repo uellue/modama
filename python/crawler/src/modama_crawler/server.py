@@ -732,7 +732,7 @@ def create_app(
     app = Flask(__name__)
     app.config.update(config)
 
-    backend = OAIFileDBBackend(pool=pool, root=app.config["MODAMA_DATA_ROOT"])
+    backend = OAIFileDBBackend(pool=pool, root=repo_config.data_root)
 
     # Create server instance for this app
     _server = OAIServer(backend, config=repo_config)
