@@ -35,7 +35,7 @@ def _get_mime_types_from_db(
     Returns:
         List of MIME types, or empty list if path not found
     """
-    cur = conn.cursor(row_factory=dict_row)
+    cur = conn.cursor()
     cur.execute(
         """
         SELECT m.mime FROM mimes m
@@ -56,12 +56,22 @@ def _get_mime_types_from_db(
             # Parse MIME type string (format: "type/subtype")
             if "/" in mime_str:
                 media, subtype = mime_str.split("/", 1)
+                # Validate that subtype is not empty
+                if not subtype:
+                    raise ValueError(
+                        f"Invalid MIME type '{mime_str}': subtype is empty"
+                    )
                 result.append(Mime.MIMEtype(media, subtype))
             else:
-                result.append(Mime.MIMEtype(mime_str, ""))
-        except Exception:
-            # Skip invalid MIME types
-            continue
+                # Single-part MIME types are also invalid for our purposes
+                raise ValueError(
+                    f"Invalid MIME type '{mime_str}': missing subtype separator"
+                )
+        except Exception as e:
+            # Re-raise as RuntimeError with more context
+            raise RuntimeError(
+                f"Invalid MIME type in database for path {path}: '{mime_str}'"
+            ) from e
     return result
 
 
@@ -332,6 +342,13 @@ class FileHandler:
         result = []
         for g in self.get_mimes():
             str_g = str(g)
+            # Validate that this is a proper MIME type with subtype
+            if not str_g or "/" not in str_g:
+                raise ValueError(
+                    f"Invalid MIME type from handler: '{str_g}'. "
+                    f"MIME types must have format 'type/subtype'. "
+                    f"Handler class: {self.__class__.__name__}, File: {self.path}"
+                )
             if str_g not in result:
                 result.append(str_g)
         # Only keep 'application/octet-stream' if there is no other option
