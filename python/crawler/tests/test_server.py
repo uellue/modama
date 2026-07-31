@@ -127,9 +127,6 @@ def test_datestamp_conversion():
     formatted = _format_datestamp(timestamp)
     assert formatted == "2024-01-15T10:30:00Z"
 
-    with pytest.raises(TypeError):
-        _parse_datestamp(None)
-
 
 def test_error_response():
     """Test error response generation."""

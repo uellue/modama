@@ -61,9 +61,7 @@ XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 
 def _parse_datestamp(s: str) -> datetime:
     """Parse OAI-PMH datestamp string to datetime."""
-    if isinstance(s, str):
-        return datestamp_to_datetime(s)
-    raise TypeError(f"Unsupported datestamp value: {s!r}")
+    return datestamp_to_datetime(s) if s else None
 
 
 def _format_datestamp(datestamp: datetime | float | int) -> str:
@@ -454,9 +452,7 @@ class OAIServer:
             root, xml_declaration=True, encoding="UTF-8", pretty_print=True
         )
 
-    def _add_dict_to_element(
-        self, parent: etree._Element, data: dict, tag_prefix: str = ""
-    ):
+    def _add_dict_to_element(self, parent: etree._Element, data: dict):
         """Recursively add dictionary data to XML element."""
         for key, value in data.items():
             if isinstance(value, dict):
