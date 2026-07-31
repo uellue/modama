@@ -192,6 +192,22 @@ def test_source_mtime():
         # 16th of July 2026, yesterday at time of writing
         assert mtime >= 1784213173
         assert mtime < now
+        print(mtime)
         max_mtime = max(max_mtime, mtime)
     print(max_mtime, FileHandler.youngest_source_mtime(), now)
     assert max_mtime == FileHandler.youngest_source_mtime()
+
+
+def test_database_mtime(test_database, test_files):
+    handler = FileHandler.create(
+        root=test_files,
+        path=Path("dataset-alpha/file1.txt"),
+        guesses=[],
+        conn=test_database,
+    )
+    res = handler.db_mtime
+    cur = test_database.cursor()
+    cur.execute("SELECT mtime from files where path = %s", (str(handler.abspath),))
+    rows = cur.fetchall()
+    ref = rows[0]["mtime"]
+    assert res == ref

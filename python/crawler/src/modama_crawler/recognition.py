@@ -10,7 +10,7 @@ import tempfile
 import inspect
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import dict_row, tuple_row
 
 from xdg import Mime
 import magika
@@ -35,7 +35,7 @@ def _get_mime_types_from_db(
     Returns:
         List of MIME types, or empty list if path not found
     """
-    cur = conn.cursor()
+    cur = conn.cursor(row_factory=tuple_row)
     cur.execute(
         """
         SELECT m.mime FROM mimes m
@@ -85,7 +85,7 @@ def _get_dataset_members_from_db(
         dataset_path: Absolute path of the dataset (as stored in database)
 
     Returns:
-        List of member paths (relative to dataset root)
+        List of absolute member paths
     """
     cur = conn.cursor(row_factory=dict_row)
     cur.execute(
@@ -100,6 +100,36 @@ def _get_dataset_members_from_db(
     rows = cur.fetchall()
     # Return paths as-is (they are absolute paths from database)
     return [pathlib.Path(row["path"]) for row in rows]
+
+
+def _get_dataset_mtime_from_db(
+    conn: psycopg.Connection, dataset_path: str
+) -> Sequence[pathlib.Path]:
+    """Get the maximum mtime of all files in a dataset from the database.
+
+    Args:
+        conn: Database connection
+        dataset_path: Absolute path of the dataset (as stored in database)
+
+    Returns:
+        mtime as floating point Unix timestamp
+    """
+    cur = conn.cursor(row_factory=dict_row)
+    cur.execute(
+        """
+        SELECT MAX(f.mtime) AS mtime FROM files f
+        JOIN datasets d ON f.path_id = d.path_id
+        WHERE f.path = %s
+        UNION ALL
+        SELECT MAX(f.mtime) FROM files_in_datasets fid
+        JOIN files f ON fid.path_id = f.path_id
+        JOIN datasets d ON fid.dataset_id = d.dataset_id
+        WHERE f.path = %s
+        """,
+        (str(dataset_path), str(dataset_path)),
+    )
+    rows = cur.fetchall()
+    return max(row["mtime"] for row in rows)
 
 
 class DatasetConsistencyError(RuntimeError):
@@ -291,21 +321,17 @@ class FileHandler:
 
     @property
     @cache
-    def ctime(self) -> float:
-        ctime = self.stat.st_ctime
-        for member in self.members:
-            abspath = self.root / member
-            ctime = min(ctime, abspath.stat().st_ctime)
-        return ctime
-
-    @property
-    @cache
     def mtime(self) -> float:
         mtime = self.stat.st_mtime
         for member in self.members:
             abspath = self.root / member
             mtime = max(mtime, abspath.stat().st_mtime)
         return mtime
+
+    @property
+    @cache
+    def db_mtime(self):
+        return _get_dataset_mtime_from_db(conn=self.conn, dataset_path=self.abspath)
 
     @classmethod
     def source_mtime(cls) -> float:
@@ -329,6 +355,8 @@ class FileHandler:
         for classlist in cls._registry.values():
             classes.update(classlist)
         # print(classes)
+        # for c in classes:
+        #     print(c, c.source_mtime())
         return max(c.source_mtime() for c in classes)
 
     def get_resource_type(self):
