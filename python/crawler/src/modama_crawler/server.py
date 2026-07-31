@@ -168,7 +168,6 @@ class OAIFileDBBackend:
 
     def listRecords(
         self,
-        metadataPrefix: str,
         from_: Optional[datetime] = None,
         until: Optional[datetime] = None,
         continuation: Optional[str] = None,
@@ -500,10 +499,7 @@ class OAIServer:
 
         datestamp_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}datestamp")
         # Handle both datetime objects (from backend) and formatted strings
-        if isinstance(header["datestamp"], datetime):
-            datestamp_elem.text = _format_datestamp(header["datestamp"])
-        else:
-            datestamp_elem.text = header["datestamp"]
+        datestamp_elem.text = _format_datestamp(header["datestamp"])
 
         for set_spec in header.get("setSpec", []):
             set_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}setSpec")
@@ -538,8 +534,10 @@ class OAIServer:
                             dc_elem.text = str(item)
                 else:
                     dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                    # Format datetime objects for OAI-PMH
+                    # Format datetime objects and timestamps for OAI-PMH
                     if isinstance(value, datetime):
+                        dc_elem.text = _format_datestamp(value)
+                    elif isinstance(value, (int, float)):
                         dc_elem.text = _format_datestamp(value)
                     else:
                         dc_elem.text = str(value)
@@ -655,7 +653,6 @@ class OAIServer:
             )
 
         items, next_path = backend_method(
-            metadataPrefix=metadata_prefix,
             from_=from_,
             until=until,
             continuation=str(continuation) if continuation else None,
@@ -772,7 +769,15 @@ def create_app(
                     mimetype="text/xml; charset=utf-8",
                 )
         except Exception as e:
-            raise
+            import sys
+
+            print(
+                f"DEBUG oai_endpoint: Exception caught - type={type(e).__name__}, msg={e}",
+                file=sys.stderr,
+            )
+            import traceback
+
+            traceback.print_exc(file=sys.stderr)
             return Response(
                 _server._make_error("badArgument", str(e)),
                 mimetype="text/xml; charset=utf-8",

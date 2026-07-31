@@ -472,3 +472,8 @@ def test_resumption_token_preserves_parameters(backend_with_db):
     until_str = params["until"]
     assert from_str.endswith("Z")  # UTC indicator
     assert until_str.endswith("Z")  # UTC indicator
+
+
+def test_request_list_records(running_http_server):
+    print(running_http_server)
+    assert False

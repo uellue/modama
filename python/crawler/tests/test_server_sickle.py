@@ -9,7 +9,7 @@ from pathlib import Path
 from xdg import Mime
 
 from modama_crawler.repository import path_from_identifier, get_identifier
-from modama_crawler.server import _get_handler_for_path, _format_datestamp
+from modama_crawler.server import _format_datestamp
 
 
 # ============================================================================
@@ -52,7 +52,9 @@ def test_sickle_list_identifiers_pagination(sickle_client):
         assert datestamp_str.endswith("Z")  # UTC indicator
 
 
-def test_sickle_list_records_dublin_core(sickle_client, test_files, test_database):
+def test_sickle_list_records_dublin_core(
+    sickle_client, test_files, test_database, backend_with_db
+):
     """Test ListRecords with Dublin Core metadata using sickle.
 
     Verifies that the metadata parsed by sickle matches what the server generates
@@ -99,27 +101,28 @@ def test_sickle_list_records_dublin_core(sickle_client, test_files, test_databas
             assert isinstance(fmt_str, str)
             guesses.append(Mime.MIMEtype(fmt_str))
         assert len(guesses) > 0
-        # Instantiate FileHandler using the path and MIME type guesses from sickle
-        with test_database as conn:
-            handler = _get_handler_for_path(conn, test_files, path, guesses)
-            intersects = False
-            handler_formats = handler.get_formats()
-            for guess in guesses:
-                if str(guess) in handler_formats:
-                    intersects = True
-            assert intersects
-            # Verify the handler's path matches
-            assert handler.path == path
-            # Verify the handler's metadata matches what sickle returned
-            handler_titles = handler.get_titles()
-            assert handler_titles == metadata_dict["title"]
 
-            handler_identifiers = [get_identifier(handler.path)]
-            assert handler_identifiers[0] == metadata_dict["identifier"][0]
+        handler = backend_with_db._get_handler_for_path(
+            conn=test_database, path=path, guesses=guesses
+        )
+        intersects = False
+        handler_formats = handler.get_formats()
+        for guess in guesses:
+            if str(guess) in handler_formats:
+                intersects = True
+        assert intersects
+        # Verify the handler's path matches
+        assert handler.path == path
+        # Verify the handler's metadata matches what sickle returned
+        handler_titles = handler.get_titles()
+        assert handler_titles == metadata_dict["title"]
 
-            # Verify dates match
-            handler_dates = [_format_datestamp(d) for d in handler.get_dates()]
-            assert handler_dates == metadata_dict["date"]
+        handler_identifiers = [get_identifier(handler.path)]
+        assert handler_identifiers[0] == metadata_dict["identifier"][0]
+
+        # Verify dates match
+        handler_dates = [_format_datestamp(d) for d in handler.get_dates()]
+        assert handler_dates == metadata_dict["date"]
 
         # Verify title is a non-empty list
         titles = metadata_dict["title"]

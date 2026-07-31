@@ -1,6 +1,6 @@
 from pathlib import Path
 import re
-from urllib.parse import unquote_plus
+from urllib.parse import unquote_plus, quote_plus
 from datetime import datetime
 from dataclasses import dataclass
 import os
@@ -13,6 +13,7 @@ def quote_path(path: str) -> str:
     query part of a URL, as close to the standard as possible
     (https://url.spec.whatwg.org/)
     """
+    return quote_plus(path)
 
 
 def unquote_path(quoted_path: str) -> str:

@@ -107,32 +107,32 @@ def test_oaipmh_list_records_dublin_core(
         assert len(guesses) > 0
 
         # Instantiate FileHandler using the path and MIME type guesses from oaipmh
-        with test_database as conn:
-            handler = backend_with_db._get_handler_for_path(
-                conn, test_files, path, guesses
-            )
 
-            # Verify MIME type intersection
-            intersects = False
-            handler_formats = handler.get_formats()
-            for guess in guesses:
-                if str(guess) in handler_formats:
-                    intersects = True
-            assert intersects
+        handler = backend_with_db._get_handler_for_path(
+            conn=test_database, path=path, guesses=guesses
+        )
 
-            # Verify the handler's path matches
-            assert handler.path == path
+        # Verify MIME type intersection
+        intersects = False
+        handler_formats = handler.get_formats()
+        for guess in guesses:
+            if str(guess) in handler_formats:
+                intersects = True
+        assert intersects
 
-            # Verify the handler's metadata matches what oaipmh returned
-            handler_titles = handler.get_titles()
-            assert handler_titles == metadata_dict["title"]
+        # Verify the handler's path matches
+        assert handler.path == path
 
-            handler_identifiers = [get_identifier(handler.path)]
-            assert handler_identifiers[0] == metadata_dict["identifier"][0]
+        # Verify the handler's metadata matches what oaipmh returned
+        handler_titles = handler.get_titles()
+        assert handler_titles == metadata_dict["title"]
 
-            # Verify dates match
-            handler_dates = [_format_datestamp(d) for d in handler.get_dates()]
-            assert handler_dates == metadata_dict["date"]
+        handler_identifiers = [get_identifier(handler.path)]
+        assert handler_identifiers[0] == metadata_dict["identifier"][0]
+
+        # Verify dates match
+        handler_dates = [_format_datestamp(d) for d in handler.get_dates()]
+        assert handler_dates == metadata_dict["date"]
 
         # Verify title is a non-empty list
         titles = metadata_dict["title"]
