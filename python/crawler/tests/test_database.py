@@ -77,3 +77,7 @@ def test_crawl_and_populate(pg_unit_test, tmp_path: Path):
     )
     txt_mime = cur.fetchone()["mime"]
     assert txt_mime == "text/plain"
+
+    cur.execute("SELECT mtime FROM files")
+    for row in cur.fetchall():
+        assert isinstance(row["mtime"], float)

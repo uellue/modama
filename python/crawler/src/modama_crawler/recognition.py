@@ -127,7 +127,7 @@ def _get_dataset_mtime_from_db(conn: psycopg.Connection, dataset_path: str) -> f
         (str(dataset_path), str(dataset_path)),
     )
     rows = cur.fetchall()
-    return max(row["mtime"] for row in rows)
+    return max(row["mtime"] for row in rows if row["mtime"] is not None)
 
 
 def get_oldest_mtime_from_db(conn: psycopg.Connection, dataset_path: str) -> float:
