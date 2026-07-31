@@ -49,6 +49,55 @@ tests/
 └── ...                 # Other test files
 ```
 
+## AI Coding Agent Tools Guide
+
+### ✅ **Preferred Tools (Safe & IDE-Integrated)**
+
+**File Access & Analysis:**
+- `read_file` - Read file contents with line ranges for large files
+- `grep_search` - Fast text/regex searches across workspace
+- `file_search` - Glob pattern file lookups
+- `list_dir` - List directory contents
+- `get_errors` - Get compile/lint errors in files
+
+**File Modification:**
+- `replace_string_in_file` - Safe string replacement with context matching
+- `insert_edit_into_file` - Insert code at specific locations
+- `create_file` / `create_directory` - New file creation
+
+**Search & Exploration:**
+- `vscode_listCodeUsages` - Find all references/definitions of symbols
+- `vscode_renameSymbol` - Semantic-aware renaming across workspace
+- `copilot_getNotebookSummary` - Get Jupyter notebook cell summaries
+
+**Terminal Execution (Selective Use):**
+- `run_in_terminal` - Run shell commands (use sync mode for one-shot tasks)
+- `run_notebook_cell` / `configure_notebook` - Execute Jupyter cells
+- `get_task_output` / `get_terminal_output` - Get command results
+
+**Testing:**
+- `testFailure` - Get recent test failure details
+- `run_in_terminal` with pytest commands for test runs (OK for running tests)
+
+**Memory & Configuration:**
+- `memory` - Manage persistent notes in `/memories/`
+- `session_store_sql` - Query past session history
+
+### ⚠️ **Use With Caution**
+
+- Shell commands that modify files (sed, awk, sed scripts)
+- Any workflow that involves writing a Python script to modify things
+- Complex multi-step shell pipelines for file editing
+
+### ❌ **Forbidden Approaches**
+
+- Writing Python/Ruby/Shell scripts whose sole purpose is to modify project files
+- Using `echo "..." >> file.txt` or similar for bulk modifications
+- Creating temporary scripts and then executing them for file manipulation
+- Any approach that bypasses IDE-integrated tools for file operations
+
+---
+
 ## Key Patterns & Conventions
 
 ### Database Access Pattern
