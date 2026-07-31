@@ -250,3 +250,33 @@ def oaipmh_client(running_http_server):
         global_metadata_registry.registerReader("oai_dc", oai_dc_reader)
 
     return Client(running_http_server)
+
+
+@pytest.fixture
+def backend_with_db(test_database, test_files):
+    """Create an OAIFileDBBackend instance configured with test database and files.
+
+    Provides the backend instance needed to access FileHandler creation logic.
+    """
+    from psycopg_pool import ConnectionPool
+    from modama_crawler.server import OAIFileDBBackend, PostgresConfig
+
+    # Use connection pool with test database
+    db_config = PostgresConfig(
+        name=test_database.info.dbname,
+        admin=test_database.info.user,
+        password=test_database.info.password or "",
+        address=test_database.info.host,
+        port=str(test_database.info.port),
+    )
+
+    pool = ConnectionPool(
+        conninfo=db_config.connection_string(),
+        min_size=1,
+        max_size=2,
+    )
+
+    # Create backend instance with explicit root = test_files
+    backend = OAIFileDBBackend(pool=pool, root=test_files)
+
+    return backend

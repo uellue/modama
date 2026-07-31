@@ -32,32 +32,6 @@ from modama_crawler.server import (
 
 
 @pytest.fixture
-def server_with_db(test_database, test_files) -> OAIFileDBBackend:
-    """Create a SimpleServer configured to use the test database and files."""
-    from psycopg_pool import ConnectionPool
-
-    # Use connection pool with test database
-    db_config = PostgresConfig(
-        name=test_database.info.dbname,
-        admin=test_database.info.user,
-        password=test_database.info.password or "",
-        address=test_database.info.host,
-        port=str(test_database.info.port),
-    )
-
-    pool = ConnectionPool(
-        conninfo=db_config.connection_string(),
-        min_size=1,
-        max_size=2,
-    )
-
-    # Create server instance with explicit root = test_files
-    backend = OAIFileDBBackend(pool=pool, root=test_files)
-
-    return backend
-
-
-@pytest.fixture
 def flask_client(test_database, test_files, monkeypatch):
     """Create a Flask test client configured with test database and files."""
 
@@ -261,9 +235,9 @@ def test_http_endpoint_bad_verb(flask_client):
 # ============================================================================
 
 
-def test_query_datasets_from_db_basic(server_with_db):
+def test_query_datasets_from_db_basic(backend_with_db):
     """Test basic database query without filters."""
-    paths, next_path = server_with_db._query_datasets_from_db(
+    paths, next_path = backend_with_db._query_datasets_from_db(
         continuation=None, from_=None, until=None, batch_size=10
     )
 
@@ -272,12 +246,12 @@ def test_query_datasets_from_db_basic(server_with_db):
     assert next_path is None  # All records returned, no continuation
 
 
-def test_query_datasets_from_db_pagination(server_with_db):
+def test_query_datasets_from_db_pagination(backend_with_db):
     """Test pagination with batch_size."""
-    # server_with_db._root is already set to test_files from fixture
+    # backend_with_db._root is already set to test_files from fixture
 
     # First batch
-    paths1, next_path1 = server_with_db._query_datasets_from_db(
+    paths1, next_path1 = backend_with_db._query_datasets_from_db(
         continuation=None, from_=None, until=None, batch_size=2
     )
     assert len(paths1) == 2
@@ -286,7 +260,7 @@ def test_query_datasets_from_db_pagination(server_with_db):
     assert next_path1 is not None  # More records available
 
     # Second batch
-    paths2, next_path2 = server_with_db._query_datasets_from_db(
+    paths2, next_path2 = backend_with_db._query_datasets_from_db(
         continuation=next_path1, from_=None, until=None, batch_size=2
     )
     assert len(paths2) == 2
@@ -296,7 +270,7 @@ def test_query_datasets_from_db_pagination(server_with_db):
 
     # Third batch (last) - still returns next_path because len == batch_size
     # The actual end is detected when the next query returns empty results
-    paths3, next_path3 = server_with_db._query_datasets_from_db(
+    paths3, next_path3 = backend_with_db._query_datasets_from_db(
         continuation=next_path2, from_=None, until=None, batch_size=2
     )
     assert len(paths3) == 2
@@ -305,14 +279,14 @@ def test_query_datasets_from_db_pagination(server_with_db):
     assert next_path3 is not None  # Last path returned, but we need to try again
 
     # Fourth query - should return empty
-    paths4, next_path4 = server_with_db._query_datasets_from_db(
+    paths4, next_path4 = backend_with_db._query_datasets_from_db(
         continuation=next_path3, from_=None, until=None, batch_size=2
     )
     assert len(paths4) == 0
     assert next_path4 is None
 
 
-def test_query_datasets_from_db_date_filtering(server_with_db):
+def test_query_datasets_from_db_date_filtering(backend_with_db):
     """Test date filtering with from_ and until."""
     # Filter to date range: 2024-06-01 to 2024-12-31
     # Using the exact timestamps from the database fixture for accurate testing
@@ -320,7 +294,7 @@ def test_query_datasets_from_db_date_filtering(server_with_db):
     from_dt = datetime(2024, 6, 1)  # dataset-beta is at 2024-06-01 (inclusive)
     until_dt = datetime(2024, 12, 31, 23, 59, 59)  # epsilon at exactly this time
 
-    paths, next_path = server_with_db._query_datasets_from_db(
+    paths, next_path = backend_with_db._query_datasets_from_db(
         continuation=None,
         from_=from_dt,
         until=until_dt,
@@ -336,12 +310,12 @@ def test_query_datasets_from_db_date_filtering(server_with_db):
     assert next_path is None
 
 
-def test_query_datasets_from_db_from_boundary(server_with_db):
+def test_query_datasets_from_db_from_boundary(backend_with_db):
     """Test that from_ is inclusive (boundary condition)."""
     # from_ at exact boundary: 2024-06-01 (dataset-beta)
     from_dt = datetime(2024, 6, 1)
 
-    paths, _ = server_with_db._query_datasets_from_db(
+    paths, _ = backend_with_db._query_datasets_from_db(
         continuation=None, from_=from_dt, until=None, batch_size=10
     )
 
@@ -350,12 +324,12 @@ def test_query_datasets_from_db_from_boundary(server_with_db):
     assert str(paths[0]) == "dataset-beta/file2.txt"
 
 
-def test_query_datasets_from_db_until_boundary(server_with_db):
+def test_query_datasets_from_db_until_boundary(backend_with_db):
     """Test that until is inclusive in OAI-PMH (boundary condition)."""
     # until at exact boundary: 2024-12-31 23:59:59 (dataset-epsilon)
     until_dt = datetime(2024, 12, 31, 23, 59, 59)
 
-    paths, _ = server_with_db._query_datasets_from_db(
+    paths, _ = backend_with_db._query_datasets_from_db(
         continuation=None, from_=None, until=until_dt, batch_size=10
     )
 
@@ -367,13 +341,13 @@ def test_query_datasets_from_db_until_boundary(server_with_db):
     assert "dataset-zeta/file6.txt" not in path_strings  # Excluded (after until)
 
 
-def test_query_datasets_from_db_empty_result(server_with_db):
+def test_query_datasets_from_db_empty_result(backend_with_db):
     """Test query with no matching results."""
     # Date range with no data
     from_dt = datetime(2023, 1, 1)
     until_dt = datetime(2023, 12, 31)
 
-    paths, next_path = server_with_db._query_datasets_from_db(
+    paths, next_path = backend_with_db._query_datasets_from_db(
         continuation=None,
         from_=from_dt,
         until=until_dt,
@@ -389,9 +363,9 @@ def test_query_datasets_from_db_empty_result(server_with_db):
 # ============================================================================
 
 
-def test_list_identifiers_basic(server_with_db):
+def test_list_identifiers_basic(backend_with_db):
     """Test basic listIdentifiers with database."""
-    headers, token = server_with_db.listIdentifiers(
+    headers, token = backend_with_db.listIdentifiers(
         from_=None,
         until=None,
         continuation=None,
@@ -404,10 +378,10 @@ def test_list_identifiers_basic(server_with_db):
     assert token is not None  # More records available
 
 
-def test_list_identifiers_pagination(server_with_db):
+def test_list_identifiers_pagination(backend_with_db):
     """Test listIdentifiers pagination."""
     # First batch
-    headers1, token1 = server_with_db.listIdentifiers(
+    headers1, token1 = backend_with_db.listIdentifiers(
         from_=None,
         until=None,
         continuation=None,
@@ -417,7 +391,7 @@ def test_list_identifiers_pagination(server_with_db):
     assert token1 is not None
 
     # Second batch
-    headers2, token2 = server_with_db.listIdentifiers(
+    headers2, token2 = backend_with_db.listIdentifiers(
         from_=None,
         until=None,
         continuation=token1,
@@ -427,7 +401,7 @@ def test_list_identifiers_pagination(server_with_db):
     assert token2 is not None
 
     # Third batch
-    headers3, token3 = server_with_db.listIdentifiers(
+    headers3, token3 = backend_with_db.listIdentifiers(
         from_=None,
         until=None,
         continuation=token2,
@@ -438,12 +412,12 @@ def test_list_identifiers_pagination(server_with_db):
     # (token is set when len == batch_size, even if it's the last batch)
 
 
-def test_list_identifiers_date_filtering(server_with_db):
+def test_list_identifiers_date_filtering(backend_with_db):
     """Test listIdentifiers with date filtering."""
     from_dt = datetime(2024, 6, 1)
     until_dt = datetime(2024, 12, 31, 23, 59, 59)
 
-    headers, token = server_with_db.listIdentifiers(
+    headers, token = backend_with_db.listIdentifiers(
         from_=from_dt,
         until=until_dt,
         continuation=None,
@@ -455,9 +429,9 @@ def test_list_identifiers_date_filtering(server_with_db):
     assert token is None  # All records returned
 
 
-def test_list_records_basic(server_with_db):
+def test_list_records_basic(backend_with_db):
     """Test basic listRecords with database."""
-    records, token = server_with_db.listRecords(
+    records, token = backend_with_db.listRecords(
         metadataPrefix="oai_dc",
         from_=None,
         until=None,
@@ -471,13 +445,13 @@ def test_list_records_basic(server_with_db):
     assert token is not None
 
 
-def test_resumption_token_preserves_parameters(server_with_db):
+def test_resumption_token_preserves_parameters(backend_with_db):
     """Test that resumption token preserves metadataPrefix, from, and until."""
     from_dt = datetime(2024, 6, 1)
     until_dt = datetime(2024, 12, 31)
 
     # First request
-    headers1, next_path = server_with_db.listIdentifiers(
+    headers1, next_path = backend_with_db.listIdentifiers(
         from_=from_dt,
         until=until_dt,
         continuation=None,
