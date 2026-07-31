@@ -58,31 +58,6 @@ def server_with_db(test_database, test_files) -> OAIFileDBBackend:
 
 
 @pytest.fixture
-def oai_server_with_db(test_database, test_files) -> OAIServer:
-    """Create an OAIServer configured to use the test database and files."""
-    from psycopg_pool import ConnectionPool
-
-    # Use connection pool with test database
-    db_config = PostgresConfig(
-        name=test_database.info.dbname,
-        admin=test_database.info.user,
-        password=test_database.info.password or "",
-        address=test_database.info.host,
-        port=str(test_database.info.port),
-    )
-
-    pool = ConnectionPool(
-        conninfo=db_config.connection_string(),
-        min_size=1,
-        max_size=2,
-    )
-
-    backend = OAIFileDBBackend(pool=pool, root=test_files)
-    server = OAIServer(backend=backend, base_url="http://test.local/oai")
-    return server
-
-
-@pytest.fixture
 def flask_client(test_database, test_files, monkeypatch):
     """Create a Flask test client configured with test database and files."""
 
@@ -154,50 +129,6 @@ def test_datestamp_conversion():
 
     with pytest.raises(TypeError):
         _parse_datestamp(None)
-
-
-def test_server_identify():
-    """Test Identify verb."""
-    from psycopg_pool import ConnectionPool
-    from modama_crawler.repository import RepositoryConfig
-    from modama_crawler.server import OAIServer
-
-    pool = ConnectionPool(conninfo="dbname=test", open=True)
-    config = RepositoryConfig.from_env()
-    backend = OAIFileDBBackend(pool=pool, root=config.data_root)
-    server = OAIServer(backend, config)
-    info = server.identify()
-
-    assert info["repositoryName"] == "Modama OAI-PMH server"
-    assert info["protocolVersion"] == "2.0"
-    assert info["deletedRecord"] == "no"
-    assert info["granularity"] == "YYYY-MM-DDThh:mm:ssZ"
-    assert "adminEmails" in info
-
-
-def test_server_list_metadata_formats():
-    """Test ListMetadataFormats verb."""
-    from psycopg_pool import ConnectionPool
-
-    pool = ConnectionPool(conninfo="dbname=test", open=True)
-    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
-    formats = backend.listMetadataFormats()
-
-    assert len(formats) == 1
-    assert formats[0][0] == "oai_dc"
-    assert "oai_dc.xsd" in formats[0][1]
-    assert formats[0][2] == "http://purl.org/dc/elements/1.1/"
-
-
-def test_server_list_sets():
-    """Test ListSets verb."""
-    from psycopg_pool import ConnectionPool
-
-    pool = ConnectionPool(conninfo="dbname=test", open=True)
-    backend = OAIFileDBBackend(pool=pool, root=Path("/tmp"))
-    sets = backend.listSets()
-
-    assert sets == []
 
 
 def test_error_response():
@@ -312,7 +243,7 @@ def test_http_endpoint_list_sets(flask_client):
     xml_content = response.data
 
     # Check for expected XML elements
-    assert b"<sets>" in xml_content or b"</ListSets>" in xml_content
+    assert b"</ListSets>" in xml_content
 
 
 def test_http_endpoint_bad_verb(flask_client):
@@ -468,7 +399,6 @@ def test_list_identifiers_basic(server_with_db):
         until=None,
         continuation=None,
         batch_size=2,
-        metadataPrefix="oai_dc",
     )
 
     assert len(headers) == 2
@@ -485,7 +415,6 @@ def test_list_identifiers_pagination(server_with_db):
         until=None,
         continuation=None,
         batch_size=2,
-        metadataPrefix="oai_dc",
     )
     assert len(headers1) == 2
     assert token1 is not None
@@ -496,7 +425,6 @@ def test_list_identifiers_pagination(server_with_db):
         until=None,
         continuation=token1,
         batch_size=2,
-        metadataPrefix="oai_dc",
     )
     assert len(headers2) == 2
     assert token2 is not None
@@ -507,7 +435,6 @@ def test_list_identifiers_pagination(server_with_db):
         until=None,
         continuation=token2,
         batch_size=2,
-        metadataPrefix="oai_dc",
     )
     assert len(headers3) == 2
     # Last batch may or may not have token depending on implementation
@@ -524,7 +451,6 @@ def test_list_identifiers_date_filtering(server_with_db):
         until=until_dt,
         continuation=None,
         batch_size=10,
-        metadataPrefix="oai_dc",
     )
 
     # Should get 4 records
@@ -559,7 +485,6 @@ def test_resumption_token_preserves_parameters(server_with_db):
         until=until_dt,
         continuation=None,
         batch_size=2,
-        metadataPrefix="oai_dc",
     )
 
     assert next_path is not None

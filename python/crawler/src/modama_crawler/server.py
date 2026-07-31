@@ -148,12 +148,11 @@ class OAIFileDBBackend:
         until: Optional[datetime] = None,
         continuation: Optional[str] = None,
         batch_size: int = 10,
-        metadataPrefix: Optional[str] = None,
-    ) -> Tuple[list, Optional[str]]:
+    ) -> Tuple[list, Optional[pathlib.Path]]:
         """List record headers with optional date filtering and pagination."""
         # Decode continuation token if present
         cont_path = pathlib.Path(continuation) if continuation else None
-
+        next_path = None
         # Get database connection for this request
         with self._pool.connection() as conn:
             # Query database for dataset paths
