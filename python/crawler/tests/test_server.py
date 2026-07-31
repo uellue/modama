@@ -624,23 +624,6 @@ def test_request_list_records(running_http_server):
             # Convert to string and validate
             dc_xml_str = ET.tostring(wrapped, encoding="unicode")
 
-            # Create a custom resolver to map external schema references to local files
-            class LocalSchemaResolver(etree.Resolver):
-                def resolve(self, system_url, public_id, context):
-                    url_str = str(system_url) if system_url else ""
-                    schemas_path = get_schema_path("")
-                    # Map Dublin Core schema to local file
-                    if "simpledc20021212.xsd" in url_str:
-                        return self.resolve_filename(
-                            str(schemas_path / "simpledc20021212.xsd"), context
-                        )
-                    # Map W3C XML namespace schema to local file
-                    if "xml.xsd" in url_str:
-                        return self.resolve_filename(
-                            str(schemas_path / "xml.xsd"), context
-                        )
-                    return None
-
             parser = etree.XMLParser()
             parser.resolvers.add(LocalSchemaResolver())
 
@@ -657,7 +640,6 @@ def test_request_list_records(running_http_server):
     # Validate the entire OAI-PMH response document against OAI-PMH.xsd
     oai_pmh_schema_path = get_schema_path("oai-pmh-oai-dc.xsd")
 
-    # Create resolver for full document validation
     parser = etree.XMLParser()
     parser.resolvers.add(LocalSchemaResolver())
 
