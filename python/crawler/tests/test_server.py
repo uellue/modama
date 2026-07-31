@@ -475,8 +475,9 @@ def test_http_endpoint_list_sets(flask_client):
 
     xml_content = response.data
 
-    # Check for expected XML elements
-    assert b"</ListSets>" in xml_content
+    # Check for noSetHierarchy error (repository does not support sets)
+    assert b'<error code="noSetHierarchy">' in xml_content
+    assert b"This repository does not support sets" in xml_content
 
 
 def test_http_endpoint_bad_verb(flask_client):
@@ -782,3 +783,659 @@ def test_request_list_records(running_http_server):
 
     # Validate the entire OAI-PMH response document
     validate_oai_pmh_response(response.content)
+
+
+# ============================================================================
+# Additional OAI-PMH Protocol Compliance Tests
+# ============================================================================
+
+
+def test_request_bad_verb(running_http_server):
+    """Test bad verb error response."""
+    response = requests.get(f"{running_http_server}?verb=BadVerb")
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+    assert b"<error" in response.content
+    assert b'code="badVerb"' in response.content
+
+    # Validate the OAI-PMH response structure even for errors
+    etree.fromstring(response.content)
+
+    # Check required error elements exist
+    assert b"<responseDate>" in response.content
+    assert b"<request>" in response.content
+
+    # Validate against OAI-PMH schema (even for errors)
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_identify(running_http_server):
+    """Test Identify verb with full validation."""
+    response = requests.get(f"{running_http_server}?verb=Identify")
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    # Parse XML and validate using lxml.etree for schema validation
+    etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Check all required Identify elements exist
+    assert b"<repositoryName>" in response.content
+    assert b"<baseURL>" in response.content
+    assert b"<protocolVersion>2.0</protocolVersion>" in response.content
+    assert b"<earliestDatestamp>" in response.content
+    assert b"<deletedRecord>" in response.content
+    assert b"<granularity>" in response.content
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_metadata_formats(running_http_server):
+    """Test ListMetadataFormats verb with full validation."""
+    response = requests.get(f"{running_http_server}?verb=ListMetadataFormats")
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    # Parse XML and validate using lxml.etree for schema validation
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Check required metadataFormat elements exist
+    assert b"<metadataFormat>" in response.content
+    assert b"<metadataPrefix>oai_dc</metadataPrefix>" in response.content
+
+    schema_elem = root.find(
+        ".//oai:ListMetadataFormats//oai:metadataFormat/oai:schema", ns
+    )
+    assert schema_elem is not None, "schema element should exist"
+    assert b"http://www.openarchives.org/OAI/2.0/oai_dc.xsd" in response.content
+
+    namespace_elem = root.find(".//oai:metadataFormat/oai:metadataNamespace", ns)
+    assert namespace_elem is not None, "metadataNamespace element should exist"
+    assert b"http://purl.org/dc/elements/1.1/" in response.content
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_identifiers_basic(running_http_server):
+    """Test ListIdentifiers verb basic functionality."""
+    response = requests.get(
+        f"{running_http_server}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    # Parse XML and validate using lxml.etree for schema validation
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Check required ListIdentifiers elements exist
+    assert b"<ListIdentifiers>" in response.content
+    assert b"<header>" in response.content
+    assert b"<identifier>" in response.content
+    assert b"<datestamp>" in response.content
+
+    # Validate header structure - each header should have identifier and datestamp
+    headers = root.findall(".//oai:ListIdentifiers/oai:header", ns)
+    assert len(headers) > 0, "Should return at least one header"
+
+    for i, header in enumerate(headers):
+        identifier = header.find("oai:identifier", ns)
+        datestamp = header.find("oai:datestamp", ns)
+        assert identifier is not None, f"Header {i} should have identifier"
+        assert datestamp is not None, f"Header {i} should have datestamp"
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_identifiers_with_from_until(running_http_server):
+    """Test ListIdentifiers with selective harvesting (date range)."""
+
+    # Use date range that should match some records based on test_database fixture
+    from_date = "2024-06-01"
+    until_date = "2024-12-31T23:59:59Z"
+
+    response = requests.get(
+        f"{running_http_server}?verb=ListIdentifiers&metadataPrefix=oai_dc&from={from_date}&until={until_date}"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Should return headers with datestamps within the range
+    headers = root.findall(".//oai:ListIdentifiers/oai:header", ns)
+    assert len(headers) > 0, "Should return headers matching date range"
+
+    for header in headers:
+        datestamp_elem = header.find("oai:datestamp", ns)
+        if datestamp_elem is not None and datestamp_elem.text:
+            # Verify date is in ISO 8601 format
+            date_value = datestamp_elem.text
+            assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", date_value), (
+                f"Datestamp {date_value} should be in ISO 8601 format"
+            )
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_identifiers_pagination(running_http_server):
+    """Test ListIdentifiers with resumptionToken pagination."""
+    # First request with small batch size (if supported) or just get first page
+    response = requests.get(
+        f"{running_http_server}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Check for resumptionToken (indicates pagination is available)
+    resumption_tokens = root.findall(".//oai:ListIdentifiers/oai:resumptionToken", ns)
+
+    if len(resumption_tokens) > 0:
+        token_elem = resumption_tokens[0]
+        token_value = token_elem.text
+        print(f"Resumption token: {token_value}")
+
+        # Optional: Verify token attributes exist (completeListSize, cursor)
+        if token_elem.attrib.get("completeListSize"):
+            print(f"Complete list size: {token_elem.attrib['completeListSize']}")
+        if token_elem.attrib.get("cursor"):
+            print(f"Cursor: {token_elem.attrib['cursor']}")
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_records_basic(running_http_server):
+    """Test ListRecords verb basic functionality."""
+    response = requests.get(
+        f"{running_http_server}?verb=ListRecords&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    # Parse XML and validate using lxml.etree for schema validation
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Check required ListRecords elements exist
+    assert b"<ListRecords>" in response.content
+    assert b"<record>" in response.content
+
+    # Validate record structure - each record should have header and metadata
+    records = root.findall(".//oai:ListRecords/oai:record", ns)
+    assert len(records) > 0, "Should return at least one record"
+
+    for i, record in enumerate(records):
+        header = record.find("oai:header", ns)
+        metadata = record.find("oai:metadata", ns)
+        assert header is not None, f"Record {i} should have a header"
+        assert metadata is not None, f"Record {i} should have metadata"
+
+    # Validate Dublin Core metadata
+    validate_dublin_core_metadata(root, ns)
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_records_with_from_until(running_http_server):
+    """Test ListRecords with selective harvesting (date range)."""
+
+    # Use date range that should match some records based on test_database fixture
+    from_date = "2024-06-01"
+    until_date = "2024-12-31T23:59:59Z"
+
+    response = requests.get(
+        f"{running_http_server}?verb=ListRecords&metadataPrefix=oai_dc&from={from_date}&until={until_date}"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Should return records with headers and metadata
+    records = root.findall(".//oai:ListRecords/oai:record", ns)
+    assert len(records) > 0, "Should return records matching date range"
+
+    for record in records:
+        header = record.find("oai:header", ns)
+        metadata = record.find("oai:metadata", ns)
+
+        assert header is not None, "Each record should have a header"
+        assert metadata is not None, "Each record should have metadata"
+
+        # Validate the date in dc:date elements
+        if metadata is not None and len(metadata) > 0:
+            dc_elem = metadata[0]
+            for date_elem in dc_elem.findall("dc:date", ns):
+                if date_elem.text:
+                    assert re.match(
+                        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", date_elem.text
+                    ), f"dc:date {date_elem.text} should be in ISO 8601 format"
+
+    # Validate Dublin Core metadata
+    validate_dublin_core_metadata(root, ns)
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_records_pagination(running_http_server):
+    """Test ListRecords with resumptionToken pagination."""
+    response = requests.get(
+        f"{running_http_server}?verb=ListRecords&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Check records structure
+    records = root.findall(".//oai:ListRecords/oai:record", ns)
+    assert len(records) > 0, "Should return at least one record"
+
+    for i, record in enumerate(records):
+        header = record.find("oai:header", ns)
+        metadata = record.find("oai:metadata", ns)
+
+        assert header is not None, f"Record {i} should have a header"
+        assert metadata is not None, f"Record {i} should have metadata"
+
+        # Validate Dublin Core structure
+        if len(metadata) > 0:
+            dc_elem = metadata[0]
+            assert dc_elem.tag == "{http://www.openarchives.org/OAI/2.0/oai_dc/}dc", (
+                f"Record {i} metadata should be oai_dc:dc"
+            )
+
+    # Validate Dublin Core metadata against schema
+    validate_dublin_core_metadata(root, ns)
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_sets(running_http_server):
+    """Test ListSets verb (may return noSetHierarchy error if sets not supported)."""
+    response = requests.get(f"{running_http_server}?verb=ListSets")
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Check if repository supports sets
+    error_no_set_hierarchy = root.find(".//oai:error[@code='noSetHierarchy']", ns)
+
+    if error_no_set_hierarchy is not None:
+        print("Repository does not support sets (noSetHierarchy error)")
+    else:
+        # If no error, check for ListSets response elements
+        assert b"<ListSets>" in response.content
+        assert b"<set>" in response.content or b"</ListSets>" in response.content
+
+        sets = root.findall(".//oai:ListSets/oai:set", ns)
+        if len(sets) > 0:
+            for i, set_elem in enumerate(sets):
+                set_spec = set_elem.find("oai:setSpec", ns)
+                set_name = set_elem.find("oai:setName", ns)
+                assert set_spec is not None, f"Set {i} should have setSpec"
+                assert set_name is not None, f"Set {i} should have setName"
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_get_record_basic(running_http_server):
+    """Test GetRecord verb with valid identifier and metadataPrefix."""
+    # First, get an identifier from ListIdentifiers to use for GetRecord
+    list_response = requests.get(
+        f"{running_http_server}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+    )
+
+    assert list_response.status_code == 200
+
+    root = etree.fromstring(list_response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Get the first identifier
+    headers = root.findall(".//oai:ListIdentifiers/oai:header", ns)
+    assert len(headers) > 0, "Need at least one header to test GetRecord"
+
+    identifier_elem = headers[0].find("oai:identifier", ns)
+    assert identifier_elem is not None and identifier_elem.text, (
+        "First header should have identifier"
+    )
+
+    identifier = identifier_elem.text
+
+    # Now test GetRecord with this identifier
+    response = requests.get(
+        f"{running_http_server}?verb=GetRecord&identifier={identifier}&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    # Validate the entire OAI-PMH response document
+    validate_oai_pmh_response(response.content)
+
+    # Check for GetRecord with record structure
+    root_get = etree.fromstring(response.content)
+    get_record = root_get.find(".//oai:GetRecord", ns)
+    assert get_record is not None, "Response should have GetRecord element"
+
+    record = root_get.find(".//oai:record", ns)
+    assert record is not None, "GetRecord response should contain a record"
+
+    # Validate record structure
+    header = record.find("oai:header", ns)
+    metadata = record.find("oai:metadata", ns)
+
+    assert header is not None, "Record should have header"
+    assert metadata is not None, "Record should have metadata"
+
+
+def test_request_get_record_invalid_identifier(running_http_server):
+    """Test GetRecord with invalid identifier (idDoesNotExist error)."""
+    # Use a clearly invalid identifier
+    invalid_identifier = "oai:invalid.test/999999nonexistent"
+
+    response = requests.get(
+        f"{running_http_server}?verb=GetRecord&identifier={invalid_identifier}&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Should return an error with code idDoesNotExist
+    error_elem = root.find(".//oai:error[@code='idDoesNotExist']", ns)
+    assert error_elem is not None, (
+        "GetRecord with invalid identifier should return idDoesNotExist error"
+    )
+
+    # Validate the OAI-PMH response structure even for errors
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_get_record_bad_argument(running_http_server):
+    """Test GetRecord with missing required parameters (badArgument error)."""
+    # Test missing identifier
+    response = requests.get(
+        f"{running_http_server}?verb=GetRecord&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Should return badArgument error for missing identifier
+    error_elem = root.find(".//oai:error[@code='badArgument']", ns)
+    assert error_elem is not None, (
+        "GetRecord with missing identifier should return badArgument error"
+    )
+
+    # Validate the OAI-PMH response structure even for errors
+    validate_oai_pmh_response(response.content)
+
+
+def test_request_list_identifiers_with_resumption_token(running_http_server):
+    """Test pagination using resumptionToken from ListIdentifiers."""
+    # First request to get a resumption token
+    response = requests.get(
+        f"{running_http_server}?verb=ListIdentifiers&metadataPrefix=oai_dc"
+    )
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Check for resumptionToken
+    resumption_tokens = root.findall(".//oai:ListIdentifiers/oai:resumptionToken", ns)
+
+    if len(resumption_tokens) > 0:
+        token_elem = resumption_tokens[0]
+
+        if token_elem.text and token_elem.text.strip():
+            # We have a valid token, use it to get next page
+            response2 = requests.get(
+                f"{running_http_server}?verb=ListIdentifiers&resumptionToken={token_elem.text}"
+            )
+
+            assert response2.status_code == 200
+
+            root2 = etree.fromstring(response2.content)
+            headers2 = root2.findall(".//oai:ListIdentifiers/oai:header", ns)
+
+            # Should get some more results or a terminator token
+            if len(headers2) > 0:
+                print(f"Got {len(headers2)} more identifiers from pagination")
+
+            # Check for terminator (empty resumptionToken means complete list)
+            resumption_tokens_2 = root2.findall(
+                ".//oai:ListIdentifiers/oai:resumptionToken", ns
+            )
+            if len(resumption_tokens_2) > 0:
+                token_elem_2 = resumption_tokens_2[0]
+                if not token_elem_2.text or not token_elem_2.text.strip():
+                    print("Pagination complete (empty terminator token)")
+
+    # Validate the first response
+    validate_oai_pmh_response(response.content)
+
+
+def test_error_list_metadata_formats_invalid_identifier(running_http_server):
+    """Test ListMetadataFormats with invalid identifier."""
+    invalid_identifier = "oai:invalid.test/999999nonexistent"
+
+    response = requests.get(
+        f"{running_http_server}?verb=ListMetadataFormats&identifier={invalid_identifier}"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Should return an error with code idDoesNotExist
+    error_elem = root.find(".//oai:error[@code='idDoesNotExist']", ns)
+    assert error_elem is not None, (
+        "ListMetadataFormats with invalid identifier should return idDoesNotExist error"
+    )
+
+    # Validate the OAI-PMH response structure even for errors
+    validate_oai_pmh_response(response.content)
+
+
+def test_http_content_type(flask_client):
+    """Test that responses have correct Content-Type header."""
+    response = flask_client.get("/oai?verb=Identify")
+
+    assert response.status_code == 200
+    content_type = response.headers.get("Content-Type", "")
+    assert "text/xml" in content_type.lower(), (
+        f"Content-Type should be text/xml, got {content_type}"
+    )
+
+
+def test_response_date_utc_timezone(running_http_server):
+    """Test that responseDate elements use UTC timezone with Z suffix."""
+    response = requests.get(f"{running_http_server}?verb=Identify")
+
+    assert response.status_code == 200
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Find responseDate element
+    response_date_elem = root.find(".//oai:responseDate", ns)
+    assert response_date_elem is not None and response_date_elem.text, (
+        "Response should have responseDate element"
+    )
+
+    date_value = response_date_elem.text
+
+    # Verify it ends with Z (UTC indicator) and matches ISO 8601 format
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", date_value), (
+        f"responseDate {date_value} should be in UTC with Z suffix"
+    )

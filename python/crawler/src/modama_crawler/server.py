@@ -436,7 +436,8 @@ class OAIServer:
         for key, value in request_args.items():
             # base_url is passed as value, not attribute
             if key not in ("base_url",) and value:
-                request_elem.set(key, quote_plus(value))
+                # OAI-PMH requests expect unencoded query parameter values in the <request> element attributes
+                request_elem.set(key, value)
 
         # Verb element
         verb_elem = etree.SubElement(root, f"{{{OAI_NS}}}{verb}")
@@ -554,16 +555,30 @@ class OAIServer:
     def handle_identify(self, args: dict) -> Response:
         """Handle Identify verb."""
         info = self.identify()
+
+        # Build children as a list that maintains order and handles lists properly
         children = [
             {"repositoryName": info["repositoryName"]},
             {"baseURL": args["base_url"]},
             {"protocolVersion": info["protocolVersion"]},
-            {"adminEmails": [{"adminEmail": email} for email in info["adminEmails"]]},
-            {"earliestDatestamp": _format_datestamp(info["earliestDatestamp"])},
-            {"deletedRecord": info["deletedRecord"]},
-            {"granularity": info["granularity"]},
-            {"compression": [{"compression": c} for c in info["compression"]]},
         ]
+
+        # Add adminEmails directly (each as separate element, not wrapped)
+        for email in info["adminEmails"]:
+            children.append({"adminEmail": email})
+
+        children.extend(
+            [
+                {"earliestDatestamp": _format_datestamp(info["earliestDatestamp"])},
+                {"deletedRecord": info["deletedRecord"]},
+                {"granularity": info["granularity"]},
+            ]
+        )
+
+        # Add compression elements if not just "identity"
+        if info["compression"] != ["identity"]:
+            for c in info["compression"]:
+                children.append({"compression": c})
         return Response(
             self._make_oai_response("Identify", children, args),
             mimetype="text/xml; charset=utf-8",
@@ -578,6 +593,16 @@ class OAIServer:
                 mimetype="text/xml; charset=utf-8",
             )
 
+        # Validate identifier format before attempting to fetch
+        try:
+            path_from_identifier(identifier)
+        except ValueError as e:
+            # Invalid identifier format or non-existent identifier
+            return Response(
+                self._make_error("idDoesNotExist", str(e)),
+                mimetype="text/xml; charset=utf-8",
+            )
+
         record = self._backend.getRecord(identifier)
         children = [self._make_record_element(record)]
 
@@ -588,6 +613,18 @@ class OAIServer:
 
     def handle_listmetadataformats(self, args: dict) -> Response:
         """Handle ListMetadataFormats verb."""
+        identifier = args.get("identifier")
+
+        # If identifier is provided, validate it first
+        if identifier:
+            try:
+                path_from_identifier(identifier)
+            except ValueError as e:
+                return Response(
+                    self._make_error("idDoesNotExist", str(e)),
+                    mimetype="text/xml; charset=utf-8",
+                )
+
         formats = self._backend.listMetadataFormats()
         children = [
             {
@@ -700,7 +737,17 @@ class OAIServer:
     def handle_listsets(self, args: dict) -> Response:
         """Handle ListSets verb."""
         sets = self._backend.listSets()
-        children = [{"set": {}} for _ in sets]  # Empty sets list
+
+        # If no sets are defined, return noSetHierarchy error per OAI-PMH spec
+        if not sets:
+            return Response(
+                self._make_error(
+                    "noSetHierarchy", "This repository does not support sets"
+                ),
+                mimetype="text/xml; charset=utf-8",
+            )
+
+        children = [{"set": {}} for _ in sets]
 
         return Response(
             self._make_oai_response("ListSets", children, args),
