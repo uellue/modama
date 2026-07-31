@@ -123,7 +123,7 @@ class FileHandler:
         root: pathlib.Path,
         path: pathlib.Path,
         guesses: Sequence[Mime.MIMEtype],
-        conn: Optional[psycopg.Connection] = None,
+        conn: psycopg.Connection,
     ):
         self.root = root
         self.path = path
@@ -167,6 +167,8 @@ class FileHandler:
             db_guesses = _get_mime_types_from_db(conn, abs_path)
             if db_guesses:
                 guesses = db_guesses
+        else:
+            raise ValueError("No database connection")
 
         best_match: Type["FileHandler"] | None = None
         best_priority = -1
@@ -196,7 +198,7 @@ class FileHandler:
         root: pathlib.Path,
         path: pathlib.Path,
         guesses: Sequence[Mime.MIMEtype],
-        conn: Optional[psycopg.Connection] = None,
+        conn: psycopg.Connection,
     ) -> "FileHandler":
         handler_cls = cls.resolve(root, path, guesses, conn)
         return handler_cls(root, path, guesses, conn)
@@ -245,7 +247,8 @@ class FileHandler:
             # self.path is relative, self.root is absolute
             abs_path = self.root / self.path
             return _get_dataset_members_from_db(self.conn, str(abs_path))
-        return [self.path]
+        else:
+            raise RuntimeError("No database connection")
 
     @property
     @cache

@@ -123,7 +123,7 @@ def test_dir(tmp_path, request):
     return (listing, tmp_path, request.param, stats)
 
 
-def test_recognition(test_dir):
+def test_recognition(test_dir, test_database):
     listing, tmp_path, param, stats = test_dir
     for path, kind, content, mtime, mimes in listing:
         abspath = tmp_path / path
@@ -131,7 +131,9 @@ def test_recognition(test_dir):
         for mime in mimes:
             print(mime, path, os.path.isdir(abspath))
             assert MIMEtype(mime) in guesses
-        handler = FileHandler.create(root=tmp_path, path=path, guesses=guesses)
+        handler = FileHandler.create(
+            root=tmp_path, path=path, guesses=guesses, conn=test_database
+        )
         if handler.path == path:
             formats = handler.get_formats()
             for mime in mimes:
@@ -141,33 +143,39 @@ def test_recognition(test_dir):
 @pytest.mark.parametrize(
     "path", ("a/aaa.xml", "a/series_x1234.raw", "series_x1234.raw", "xxx.xml")
 )
-def test_empad(test_dir, path):
+def test_empad(test_dir, path, test_database):
     listing, tmp_path, param, stats = test_dir
     abspath = tmp_path / path
     guesses = guess(abspath)
     print(guesses)
-    handler = FileHandler.create(root=tmp_path, path=path, guesses=guesses)
+    handler = FileHandler.create(
+        root=tmp_path, path=path, guesses=guesses, conn=test_database
+    )
     assert isinstance(handler, EMPAD)
 
 
 @pytest.mark.parametrize("path", ("something.raw", "b.txt"))
-def test_not_empad(test_dir, path):
+def test_not_empad(test_dir, path, test_database):
     listing, tmp_path, param, stats = test_dir
     abspath = tmp_path / path
     guesses = guess(abspath)
     print(guesses)
-    handler = FileHandler.create(root=tmp_path, path=path, guesses=guesses)
+    handler = FileHandler.create(
+        root=tmp_path, path=path, guesses=guesses, conn=test_database
+    )
     assert not isinstance(handler, EMPAD)
 
 
-def test_special(test_dir):
+def test_special(test_dir, test_database):
     listing, tmp_path, param, stats = test_dir
     for path, kind, content, mtime, mimes in listing:
         if kind in ("l", "d"):
             abspath = tmp_path / path
             guesses = guess(abspath)
             print(guesses)
-            handler = FileHandler.create(root=tmp_path, path=path, guesses=guesses)
+            handler = FileHandler.create(
+                root=tmp_path, path=path, guesses=guesses, conn=test_database
+            )
             if kind == "l":
                 assert isinstance(handler, Symlink)
             elif kind == "d":
