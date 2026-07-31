@@ -13,6 +13,9 @@ Shared fixtures are defined in conftest.py and available to all test files.
 import pytest
 from pathlib import Path
 from datetime import datetime
+import re
+import requests
+
 from psycopg_pool import ConnectionPool
 
 # Import the server components
@@ -24,6 +27,54 @@ from modama_crawler.server import (
     _parse_datestamp,
     _format_datestamp,
 )
+
+
+def pretty_print_xml_response(response):
+    """Pretty-print an XML response if content-type indicates XML."""
+    if "xml" in response.headers.get("content-type", "").lower():
+        try:
+            import xml.dom.minidom
+
+            dom = xml.dom.minidom.parseString(response.text)
+            pretty_xml = dom.toprettyxml()
+            print(f"Response (XML):\n{pretty_xml}")
+        except Exception:
+            # If parsing fails, just print the raw text
+            print(f"Response body:\n{response.text}")
+    else:
+        print(f"Response body:\n{response.text}")
+
+
+def validate_dc_date(date_value: str):
+    """Validate that a Dublin Core date follows ISO 8601 / W3C Date-Time Format.
+
+    According to Dublin Core and OAI-PMH specifications, dates should follow
+    ISO 8601 format with UTC timezone indicator (Z suffix).
+
+    Acceptable formats:
+    - YYYY-MM-DDThh:mm:ssZ (full datetime)
+    - YYYY-MM-DD (date only)
+    - YYYY-MM (year-month only)
+    - YYYY (year only)
+    """
+    # Regular expression for W3C Date-Time Format (ISO 8601 profile)
+    # Matches: YYYY-MM-DDThh:mm:ssZ
+    w3c_datetime_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+
+    # Regular expression for date-only formats
+    date_patterns = [
+        r"^\d{4}$",  # YYYY
+        r"^\d{4}-\d{2}$",  # YYYY-MM
+        r"^\d{4}-\d{2}-\d{2}$",  # YYYY-MM-DD
+        w3c_datetime_pattern,  # YYYY-MM-DDThh:mm:ssZ
+    ]
+
+    for pattern in date_patterns:
+        if re.match(pattern, date_value):
+            return True
+
+    # If none matched, it's invalid
+    return False
 
 
 # ============================================================================
@@ -475,5 +526,51 @@ def test_resumption_token_preserves_parameters(backend_with_db):
 
 
 def test_request_list_records(running_http_server):
-    print(running_http_server)
-    assert False
+    """Test ListRecords verb via HTTP endpoint."""
+    response = requests.get(
+        f"{running_http_server}?verb=ListRecords&metadataPrefix=oai_dc"
+    )
+    print(f"Status code: {response.status_code}")
+
+    pretty_print_xml_response(response)
+
+    assert response.status_code == 200
+    assert b"<ListRecords>" in response.content
+    assert b"<record>" in response.content
+
+    # Parse XML and validate dc:date values
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(response.content)
+
+    # Define namespaces
+    ns = {
+        "oai": "http://www.openarchives.org/OAI/2.0/",
+        "oai_dc": "http://www.openarchives.org/OAI/2.0/oai_dc/",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
+
+    # Register namespaces
+    for prefix, uri in ns.items():
+        ET.register_namespace(prefix, uri)
+
+    # Extract all dc:date elements from metadata
+    date_elements = root.findall(".//oai_dc:dc/dc:date", ns)
+
+    assert len(date_elements) > 0, "No dc:date elements found in response"
+
+    # Validate each date value
+    for date_elem in date_elements:
+        date_value = date_elem.text
+
+        # Check that it's not a raw timestamp (which would indicate the bug)
+        # Timestamps are numeric strings like "1785494744.596561"
+        assert not re.match(r"^\d+\.?\d*$", date_value), (
+            f"dc:date contains a Unix timestamp instead of ISO 8601 format: {date_value}"
+        )
+
+        # Validate the format
+        is_valid = validate_dc_date(date_value)
+        assert is_valid, (
+            f"dc:date '{date_value}' does not match Dublin Core/ISO 8601 format"
+        )

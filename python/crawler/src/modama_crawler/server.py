@@ -527,8 +527,10 @@ class OAIServer:
                 if isinstance(value, list):
                     for item in value:
                         dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                        # Format datetime objects for OAI-PMH
+                        # Format datetime objects and timestamps for OAI-PMH
                         if isinstance(item, datetime):
+                            dc_elem.text = _format_datestamp(item)
+                        elif isinstance(item, (int, float)):
                             dc_elem.text = _format_datestamp(item)
                         else:
                             dc_elem.text = str(item)
