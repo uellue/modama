@@ -10,9 +10,15 @@ keywords = ["OAI-PMH", "data repository", "metadata"]
 requires-python = ">=3.14"
 version = "0.0.1.dev0"
 dependencies = [
+    "datacite",
+    "defusedxml",
+    "flask",
+    "lxml",
+    "magika",
     "natsort",
     "psycopg[binary,pool]",
     "python-dotenv",
+    "pyxdg",
 ]
 classifiers = [
     "Programming Language :: Python :: 3.14",
@@ -26,7 +32,16 @@ authors = [
 repository = "https://iffgit.fz-juelich.de/weber/data-management-system/"
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov", "pytest-postgresql", "oaipmh", "oaipmh-scythe"]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-postgresql",
+    "oaipmh",
+    "oaipmh-scythe",
+    "pillow",
+    "requests",
+    "sickle",
+]
 
 [tool.setuptools.dynamic]
 

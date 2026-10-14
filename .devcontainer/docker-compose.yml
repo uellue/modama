@@ -1,0 +1,39 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sleep infinity
+    volumes:
+      - ..:/workspaces/data-management-system:cached
+      # Forks installed in editable mode, expected as siblings of this repo
+      - ../../pyxdg:/workspaces/pyxdg:cached
+      - ../../oaipmh:/workspaces/oaipmh:cached
+      - crawler-data:/data
+    environment:
+      # Set explicitly so that python/crawler/.env from the host doesn't apply:
+      # python-dotenv does not override variables that are already set.
+      MODAMA_DATA_ROOT: /data
+      MODAMA_CRAWLER_DB: modama_crawler
+      POSTGRES_ADMIN: postgres
+      POSTGRES_PASSWORD: ""
+      POSTGRES_ADDRESS: db
+      POSTGRES_PORT: "5432"
+      OAI_BASE_URL: http://localhost:7654/oai
+    depends_on:
+      - db
+
+  # Development database for running the crawler and server by hand.
+  # The test suite doesn't use it, pytest-postgresql starts its own instances.
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: modama_crawler
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  crawler-data:
+  pgdata:
