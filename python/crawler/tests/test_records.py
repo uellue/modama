@@ -65,13 +65,11 @@ def test_shortened_identifiers_differ():
 
 def test_publish_records(conn, tmp_path):
     ((path_id,),) = conn.execute(
-        "INSERT INTO files (path, mtime, uid) VALUES (%s, 0, %s) RETURNING path_id",
+        "INSERT INTO files (path, mtime, uid, mime) VALUES (%s, 0, %s, 'text/plain') "
+        "RETURNING path_id",
         (str(tmp_path / "x.txt"), os.getuid()),
     )
-    ((dataset_id,),) = conn.execute(
-        "INSERT INTO datasets (path_id) VALUES (%s) RETURNING dataset_id", (path_id,)
-    )
-    conn.execute("INSERT INTO mimes VALUES (%s, 'text/plain')", (dataset_id,))
+    conn.execute("INSERT INTO datasets (path_id) VALUES (%s)", (path_id,))
     conn.commit()
 
     assert publish_records(conn, tmp_path) == 1

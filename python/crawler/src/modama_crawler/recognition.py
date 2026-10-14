@@ -8,12 +8,11 @@ from functools import cache
 from typing import ClassVar, Dict, Iterable, Optional, Sequence, Type
 
 import defusedxml.ElementTree as ET
-import magika
 import psycopg
 from psycopg.rows import dict_row, tuple_row
 from xdg import Mime
 
-mgk = magika.Magika()
+from .mime import detect
 
 
 def _get_mime_types_from_db(
@@ -31,11 +30,7 @@ def _get_mime_types_from_db(
     cur = conn.cursor(row_factory=tuple_row)
     cur.execute(
         """
-        SELECT m.mime FROM mimes m
-        JOIN datasets d ON m.dataset_id = d.dataset_id
-        JOIN files f ON d.path_id = f.path_id
-        WHERE f.path = %s
-        ORDER BY m.mime
+        SELECT mime FROM files WHERE path = %s AND mime IS NOT NULL
         """,
         (str(path),),
     )
@@ -100,14 +95,7 @@ class DatasetConsistencyError(RuntimeError):
 
 
 def guess(path: pathlib.Path) -> Sequence[Mime.MIMEtype]:
-    result = []
-    res = Mime.get_type2(path, follow=False)
-    if res is not None:
-        result.append(res)
-    mgk_res = mgk.identify_path(path)
-    if mgk_res.status is magika.Status.OK:
-        result.append(Mime.MIMEtype(mgk_res.output.mime_type))
-    return result
+    return [Mime.MIMEtype(detect(str(path)))]
 
 
 class FileHandler:

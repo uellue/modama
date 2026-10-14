@@ -76,7 +76,7 @@ def add_record(conn):
             (path_id,),
         )
         identifier = oai_identifier(path)
-        metadata = dc_metadata(path, 0.0, os.getuid(), ["text/plain"])
+        metadata = dc_metadata(path, 0.0, os.getuid(), "text/plain")
         conn.execute(
             "INSERT INTO records VALUES (%s, %s, %s, %s)",
             (dataset_id, identifier, datestamp, Jsonb(metadata)),

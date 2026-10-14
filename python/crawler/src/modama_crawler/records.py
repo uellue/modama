@@ -60,16 +60,14 @@ def user_name(uid: int) -> str:
         return str(uid)
 
 
-def dc_metadata(
-    path: str, mtime: float, uid: int, mimes: list[str]
-) -> dict[str, list[str]]:
+def dc_metadata(path: str, mtime: float, uid: int, mime: str) -> dict[str, list[str]]:
     """Dublin Core elements of the dataset at path, mapped approximately from the file system."""
     return {
         "title": [path],
         "creator": [user_name(uid)],
         "date": [format_datestamp(datetime.fromtimestamp(mtime, UTC))],
         "type": ["Dataset"],
-        "format": sorted(mimes),
+        "format": [mime],
         "identifier": [browse_url(path)],
         "publisher": [PUBLISHER],
     }
@@ -92,19 +90,15 @@ def publish_records(
     ):
         datasets.execute(
             """
-            SELECT d.dataset_id, f.path, f.mtime, f.uid,
-                array_remove(array_agg(m.mime), NULL)
-            FROM datasets d
-            JOIN files f USING (path_id)
-            LEFT JOIN mimes m USING (dataset_id)
-            GROUP BY d.dataset_id, f.path, f.mtime, f.uid
+            SELECT d.dataset_id, f.path, f.mtime, f.uid, f.mime
+            FROM datasets d JOIN files f USING (path_id)
             """
         )
         while rows := datasets.fetchmany(batch_size):
             params = []
-            for dataset_id, abspath, mtime, uid, mimes in rows:
+            for dataset_id, abspath, mtime, uid, mime in rows:
                 path = "/" + str(Path(abspath).relative_to(root))
-                metadata = dc_metadata(path, mtime, uid, mimes)
+                metadata = dc_metadata(path, mtime, uid, mime)
                 params.append((dataset_id, oai_identifier(path), Jsonb(metadata)))
             cur.executemany(
                 """

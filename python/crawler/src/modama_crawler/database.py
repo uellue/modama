@@ -6,9 +6,8 @@ from pathlib import Path
 
 import psycopg
 from psycopg.conninfo import make_conninfo
-from psycopg.rows import dict_row
 
-from .mime_sql import apply_mime_prefilter_with_resolution
+from .mime import detect
 from .records import publish_records
 
 log = logging.getLogger(__name__)
@@ -26,7 +25,7 @@ def conninfo_from_env(env: Mapping = os.environ) -> str:
 
 @contextmanager
 def crawling(conn):
-    cur = conn.cursor(row_factory=dict_row)
+    cur = conn.cursor()
     # Create temporary crawl table with same schema as files
     cur.execute(
         """
@@ -78,79 +77,75 @@ def crawl_repository(conn: psycopg.Connection, root_path: Path) -> int:
     return total
 
 
-def populate_files_from_crawl(conn: psycopg.Connection) -> int:
-    """Transfer data from temporary crawl table to permanent files table.
+def populate_files_from_crawl(conn: psycopg.Connection, batch_size: int = 1000) -> int:
+    """Bring files up to date with the crawl table and create a dataset per regular file.
 
+    Only new and changed files are classified, since that may read their contents.
     Returns the number of new or changed files.
-
-    Note:
-        TODO: For incremental updates, re-run MIME matching for modified files
     """
-    cur = conn.cursor(row_factory=dict_row)
-
-    # Remove deleted files, cascading to their datasets and records
-    cur.execute(
-        """
-        DELETE FROM files
-        WHERE files.path NOT IN (SELECT path FROM crawl)
-        """
-    )
-    # Ignore everything that is unchanged
+    cur = conn.cursor()
+    # Deleted files cascade to their datasets and records
+    cur.execute("DELETE FROM files WHERE path NOT IN (SELECT path FROM crawl)")
     cur.execute(
         """
         DELETE FROM crawl
-        WHERE (crawl.path, crawl.mtime, crawl.uid) IN (SELECT path, mtime, uid FROM files)
+        WHERE (path, mtime, uid) IN (SELECT path, mtime, uid FROM files)
         """
     )
+    conn.commit()
+
+    changed = 0
+    with conn.cursor(name="changed_files", withhold=True) as crawled:
+        crawled.execute("SELECT path, mtime, uid FROM crawl")
+        while rows := crawled.fetchmany(batch_size):
+            params = []
+            for path, mtime, uid in rows:
+                try:
+                    params.append((path, mtime, uid, detect(path)))
+                except OSError as e:
+                    log.warning("Skipping %s: %s", path, e)
+            cur.executemany(
+                """
+                INSERT INTO files (path, mtime, uid, mime) VALUES (%s, %s, %s, %s)
+                ON CONFLICT (path) DO UPDATE
+                SET mtime = EXCLUDED.mtime, uid = EXCLUDED.uid, mime = EXCLUDED.mime
+                """,
+                params,
+            )
+            changed += len(params)
+            conn.commit()
+
+    # One dataset per regular file, for now
     cur.execute(
         """
-        INSERT INTO files (path, mtime, uid)
-        SELECT path, mtime, uid FROM crawl
-        ON CONFLICT (path) DO UPDATE
-        SET mtime = EXCLUDED.mtime, uid = EXCLUDED.uid
+        INSERT INTO datasets (path_id)
+        SELECT path_id FROM files WHERE mime NOT LIKE 'inode/%'
+        ON CONFLICT (path_id) DO NOTHING
         """
     )
-    files_inserted = cur.rowcount
-
     conn.commit()
-    return files_inserted
+    return changed
 
 
-def crawl_and_populate(
-    conn: psycopg.Connection,
-    root_path: Path,
-    filters_map: dict | None = None,
-) -> dict:
+def crawl_and_populate(conn: psycopg.Connection, root_path: Path) -> dict:
     """Crawl root_path and bring files, datasets and OAI-PMH records up to date.
-
-    1. Crawl the filesystem into the temporary crawl table
-    2. Transfer entries from the crawl table to the files table
-    3. Run the MIME prefilter to create datasets and mimes entries
-    4. Publish a record for every dataset
 
     Returns a summary with counts.
     """
     with crawling(conn):
-        crawled_count = crawl_repository(conn, root_path=root_path)
-        files_inserted = populate_files_from_crawl(conn)
-        mime_summary = apply_mime_prefilter_with_resolution(
-            conn, filters_map=filters_map
-        )
-        conn.commit()
-
-    records_changed = publish_records(conn, root_path)
+        crawled = crawl_repository(conn, root_path=root_path)
+        changed = populate_files_from_crawl(conn)
     return {
-        "crawled": crawled_count,
-        "files_inserted": files_inserted,
-        "datasets_created": mime_summary.get("datasets_created", 0),
-        "records_changed": records_changed,
+        "crawled": crawled,
+        "files_changed": changed,
+        "records_changed": publish_records(conn, root_path),
     }
 
 
 def ensure_dataset_tables(conn: psycopg.Connection) -> None:
     """Create the schema if it does not exist.
 
-    files, datasets, mimes and files_in_datasets are the crawler's view of the
+    files, datasets and files_in_datasets are the crawler's view of the
     file system. records holds what the OAI-PMH server publishes.
     """
     cur = conn.cursor()
@@ -160,7 +155,8 @@ def ensure_dataset_tables(conn: psycopg.Connection) -> None:
             path_id SERIAL PRIMARY KEY,
             path TEXT UNIQUE,
             mtime DOUBLE PRECISION,
-            uid INTEGER
+            uid INTEGER,
+            mime TEXT
         )
         """
     )
@@ -169,15 +165,6 @@ def ensure_dataset_tables(conn: psycopg.Connection) -> None:
         CREATE TABLE IF NOT EXISTS datasets (
             dataset_id SERIAL PRIMARY KEY,
             path_id INTEGER UNIQUE REFERENCES files(path_id) ON DELETE CASCADE
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS mimes (
-            dataset_id INTEGER REFERENCES datasets(dataset_id) ON DELETE CASCADE,
-            mime TEXT,
-            UNIQUE(dataset_id, mime)
         )
         """
     )

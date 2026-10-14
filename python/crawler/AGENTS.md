@@ -8,7 +8,7 @@
 
 **Status:** the code started as a proof of concept with poor architecture and is being rewritten. The order of work:
 1. Clean up the OAI-PMH server and the tests. Done: `records.py`, `server.py` and their tests are new.
-2. Recognise datasets in the messy file tree. The crawl pipeline, `mime_sql.py` and `recognition.py` are still the proof of concept.
+2. Recognise datasets in the messy file tree. MIME detection (`mime.py`) is new; one dataset per regular file and `recognition.py` are still the proof of concept.
 3. Extract metadata per file format.
 
 Don't copy the proof-of-concept code's style or structure, and don't preserve it for its own sake.
@@ -61,13 +61,13 @@ ruff format --check --diff && ruff check
 src/modama_crawler/
 ├── __main__.py     # command line: crawl, serve; the only place that reads the environment
 ├── database.py     # schema and crawl pipeline
-├── mime_sql.py     # bulk MIME classification in SQL -> datasets and mimes (step 2: rework)
+├── mime.py         # MIME type of a file per the shared-mime-info checking order
 ├── recognition.py  # FileHandler registry for dataset types (step 2: rework)
 ├── records.py      # OAI identifiers, browse URLs, Dublin Core mapping, publishing records
 └── server.py       # OAI-PMH WSGI app (werkzeug)
 ```
 
-Data flows from the file system to `files`, then to `datasets` and `mimes`, then to `records`, which is all the server reads. The server never touches the file system.
+Data flows from the file system to `files`, then to `datasets`, then to `records`, which is all the server reads. The server never touches the file system.
 
 **Records** (`records.py`):
 - `publish_records` builds the Dublin Core metadata and the identifier of every dataset, and upserts them into `records(dataset_id, identifier, datestamp, metadata)`.
@@ -82,9 +82,14 @@ Data flows from the file system to `files`, then to `datasets` and `mimes`, then
 
 **Crawl pipeline** (`database.crawl_and_populate`, to be reworked in step 2):
 1. `crawl_repository` walks the tree with `os.walk` (not following symlinks) into a TEMP table `crawl`, with `max(st_mtime, st_ctime)` and the owner's uid. Names that aren't valid UTF-8 are skipped with a warning.
-2. `populate_files_from_crawl` updates `files`. Deleted files cascade to their datasets and records.
-3. `mime_sql.apply_mime_prefilter_with_resolution` turns XDG shared-mime-info glob patterns into SQL `LIKE` filters and creates one dataset per matching file.
-4. `publish_records` updates `records`.
+2. `populate_files_from_crawl` updates `files`. Deleted files cascade to their datasets and records. New and changed files get their MIME type from `mime.detect`, and every regular file gets a dataset.
+3. `publish_records` updates `records`.
+
+**MIME detection** (`mime.py`) follows the "recommended checking order" of the [shared-mime-info spec](https://specifications.freedesktop.org/shared-mime-info/latest/ar01s02.html), using pyxdg's parsed `globs2` and `magic` databases:
+- Globs match the file name only, case-insensitively unless flagged `cs`. Among matches, keep the biggest weight, then the longest pattern; a single remaining type is the result.
+- Otherwise read the first `Mime.magic.maxlen` bytes (about 18 KB) and sniff. Without glob matches, the magic result wins, else `text/plain` or `application/octet-stream`. With conflicting globs, the candidate that equals the magic result or is a subclass of it wins; failing that (not in the spec), the candidate whose own magic matches, highest priority first.
+- pyxdg's `get_type2()` is not used: it skips the longest-pattern rule, and `MagicDB.match_data(possible=...)` checks the lowest priority first.
+- Cost: about 10 µs per file with a decisive name, about 5 ms per sniffed file (pure-Python magic) plus reading.
 
 **Configuration** (environment variables, see `.env.example`): `MODAMA_DATA_ROOT` (default `/data`, the data root inside containers; the older `/storage/er-c-data` from bare-metal tests on one specific host is deprecated), `MODAMA_CRAWLER_DB`, `POSTGRES_*`, `OAI_BASE_URL`, `OAI_ADMIN_EMAIL`.
 
@@ -107,4 +112,5 @@ Data flows from the file system to `files`, then to `datasets` and `mimes`, then
 - `test_clients.py`: the main verbs with `sickle`, `oaipmh-scythe` (used by the EOSC harvester) and `oaipmh`, one adapter per library.
 - `test_records.py`: identifiers, browse URLs and datestamp behaviour.
 - `test_crawl.py`: crawl a temporary tree and serve it.
-- `test_mime_sql.py`, `test_recognition.py`: internals of the current dataset recognition; to be reworked in step 2.
+- `test_mime.py`: MIME detection, one case per rule of the checking order.
+- `test_recognition.py`: internals of the current dataset recognition; to be reworked in step 2.
