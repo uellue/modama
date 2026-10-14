@@ -11,6 +11,18 @@ Deferred items, roughly in the order they are likely to come up.
 - **Non-UTF-8 and control characters in file names:** decide how to store them and how to render them in XML.
 - **Per-user access checks** through the modama permission APIs.
 - **DataCite output,** if `oai_dc` turns out too lossy. The warehouse's DC→DataCite XSLT drops `dc:format`. The warehouse also accepts DataCite with `identifierType="URL"`, even though the DataCite schema documentation requires a DOI.
+- **Crawl scaling:**
+  - The walk is single-threaded and has no checkpointing, so a failure restarts it from scratch.
+  - `DELETE … WHERE path NOT IN (SELECT path FROM crawl)` is an anti-join over the whole table.
+  - Paths are stored as absolute text, and keys are `SERIAL` (int4).
+  - `publish_records` recomputes the metadata of every dataset on every crawl, not only of changed ones.
+- **Datestamp window:** a harvest running in the same seconds as a publishing batch can miss that batch. Batching keeps the window small, but not zero.
+- **Symlinks and directories** never become datasets. Directories should wait for dataset grouping; symlinks to files are an open question.
+- **Schema migrations:** there are none, so every schema change means recreating the database. Needed before deployment.
+- **`recognition.py` defects,** relevant if parts of it are kept in step 2:
+  - The members query never returns other members, and `files_in_datasets` is never populated.
+  - `matches()` and EMPAD glob the file system.
+- **Local EOSC snapshot:** `prototypes/EOSC-Data-Commons/` is about three months behind upstream (v1.9.0, 2026-10-08) and has uncommitted local changes, including the `localhost:7654` endpoint in `seed.sql`.
 - **Deployment:** a container in `deploy/` behind the gateway, with a read-only data mount and a crawl schedule.
 - **Drop the pyxdg fork** once https://gitlab.freedesktop.org/xdg/pyxdg/-/merge_requests/18 is merged.
 - **Report or fix upstream** (pyxdg): `get_type2()` lacks the longest-pattern rule (`a.tar.gz` becomes `application/gzip`), and `MagicDB.match_data(possible=...)` checks the lowest priority first (an SVG checked against `[xml, svg]` becomes `application/xml`).

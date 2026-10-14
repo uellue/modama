@@ -4,8 +4,9 @@ import glob
 import os
 import pathlib
 import tempfile
-from functools import cache
-from typing import ClassVar, Dict, Iterable, Optional, Sequence, Type
+from collections.abc import Iterable, Sequence
+from functools import cached_property
+from typing import ClassVar
 
 import defusedxml.ElementTree as ET
 import psycopg
@@ -99,7 +100,7 @@ def guess(path: pathlib.Path) -> Sequence[Mime.MIMEtype]:
 
 
 class FileHandler:
-    _registry: ClassVar[Dict[Mime.MIMEtype, list[Type["FileHandler"]]]] = {}
+    _registry: ClassVar[dict[Mime.MIMEtype, list[type[FileHandler]]]] = {}
 
     file_types: ClassVar[tuple[Mime.MIMEtype, ...]] = (Mime.MIMEtype("", ""),)
 
@@ -128,13 +129,11 @@ class FileHandler:
         self.abspath = self.root / path
 
     @classmethod
-    def handlers_for_type(
-        cls, file_type: Mime.MIMEtype
-    ) -> Sequence[Type["FileHandler"]]:
+    def handlers_for_type(cls, file_type: Mime.MIMEtype) -> Sequence[type[FileHandler]]:
         return tuple(cls._registry.get(file_type, []))
 
     @classmethod
-    def handlers(cls) -> Sequence[Type["FileHandler"]]:
+    def handlers(cls) -> Sequence[type[FileHandler]]:
         result = set()
         for handlers in cls._registry.values():
             result.update(handlers)
@@ -146,8 +145,8 @@ class FileHandler:
         root: pathlib.Path,
         path: pathlib.Path,
         guesses: Sequence[Mime.MIMEtype],
-        conn: Optional[psycopg.Connection] = None,
-    ) -> Type["FileHandler"]:
+        conn: psycopg.Connection | None = None,
+    ) -> type[FileHandler]:
         path = pathlib.Path(path)
         root = pathlib.Path(root)
 
@@ -161,7 +160,7 @@ class FileHandler:
         else:
             raise ValueError("No database connection")
 
-        best_match: Type["FileHandler"] | None = None
+        best_match: type[FileHandler] | None = None
         best_priority = -1
 
         for file_type in guesses:
@@ -190,7 +189,7 @@ class FileHandler:
         path: pathlib.Path,
         guesses: Sequence[Mime.MIMEtype],
         conn: psycopg.Connection,
-    ) -> "FileHandler":
+    ) -> FileHandler:
         handler_cls = cls.resolve(root, path, guesses, conn)
         return handler_cls(root, path, guesses, conn)
 
@@ -241,8 +240,7 @@ class FileHandler:
         else:
             raise RuntimeError("No database connection")
 
-    @property
-    @cache
+    @cached_property
     def stat(self):
         return self.abspath.stat()
 
@@ -265,10 +263,9 @@ class FileHandler:
         return [self.mtime]
 
     def get_descriptions(self):
-        return [", ".join(f"'{str(m.relative_to(self.root))}'" for m in self.members)]
+        return [", ".join(f"'{m.relative_to(self.root)!s}'" for m in self.members)]
 
-    @property
-    @cache
+    @cached_property
     def mtime(self) -> float:
         mtime = self.stat.st_mtime
         for member in self.members:
@@ -358,7 +355,7 @@ class EMPAD(FileHandler):
                 # Should not have matched otherwise
                 raise DatasetConsistencyError("Did not find corresponding raw file")
             else:
-                score, raw_file = found_raw
+                _score, raw_file = found_raw
             return [self.path, raw_file.relative_to(self.root)]
         elif Mime.MIMEtype("application/x.empad-raw") in self.guesses:
             found_xml = self.__find_xml(self.abspath)
@@ -366,7 +363,7 @@ class EMPAD(FileHandler):
                 # Should not have matched otherwise
                 raise DatasetConsistencyError("Did not find corresponding XML file")
             else:
-                score, xml_file = found_xml
+                _score, xml_file = found_xml
             raw_path = self.path
             self._rebase(xml_file.relative_to(self.root))
             return [self.path, raw_path]
@@ -435,7 +432,7 @@ class EMPAD(FileHandler):
         elif Mime.MIMEtype("application/x.empad-raw") in guesses:
             found_xml = cls.__find_xml(root / path)
             if found_xml is not None:
-                score, abspath = found_xml
+                score, _abspath = found_xml
                 return score
         return None
 

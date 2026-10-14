@@ -42,7 +42,7 @@ def test_dir(tmp_path, request):
             ("c.txt", "l", "b.txt", None, ("inode/symlink",)),
             ("series_x1234.raw", "f", "", 1030.0, ("application/x.empad-raw",)),
             ("something.txt", "f", "", 1040.0, ("text/plain",)),
-            ("something.raw", "f", "", 1050.0, tuple()),
+            ("something.raw", "f", "", 1050.0, ()),
             (
                 "xxx.xml",
                 "f",
@@ -50,7 +50,7 @@ def test_dir(tmp_path, request):
                 1060.0,
                 ("application/x.empad+xml",),
             ),
-            ("zzz.abc", "f", EMPAD_XML, 1070.0, tuple()),
+            ("zzz.abc", "f", EMPAD_XML, 1070.0, ()),
         ]
     elif request.param == "invalid":
         listing = [
@@ -66,7 +66,7 @@ def test_dir(tmp_path, request):
             ("b.txt", "f", "", 1020.0, ("text/plain",)),
             ("series_x1234.raw", "f", "", 1030.0, ("application/x.empad-raw",)),
             ("something.txt", "f", "", 1040.0, ("text/plain",)),
-            ("something.raw", "f", "", 1050.0, tuple()),
+            ("something.raw", "f", "", 1050.0, ()),
             # Two XML files claiming the same raw file
             (
                 "www.xml",
@@ -83,7 +83,7 @@ def test_dir(tmp_path, request):
                 ("application/x.empad+xml",),
             ),
             # Don't match
-            ("zzz.abc", "f", EMPAD_XML, 1080.0, tuple()),
+            ("zzz.abc", "f", EMPAD_XML, 1080.0, ()),
         ]
     else:
         raise ValueError(f"{request.param} WTF")
@@ -119,7 +119,7 @@ def test_dir(tmp_path, request):
 
 
 def test_recognition(test_dir, conn):
-    listing, tmp_path, param, stats = test_dir
+    listing, tmp_path, _param, _stats = test_dir
     for path, kind, content, mtime, mimes in listing:
         abspath = tmp_path / path
         guesses = guess(abspath)
@@ -139,7 +139,7 @@ def test_recognition(test_dir, conn):
     "path", ("a/aaa.xml", "a/series_x1234.raw", "series_x1234.raw", "xxx.xml")
 )
 def test_empad(test_dir, path, conn):
-    listing, tmp_path, param, stats = test_dir
+    _listing, tmp_path, _param, _stats = test_dir
     abspath = tmp_path / path
     guesses = guess(abspath)
     print(guesses)
@@ -149,7 +149,7 @@ def test_empad(test_dir, path, conn):
 
 @pytest.mark.parametrize("path", ("something.raw", "b.txt"))
 def test_not_empad(test_dir, path, conn):
-    listing, tmp_path, param, stats = test_dir
+    _listing, tmp_path, _param, _stats = test_dir
     abspath = tmp_path / path
     guesses = guess(abspath)
     print(guesses)
@@ -158,7 +158,7 @@ def test_not_empad(test_dir, path, conn):
 
 
 def test_special(test_dir, conn):
-    listing, tmp_path, param, stats = test_dir
+    listing, tmp_path, _param, _stats = test_dir
     for path, kind, content, mtime, mimes in listing:
         if kind in ("l", "d"):
             abspath = tmp_path / path
