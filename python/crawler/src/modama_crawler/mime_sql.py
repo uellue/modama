@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Iterable, List, Optional, Sequence, Tuple
+
 import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple
-from contextlib import contextmanager
-
 from xdg import Mime
-
 
 SQL_ESCAPE_RE = re.compile(r"([%_\\])")
 
@@ -231,7 +230,6 @@ def _apply_mime_prefilter(
     summary: dict[str, int] = {}
 
     for mime, filters in filters_map.items():
-        print(mime)
         if not filters:
             continue
 
@@ -306,7 +304,6 @@ def _resolve_ambiguous_with_get_type2(
     for row in ambiguous:
         dataset_id = row["dataset_id"]
         path = row["path"]
-        print(path)
         checked += 1
         try:
             mt = Mime.get_type2(path)

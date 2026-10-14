@@ -1,929 +1,342 @@
-#!/usr/bin/env python3
-"""Clean OAI-PMH server (Flask) with path-based continuation tokens.
+"""OAI-PMH 2.0 repository serving the `records` table as a WSGI app.
 
-This provides a simple, readable OAI-PMH endpoint implementing all 6 verbs
-(Identify, GetRecord, ListMetadataFormats, ListIdentifiers, ListRecords, ListSets)
-with full resumptionToken pagination and selective harvesting support.
-
-The server uses dynamic crawling with path-based continuation tokens for pagination
-and supports selective harvesting via from/until date parameters.
-
-Run:
-
-    python python/crawler/src/modama_crawler/server.py
-
-Then access: http://localhost:8000/oai?verb=Identify
+Protocol: https://www.openarchives.org/OAI/2.0/openarchivesprotocol.htm
+Only oai_dc, no sets, no deleted records, seconds granularity.
 """
 
-from flask import Flask, request, Response
+import re
+from datetime import UTC, datetime, timedelta
+
 from lxml import etree
-from datetime import datetime, timedelta, timezone
-from urllib.parse import unquote_plus, quote_plus
-import pathlib
-from typing import Optional, Sequence, Tuple
-import json
-import warnings
-
-import psycopg
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from dotenv import load_dotenv
+from werkzeug.datastructures import MultiDict
+from werkzeug.wrappers import Request, Response
 
-from oaipmh.datestamp import datestamp_to_datetime, datetime_to_datestamp
-from xdg import Mime
+from .records import format_datestamp
 
-from modama_crawler.repository import (
-    get_identifier,
-    get_publisher,
-    path_from_identifier,
-    sanitize,
-    RepositoryConfig,
-)
-from modama_crawler.recognition import guess, FileHandler, _get_mime_types_from_db
-from .database import PostgresConfig
-
-
-# Load environment variables from .env file
-load_dotenv()
-
-# MODAMA_DATA_ROOT: Absolute path where files are stored in the database and on filesystem
-
-# PostgreSQL configuration is now handled via PostgresConfig dataclass passed to create_app
-
-# XML Namespaces
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
-XSD_NS = "http://www.w3.org/2001/XMLSchema"  # Required for xsi:type="xsd:anyURI"
+XSI_SCHEMA_LOCATION = f"{{{XSI_NS}}}schemaLocation"
+OAI_DC_SCHEMA = "http://www.openarchives.org/OAI/2.0/oai_dc.xsd"
 
-# --- Helper Functions ---
+REPOSITORY_NAME = "ER-C data (modama)"
+GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+# The elements of unqualified Dublin Core, in the order we render them
+DC_ELEMENTS = (
+    "title", "creator", "subject", "description", "publisher", "contributor",
+    "date", "type", "format", "identifier", "source", "language", "relation",
+    "coverage", "rights",
+)  # fmt: skip
+
+# verb: (required arguments, optional arguments, exclusive argument)
+VERBS = {
+    "Identify": (set(), set(), None),
+    "ListMetadataFormats": (set(), {"identifier"}, None),
+    "ListSets": (set(), set(), "resumptionToken"),
+    "GetRecord": ({"identifier", "metadataPrefix"}, set(), None),
+    "ListIdentifiers": (
+        {"metadataPrefix"},
+        {"from", "until", "set"},
+        "resumptionToken",
+    ),
+    "ListRecords": ({"metadataPrefix"}, {"from", "until", "set"}, "resumptionToken"),
+}
+
+DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+SECOND_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+# Characters that XML 1.0 can't represent
+INVALID_XML_RE = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
 
 
-def _parse_datestamp(s: str) -> datetime:
-    """Parse OAI-PMH datestamp string to datetime."""
-    return datestamp_to_datetime(s) if s else None
+class OAIError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
-def _format_datestamp(datestamp: datetime | float | int) -> str:
-    """Format date as OAI-PMH datestamp.
-
-    Accepts either a datetime object, or Unix timestamp (int/float)
-    Converts timezone-aware datetimes and timestamps to naive UTC datetimes for OAI-PMH compatibility.
-    """
-    if isinstance(datestamp, datetime):
-        # Convert timezone-aware to naive UTC
-        if datestamp.tzinfo is not None:
-            datestamp = datestamp.astimezone(timezone.utc).replace(tzinfo=None)
-        return datetime_to_datestamp(datestamp)
-    elif isinstance(datestamp, (int, float)):
-        # Assume it's a Unix timestamp
-        return datetime_to_datestamp(datetime.fromtimestamp(datestamp))
-    else:
-        raise TypeError(f"Invalid argument {datestamp} {type(datestamp)}")
+def _xml_text(text: str) -> str:
+    return INVALID_XML_RE.sub("�", text)
 
 
-# --- OAI-PMH Server Implementation ---
+def _element(tag: str) -> etree._Element:
+    return etree.Element(f"{{{OAI_NS}}}{tag}", nsmap={None: OAI_NS})
 
 
-class OAIFileDBBackend:
-    """OAI-PMH backend that reads from file system and database."""
+def _sub(parent, tag: str, text: str | None = None) -> etree._Element:
+    element = etree.SubElement(parent, f"{{{OAI_NS}}}{tag}")
+    if text is not None:
+        element.text = _xml_text(text)
+    return element
 
-    def __init__(self, pool: ConnectionPool, root: pathlib.Path):
-        self._pool = pool
 
-        self._root = root
+def parse_arguments(params: MultiDict) -> tuple[str, dict[str, str]]:
+    verbs = params.getlist("verb")
+    if len(verbs) != 1 or verbs[0] not in VERBS:
+        raise OAIError("badVerb", "Missing, repeated or illegal verb")
+    verb = verbs[0]
+    args = {}
+    for key in params:
+        values = params.getlist(key)
+        if len(values) > 1:
+            raise OAIError("badArgument", f"Repeated argument {key}")
+        if key != "verb":
+            args[key] = values[0]
 
-    def _get_handler_for_path(
-        self,
-        conn: psycopg.Connection,
-        path: pathlib.Path,
-        guesses: Optional[Sequence[Mime.MIMEtype]] = None,
-    ) -> FileHandler:
-        """Create a FileHandler for a path using database MIME types.
+    required, optional, exclusive = VERBS[verb]
+    if exclusive in args:
+        if len(args) > 1:
+            raise OAIError("badArgument", f"{exclusive} is an exclusive argument")
+        return verb, args
+    illegal = args.keys() - required - optional
+    if illegal:
+        raise OAIError("badArgument", f"Illegal arguments {sorted(illegal)}")
+    missing = required - args.keys()
+    if missing:
+        raise OAIError("badArgument", f"Missing arguments {sorted(missing)}")
+    return verb, args
 
-        Args:
-            conn: Database connection
-            path: Relative path to create handler for
-            guesses: Optional MIME type guesses (e.g., from client)
 
-        Returns:
-            FileHandler instance
-        """
-        # Convert relative path to absolute for database query and filesystem access
-        abs_path = self._root / path
+def _parse_datestamp(value: str) -> tuple[datetime, bool]:
+    """Parse a from/until argument. Returns the time and whether it has day granularity."""
+    try:
+        if DAY_RE.fullmatch(value):
+            return datetime.fromisoformat(value).replace(tzinfo=UTC), True
+        if SECOND_RE.fullmatch(value):
+            return datetime.fromisoformat(value), False
+    except ValueError:
+        pass
+    raise OAIError("badArgument", f"Illegal datestamp {value!r}")
 
-        # Try to get MIME types from database using absolute path
-        db_guesses = _get_mime_types_from_db(conn, abs_path)
-        if db_guesses:
-            guesses = db_guesses
-        elif guesses is None:
-            # Fall back to filesystem-based guessing
-            guesses = guess(abs_path)
 
-        # Create handler with absolute filesystem root and relative path
-        # FileHandler will construct abspath as root / path
-        return FileHandler.create(self._root, path, guesses, conn)
+def parse_range(
+    from_arg: str | None, until_arg: str | None
+) -> tuple[datetime | None, datetime | None]:
+    """Inclusive bounds for selective harvesting, at seconds resolution."""
+    from_ = until = None
+    granularities = set()
+    if from_arg is not None:
+        from_, is_day = _parse_datestamp(from_arg)
+        granularities.add(is_day)
+    if until_arg is not None:
+        until, is_day = _parse_datestamp(until_arg)
+        granularities.add(is_day)
+        if is_day:
+            until += timedelta(days=1, seconds=-1)
+    if len(granularities) > 1:
+        raise OAIError("badArgument", "from and until have different granularities")
+    if from_ is not None and until is not None and from_ > until:
+        raise OAIError("badArgument", "from is later than until")
+    return from_, until
 
-    def _get_oldest_db_mtime(self) -> float:
-        """Get the minimum mtime of all files from the database.
 
-        Args:
-            conn: Database connection
+def _timestamp(value: datetime | None) -> str:
+    return "" if value is None else str(int(value.timestamp()))
 
-        Returns:
-            mtime as floating point Unix timestamp
-        """
-        with self._pool.connection() as conn:
-            cur = conn.cursor(row_factory=dict_row)
-            cur.execute(
-                """
-                SELECT MIN(f.mtime) AS mtime FROM files f WHERE True
-                """
-            )
-            rows = cur.fetchall()
-            return min(row["mtime"] for row in rows)
 
-    def getRecord(self, identifier: str) -> dict:
-        """Get a single record by identifier."""
-        with self._pool.connection() as conn:
-            path = pathlib.Path(path_from_identifier(identifier))
-            path = sanitize(root=self._root, path=path)
-            handler = self._get_handler_for_path(conn, path)
+def _from_timestamp(value: str) -> datetime | None:
+    return None if value == "" else datetime.fromtimestamp(int(value), UTC)
 
-            return {
-                "header": self._make_header(handler),
-                "metadata": self._make_metadata(handler),
-            }
 
-    def listMetadataFormats(self) -> list:
-        """List available metadata formats."""
-        return [("oai_dc", "http://www.openarchives.org/OAI/2.0/oai_dc.xsd", DC_NS)]
+def encode_token(from_, until, last_datestamp: datetime, last_id: int) -> str:
+    return ",".join(
+        (_timestamp(from_), _timestamp(until), _timestamp(last_datestamp), str(last_id))
+    )
 
-    def listIdentifiers(
-        self,
-        from_: Optional[datetime] = None,
-        until: Optional[datetime] = None,
-        continuation: Optional[str] = None,
-        batch_size: int = 10,
-        set_spec: Optional[str] = None,
-    ) -> Tuple[list, Optional[pathlib.Path]]:
-        """List record headers with optional date filtering and pagination.
 
-        Args:
-            from_: Minimum mtime (inclusive)
-            until: Maximum mtime (exclusive)
-            continuation: Last path from previous batch (for pagination)
-            batch_size: Maximum number of paths to return
-            set_spec: Set specification to filter by (not supported - ignored)
-
-        Returns:
-            Tuple of (list of headers, next continuation path or None)
-        """
-        if set_spec is not None and not self.listSets():
-            raise ValueError("Sets are not implemented in this backend")
-        # Decode continuation token if present
-        cont_path = pathlib.Path(continuation) if continuation else None
-        next_path = None
-        # Get database connection for this request
-        with self._pool.connection() as conn:
-            # Query database for dataset paths
-            paths, next_path = self._query_datasets_from_db(
-                cont_path, from_, until, batch_size
-            )
-
-            # Build headers
-            headers = []
-            for path in paths:
-                handler = self._get_handler_for_path(conn, path)
-                headers.append(self._make_header(handler))
-
-        return headers, next_path
-
-    def listRecords(
-        self,
-        from_: Optional[datetime] = None,
-        until: Optional[datetime] = None,
-        continuation: Optional[str] = None,
-        batch_size: int = 10,
-        set_spec: Optional[str] = None,
-    ) -> Tuple[list, Optional[str]]:
-        """List full records with optional date filtering and pagination.
-
-        Args:
-            from_: Minimum mtime (inclusive)
-            until: Maximum mtime (exclusive)
-            continuation: Last path from previous batch (for pagination)
-            batch_size: Maximum number of paths to return
-            set_spec: Set specification to filter by (not supported - ignored)
-
-        Returns:
-            Tuple of (list of records, next continuation or None)
-        """
-        if set_spec is not None and not self.listSets():
-            raise ValueError("Sets are not implemented in this backend")
-        # Decode continuation token if present
-        cont_path = pathlib.Path(continuation) if continuation else None
-
-        # Query database for dataset paths using connection pool
-        with self._pool.connection() as conn:
-            paths, next_path = self._query_datasets_from_db(
-                cont_path, from_, until, batch_size
-            )
-
-            # Build records
-            recs = []
-            for path in paths:
-                try:
-                    handler = self._get_handler_for_path(conn, path)
-                    recs.append(
-                        {
-                            "header": self._make_header(handler),
-                            "metadata": self._make_metadata(handler),
-                        }
-                    )
-                except FileNotFoundError as e:
-                    warnings.warn(f"Exception: {e}")
-
-        return recs, next_path
-
-    def listSets(self) -> list:
-        """List available sets (empty for this implementation)."""
-        return []
-
-    def supports_deleted_records(self) -> bool:
-        """Return whether this backend supports deleted records."""
-        return False
-
-    def granularity(self) -> str:
-        return "YYYY-MM-DDThh:mm:ssZ"
-
-    def _query_datasets_from_db(
-        self,
-        continuation: Optional[pathlib.Path],
-        from_: Optional[datetime],
-        until: Optional[datetime],
-        batch_size: int,
-    ) -> Tuple[list[pathlib.Path], Optional[pathlib.Path]]:
-        """Query dataset paths from database with pagination and date filtering.
-
-        Args:
-            continuation: Last path from previous batch (for pagination)
-            from_: Minimum mtime (inclusive)
-            until: Maximum mtime (exclusive)
-            batch_size: Maximum number of paths to return
-
-        Returns:
-            Tuple of (list of relative paths, next continuation path or None)
-            Paths are relative to self._root for client exposure.
-        """
-        with self._pool.connection() as conn:
-            cur = conn.cursor(row_factory=dict_row)
-
-            # Build WHERE clause
-            where_clauses = []
-            params = []
-
-            # Get the database root path prefix to strip
-            db_root_str = str(self._root)
-            if not db_root_str.endswith("/"):
-                db_root_str += "/"
-
-            # Pagination: paths greater than continuation (in database format)
-            if continuation is not None:
-                # Convert relative continuation to absolute for database query
-                abs_continuation = self._root / continuation
-                where_clauses.append("f.path > %s")
-                params.append(str(abs_continuation))
-
-            # Date filtering on mtime
-            if from_ is not None:
-                from_ts = from_.timestamp()
-                # include all records if the FileHandler source code has been modified since
-                if from_ts < FileHandler.youngest_source_mtime():
-                    from_ts = 0.0
-                where_clauses.append("f.mtime >= %s")
-                params.append(from_ts)
-
-            if until is not None:
-                # until is inclusive in OAI-PMH, but we make it exclusive for SQL
-                # We work with seconds resolution
-                until_exclusive = until + timedelta(seconds=1)
-                until_ts = until_exclusive.timestamp()
-                # Skip all records if the file handler source code has been modified,
-                # meaning all records are younger
-                if until_ts < FileHandler.youngest_source_mtime():
-                    until_ts = 0.0
-                where_clauses.append("f.mtime < %s")
-                params.append(until_ts)
-
-            where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
-
-            # Query for dataset paths (one path per dataset)
-            # Return absolute paths from database, we'll convert to relative below
-            sql = f"""
-                SELECT DISTINCT f.path, f.mtime
-                FROM files f
-                JOIN datasets d ON f.path_id = d.path_id
-                WHERE {where_clause}
-                ORDER BY f.path
-                LIMIT %s
-            """
-            params.append(batch_size)
-
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-
-            if not rows:
-                return [], None
-
-            # Convert absolute database paths to relative paths for client exposure
-            paths = []
-            for row in rows:
-                abs_path = pathlib.Path(row["path"])
-                # Strip the database root prefix
-                try:
-                    rel_path = abs_path.relative_to(self._root)
-                except ValueError:
-                    # Path is not under self._root, use as-is
-                    rel_path = abs_path
-                paths.append(rel_path)
-
-            # For continuation, we need the last absolute path for database comparison
-            next_path = paths[-1] if len(paths) == batch_size else None
-
-        return paths, next_path
-
-    def _make_header(self, handler: FileHandler) -> dict:
-        """Create header dict from FileHandler.
-
-        Returns Unix timestamp (float) for datestamp.
-        """
-        return {
-            "identifier": get_identifier(handler.path),
-            "datestamp": max(handler.db_mtime, handler.source_mtime()),
-            "setSpec": [],
-            "isDeleted": False,
-        }
-
-    def _make_metadata(self, handler: FileHandler) -> dict:
-        """Create metadata dict (oai_dc) from FileHandler.
-
-        Returns list of Unix timestamps (floats) for date field.
-        """
-        return {
-            "title": handler.get_titles(),
-            "creator": handler.get_creators(),
-            "date": handler.get_dates(),
-            "format": handler.get_formats(),
-            "identifier": [get_identifier(handler.path)],
-            "description": handler.get_descriptions(),
-            "publisher": [get_publisher()],
-        }
+def decode_token(token: str):
+    """Returns (from, until, (last datestamp, last dataset id))."""
+    try:
+        from_, until, last_datestamp, last_id = token.split(",")
+        return (
+            _from_timestamp(from_),
+            _from_timestamp(until),
+            (datetime.fromtimestamp(int(last_datestamp), UTC), int(last_id)),
+        )
+    except (ValueError, OverflowError, OSError):
+        raise OAIError("badResumptionToken", "Invalid resumptionToken") from None
 
 
 class OAIServer:
-    """OAI-PMH server that handles all HTTP request processing and XML generation."""
-
-    def __init__(self, backend: OAIFileDBBackend, config: RepositoryConfig):
-        self._backend = backend
-        self._config = config
-
-    # --- OAI-PMH Protocol Methods ---
-
-    def identify(self) -> dict:
-        """Return repository identification information for OAI-PMH Identify response.
-
-        This method implements the OAI-PMH Identify verb directly using the
-        RepositoryConfig, separating protocol concerns from data storage concerns.
-
-        Returns:
-            Dictionary containing all Identify response fields
-        """
-        return {
-            "repositoryName": self._config.repository_name,
-            "protocolVersion": "2.0",
-            "adminEmails": [self._config.admin_email],
-            "earliestDatestamp": min(
-                self._config.earliest_datestamp.astimezone(timezone.utc),
-                datetime.fromtimestamp(
-                    FileHandler.oldest_source_mtime(), tz=timezone.utc
-                ),
-                datetime.fromtimestamp(
-                    self._backend._get_oldest_db_mtime(), tz=timezone.utc
-                ),
-            ),
-            "deletedRecord": "yes"
-            if self._backend.supports_deleted_records()
-            else "no",
-            "granularity": self._backend.granularity(),
-            "compression": self._config.compression,
-        }
-
-    # --- Resumption Token Helpers ---
-
-    @staticmethod
-    def _encode_resumption_token(
-        continuation: Optional[pathlib.Path],
-        metadataPrefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        until: Optional[str] = None,
-    ) -> Optional[str]:
-        """Encode resumption token with continuation path and request parameters.
-
-        Following OAI-PMH spec, the resumptionToken encodes all parameters except verb.
-        All special characters are URL-encoded so the token can be pasted directly into a URL.
-        Uses quote_plus to ensure proper encoding for query string parameters.
-        """
-        if continuation is None:
-            return None
-
-        token_data = {"continuation": str(continuation)}
-        if metadataPrefix:
-            token_data["metadataPrefix"] = metadataPrefix
-        if from_:
-            token_data["from"] = from_
-        if until:
-            token_data["until"] = until
-
-        as_json = json.dumps(token_data)
-        return quote_plus(as_json)
-
-    @staticmethod
-    def _decode_resumption_token(token: str) -> Tuple[Optional[pathlib.Path], dict]:
-        """Decode resumption token to continuation path and parameters.
-
-        The token is URL-encoded with quote_plus, so we use unquote_plus to decode.
-        """
-        unquoted = unquote_plus(token)
-
-        as_data = json.loads(unquoted)
-
-        keys = "continuation", "metadataPrefix", "from", "until"
-        result = {}
-
-        for key in keys:
-            try:
-                result[key] = as_data.pop(key)
-            except KeyError:
-                pass
-        continuation_str = result.pop("continuation", "")
-        continuation = pathlib.Path(continuation_str) if continuation_str else None
-        return continuation, result
-
-    # --- XML Response Generation ---
-
-    def _make_oai_response(
-        self, verb: str, children: list, request_args: Optional[dict] = None
-    ) -> str:
-        """Generate OAI-PMH XML response."""
-        nsmap = {
-            None: OAI_NS,
-            "oai_dc": OAI_DC_NS,
-            "dc": DC_NS,
-            "xsi": XSI_NS,
-            "xsd": XSD_NS,  # Required for xsi:type="xsd:anyURI"
-        }
-
-        root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
-
-        # Add schemaLocation attribute to root element
-        schema_location = f"{OAI_NS} http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd"
-        root.set(f"{{{XSI_NS}}}schemaLocation", schema_location)
-
-        # Response date
-        response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
-        response_date.text = _format_datestamp(datetime.now().timestamp())
-
-        # Request - No xsi:type needed; element definition already specifies simpleContent with anyURI base
-        request_elem = etree.SubElement(root, f"{{{OAI_NS}}}request")
-        request_elem.text = request_args.get("base_url", "")
-        for key, value in request_args.items():
-            # base_url is passed as value, not attribute
-            if key not in ("base_url",) and value:
-                # OAI-PMH requests expect unencoded query parameter values in the <request> element attributes
-                request_elem.set(key, value)
-
-        # Verb element
-        verb_elem = etree.SubElement(root, f"{{{OAI_NS}}}{verb}")
-        # Add empty text to prevent lxml from using self-closing tags for empty elements
-        verb_elem.text = ""
-
-        # Add children
-        for child in children:
-            if isinstance(child, etree._Element):
-                verb_elem.append(child)
-            elif isinstance(child, dict):
-                self._add_dict_to_element(verb_elem, child)
-
-        return etree.tostring(
-            root, xml_declaration=True, encoding="UTF-8", pretty_print=True
-        )
-
-    def _add_dict_to_element(self, parent: etree._Element, data: dict):
-        """Recursively add dictionary data to XML element."""
-        for key, value in data.items():
-            if isinstance(value, dict):
-                child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-                self._add_dict_to_element(child, value)
-            elif isinstance(value, list):
-                for item in value:
-                    if isinstance(item, dict):
-                        child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-                        self._add_dict_to_element(child, item)
-                    else:
-                        child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-                        child.text = str(item)
-            else:
-                child = etree.SubElement(parent, f"{{{OAI_NS}}}{key}")
-                child.text = str(value)
-
-    def _make_error(self, code: str, message: str) -> str:
-        """Generate OAI-PMH error response."""
-        nsmap = {None: OAI_NS}
-        root = etree.Element(f"{{{OAI_NS}}}OAI-PMH", nsmap=nsmap)
-
-        response_date = etree.SubElement(root, f"{{{OAI_NS}}}responseDate")
-        response_date.text = _format_datestamp(datetime.now().timestamp())
-
-        request_elem = etree.SubElement(root, f"{{{OAI_NS}}}request")
-        request_elem.text = ""
-
-        error = etree.SubElement(root, f"{{{OAI_NS}}}error")
-        error.set("code", code)
-        error.text = message
-
-        return etree.tostring(
-            root, xml_declaration=True, encoding="UTF-8", pretty_print=True
-        )
-
-    def _make_header_element(self, header: dict) -> etree._Element:
-        """Create header XML element."""
-        header_elem = etree.Element(f"{{{OAI_NS}}}header")
-        if header.get("isDeleted"):
-            header_elem.set("status", "deleted")
-
-        id_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}identifier")
-        id_elem.text = header["identifier"]
-
-        datestamp_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}datestamp")
-        # Handle both datetime objects (from backend) and formatted strings
-        datestamp_elem.text = _format_datestamp(header["datestamp"])
-
-        for set_spec in header.get("setSpec", []):
-            set_elem = etree.SubElement(header_elem, f"{{{OAI_NS}}}setSpec")
-            set_elem.text = set_spec
-
-        return header_elem
-
-    def _make_record_element(self, record: dict) -> etree._Element:
-        """Create record XML element with header and metadata."""
-        record_elem = etree.Element(f"{{{OAI_NS}}}record")
-
-        # Add header
-        record_elem.append(self._make_header_element(record["header"]))
-
-        # Add metadata
-        if "metadata" in record:
-            metadata_elem = etree.SubElement(record_elem, f"{{{OAI_NS}}}metadata")
-            oai_dc_elem = etree.SubElement(
-                metadata_elem,
-                f"{{{OAI_DC_NS}}}dc",
-                nsmap={"oai_dc": OAI_DC_NS, "dc": DC_NS},
-            )
-
-            for key, value in record["metadata"].items():
-                if isinstance(value, list):
-                    for item in value:
-                        dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                        # Format datetime objects and timestamps for OAI-PMH
-                        if isinstance(item, datetime):
-                            dc_elem.text = _format_datestamp(item)
-                        elif isinstance(item, (int, float)):
-                            dc_elem.text = _format_datestamp(item)
-                        else:
-                            dc_elem.text = str(item)
-                else:
-                    dc_elem = etree.SubElement(oai_dc_elem, f"{{{DC_NS}}}{key}")
-                    # Format datetime objects and timestamps for OAI-PMH
-                    if isinstance(value, datetime):
-                        dc_elem.text = _format_datestamp(value)
-                    elif isinstance(value, (int, float)):
-                        dc_elem.text = _format_datestamp(value)
-                    else:
-                        dc_elem.text = str(value)
-
-        return record_elem
-
-    # --- OAI-PMH Verb Handlers ---
-
-    def handle_identify(self, args: dict) -> Response:
-        """Handle Identify verb."""
-        info = self.identify()
-
-        # Build children as a list that maintains order and handles lists properly
-        children = [
-            {"repositoryName": info["repositoryName"]},
-            {"baseURL": args["base_url"]},
-            {"protocolVersion": info["protocolVersion"]},
-        ]
-
-        # Add adminEmails directly (each as separate element, not wrapped)
-        for email in info["adminEmails"]:
-            children.append({"adminEmail": email})
-
-        children.extend(
-            [
-                {"earliestDatestamp": _format_datestamp(info["earliestDatestamp"])},
-                {"deletedRecord": info["deletedRecord"]},
-                {"granularity": info["granularity"]},
-            ]
-        )
-
-        # Add compression elements if not just "identity"
-        if info["compression"] != ["identity"]:
-            for c in info["compression"]:
-                children.append({"compression": c})
-        return Response(
-            self._make_oai_response("Identify", children, args),
-            mimetype="text/xml; charset=utf-8",
-        )
-
-    def handle_getrecord(self, args: dict) -> Response:
-        """Handle GetRecord verb."""
-        identifier = args.get("identifier")
-        if not identifier:
-            return Response(
-                self._make_error("badArgument", "Missing identifier parameter"),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        # Validate identifier format before attempting to fetch
-        try:
-            path_from_identifier(identifier)
-        except ValueError as e:
-            # Invalid identifier format or non-existent identifier
-            return Response(
-                self._make_error("idDoesNotExist", str(e)),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        record = self._backend.getRecord(identifier)
-        children = [self._make_record_element(record)]
-
-        return Response(
-            self._make_oai_response("GetRecord", children, args),
-            mimetype="text/xml; charset=utf-8",
-        )
-
-    def handle_listmetadataformats(self, args: dict) -> Response:
-        """Handle ListMetadataFormats verb."""
-        identifier = args.get("identifier")
-
-        # If identifier is provided, validate it first
-        if identifier:
-            try:
-                path_from_identifier(identifier)
-            except ValueError as e:
-                return Response(
-                    self._make_error("idDoesNotExist", str(e)),
-                    mimetype="text/xml; charset=utf-8",
-                )
-
-        formats = self._backend.listMetadataFormats()
-        children = [
-            {
-                "metadataFormat": {
-                    "metadataPrefix": fmt[0],
-                    "schema": fmt[1],
-                    "metadataNamespace": fmt[2],
-                }
-            }
-            for fmt in formats
-        ]
-
-        return Response(
-            self._make_oai_response("ListMetadataFormats", children, args),
-            mimetype="text/xml; charset=utf-8",
-        )
-
-    def _process_list_verb(
+    def __init__(
         self,
-        verb: str,
-        backend_method: callable,
-        make_element: callable,
-        args: dict,
-    ) -> Response:
-        """Common logic for ListIdentifiers and ListRecords verbs.
+        pool: ConnectionPool,
+        base_url: str,
+        admin_email: str,
+        page_size: int = 100,
+    ):
+        self.pool = pool
+        self.base_url = base_url
+        self.admin_email = admin_email
+        self.page_size = page_size
 
-        Args:
-            verb: OAI-PMH verb name ("ListIdentifiers" or "ListRecords")
-            backend_method: Backend method to call (listIdentifiers or listRecords)
-            make_element: Function to convert items to XML elements
-            args: Request arguments
-        """
-        resumption_token = args.get("resumptionToken")
-        from_arg = args.get("from")
-        until_arg = args.get("until")
-        metadata_prefix_arg = args.get("metadataPrefix")
-        set_arg = args.get("set")
-
-        # If resumptionToken is present, decode it and use those parameters
-        if resumption_token:
-            continuation, token_params = self._decode_resumption_token(resumption_token)
-
-            # Check for conflicting parameters
-            if from_arg or until_arg or metadata_prefix_arg:
-                return Response(
-                    self._make_error(
-                        "badArgument",
-                        "Cannot mix resumptionToken with from, until, or metadataPrefix parameters",
-                    ),
-                    mimetype="text/xml; charset=utf-8",
-                )
-
-            # Use parameters from resumption token
-            from_ = _parse_datestamp(token_params.get("from"))
-            until = _parse_datestamp(token_params.get("until"))
-            metadata_prefix = token_params.get("metadataPrefix")
+    def __call__(self, environ, start_response):
+        request = Request(environ)
+        if request.method == "GET":
+            body = self.respond(request.args)
+        elif request.method == "POST":
+            body = self.respond(request.form)
         else:
-            # Use provided parameters
-            continuation = None
-            from_ = _parse_datestamp(from_arg)
-            until = _parse_datestamp(until_arg)
-            metadata_prefix = metadata_prefix_arg
+            response = Response(status=405, headers={"Allow": "GET, POST"})
+            return response(environ, start_response)
+        response = Response(body, content_type="text/xml; charset=utf-8")
+        return response(environ, start_response)
 
-        # Validate metadataPrefix (required for ListIdentifiers in OAI-PMH 2.0)
-        if not metadata_prefix:
-            return Response(
-                self._make_error("badArgument", "Missing metadataPrefix parameter"),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        # Check if set argument is provided but repository doesn't support sets
-        # Per OAI-PMH spec, this should return noSetHierarchy error
-        if set_arg:
-            sets = self._backend.listSets()
-            if not sets:
-                return Response(
-                    self._make_error(
-                        "noSetHierarchy", "This repository does not support sets"
-                    ),
-                    mimetype="text/xml; charset=utf-8",
-                )
-
-        items, next_path = backend_method(
-            from_=from_,
-            until=until,
-            continuation=str(continuation) if continuation else None,
-            set_spec=set_arg if set_arg else None,
+    def respond(self, params: MultiDict) -> bytes:
+        root = etree.Element(
+            f"{{{OAI_NS}}}OAI-PMH", nsmap={None: OAI_NS, "xsi": XSI_NS}
         )
-
-        children = [make_element(item) for item in items]
-
-        # Encode and add resumption token if present
-        if next_path:
-            from_str = _format_datestamp(from_.timestamp()) if from_ else None
-            until_str = _format_datestamp(until.timestamp()) if until else None
-            encoded_token = self._encode_resumption_token(
-                next_path, metadata_prefix, from_str, until_str
-            )
-            children.append({"resumptionToken": encoded_token})
-
-        return Response(
-            self._make_oai_response(verb, children, args),
-            mimetype="text/xml; charset=utf-8",
+        root.set(
+            XSI_SCHEMA_LOCATION,
+            f"{OAI_NS} http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd",
         )
-
-    def handle_listidentifiers(self, args: dict) -> Response:
-        """Handle ListIdentifiers verb."""
-        return self._process_list_verb(
-            "ListIdentifiers",
-            self._backend.listIdentifiers,
-            self._make_header_element,
-            args,
-        )
-
-    def handle_listrecords(self, args: dict) -> Response:
-        """Handle ListRecords verb."""
-        return self._process_list_verb(
-            "ListRecords",
-            self._backend.listRecords,
-            self._make_record_element,
-            args,
-        )
-
-    def handle_listsets(self, args: dict) -> Response:
-        """Handle ListSets verb."""
-        sets = self._backend.listSets()
-
-        # If no sets are defined, return noSetHierarchy error per OAI-PMH spec
-        if not sets:
-            return Response(
-                self._make_error(
-                    "noSetHierarchy", "This repository does not support sets"
-                ),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        children = [{"set": {}} for _ in sets]
-
-        return Response(
-            self._make_oai_response("ListSets", children, args),
-            mimetype="text/xml; charset=utf-8",
-        )
-
-
-def create_app(
-    pool: ConnectionPool,
-    repo_config: Optional[RepositoryConfig] = None,
-    config: Optional[dict] = None,
-) -> Flask:
-    """Create and configure the OAI-PMH Flask application.
-
-    Args:
-        config: Optional dictionary of configuration values
-        db_config: Optional PostgresConfig for database connection. If provided,
-                   will override the global postgres_config for this app instance.
-
-    Returns:
-        Configured Flask app instance
-    """
-    # Apply configuration override
-    if config is None:
-        config = {}
-
-    if repo_config is None:
-        # Create RepositoryConfig from environment variables
-        repo_config = RepositoryConfig.from_env()
-
-    app = Flask(__name__)
-    app.config.update(config)
-
-    backend = OAIFileDBBackend(pool=pool, root=repo_config.data_root)
-
-    # Create server instance for this app
-    _server = OAIServer(backend, config=repo_config)
-
-    @app.route("/oai", methods=["GET", "POST"])
-    def oai_endpoint():
-        """Handle OAI-PMH requests."""
-        params = request.args if request.method == "GET" else request.form
-        request_args = {str(k): str(v) for k, v in params.items()}
-
-        verb = request_args.get("verb")
-        if not verb:
-            return Response(
-                _server._make_error("badVerb", "Missing verb parameter"),
-                mimetype="text/xml; charset=utf-8",
-            )
-
-        # Add base URL to request args
-        request_args["base_url"] = request.url.split("?")[0]
-
+        _sub(root, "responseDate", format_datestamp(datetime.now(UTC)))
+        request = _sub(root, "request", self.base_url)
         try:
-            if verb == "Identify":
-                return _server.handle_identify(request_args)
-            elif verb == "GetRecord":
-                return _server.handle_getrecord(request_args)
-            elif verb == "ListMetadataFormats":
-                return _server.handle_listmetadataformats(request_args)
-            elif verb == "ListIdentifiers":
-                return _server.handle_listidentifiers(request_args)
-            elif verb == "ListRecords":
-                return _server.handle_listrecords(request_args)
-            elif verb == "ListSets":
-                return _server.handle_listsets(request_args)
-            else:
-                return Response(
-                    _server._make_error("badVerb", f"Unknown verb: {verb}"),
-                    mimetype="text/xml; charset=utf-8",
-                )
-        except Exception as e:
-            import sys
+            verb, args = parse_arguments(params)
+            request.set("verb", verb)
+            for key, value in args.items():
+                request.set(key, _xml_text(value))
+            root.append(getattr(self, verb)(args))
+        except OAIError as error:
+            # The request element must not have attributes for these errors
+            if error.code in ("badVerb", "badArgument"):
+                request.attrib.clear()
+            error_element = _sub(root, "error", error.message)
+            error_element.set("code", error.code)
+        return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
-            print(
-                f"DEBUG oai_endpoint: Exception caught - type={type(e).__name__}, msg={e}",
-                file=sys.stderr,
-            )
-            import traceback
+    def _query(self, sql: str, params=()) -> list[tuple]:
+        with self.pool.connection() as conn:
+            return conn.execute(sql, params).fetchall()
 
-            traceback.print_exc(file=sys.stderr)
-            return Response(
-                _server._make_error("badArgument", str(e)),
-                mimetype="text/xml; charset=utf-8",
-            )
+    def _check_exists(self, identifier: str):
+        if not self._query(
+            "SELECT 1 FROM records WHERE identifier = %s", (identifier,)
+        ):
+            raise OAIError("idDoesNotExist", f"No record {identifier}")
 
-    return app
+    def Identify(self, args):
+        ((earliest,),) = self._query("SELECT min(datestamp) FROM records")
+        identify = _element("Identify")
+        _sub(identify, "repositoryName", REPOSITORY_NAME)
+        _sub(identify, "baseURL", self.base_url)
+        _sub(identify, "protocolVersion", "2.0")
+        _sub(identify, "adminEmail", self.admin_email)
+        _sub(identify, "earliestDatestamp", format_datestamp(earliest or EPOCH))
+        _sub(identify, "deletedRecord", "no")
+        _sub(identify, "granularity", GRANULARITY)
+        return identify
 
+    def ListMetadataFormats(self, args):
+        if "identifier" in args:
+            self._check_exists(args["identifier"])
+        formats = _element("ListMetadataFormats")
+        metadata_format = _sub(formats, "metadataFormat")
+        _sub(metadata_format, "metadataPrefix", "oai_dc")
+        _sub(metadata_format, "schema", OAI_DC_SCHEMA)
+        _sub(metadata_format, "metadataNamespace", OAI_DC_NS)
+        return formats
 
-if __name__ == "__main__":
-    with ConnectionPool(
-        conninfo=PostgresConfig.from_env().connection_string(),
-        open=True,
-    ) as pool:
-        # Expose default app for backward compatibility (legacy usage)
-        app = create_app(
-            pool=pool,
+    def ListSets(self, args):
+        raise OAIError("noSetHierarchy", "This repository does not support sets")
+
+    def GetRecord(self, args):
+        _check_prefix(args["metadataPrefix"])
+        rows = self._query(
+            "SELECT identifier, datestamp, metadata FROM records WHERE identifier = %s",
+            (args["identifier"],),
         )
-        app.run(port=7654, debug=True)
+        if not rows:
+            raise OAIError("idDoesNotExist", f"No record {args['identifier']}")
+        get_record = _element("GetRecord")
+        _record(get_record, *rows[0])
+        return get_record
+
+    def ListIdentifiers(self, args):
+        return self._list("ListIdentifiers", args)
+
+    def ListRecords(self, args):
+        return self._list("ListRecords", args)
+
+    def _list(self, verb, args):
+        if "resumptionToken" in args:
+            from_, until, after = decode_token(args["resumptionToken"])
+        else:
+            _check_prefix(args["metadataPrefix"])
+            if "set" in args:
+                raise OAIError(
+                    "noSetHierarchy", "This repository does not support sets"
+                )
+            from_, until = parse_range(args.get("from"), args.get("until"))
+            after = None
+
+        conditions, params = [], []
+        if from_ is not None:
+            conditions.append("datestamp >= %s")
+            params.append(from_)
+        if until is not None:
+            conditions.append("datestamp <= %s")
+            params.append(until)
+        if after is not None:
+            conditions.append("(datestamp, dataset_id) > (%s, %s)")
+            params.extend(after)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = self._query(
+            f"""
+            SELECT identifier, datestamp, metadata, dataset_id FROM records {where}
+            ORDER BY datestamp, dataset_id LIMIT %s
+            """,
+            (*params, self.page_size + 1),
+        )
+        if not rows:
+            raise OAIError("noRecordsMatch", "No records match the request")
+
+        result = _element(verb)
+        for identifier, datestamp, metadata, _ in rows[: self.page_size]:
+            if verb == "ListRecords":
+                _record(result, identifier, datestamp, metadata)
+            else:
+                _header(result, identifier, datestamp)
+        if len(rows) > self.page_size:
+            _, datestamp, _, dataset_id = rows[self.page_size - 1]
+            _sub(
+                result,
+                "resumptionToken",
+                encode_token(from_, until, datestamp, dataset_id),
+            )
+        elif "resumptionToken" in args:
+            # The last part of an incomplete list has an empty token
+            _sub(result, "resumptionToken")
+        return result
+
+
+def _check_prefix(prefix: str):
+    if prefix != "oai_dc":
+        raise OAIError(
+            "cannotDisseminateFormat", f"Unsupported metadataPrefix {prefix!r}"
+        )
+
+
+def _header(parent, identifier: str, datestamp: datetime):
+    header = _sub(parent, "header")
+    _sub(header, "identifier", identifier)
+    _sub(header, "datestamp", format_datestamp(datestamp))
+
+
+def _record(parent, identifier: str, datestamp: datetime, metadata: dict):
+    record = _sub(parent, "record")
+    _header(record, identifier, datestamp)
+    dc = etree.SubElement(
+        _sub(record, "metadata"),
+        f"{{{OAI_DC_NS}}}dc",
+        nsmap={"oai_dc": OAI_DC_NS, "dc": DC_NS, "xsi": XSI_NS},
+    )
+    dc.set(XSI_SCHEMA_LOCATION, f"{OAI_DC_NS} {OAI_DC_SCHEMA}")
+    for name in DC_ELEMENTS:
+        for value in metadata.get(name, ()):
+            etree.SubElement(dc, f"{{{DC_NS}}}{name}").text = _xml_text(value)

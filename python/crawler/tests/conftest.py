@@ -1,28 +1,39 @@
-import pytest
-
 import os
+import threading
 from importlib import reload
 from pathlib import Path
-import psycopg
-from datetime import datetime
-from typing import Generator
-import threading
-import time
-import requests
 
-import xdg
-
-# Import crawler classes
 import modama_crawler.recognition
+import pytest
+import xdg
+from lxml import etree
 from modama_crawler.database import ensure_dataset_tables
-from modama_crawler.repository import RepositoryConfig
+from modama_crawler.records import dc_metadata, oai_identifier
+from modama_crawler.server import OAIServer
+from psycopg.conninfo import make_conninfo
+from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
+from werkzeug.serving import make_server
+from werkzeug.test import Client
 
+SCHEMAS = Path(__file__).parent / "schemas"
+OAI = "{http://www.openarchives.org/OAI/2.0/}"
+DC = "{http://purl.org/dc/elements/1.1/}"
+BASE_URL = "http://localhost/oai"
 
-# MIME for self test
+# path: datestamp; boundaries for selective harvesting and paging with page size 2
+RECORDS = {
+    "/a.txt": "2024-01-01T00:00:00Z",
+    "/b.txt": "2024-06-01T00:00:00Z",
+    "/c d.txt": "2024-06-01T12:00:00Z",
+    "/e:f.txt": "2024-06-01T23:59:59Z",
+    "/g+h%.txt": "2024-06-02T00:00:00Z",
+}
+
+# MIME type for the self test of the handler installation
 CANARY_MIME = xdg.Mime.MIMEtype("application", "x.modamatestfile")
 
 
-# File handler for self test
 class Canary(modama_crawler.recognition.FileHandler):
     file_types = (CANARY_MIME,)
 
@@ -38,244 +49,90 @@ class Canary(modama_crawler.recognition.FileHandler):
 
 @pytest.fixture(scope="session", autouse=True)
 def install_handlers(tmp_path_factory):
-    workdir = tmp_path_factory.mktemp("localshare")
-    os.environ["XDG_DATA_HOME"] = str(workdir)
-    # Make the new base directory active
+    """Install the handlers' MIME info into a temporary XDG directory, not the user's."""
+    os.environ["XDG_DATA_HOME"] = str(tmp_path_factory.mktemp("localshare"))
     reload(xdg.BaseDirectory)
     modama_crawler.recognition.FileHandler.install_mime_info()
-    # Self-test: Make sure the MIME definition installation worked
     assert xdg.Mime.get_type_by_name("/home/whatever.modamatestfile") == CANARY_MIME
 
 
-# ============================================================================
-# Fixtures for Unit Tests (no full test data needed)
-# ============================================================================
+@pytest.fixture
+def conn(postgresql):
+    ensure_dataset_tables(postgresql)
+    return postgresql
 
 
 @pytest.fixture
-def pg_unit_test(postgresql):
-    """Simple PostgreSQL connection for unit tests that don't need test data.
+def add_record(conn):
+    """Insert a record with the given datestamp, bypassing the crawl. Returns its identifier."""
 
-    Returns a fresh connection with row factory set.
-    """
-    conn = postgresql
-    conn.row_factory = psycopg.rows.dict_row
-    return conn
-
-
-# ============================================================================
-# Shared Fixtures for OAI-PMH Server Tests
-# ============================================================================
-
-
-@pytest.fixture
-def test_database(postgresql, tmp_path) -> Generator[psycopg.Connection, None, None]:
-    """Create a PostgreSQL test database with schema and test data.
-
-    Sets up:
-    - 6 dataset paths with varying mtimes for pagination and date filtering tests
-    - MIME types for each dataset
-    - Paths are stored as absolute paths (tmp_path / relative_path)
-    """
-
-    # Use the postgresql fixture connection
-    conn = postgresql
-    conn.row_factory = psycopg.rows.dict_row
-
-    # Create schema using the official function
-    ensure_dataset_tables(conn)
-
-    # Test data: 6 datasets with different mtimes
-    # Date range for testing: 2024-06-01 to 2024-12-31
-    # Paths are relative, will be converted to absolute for database storage
-    relative_paths = [
-        "dataset-alpha/file1.txt",
-        "dataset-beta/file2.txt",
-        "dataset-gamma/file3.txt",
-        "dataset-delta/file4.txt",
-        "dataset-epsilon/file5.txt",
-        "dataset-zeta/file6.txt",
-    ]
-
-    cur = conn.cursor()
-
-    # Insert files with absolute paths
-    # Use specific dates to match test expectations:
-    # dataset-alpha: 2024-01-01 (before date filter range)
-    # dataset-beta: 2024-06-01 (at from_ boundary)
-    # dataset-gamma: 2024-06-15 (within range)
-    # dataset-delta: 2024-07-01 (within range)
-    # dataset-epsilon: 2024-12-31 23:59:59 (at until boundary)
-    # dataset-zeta: 2025-02-01 (after until boundary)
-    test_dates = [
-        datetime(2024, 1, 1),
-        datetime(2024, 6, 1),
-        datetime(2024, 6, 15),
-        datetime(2024, 7, 1),
-        datetime(2024, 12, 31, 23, 59, 59),
-        datetime(2025, 2, 1),
-    ]
-    mimes = [
-        "application/pdf",
-        "text/plain",
-        "image/jpeg",
-        "application/pdf",
-        "text/csv",
-        "application/zip",
-    ]
-
-    for i, rel_path in enumerate(relative_paths):
-        # Store as absolute path (will be stripped by server)
-        abs_path = str(tmp_path / rel_path)
-        mtime = test_dates[i].timestamp()
-        mime = mimes[i]
-        cur.execute(
-            "INSERT INTO files (path_id, path, mtime) VALUES (%s, %s, %s)",
-            (i + 1, abs_path, mtime),
+    def add(path: str, datestamp: str) -> str:
+        ((path_id,),) = conn.execute(
+            "INSERT INTO files (path, mtime, uid) VALUES (%s, 0, %s) RETURNING path_id",
+            (path, os.getuid()),
         )
-        # Insert dataset
-        cur.execute(
-            "INSERT INTO datasets (dataset_id, path_id) VALUES (%s, %s)", (i + 1, i + 1)
+        ((dataset_id,),) = conn.execute(
+            "INSERT INTO datasets (path_id) VALUES (%s) RETURNING dataset_id",
+            (path_id,),
         )
-        # Insert MIME type
-        cur.execute(
-            "INSERT INTO mimes (dataset_id, mime) VALUES (%s, %s)", (i + 1, mime)
+        identifier = oai_identifier(path)
+        metadata = dc_metadata(path, 0.0, os.getuid(), ["text/plain"])
+        conn.execute(
+            "INSERT INTO records VALUES (%s, %s, %s, %s)",
+            (dataset_id, identifier, datestamp, Jsonb(metadata)),
         )
-        # Link file to dataset
-        cur.execute(
-            "INSERT INTO files_in_datasets (dataset_id, path_id) VALUES (%s, %s)",
-            (i + 1, i + 1),
-        )
+        conn.commit()
+        return identifier
 
-    conn.commit()
-    yield conn
+    return add
 
 
 @pytest.fixture
-def test_files(tmp_path) -> Path:
-    """Create temporary test files that match the database paths."""
-    # Create files for each dataset
-    test_paths = [
-        "dataset-alpha/file1.txt",
-        "dataset-beta/file2.txt",
-        "dataset-gamma/file3.txt",
-        "dataset-delta/file4.txt",
-        "dataset-epsilon/file5.txt",
-        "dataset-zeta/file6.txt",
-    ]
-
-    for path in test_paths:
-        file_path = tmp_path / path
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(f"Content of {path}")
-
-    return tmp_path
+def records(add_record) -> list[str]:
+    return [add_record(path, datestamp) for path, datestamp in RECORDS.items()]
 
 
 @pytest.fixture
-def repo_config(test_files):
-    return RepositoryConfig(
-        admin_email="email@example.com",
-        repository_name="Modama test repository",
-        earliest_datestamp=datetime.fromtimestamp(0.0),
-        data_root=test_files,
-    )
+def server(conn):
+    conninfo = make_conninfo(conn.info.dsn, password=conn.info.password or "")
+    with ConnectionPool(conninfo, min_size=1, open=True) as pool:
+        yield OAIServer(pool, BASE_URL, "admin@example.org", page_size=2)
 
 
-@pytest.fixture()
-def running_http_server(test_database, repo_config):
-    """Start OAI-PMH server as HTTP server in background thread.
+@pytest.fixture(scope="session")
+def oai_schema():
+    class LocalSchemas(etree.Resolver):
+        def resolve(self, url, public_id, context):
+            return self.resolve_filename(str(SCHEMAS / url.rsplit("/", 1)[-1]), context)
 
-    Yields the base URL of the running server (e.g., "http://127.0.0.1:12345/oai").
-    Server is automatically stopped when test completes.
-    """
-    from modama_crawler.server import create_app, PostgresConfig
-    from psycopg_pool import ConnectionPool
-    from werkzeug.serving import make_server
-
-    # Create PostgreSQL config from test_database fixture
-    db_config = PostgresConfig.from_conninfo(test_database.info)
-
-    pool = ConnectionPool(
-        conninfo=db_config.connection_string(),
-        min_size=1,
-        max_size=2,
-    )
-
-    # Configure backend for testing
-    config_dict = {"TESTING": True}
-
-    # Create app with direct configuration (no environment monkeypatching needed)
-    app = create_app(pool=pool, config=config_dict, repo_config=repo_config)
-
-    # Create server instance
-    server = make_server("127.0.0.1", 0, app, threaded=True)
-    port = server.server_address[1]
-
-    # Start server in background thread
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-
-    # Wait for server to be ready
-    base_url = f"http://127.0.0.1:{port}/oai"
-
-    # Retry connection a few times
-    for i in range(10):
-        try:
-            response = requests.get(f"{base_url}?verb=Identify", timeout=1)
-            if response.status_code == 200:
-                break
-        except requests.ConnectionError:
-            time.sleep(0.1)
-
-    try:
-        yield base_url
-    finally:
-        # Shutdown server
-        server.shutdown()
+    parser = etree.XMLParser()
+    parser.resolvers.add(LocalSchemas())
+    return etree.XMLSchema(etree.parse(str(SCHEMAS / "oai-pmh-oai-dc.xsd"), parser))
 
 
 @pytest.fixture
-def sickle_client(running_http_server):
-    """Create sickle client connected to test HTTP server."""
-    from sickle import Sickle
+def oai(server, oai_schema):
+    """Send a request to the server, check that the response is valid OAI-PMH, and parse it."""
+    client = Client(server)
 
-    return Sickle(running_http_server)
+    def request(method="GET", **params):
+        if method == "GET":
+            response = client.get("/oai", query_string=params)
+        else:
+            response = client.open("/oai", method=method, data=params)
+        assert response.status_code == 200
+        assert response.content_type == "text/xml; charset=utf-8"
+        document = etree.fromstring(response.data)
+        oai_schema.assertValid(document)
+        return document
 
-
-@pytest.fixture
-def oaipmh_client(running_http_server):
-    """Create oaipmh client connected to test HTTP server."""
-    from oaipmh.client import Client
-    from oaipmh.metadata import global_metadata_registry, oai_dc_reader
-
-    # Register the oai_dc reader with the global metadata registry
-    # This is needed because oaipmh doesn't register it by default
-    if not global_metadata_registry.hasReader("oai_dc"):
-        global_metadata_registry.registerReader("oai_dc", oai_dc_reader)
-
-    return Client(running_http_server)
+    return request
 
 
 @pytest.fixture
-def backend_with_db(test_database, test_files):
-    """Create an OAIFileDBBackend instance configured with test database and files.
-
-    Provides the backend instance needed to access FileHandler creation logic.
-    """
-    from psycopg_pool import ConnectionPool
-    from modama_crawler.server import OAIFileDBBackend, PostgresConfig
-
-    # Use connection pool with test database
-    db_config = PostgresConfig.from_conninfo(test_database.info)
-
-    pool = ConnectionPool(
-        conninfo=db_config.connection_string(),
-        min_size=1,
-        max_size=2,
-    )
-
-    # Create backend instance with explicit root = test_files
-    backend = OAIFileDBBackend(pool=pool, root=test_files)
-
-    return backend
+def base_url(server):
+    """Serve over HTTP for the client libraries. Returns the base URL."""
+    http = make_server("localhost", 0, server, threaded=True)
+    threading.Thread(target=http.serve_forever, daemon=True).start()
+    yield f"http://localhost:{http.server_port}/oai"
+    http.shutdown()

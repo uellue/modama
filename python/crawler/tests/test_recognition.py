@@ -1,20 +1,15 @@
-import pytest
-
-from pathlib import Path
 import os
-import time
+from pathlib import Path
 
-from xdg.Mime import MIMEtype
-
+import pytest
 from modama_crawler.recognition import (
     EMPAD,
-    OctetStream,
-    FileHandler,
     Directory,
+    FileHandler,
     Symlink,
     guess,
 )
-
+from xdg.Mime import MIMEtype
 
 EMPAD_XML = """<root name="acquisition_1">
     <timestamp timestamp="1706883519.18255" isoformat="2024-02-02T15:18:39.182550" />
@@ -123,7 +118,7 @@ def test_dir(tmp_path, request):
     return (listing, tmp_path, request.param, stats)
 
 
-def test_recognition(test_dir, test_database):
+def test_recognition(test_dir, conn):
     listing, tmp_path, param, stats = test_dir
     for path, kind, content, mtime, mimes in listing:
         abspath = tmp_path / path
@@ -132,7 +127,7 @@ def test_recognition(test_dir, test_database):
             print(mime, path, os.path.isdir(abspath))
             assert MIMEtype(mime) in guesses
         handler = FileHandler.create(
-            root=tmp_path, path=path, guesses=guesses, conn=test_database
+            root=tmp_path, path=path, guesses=guesses, conn=conn
         )
         if handler.path == path:
             formats = handler.get_formats()
@@ -143,30 +138,26 @@ def test_recognition(test_dir, test_database):
 @pytest.mark.parametrize(
     "path", ("a/aaa.xml", "a/series_x1234.raw", "series_x1234.raw", "xxx.xml")
 )
-def test_empad(test_dir, path, test_database):
+def test_empad(test_dir, path, conn):
     listing, tmp_path, param, stats = test_dir
     abspath = tmp_path / path
     guesses = guess(abspath)
     print(guesses)
-    handler = FileHandler.create(
-        root=tmp_path, path=path, guesses=guesses, conn=test_database
-    )
+    handler = FileHandler.create(root=tmp_path, path=path, guesses=guesses, conn=conn)
     assert isinstance(handler, EMPAD)
 
 
 @pytest.mark.parametrize("path", ("something.raw", "b.txt"))
-def test_not_empad(test_dir, path, test_database):
+def test_not_empad(test_dir, path, conn):
     listing, tmp_path, param, stats = test_dir
     abspath = tmp_path / path
     guesses = guess(abspath)
     print(guesses)
-    handler = FileHandler.create(
-        root=tmp_path, path=path, guesses=guesses, conn=test_database
-    )
+    handler = FileHandler.create(root=tmp_path, path=path, guesses=guesses, conn=conn)
     assert not isinstance(handler, EMPAD)
 
 
-def test_special(test_dir, test_database):
+def test_special(test_dir, conn):
     listing, tmp_path, param, stats = test_dir
     for path, kind, content, mtime, mimes in listing:
         if kind in ("l", "d"):
@@ -174,50 +165,9 @@ def test_special(test_dir, test_database):
             guesses = guess(abspath)
             print(guesses)
             handler = FileHandler.create(
-                root=tmp_path, path=path, guesses=guesses, conn=test_database
+                root=tmp_path, path=path, guesses=guesses, conn=conn
             )
             if kind == "l":
                 assert isinstance(handler, Symlink)
             elif kind == "d":
                 assert isinstance(handler, Directory)
-
-
-def test_source_mtime():
-    pytest.xfail("For some reason the times are flaky in testing")
-    # Unix timestamp, 0 is far enough in the past
-    max_mtime = 0.0
-    now = time.time()
-    min_mtime = now
-    for cls in FileHandler, OctetStream, Directory, Symlink, EMPAD:
-        mtime = cls.source_mtime()
-        # Plausibility
-        # 16th of July 2026, yesterday at time of writing
-        assert mtime >= 1784213173
-        assert mtime < now
-        print(mtime)
-        max_mtime = max(max_mtime, mtime)
-        min_mtime = min(min_mtime, mtime)
-    print(
-        max_mtime,
-        FileHandler.youngest_source_mtime(),
-        min_mtime,
-        FileHandler.oldest_source_mtime(),
-        now,
-    )
-    assert max_mtime == FileHandler.youngest_source_mtime()
-    assert min_mtime == FileHandler.oldest_source_mtime()
-
-
-def test_database_mtime(test_database, test_files):
-    handler = FileHandler.create(
-        root=test_files,
-        path=Path("dataset-alpha/file1.txt"),
-        guesses=[],
-        conn=test_database,
-    )
-    res = handler.db_mtime
-    cur = test_database.cursor()
-    cur.execute("SELECT mtime from files where path = %s", (str(handler.abspath),))
-    rows = cur.fetchall()
-    ref = rows[0]["mtime"]
-    assert res == ref

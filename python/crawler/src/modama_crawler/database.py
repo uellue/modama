@@ -1,63 +1,27 @@
-from pathlib import Path
+import logging
 import os
+from collections.abc import Mapping
 from contextlib import contextmanager
-from typing import Optional, Mapping
-from dataclasses import dataclass
+from pathlib import Path
 
 import psycopg
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
-from dotenv import load_dotenv
 
 from .mime_sql import apply_mime_prefilter_with_resolution
+from .records import publish_records
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Data root path configuration
-MODAMA_DATA_ROOT = Path(os.environ.get("MODAMA_DATA_ROOT", "/data"))
+log = logging.getLogger(__name__)
 
 
-@dataclass
-class PostgresConfig:
-    """PostgreSQL database configuration."""
-
-    name: str
-    admin: str
-    password: str
-    address: str
-    port: str
-
-    def connection_string(self) -> str:
-        """Return PostgreSQL connection string."""
-        return f"postgresql://{self.admin}:{self.password}@{self.address}:{self.port}/{self.name}"
-
-    @classmethod
-    def from_env(cls, env: Mapping = os.environ) -> "PostgresConfig":
-        """Create a PostgresConfig instance from environment variables.
-
-        Args:
-            env: Mapping containing environment variables. Defaults to os.environ
-
-        Returns:
-            PostgresConfig with values from environment or defaults
-        """
-        return cls(
-            name=env.get("MODAMA_CRAWLER_DB", "modama_crawler"),
-            admin=env.get("POSTGRES_ADMIN", "postgres"),
-            password=env.get("POSTGRES_PASSWORD", ""),
-            address=env.get("POSTGRES_ADDRESS", "localhost"),
-            port=env.get("POSTGRES_PORT", "5432"),
-        )
-
-    @classmethod
-    def from_conninfo(cls, conninfo: psycopg.ConnectionInfo):
-        return cls(
-            name=conninfo.dbname,
-            admin=conninfo.user,
-            password=conninfo.password or "",
-            address=conninfo.host,
-            port=str(conninfo.port),
-        )
+def conninfo_from_env(env: Mapping = os.environ) -> str:
+    return make_conninfo(
+        dbname=env.get("MODAMA_CRAWLER_DB", "modama_crawler"),
+        user=env.get("POSTGRES_ADMIN", "postgres"),
+        password=env.get("POSTGRES_PASSWORD", ""),
+        host=env.get("POSTGRES_ADDRESS", "localhost"),
+        port=env.get("POSTGRES_PORT", "5432"),
+    )
 
 
 @contextmanager
@@ -76,91 +40,55 @@ def crawling(conn):
         cur.execute("DROP TABLE IF EXISTS crawl")
 
 
-def crawl_repository(
-    conn: psycopg.Connection,
-    root_path: Path = MODAMA_DATA_ROOT,
-) -> int:
-    """Crawl the repository and populate a temporary crawl table.
+def _is_utf8(name: str) -> bool:
+    # os.walk() returns names that aren't valid UTF-8 with surrogate escapes,
+    # which PostgreSQL text can't store.
+    try:
+        name.encode()
+        return True
+    except UnicodeEncodeError:
+        return False
 
-    Walks the filesystem tree starting at root_path, collecting file and directory
-    paths with their modification times. Creates a temporary table 'crawl' with the
-    same schema as the 'files' table and populates it with all discovered entries.
 
-    Args:
-        conn: PostgreSQL database connection
-        root_path: Root directory to crawl (defaults to MODAMA_DATA_ROOT)
+def crawl_repository(conn: psycopg.Connection, root_path: Path) -> int:
+    """Walk the tree below root_path into the temporary crawl table.
 
-    Returns:
-        int: Number of entries crawled
-
-    Note:
-        This creates a temporary table that exists only for the duration of the
-        connection. The caller should call populate_files_from_crawl() to transfer
-        the data to the permanent files table.
+    Returns the number of entries crawled.
     """
-    cur = conn.cursor(row_factory=dict_row)
     total = 0
-
     for root, dirs, files in os.walk(root_path, followlinks=False):
-        # Collect all entries
-        entries: list[tuple[str, float, float]] = []
-        # Process directories
-        for d in dirs:
-            dir_path = Path(root) / d
+        entries = []
+        for name in dirs + files:
+            if not _is_utf8(name):
+                log.warning("Skipping non-UTF-8 name %r in %s", name, root)
+                continue
+            path = Path(root) / name
             try:
-                stat_info = dir_path.stat(follow_symlinks=False)
-                mtime = max(stat_info.st_mtime, stat_info.st_ctime)
-                entries.append((str(dir_path), mtime, mtime))
+                stat = path.stat(follow_symlinks=False)
             except (PermissionError, FileNotFoundError):
                 continue
-
-        # Process files
-        for f in files:
-            file_path = Path(root) / f
-            try:
-                stat_info = file_path.stat(follow_symlinks=False)
-                mtime = max(stat_info.st_mtime, stat_info.st_ctime)
-                entries.append((str(file_path), mtime, mtime))
-            except (PermissionError, FileNotFoundError):
-                continue
-
-        # Batch insert into crawl table
-        if entries:
-            cur.executemany(
-                "INSERT INTO crawl (path, mtime) VALUES (%s, %s) "
-                "ON CONFLICT (path) DO UPDATE "
-                "SET mtime = %s",
-                entries,
-            )
-
+            entries.append((str(path), max(stat.st_mtime, stat.st_ctime), stat.st_uid))
+        # Don't descend into directories we skipped
+        dirs[:] = [d for d in dirs if _is_utf8(d)]
+        with conn.cursor().copy("COPY crawl (path, mtime, uid) FROM STDIN") as copy:
+            for entry in entries:
+                copy.write_row(entry)
         conn.commit()
         total += len(entries)
     return total
 
 
-def populate_files_from_crawl(conn: psycopg.Connection) -> tuple[int, int]:
+def populate_files_from_crawl(conn: psycopg.Connection) -> int:
     """Transfer data from temporary crawl table to permanent files table.
 
-    This function performs the initial population of the files table from the
-    temporary crawl table created by crawl_repository().
-
-    Args:
-        conn: PostgreSQL database connection
-
-    Returns:
-        number of files inserted
+    Returns the number of new or changed files.
 
     Note:
-        TODO: For incremental updates, add logic to:
-        - Detect modified files (present in both crawl and files with different mtime)
-        - Update mtimes for modified files
-        - Handle deleted files and their references (TODO: update dataset mtimes)
-        - Re-run MIME matching for modified files (TODO: call apply_mime_prefilter_with_resolution selectively)
+        TODO: For incremental updates, re-run MIME matching for modified files
     """
     cur = conn.cursor(row_factory=dict_row)
 
-    # Remove deleted files from database
-    # Foreign key constraints should take care of everything that references these files
+    # Remove deleted files, cascading to their datasets and records
     cur.execute(
         """
         DELETE FROM files
@@ -171,16 +99,15 @@ def populate_files_from_crawl(conn: psycopg.Connection) -> tuple[int, int]:
     cur.execute(
         """
         DELETE FROM crawl
-        WHERE (crawl.path, crawl.mtime) IN (SELECT path, mtime FROM files)
+        WHERE (crawl.path, crawl.mtime, crawl.uid) IN (SELECT path, mtime, uid FROM files)
         """
     )
-    # Insert all files from crawl into files table
     cur.execute(
         """
-        INSERT INTO files (path, mtime)
-        SELECT path, mtime FROM crawl
+        INSERT INTO files (path, mtime, uid)
+        SELECT path, mtime, uid FROM crawl
         ON CONFLICT (path) DO UPDATE
-        SET mtime = EXCLUDED.mtime WHERE files.mtime != EXCLUDED.mtime
+        SET mtime = EXCLUDED.mtime, uid = EXCLUDED.uid
         """
     )
     files_inserted = cur.rowcount
@@ -191,71 +118,49 @@ def populate_files_from_crawl(conn: psycopg.Connection) -> tuple[int, int]:
 
 def crawl_and_populate(
     conn: psycopg.Connection,
-    root_path: Optional[Path] = None,
-    filters_map: Optional[dict] = None,
+    root_path: Path,
+    filters_map: dict | None = None,
 ) -> dict:
-    """Perform complete crawling and database population workflow.
+    """Crawl root_path and bring files, datasets and OAI-PMH records up to date.
 
-    This function orchestrates the complete initial population workflow:
-    1. Crawl the filesystem and populate temporary crawl table
-    2. Transfer entries from crawl table to files table
-    3. Run MIME prefilter with resolution to create datasets and mimes entries
+    1. Crawl the filesystem into the temporary crawl table
+    2. Transfer entries from the crawl table to the files table
+    3. Run the MIME prefilter to create datasets and mimes entries
+    4. Publish a record for every dataset
 
-    Args:
-        conn: PostgreSQL database connection
-        root_path: Root directory to crawl (defaults to MODAMA_DATA_ROOT)
-        filters_map: Optional mapping of MIME types to filters for apply_mime_prefilter_with_resolution
-
-    Returns:
-        dict: Summary with counts:
-            - 'crawled': number of entries crawled
-            - 'files_inserted': number of files inserted into files table
-            - 'datasets_created': number of datasets created by MIME prefilter
-
-    Note:
-        This is designed for initial population only. For incremental updates,
-        see TODO comments in populate_files_from_crawl() for future enhancements.
+    Returns a summary with counts.
     """
-    # Create temporary crawl table with same schema as files
     with crawling(conn):
-        # Step 1: Crawl the repository
         crawled_count = crawl_repository(conn, root_path=root_path)
-        conn.commit()
-
-        # Step 2: Transfer to permanent files table
         files_inserted = populate_files_from_crawl(conn)
-        conn.commit()
-
-        # Step 3: Apply MIME prefilter to create datasets and mimes
         mime_summary = apply_mime_prefilter_with_resolution(
             conn, filters_map=filters_map
         )
         conn.commit()
-        datasets_created = mime_summary.get("datasets_created", 0)
 
-        return {
-            "crawled": crawled_count,
-            "files_inserted": files_inserted,
-            "datasets_created": datasets_created,
-        }
+    records_changed = publish_records(conn, root_path)
+    return {
+        "crawled": crawled_count,
+        "files_inserted": files_inserted,
+        "datasets_created": mime_summary.get("datasets_created", 0),
+        "records_changed": records_changed,
+    }
 
 
 def ensure_dataset_tables(conn: psycopg.Connection) -> None:
-    """Create the 4-table MIME prefilter schema if it does not exist.
+    """Create the schema if it does not exist.
 
-    Schema:
-      files(path_id INTEGER PRIMARY KEY, path TEXT UNIQUE, mtime FLOAT)
-      datasets(dataset_id INTEGER PRIMARY KEY, path_id INTEGER UNIQUE, FK→files)
-      mimes(dataset_id INTEGER, mime TEXT, FK→datasets, UNIQUE(dataset_id, mime))
-      files_in_datasets(dataset_id INTEGER, path_id INTEGER, FK→datasets, FK→files, UNIQUE(dataset_id, path_id))
+    files, datasets, mimes and files_in_datasets are the crawler's view of the
+    file system. records holds what the OAI-PMH server publishes.
     """
-    cur = conn.cursor(row_factory=dict_row)
+    cur = conn.cursor()
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS files (
             path_id SERIAL PRIMARY KEY,
             path TEXT UNIQUE,
-            mtime REAL
+            mtime DOUBLE PRECISION,
+            uid INTEGER
         )
         """
     )
@@ -263,17 +168,15 @@ def ensure_dataset_tables(conn: psycopg.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS datasets (
             dataset_id SERIAL PRIMARY KEY,
-            path_id INTEGER UNIQUE,
-            FOREIGN KEY (path_id) REFERENCES files(path_id)
+            path_id INTEGER UNIQUE REFERENCES files(path_id) ON DELETE CASCADE
         )
         """
     )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS mimes (
-            dataset_id INTEGER,
+            dataset_id INTEGER REFERENCES datasets(dataset_id) ON DELETE CASCADE,
             mime TEXT,
-            FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id),
             UNIQUE(dataset_id, mime)
         )
         """
@@ -281,12 +184,23 @@ def ensure_dataset_tables(conn: psycopg.Connection) -> None:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS files_in_datasets (
-            dataset_id INTEGER,
-            path_id INTEGER,
-            FOREIGN KEY (dataset_id) REFERENCES datasets(dataset_id),
-            FOREIGN KEY (path_id) REFERENCES files(path_id),
+            dataset_id INTEGER REFERENCES datasets(dataset_id) ON DELETE CASCADE,
+            path_id INTEGER REFERENCES files(path_id) ON DELETE CASCADE,
             UNIQUE(dataset_id, path_id)
         )
         """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS records (
+            dataset_id INTEGER PRIMARY KEY REFERENCES datasets(dataset_id) ON DELETE CASCADE,
+            identifier TEXT NOT NULL UNIQUE,
+            datestamp TIMESTAMPTZ NOT NULL,
+            metadata JSONB NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS records_datestamp ON records (datestamp, dataset_id)"
     )
     conn.commit()

@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import pathlib
-from typing import ClassVar, Dict, Sequence, Type, Iterable, Optional
-import datetime
-from functools import cache
-import os
 import glob
+import os
+import pathlib
 import tempfile
-import inspect
+from functools import cache
+from typing import ClassVar, Dict, Iterable, Optional, Sequence, Type
 
+import defusedxml.ElementTree as ET
+import magika
 import psycopg
 from psycopg.rows import dict_row, tuple_row
-
 from xdg import Mime
-import magika
-import datacite.schema45
-import defusedxml.ElementTree as ET
-
-from .repository import get_identifier, get_publisher
-
 
 mgk = magika.Magika()
 
@@ -100,53 +93,6 @@ def _get_dataset_members_from_db(
     rows = cur.fetchall()
     # Return paths as-is (they are absolute paths from database)
     return [pathlib.Path(row["path"]) for row in rows]
-
-
-def _get_dataset_mtime_from_db(conn: psycopg.Connection, dataset_path: str) -> float:
-    """Get the maximum mtime of all files in a dataset from the database.
-
-    Args:
-        conn: Database connection
-        dataset_path: Absolute path of the dataset (as stored in database)
-
-    Returns:
-        mtime as floating point Unix timestamp
-    """
-    cur = conn.cursor(row_factory=dict_row)
-    cur.execute(
-        """
-        SELECT MAX(f.mtime) AS mtime FROM files f
-        JOIN datasets d ON f.path_id = d.path_id
-        WHERE f.path = %s
-        UNION ALL
-        SELECT MAX(f.mtime) FROM files_in_datasets fid
-        JOIN files f ON fid.path_id = f.path_id
-        JOIN datasets d ON fid.dataset_id = d.dataset_id
-        WHERE f.path = %s
-        """,
-        (str(dataset_path), str(dataset_path)),
-    )
-    rows = cur.fetchall()
-    return max(row["mtime"] for row in rows if row["mtime"] is not None)
-
-
-def get_oldest_mtime_from_db(conn: psycopg.Connection, dataset_path: str) -> float:
-    """Get the minimum mtime of all files from the database.
-
-    Args:
-        conn: Database connection
-
-    Returns:
-        mtime as floating point Unix timestamp
-    """
-    cur = conn.cursor(row_factory=dict_row)
-    cur.execute(
-        """
-        SELECT MIN(f.mtime) AS mtime FROM files
-        """
-    )
-    rows = cur.fetchall()
-    return min(row["mtime"] for row in rows)
 
 
 class DatasetConsistencyError(RuntimeError):
@@ -327,9 +273,6 @@ class FileHandler:
             str(self.path),
         ]
 
-    def get_year(self):
-        return str(datetime.datetime.fromtimestamp(self.stat.st_ctime).year)
-
     def get_dates(self) -> Sequence[float]:
         return [self.mtime]
 
@@ -344,49 +287,6 @@ class FileHandler:
             abspath = self.root / member
             mtime = max(mtime, abspath.stat().st_mtime)
         return mtime
-
-    @property
-    @cache
-    def db_mtime(self):
-        return _get_dataset_mtime_from_db(conn=self.conn, dataset_path=self.abspath)
-
-    @classmethod
-    def source_mtime(cls) -> float:
-        # Unix timestamp, safe to assume nothing here is older
-        result = 0.0
-        # A bit questionable, but let's assume only the files containing the
-        # ancestry influence the result...
-        for parent in cls.__mro__:
-            try:
-                file = inspect.getfile(parent)
-                mtime = os.stat(file).st_mtime
-                result = max(result, mtime)
-            # Couldn't get source, e.g. builtin
-            except TypeError, FileNotFoundError, PermissionError:
-                continue
-        return result
-
-    @classmethod
-    @cache
-    def youngest_source_mtime(cls) -> float:
-        classes = set()
-        for classlist in cls._registry.values():
-            classes.update(classlist)
-        # print(classes)
-        # for c in classes:
-        #     print(c, c.source_mtime())
-        return max(c.source_mtime() for c in classes)
-
-    @classmethod
-    @cache
-    def oldest_source_mtime(cls) -> float:
-        classes = set()
-        for classlist in cls._registry.values():
-            classes.update(classlist)
-        # print(classes)
-        # for c in classes:
-        #     print(c, c.source_mtime())
-        return min(c.source_mtime() for c in classes)
 
     def get_resource_type(self):
         g = self.get_mimes()[0]
@@ -415,23 +315,6 @@ class FileHandler:
             except ValueError:
                 pass
         return result
-
-    def datacite(self):
-        raise NotImplementedError
-        # FIXME adapt to changes to better suit `oaipmh` module
-        record = {
-            "identifier": get_identifier(self.path, self.root),
-            "creators": self.get_creators(),
-            "titles": self.get_titles(),
-            "publisher": {"name": get_publisher()},
-            "publicationYear": self.get_year(),
-            "dates": self.get_dates(),
-            "types": self.get_resource_type(),
-            "formats": self.get_formats(),
-            "schemaVersion": "http://datacite.org/schema/kernel-4",
-        }
-        datacite.schema45.validate(record)
-        return record
 
     @staticmethod
     def xdg_mimeinfo() -> str | None:

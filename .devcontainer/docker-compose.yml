@@ -6,9 +6,8 @@ services:
     command: sleep infinity
     volumes:
       - ..:/workspaces/data-management-system:cached
-      # Forks installed in editable mode, expected as siblings of this repo
+      # Fork installed in editable mode, expected as a sibling of this repo
       - ../../pyxdg:/workspaces/pyxdg:cached
-      - ../../oaipmh:/workspaces/oaipmh:cached
       - crawler-data:/data
     environment:
       # Set explicitly so that python/crawler/.env from the host doesn't apply:

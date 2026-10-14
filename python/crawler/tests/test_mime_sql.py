@@ -1,9 +1,16 @@
 from pathlib import Path
 
+import pytest
 import xdg
+from modama_crawler import database, mime_sql
+from psycopg.rows import dict_row
 from xdg import Mime
 
-from modama_crawler import mime_sql, database
+
+@pytest.fixture
+def pg_unit_test(conn):
+    conn.row_factory = dict_row
+    return conn
 
 
 def test_glob_to_like_simple():
