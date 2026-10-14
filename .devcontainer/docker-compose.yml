@@ -9,6 +9,9 @@ services:
       # Fork installed in editable mode, expected as a sibling of this repo
       - ../../pyxdg:/workspaces/pyxdg:cached
       - crawler-data:/data
+      # The real data for crawl experiments, read-only. If the host has no
+      # such directory, Docker creates an empty one.
+      - /storage/er-c-data:/er-c-data:ro
     environment:
       # Set explicitly so that python/crawler/.env from the host doesn't apply:
       # python-dotenv does not override variables that are already set.
