@@ -1,255 +1,103 @@
-# AI Coding Agent Instructions - Modama OAI-PMH Crawler
+# Agent instructions: modama crawler
 
-This document helps AI coding agents quickly understand and be productive in the modama crawler codebase.
+`modama-crawler` exposes a file system tree (`MODAMA_DATA_ROOT`) as a data repository over OAI-PMH, with a PostgreSQL index. Python ≥ 3.14. For the rest of the repository, see the top-level `CLAUDE.md` and `README.md`.
 
-## Quick Start
+## Development environment (devcontainer)
 
-### Build/Test Commands
+Development happens in the devcontainer defined in `/.devcontainer/`. Everything below assumes you run inside it.
+
+- Python venv at `~/.venv`, already on `PATH`. `post-create.sh` installs this package editable with `[test]` extras, plus `ruff` and `pre-commit`.
+- `pyxdg` and `oaipmh` are **local forks**, installed editable from sibling checkouts mounted at `/workspaces/pyxdg` and `/workspaces/oaipmh`. Behaviour of `xdg.Mime` and `oaipmh.datestamp` may differ from the PyPI releases. Changes to them belong in those repositories, not here.
+- The compose service `db` (Postgres 17, trust auth, database `modama_crawler`) is for running the crawler and server by hand. The connection env vars (`POSTGRES_ADDRESS=db`, `MODAMA_DATA_ROOT=/data`, `OAI_BASE_URL=http://localhost:7654/oai`, …) are set in `.devcontainer/docker-compose.yml`. Because `python-dotenv` doesn't override variables that are already set, a `python/crawler/.env` file has no effect for those keys inside the container. `.env.example` documents the keys for use outside the devcontainer.
+- `/data` is an initially empty named volume (`crawler-data`) to use as a data root.
+- The PostgreSQL 17 server binaries are on `PATH` without a default cluster. The test suite uses them through `pytest-postgresql`, which spawns its own throwaway clusters, so tests never touch `db`.
+
+## Commands
+
+Run from `python/crawler/`:
 
 ```bash
-# Install dependencies (from within python/crawler directory)
-pip install -e ".[test]"
+pytest                                   # whole suite
+pytest tests/test_server.py              # one file
+pytest tests/test_server.py::test_name   # one test
+pytest -k listrecords                    # by pattern
+pytest tests/functional                  # end-to-end: crawl temp dir -> serve -> harvest
+pytest --cov                             # coverage (config in setup.cfg)
 
-# Run all tests
-pytest
+python -m modama_crawler.server          # dev server, http://localhost:7654/oai (port forwarded)
 
-# Run specific test file
-pytest tests/test_server.py
-pytest tests/test_database.py
-pytest tests/test_recognition.py
-
-# Run with verbose output
-pytest -v
-
-# Run tests matching pattern
-pytest -k "test_name_pattern"
+# Lint/format (from repo root; same as CI and pre-commit)
+uvx ruff format --check --diff && uvx ruff check
 ```
 
-### Environment Setup
+There is no crawl CLI yet. To populate the dev database by hand:
 
-1. Copy `.env.example` to `.env`
-2. Fill in PostgreSQL connection details (see `.env.example`)
-3. The crawler uses the `crawler314` conda environment with Python 3.14+
+```python
+import psycopg
+from modama_crawler.database import PostgresConfig, ensure_dataset_tables, crawl_and_populate
+from modama_crawler.recognition import FileHandler
 
-## Architecture Overview
+FileHandler.install_mime_info()  # register handler MIME definitions (writes to XDG_DATA_HOME)
+with psycopg.connect(PostgresConfig.from_env().connection_string()) as conn:
+    ensure_dataset_tables(conn)
+    print(crawl_and_populate(conn, root_path="/data"))
+```
 
-The modama crawler is an OAI-PMH server implementation with PostgreSQL backend:
+## Architecture
 
 ```
 src/modama_crawler/
-├── server.py           # Flask app factory + OAI-PMH verb implementations
-├── database.py         # PostgreSQL connection pooling + crawling logic  
-├── mime_sql.py         # SQL-based MIME type detection and dataset creation
-├── recognition.py      # FileHandler pattern for different file types
-└── repository.py       # Identifier/path conversion utilities
-
-tests/
-├── conftest.py         # Shared pytest fixtures (CRITICAL)
-├── test_server.py      # Flask server endpoint tests
-└── ...                 # Other test files
+├── database.py     # PostgresConfig, schema, crawl pipeline
+├── mime_sql.py     # bulk MIME classification in SQL -> datasets/mimes rows
+├── recognition.py  # FileHandler registry and per-type metadata
+├── repository.py   # RepositoryConfig, identifier <-> path conversion
+└── server.py       # OAIFileDBBackend, OAIServer (verbs), create_app()
 ```
 
-## AI Coding Agent Tools Guide
+**Crawl pipeline** (`database.crawl_and_populate`):
+1. `crawl_repository` uses `os.walk` (without following symlinks) to fill a TEMP table `crawl`. It stores `mtime` as `max(st_mtime, st_ctime)`.
+2. `populate_files_from_crawl` copies the rows into `files`. It currently only does an initial population; incremental updates are a TODO.
+3. `mime_sql.apply_mime_prefilter_with_resolution` runs next. It turns XDG shared-mime-info glob patterns into SQL `LIKE` filters to classify paths in bulk, and falls back to content sniffing (`pyxdg` `get_type2` plus `magika`) only for ambiguous candidates. This step writes `datasets`, `mimes` and `files_in_datasets`.
 
-### ✅ **Preferred Tools (Safe & IDE-Integrated)**
+**Schema** (`ensure_dataset_tables`): `files(path_id, path UNIQUE, mtime)`, `datasets(dataset_id, path_id UNIQUE → files)`, `mimes(dataset_id, mime)`, `files_in_datasets(dataset_id, path_id)`. A dataset is anchored at one path and can include several member files.
 
-**File Access & Analysis:**
-- `read_file` - Read file contents with line ranges for large files
-- `grep_search` - Fast text/regex searches across workspace
-- `file_search` - Glob pattern file lookups
-- `list_dir` - List directory contents
-- `get_errors` - Get compile/lint errors in files
+**File handlers** (`recognition.py`):
+- Each subclass of `FileHandler` registers itself for its `file_types` through `__init_subclass__`.
+- `FileHandler.resolve()` reads the MIME types of the path from the DB, asks every candidate handler's `matches(root, path, guesses)` for a priority from 0 to 100 (or `None`), picks the highest, and falls back to `OctetStream`. It requires a DB connection.
+- A handler can override:
+  - `_find_all_members()` to define dataset membership (for example, `EMPAD` pairs an `.xml` with its `.raw`)
+  - `xdg_mimeinfo()` to ship its own MIME definition, installed by `install_mime_info()`
+  - the metadata getters `get_titles`, `get_creators`, `get_dates`, `get_descriptions`, `get_formats` and `get_resource_type`, plus `datacite()`
 
-**File Modification:**
-- `replace_string_in_file` - Safe string replacement with context matching
-- `insert_edit_into_file` - Insert code at specific locations
-- `create_file` / `create_directory` - New file creation
+**Server** (`server.py`):
+- `create_app(pool, repo_config=None, config=None)` is a Flask factory with one route, `/oai`, for GET and POST.
+- `OAIFileDBBackend` does the DB queries and builds handlers. `OAIServer` renders the six verbs.
+- Only `oai_dc` is supported. `server._make_metadata` maps the handler getters to DC fields.
+- Resumption tokens are JSON and based on paths.
+- `from`/`until` filter on dataset mtimes.
+- Sets are not supported: `ListSets` returns `noSetHierarchy`. A list request that passes a `set` argument raises `ValueError` in the backend, and the endpoint turns that into `badArgument`.
 
-**Search & Exploration:**
-- `vscode_listCodeUsages` - Find all references/definitions of symbols
-- `vscode_renameSymbol` - Semantic-aware renaming across workspace
-- `copilot_getNotebookSummary` - Get Jupyter notebook cell summaries
+**Configuration:**
+- `PostgresConfig.from_env()` reads `MODAMA_CRAWLER_DB`, `POSTGRES_*`. In tests, use `PostgresConfig.from_conninfo(conn.info)`.
+- `RepositoryConfig.from_env()` reads `OAI_BASE_URL`, `OAI_ADMIN_EMAIL`, `OAI_REPOSITORY_NAME`, `OAI_EARLIEST_DATESTAMP`, `BATCH_SIZE` (default 10) and `MODAMA_DATA_ROOT`.
+- `MODAMA_DATA_ROOT` defaults to `/data`, the data root inside containers. The older `/storage/er-c-data` from bare-metal tests on one specific host is deprecated; don't reintroduce it.
 
-**Terminal Execution (Selective Use):**
-- `run_in_terminal` - Run shell commands (use sync mode for one-shot tasks)
-- `run_notebook_cell` / `configure_notebook` - Execute Jupyter cells
-- `get_task_output` / `get_terminal_output` - Get command results
+## Conventions and gotchas
 
-**Testing:**
-- `testFailure` - Get recent test failure details
-- `run_in_terminal` with pytest commands for test runs (OK for running tests)
+- PostgreSQL only: use `%s` placeholders and cursors with `row_factory=dict_row`.
+- Server code gets connections from a `psycopg_pool.ConnectionPool` passed to `create_app` or `OAIFileDBBackend`. Read config through the `*Config.from_env()` classmethods, not `os.environ` directly.
+- Paths: the DB stores **absolute** paths. OAI identifiers and API output use paths relative to the data root. Convert with `repository.get_identifier`, `path_from_identifier` and `sanitize`. `sanitize` rejects paths outside the root.
+- `FileHandler._registry` is a global class registry. Defining a handler class (including in a test) registers it for the rest of the process.
 
-**Memory & Configuration:**
-- `memory` - Manage persistent notes in `/memories/`
-- `session_store_sql` - Query past session history
+## Tests
 
-### ⚠️ **Use With Caution**
-
-- Shell commands that modify files (sed, awk, sed scripts)
-- Any workflow that involves writing a Python script to modify things
-- Complex multi-step shell pipelines for file editing
-
-### ❌ **Forbidden Approaches**
-
-- Writing Python/Ruby/Shell scripts whose sole purpose is to modify project files
-- Using `echo "..." >> file.txt` or similar for bulk modifications
-- Creating temporary scripts and then executing them for file manipulation
-- Any approach that bypasses IDE-integrated tools for file operations
-
----
-
-## Key Patterns & Conventions
-
-### Database Access Pattern
-
-**Always use connection pooling with `psycopg`:**
-
-```python
-from psycopg_pool import ConnectionPool
-from modama_crawler.server import PostgresConfig
-
-pool = ConnectionPool(
-    conninfo=PostgresConfig.from_env().connection_string(),
-    min_size=1,
-    max_size=2,
-)
-
-with pool.connection() as conn:
-    cur = conn.cursor(row_factory=dict_row)
-    # ... database operations
-```
-
-**Never:**
-- Use standalone `psycopg.connect()` without pooling
-- Access environment variables directly (use `PostgresConfig.from_env()`)
-- Forget `row_factory=dict_row` for cursor instantiations
-
-### Flask Application Factory Pattern
-
-```python
-from modama_crawler.server import create_app
-
-app = create_app(
-    pool=connection_pool,
-    root=pathlib.Path("/path/to/data"),
-    config={"TESTING": True}  # Optional
-)
-```
-
-### Testing Fixtures (Critical)
-
-**`conftest.py` provides these essential fixtures:**
-
-| Fixture | Purpose |
-|---------|---------|
-| `test_database` | Full test database with schema and data |
-| `pg_unit_test` | Empty isolated PostgreSQL connection |
-| `flask_client` | Flask test client with monkeypatched DB connection |
-| `running_http_server` | HTTP server fixture for integration tests |
-
-**Test types:**
-- **Unit tests** (no data): Use `pg_unit_test` directly
-- **Integration tests** (with data): Use `test_database` + `test_files`
-- **HTTP endpoint tests**: Use `flask_client`
-
-### OAI-PMH Implementation
-
-The server implements all 6 required verbs:
-1. `Identify` - Repository information
-2. `GetRecord` - Single record retrieval
-3. `ListMetadataFormats` - Available formats
-4. `ListIdentifiers` - Header-only list with pagination
-5. `ListRecords` - Full records with pagination
-6. `ListSets` - Available sets (currently empty)
-
-**Key features:**
-- Path-based continuation tokens (JSON-encoded in URL)
-- Date filtering via `from`/`until` parameters
-- Configurable batch size (`BATCH_SIZE` environment variable, default: 10)
-- Supports selective harvesting
-
-### FileHandler Pattern
-
-Each file type has a handler subclassing `FileHandler`:
-
-```python
-class MyHandler(FileHandler):
-    file_types = ("my/type", "other/type")
-    
-    def x_md5(self) -> str:
-        return calculate_md5()
-    
-    def x_dc_title(self) -> list[str]:
-        return [self.get_title()]
-```
-
-**MIME type resolution:** Database lookups first, then filesystem guessing via `modama_crawler.recognition.guess()`.
-
-## Gotchas & Common Pitfalls
-
-### 🔴 Critical Gotchas
-
-1. **PostgreSQL-only** - No SQLite support anywhere
-   - Always use `%s` placeholders (not `?`)
-   
-2. **Connection pooling required** - Production code always uses `ConnectionPool`
-   - Tests also need explicit pool creation
-   
-3. **Test isolation is mandatory**
-   - Never connect to production database
-   - Use fixtures from `conftest.py`, not direct connections
-   
-4. **Environment variables**
-   - Use `PostgresConfig.from_env()` instead of reading env vars directly
-   - `.env` file is not committed (see `.env.example`)
-   
-5. **Path handling**
-   - Database stores absolute paths
-   - API responses use relative paths (relative to root)
-   - `path_from_identifier()` and `sanitize()` handle conversion
-
-6. **Python 3.14+** - Requires very recent Python version
-
-### ✅ Best Practices
-
-- Use `row_factory=dict_row` for all cursors
-- Always wrap database operations in `with pool.connection() as conn:`
-- Test with `pytest` before committing changes
-- Check `POSTGRESQL_MIGRATION_SUMMARY.md` for SQL syntax differences from SQLite
-- See `TEST_ISOLATION_NOTES.md` for testing patterns
-
-## Key Files Reference
-
-| File | Purpose |
-|------|---------|
-| `src/modama_crawler/server.py` | Flask app factory + OAI-PMH verb implementations |
-| `src/modama_crawler/database.py` | Connection pooling, crawling, population |
-| `src/modama_crawler/mime_sql.py` | SQL-based MIME detection and dataset creation |
-| `src/modama_crawler/recognition.py` | FileHandler pattern implementation |
-| `tests/conftest.py` | **Shared pytest fixtures - READ THIS FIRST** |
-
-## Testing Strategy
-
-1. **Unit tests** (fast, no external dependencies):
-   ```python
-   def test_something(pg_unit_test):
-       # Test logic without database access
-   ```
-
-2. **Integration tests** (database with test data):
-   ```python
-   def test_with_data(test_database, test_files):
-       # test_database has schema + data
-       # test_files has the actual files on disk
-   ```
-
-3. **HTTP endpoint tests**:
-   ```python
-   def test_endpoint(flask_client):
-       response = flask_client.get("/oai?verb=Identify")
-   ```
-
-## Additional Documentation
-
-- `POSTGRESQL_MIGRATION_SUMMARY.md` - SQLite to PostgreSQL migration details
-- `TEST_ISOLATION_NOTES.md` - Testing pattern history and improvements
+- `tests/conftest.py`:
+  - A session-scoped autouse fixture points `XDG_DATA_HOME` at a temp dir and installs handler MIME info, with a `Canary` self-test handler. Tests never touch the real user MIME database.
+  - `pg_unit_test`: empty DB connection.
+  - `test_database` + `test_files`: schema plus 6 single-file datasets whose fixed mtimes span the 2024-06-01 to 2024-12-31 `from`/`until` boundaries. Tests depend on these dates.
+  - `repo_config`, `backend_with_db`.
+  - `running_http_server`: a real werkzeug server on a random port. `sickle_client` and `oaipmh_client` use it.
+- `flask_client` is defined in `tests/test_server.py`.
+- `tests/test_server_oaipmh.py` and `tests/test_server_scythe.py` check interoperability with third-party harvesting clients.
+- `tests/functional/` is self-contained, with its own `conftest.py`. It builds realistic directory trees, runs the real crawl pipeline, and harvests with `oaipmh-scythe`.
+- Responses are validated against the XSDs in `tests/schemas/`.

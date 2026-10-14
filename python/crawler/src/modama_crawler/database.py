@@ -14,7 +14,7 @@ from .mime_sql import apply_mime_prefilter_with_resolution
 load_dotenv()
 
 # Data root path configuration
-MODAMA_DATA_ROOT = Path(os.environ.get("MODAMA_DATA_ROOT", "/storage/er-c-data"))
+MODAMA_DATA_ROOT = Path(os.environ.get("MODAMA_DATA_ROOT", "/data"))
 
 
 @dataclass
