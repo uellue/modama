@@ -34,6 +34,8 @@ Development happens in the devcontainer defined in `/.devcontainer/`. Everything
 - `pyxdg` is a **local fork** with https://gitlab.freedesktop.org/xdg/pyxdg/-/merge_requests/18, installed editable from a sibling checkout mounted at `/workspaces/pyxdg`. Changes to it belong in that repository.
 - The compose service `db` (Postgres 17, trust auth, database `modama_crawler`) is for running the crawler and server by hand. The connection env vars (`POSTGRES_ADDRESS=db`, `MODAMA_DATA_ROOT=/data`, `OAI_BASE_URL=http://localhost:7654/oai`, …) are set in `.devcontainer/docker-compose.yml`. Because `python-dotenv` doesn't override variables that are already set, a `python/crawler/.env` file has no effect for those keys inside the container. `.env.example` documents the keys for use outside the devcontainer.
 - `/data` is an initially empty named volume (`crawler-data`) to use as a data root.
+- `/er-c-data` is the real data, mounted read-only from the host's `/storage/er-c-data`. Use it for listings and crawl experiments, not as `MODAMA_DATA_ROOT` of the dev database by accident.
+- `~/.claude` (Claude Code sessions and memory) lives on the `claude-home` volume, so container rebuilds keep it. The volume is only lost by removing volumes (`docker compose down -v`); before doing that, copy it with `cp -a ~/.claude/. /workspaces/data-management-system/.claude/home-backup/`, and `post-create.sh` restores the copy into an empty volume.
 - The PostgreSQL 17 server binaries are on `PATH` without a default cluster. The test suite uses them through `pytest-postgresql`, which spawns its own throwaway clusters, so tests never touch `db`.
 
 ## Commands
