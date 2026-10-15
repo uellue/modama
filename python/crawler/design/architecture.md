@@ -69,26 +69,9 @@ Recommendation: E-c. Against: two mechanisms to document.
 
 Enabling (R1): an explicit list in the deployment configuration, with wildcards per collection, plus path exclusions per handler and for the crawl as a whole.
 
-## F. Testing and test data (open: Q8 and Q10 details)
+## F. Testing and test data (open: Q8, Q10, Q18)
 
-Decided (Q10): an ensemble test on a real tree passes when no handler crashes, no probe hits its time limit, every known-bad case is reported as expected (in the spirit of `pytest.raises`), and every known-good dataset is present, by anchor path and optionally with expected Dublin Core properties. The expectations belong to the deployment, since they check that its rules and handlers work together.
-
-Open (Q8): how test data is defined and provided. Options, not exclusive:
-
-| Option | Fits | Cost | Doesn't cover |
-|---|---|---|---|
-| F1. Skeleton files generated from the XML (PRONOM's idea): the minimal file that satisfies a glob or magic rule | Every XML rule, automatically; conflict detection | Nothing, once the generator exists | Anything a Python handler checks beyond name and magic |
-| F2. Small real files in the collection's package, with an expected-result file next to each (type, anchor, members, warnings) | Most formats; vendor software can write minimal files (RosettaSciIO policy: small, non-square, zeros) | Git size if people don't keep them small | Formats with large minimal files |
-| F3. Hash registry in the package, files fetched from Zenodo or an institute store, cached locally (pooch) | Large files; sharing between collections | A store to run; a download step in CI | Offline use without a mirror |
-| F4. Skeleton trees captured from production: the listing (paths, sizes, mtimes, modes) plus the first N KB of each file, written by one command | Ensemble tests on real structures; turning a production failure into a test | Prefixes may contain data that can't leave the institute | Probes that read beyond N KB |
-| F5. git LFS | Medium files in git | Repository quota, re-download on every CI clone | Same as F2 |
-| F6. A separate data repository as a submodule | Many medium files | Submodule handling for every contributor | Same as F3 |
-
-Provisional recommendation: F1 and F2 as the baseline every collection must have, F3 for anything over a few MB, F4 for ensemble tests and failure reports, no F5. Guidance per kind of format in a template, flexibility for complex cases. Licence noted per file for anything that came from outside.
-
-Against: three mechanisms (F1, F2, F3) to learn before writing the first handler; F4 may be blocked by data that can't leave the institute. Both are things @clausen and @shanker may have views on.
-
-Support for R8 and R9: `explain PATH` runs recognition on one path and prints the decision; `capture DIR` writes a skeleton tree (F4) of a directory into a fixture.
+Moved to `testing.md`: what other projects do, how reproducers are derived from real-world cases, the options for fixtures, expected outcomes, external data, deployment tests and monitoring, validity checks, size and licence policy, and the reusable collections. Decided so far (Q10): an ensemble test passes on no crash, no timeout, known-bad reported, known-good present, with expectations owned by the deployment.
 
 ## G. Execution and isolation (decided for now)
 
@@ -162,4 +145,4 @@ known_bad = { "/adhoc/legacy/broken.xml" = "raw file missing" }
 | 2026-10-14 (@weber review) | Ensemble test passes on: no crash, no timeout, known-bad reported, known-good present; expectations owned by the deployment (Q10) | Checks that the deployment's rules and handlers work together | Coverage thresholds |
 | 2026-10-14 (@weber review) | Isolation per crawl for now; the architecture must allow finer isolation later (Q13, R23, R24) | Keep it simple; hardening is for production | Worker subprocesses now; per-handler sandboxes |
 
-Open for the next round: Q8 (test data, section F), Q16 (the Python handler interface, sections A and B), Q17 (packaging and discovery, section E), and Q15 (generic extractors on subtypes, later).
+Open for the next round: Q8 and Q18 (test data, `testing.md`), Q16 (the Python handler interface, sections A and B), Q17 (packaging and discovery, section E), and Q15 (generic extractors on subtypes, later).
