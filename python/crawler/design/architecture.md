@@ -86,7 +86,8 @@ A collection, as it would look under B, C and E-c. Illustration, not an API prop
 ```
 empad/
 ├── empad.xml          # XDG MIME: application/x.empad+xml (magic), application/x.empad-raw (globs, weight 80)
-└── empad.py           # reduction handler: XML + raw -> one dataset, anchor = the XML
+├── empad.py           # reduction handler: XML + raw -> one dataset, anchor = the XML
+└── tests/             # fixtures/, fixtures.toml, expected/; see testing.md
 ```
 
 ```python
@@ -144,5 +145,14 @@ known_bad = { "/adhoc/legacy/broken.xml" = "raw file missing" }
 | 2026-10-14 (@weber review) | Collections per application domain and per software package (Q7) | Mirrors how Linux distributions ship format definitions | Per team; per instrument |
 | 2026-10-14 (@weber review) | Ensemble test passes on: no crash, no timeout, known-bad reported, known-good present; expectations owned by the deployment (Q10) | Checks that the deployment's rules and handlers work together | Coverage thresholds |
 | 2026-10-14 (@weber review) | Isolation per crawl for now; the architecture must allow finer isolation later (Q13, R23, R24) | Keep it simple; hardening is for production | Worker subprocesses now; per-handler sandboxes |
+| 2026-10-15 (@weber) | Per-handler tests never download; external data only in the opt-in tier and deployment tests (T1) | Self-contained test suites | Download and cache on first run |
+| 2026-10-15 (@weber) | Size policy: 100 KB compressed per fixture, a few MB per collection, enforced by an overridable pre-commit check with the override justified at review (T2) | Keeps collection repositories small without blocking exceptions | No policy, as in most projects |
+| 2026-10-15 (@weber) | Expected outcomes are recorded on first run and reviewed, bound to the fixture's file stem (T4) | As LiberTEM does with notebooks; hand-written asserts drift | Hand-written companion records only |
+| 2026-10-15 (@weber) | One expectation file per deployment serves both CI tests on a snapshot and monitoring after each production crawl (T7) | The monitoring mechanism is tested in the same go | Separate mechanisms |
+| 2026-10-15 (@weber) | Deferred: where the deployment pipeline runs and who owns ER-C's known-good list; run by hand first (T3) | Automate once something exists to automate | Decide now |
+| 2026-10-15 (@weber) | Optional validator step per format in CI; required validity field per fixture, `parser-only` where no independent check exists (T5) | Makes "only our parser accepts this" visible | Trust fixtures implicitly |
+| 2026-10-15 (@weber) | Reproducers from production are always scrubbed (allow-list) and reviewed; they go into the handler's repository by default; an internal store is deferred (T6) | A scrubbed, reviewed file has no reason to stay internal yet | Internal store by default |
+| 2026-10-15 (@weber) | Two purposes of test files: representative files (realistic, from the wild or a real-world producer, at least one per file-specific rule) and reproducers for invalid or incomplete files; synthetic and skeleton files only in the core's rule-processing tests (T-A, R29) | Synthetic files pass name rules and keep passing after content rules change, hiding the gap; skeletons test the engine, not the format | Skeletons generated from every rule; synthetic `.fake` files in handler tests |
+| 2026-10-15 (@weber) | Preliminary, to be revisited after the spike: fixture layout with a fixture as a directory containing only wild files, provenance in one manifest per collection (purpose, validity, licence, source), expected outcomes recorded in a parallel `expected/` tree bound by name, and checks, skills and workflows around the trees (T-B layout) | Sidecars would be seen by sibling and directory rules; the hand-written part stays four keys | Sidecar record per fixture |
 
-Open for the next round: Q8 and Q18 (test data, `testing.md`), Q16 (the Python handler interface, sections A and B), Q17 (packaging and discovery, section E), and Q15 (generic extractors on subtypes, later).
+Open for the next round: Q16 (the Python handler interface, sections A and B), Q17 (packaging and discovery, section E), and Q15 (generic extractors on subtypes, later).
