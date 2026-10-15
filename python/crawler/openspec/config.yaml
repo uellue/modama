@@ -1,0 +1,52 @@
+schema: spec-driven
+
+# Project context: constraints an agent cannot infer from the code.
+context: |
+  The rationale lives in design/ (requirements.md with numbered R* and Q*,
+  architecture.md with the decision log, testing.md, survey.md, prior-art.md).
+  Specs here are the behaviour contract; design/ is the why. Reference
+  decisions by their R*/Q*/T* numbers instead of restating them, and never
+  contradict the decision log without a new decision there.
+  YAGNI: solve the ER-C case, keep the core small, add generality only for a
+  concrete need. Options are provisional until the spike shows they hold.
+  Recognition rules are valid XDG MIME XML in curated packages; Python only
+  where XDG cannot express it (directories, siblings), extending a rule.
+  Priorities are the XDG 0..100 model. Type identifiers are valid MIME strings.
+  Test files have two purposes (testing.md): representative files from the
+  wild, at least one per file-specific rule, and reproducers for invalid or
+  incomplete files. Synthetic files only in the core's rule-processing tests.
+  Per-handler tests run offline; the fixture layout and companion records are
+  in testing.md (preliminary).
+  Reviewers (@weber, @clausen, @shanker) comment inline in Markdown files on
+  the crawler branch or on MR !106; resolved comments are removed and the
+  outcome goes to the decision log.
+
+rules:
+  proposal:
+    - State what is out of scope and which R*/Q* items the change serves
+  specs:
+    - One requirement per observable behaviour; scenarios must be testable with a fixture or a crawl of a test tree
+  tasks:
+    - Every task names how it is verified (test, command, or observable result)
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

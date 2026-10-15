@@ -8,6 +8,10 @@
         "PATH": "/home/vscode/.venv/bin:${containerEnv:PATH}"
     },
     "postCreateCommand": "bash .devcontainer/post-create.sh",
+    "features": {
+        // Node for the OpenSpec CLI (spec-driven change workflow, dev-only)
+        "ghcr.io/devcontainers/features/node:1": {"version": "lts"}
+    },
     "forwardPorts": [7654],
     "customizations": {
         "vscode": {

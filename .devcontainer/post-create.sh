@@ -17,3 +17,10 @@ python -m venv ~/.venv
     -e /workspaces/pyxdg \
     -e "/workspaces/data-management-system/python/crawler[test]" \
     ruff pre-commit
+
+# OpenSpec CLI (https://openspec.dev), installed by the node feature's nvm.
+# Dev-only; provides the /opsx:* slash commands once `openspec init` has run.
+export NVM_DIR=/usr/local/share/nvm
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+npm install -g @fission-ai/openspec@latest
