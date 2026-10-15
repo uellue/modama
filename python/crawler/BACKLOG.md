@@ -5,6 +5,11 @@ Deferred items, roughly in the order they are likely to come up.
 - **Deleted records:** support `deletedRecord` (`transient` or `persistent`) with tombstones for removed or renamed datasets. Currently `no`.
 - **Collapsing trees:** treat large uninteresting trees (`node_modules`, Python/conda environments, known source trees such as a Linux kernel checkout) as one dataset, adding their members in bulk or ignoring them.
 - **Sniffing cost:** files without a decisive name cost about 5 ms each in pure-Python magic matching, plus reading 18 KB. Measure on real data; options are skipping or deferring them, parallelism, or libmagic.
+- **Curated MIME definitions:** import the full range of freedesktop shared-mime-info types into our own curated packages, so the crawler depends on nothing from the host. Large, well-defined, with lots of context: a work item for an AI agent.
+- **Revisit-later stash:** keep incomplete datasets (for example an EMPAD XML without its raw file) for a retry, and report them as broken after a deadline. For now they are only reported.
+- **Agent skill:** find an existing or propose a new MIME type for a format, in discussion with the user, as part of adding a handler.
+- **Agent workflow, unclaimed review (R22):** from the crawl's report of unclaimed and generic-only files (by extension, location, and change over time), inspect likely candidates for a missing handler, then search for, activate or create one, or extend an existing handler's rules for an unknown variant. Sub-handlers for schema-specific XML, YAML and JSON (`docker-compose.yml`, Dublin Core XML) are the generic-only case.
+- **Per-user views** of the index, as a deferred requirement; crawl-time access checks stay out of scope.
 - **EMPAD detection:** `application/x.empad+xml` registers `*.xml` only to make every XML file ambiguous and force sniffing. This belongs in dataset recognition (XML plus raw file), driven by the raw files' weight-80 globs.
 - **Metadata extraction** per file format.
 - **`dc:date`** currently uses `max(mtime, ctime)` from the crawl, which becomes the copy time for files copied from instruments. The plain mtime, or a date from the file's own metadata, is probably closer to the acquisition time.
