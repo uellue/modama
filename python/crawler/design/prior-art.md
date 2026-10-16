@@ -96,3 +96,22 @@ For us: store handler name and version plus a basis with every dataset and every
 - How to handle **incomplete datasets** during copying (Q3). No project crawls a live file system; all of them open finished files.
 - **Collapsing large trees** (R11, Q9). Only Zarr's "don't descend below the marker" is documented; nothing for `node_modules` or environments.
 - Whether a **computed specificity** can be defined for our mixed rules (names, magic, siblings, markers) in a way contributors find predictable. libmagic's experience says the heuristic will need overrides.
+
+## Rule selection and rule-package distribution (added 2026-10-16)
+
+For Q17: how a deployment selects handlers from many collections, and how such packages are found. Verified against the projects' documentation on 2026-10-16; I re-checked the ruff quotes.
+
+| Project | Selection syntax | Precedence | Per-path | Distribution and discovery |
+|---|---|---|---|---|
+| [ruff](https://docs.astral.sh/ruff/settings/) ‡ | `select`, `ignore`, `extend-select`, prefixes (`F`, `F4`, `F401`, `ALL`) | "more specific prefixes override less specific prefixes"; "`ignore` takes precedence over `select` if the same prefix appears in both" | `per-file-ignores` with globset patterns, `!` negates; additive only: letting negated patterns re-enable rules was tried and reverted as "too confusing" ([#10863](https://github.com/astral-sh/ruff/pull/10863)) | built in |
+| [flake8](https://flake8.pycqa.org/en/latest/user/options.html) | same model, which ruff copied | "the most specific user-specified rule will win" | `per-file-ignores` | plugins via entry points `flake8.extension`, whose name is a unique code prefix; `Framework :: Flake8` classifier; an awesome list |
+| [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) | ordered glob list `-*,clang-analyzer-*,-clang-analyzer-cplusplus*` | "Globs are processed in order of appearance"; CLI appended to the config file | none | compiled in |
+| [ESLint](https://eslint.org/docs/latest/use/configure/configuration-files) | ordered list of `{files, ignores, plugins, rules}` objects, severities off/warn/error | "later objects overriding previous objects" | `files`/`ignores` per object, minimatch | `eslint-plugin-*` on npm, rules namespaced `plugin/rule`, awesome list (~250) |
+| pylint | symbolic names, ids, categories, `all` | positional: `--disable=all --enable=classes --disable=W` | inline comments | `load-plugins` |
+| [RuboCop](https://docs.rubocop.org/rubocop/latest/configuration.html) | `Department/Cop`, department toggle, per-cop `Enabled`, `DisabledByDefault` | cop overrides department; file over inherited; `Exclude` beats `Include`; arrays replace on inheritance | `Include`/`Exclude` per cop | `rubocop-*` gems via `plugins:`; new cops are "pending" and warn until enabled or disabled |
+| [Semgrep](https://docs.semgrep.dev/running-rules) | `--config p/python`, `--exclude-rule id` | "exclusion filters take precedence" | rule-level `paths: include/exclude` | central registry, rules by pull request with mandatory tests and metadata; registry pulls send metrics by default |
+| [pre-commit](https://pre-commit.com/) | `repos:` with git URL, pinned `rev`, hook ids | n/a | `files`/`exclude` as Python regexes | hooks from git repos, `autoupdate` for versions; curated page by pull request, with criteria (over 500 stars) |
+| [pytest](https://docs.pytest.org/en/stable/how-to/writing_plugins.html) | `-p no:name` | n/a | n/a | entry point `pytest11`, `pytest-*` names, `Framework :: Pytest`, an auto-generated list of 2,016 plugins |
+| [gitignore](https://git-scm.com/docs/gitignore) | patterns with `!`, `**` | last match wins; no re-include under an excluded directory | the standard everyone reuses (ESLint, ruff, Semgrep) | n/a |
+
+Lessons: the ruff/flake8 model is the one Python developers know and its precedence fits in one sentence, while positional models (clang-tidy, pylint) are compact but easy to get wrong when sources are concatenated. Namespaced ids (`plugin/rule`, `Department/Cop`) read better than codes. Per-path overrides should be gitignore globs and additive only. New rules after an upgrade are handled either by implicit enabling (ruff `ALL`) or by a pending-state warning (RuboCop). Distribution is entry points plus a name prefix plus a curated page everywhere; Semgrep's central registry is the outlier and brings a network dependency.

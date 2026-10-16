@@ -11,7 +11,7 @@ context: |
   concrete need. Options are provisional until the spike shows they hold.
   Recognition rules are valid XDG MIME XML in curated packages; Python only
   where XDG cannot express it (directories, siblings), extending a rule.
-  Priorities are the XDG 0..100 model. Type identifiers are valid MIME strings.
+  Priorities are the XDG 0..100 model. Type identifiers are valid MIME strings. The unit is a "format" (id collection/format), its code parts a recognizer and an extractor; packages are modama-formats-*.
   Test files have two purposes (testing.md): representative files from the
   wild, at least one per file-specific rule, and reproducers for invalid or
   incomplete files. Synthetic files only in the core's rule-processing tests.

@@ -21,8 +21,8 @@ Proposed definitions. Several are open, see the questions at the end.
 - **Member:** a file that belongs to a dataset.
 - **Anchor:** the member whose path identifies the dataset: the entry point, what one would pass to an `open()` function (MR). It defines the identifier and the browse URL, so it has to be stable.
 - **Dataset type:** what kind of dataset it is, named by a MIME-type string (R25).
-- **Handler:** the code and rules that recognise one kind of dataset and, later, extract its metadata.
-- **Handler collection:** a set of handlers shipped together, for example as a Python package, possibly from a separate repository.
+- **Format** (decided 2026-10-16, previously "handler"): the definition of one kind of dataset: its identifier and description (R25), the rules that recognise it (XDG MIME XML, plus a Python *recognizer* where needed), and later its metadata *extractor* and relations. The admin-facing unit, selected by id `collection/format`, for example `gatan/dm4`. "Format" is used loosely, as people do: a Python environment or a TENSOR export is a format in this sense. Older text in these documents says "handler" for the same thing.
+- **Collection:** a set of formats shipped together as a Python package (`modama-formats-*`, entry-point group `modama.formats`), possibly from a separate repository.
 - **Deployment:** one installation of the crawler with a chosen set of handler collections and per-handler settings.
 - **Recognition:** deciding which files form which datasets and which handler is responsible for each.
 
@@ -65,7 +65,7 @@ Test data has to be collected and improved continuously: new format variants, is
 - **R27 (must)** Every issue found on real data becomes a small reproducer in the responsible handler's tests. A workflow for agents (R14) helps derive a small file from a large real-world case. Reproducers derived from production data are scrubbed and reviewed before they are committed. Reproducers that may only be valid for our software and not for the originating application are labelled as such.
 - **R28 (should)** A shipped fixture is bound to its expected outcome (type, anchor, members, warnings, selected metadata, or the error it must raise), so that file content and expectations don't drift apart. Generated fixtures carry this in code; shipped files need a companion record that a test fixture picks up.
 - **R29 (must, decided)** Test files have two purposes that are kept apart. *Representative files* are realistic files as found in the wild, written by the instrument, the application, or the library that writes the format in practice; every file-specific rule (glob, magic, Python handler) has at least one representative file that matches it. *Reproducers* for crashes or wrong results caused by invalid or incomplete files are the only exception from realism. Synthetic and skeleton files test the rule engine and live in the core, not in handler collections (`testing.md`).
-- **R14 (must)** Developing a handler, including finding or generating test data and writing unit and integration tests, is easy for humans and for AI agents. Skills or templates for agents are part of the deliverable.
+- **R14 (must)** Developing a handler, including finding or generating test data and writing unit and integration tests, is easy for humans and for AI agents. Skills or templates for agents are part of the deliverable. The central one is a workflow for defining a dataset type: an agent looks at sample files or directories, figures out what they are and how they group, works it out with the user in questions and answers, and develops the matching rules, the metadata extractor and the relation extractor ("produced by this script") together with their fixtures. This conversation, which found the TENSOR export and the series kinds in the survey, is the prototype of that workflow.
 
 ### Security (MR)
 
@@ -84,6 +84,12 @@ Options on the table, to be weighed against cost and complexity, not requirement
 - **R16 (later)** Vision-language models or similar for metadata extraction.
 
 Keeping guessing (cheap candidates), recognition (authoritative) and metadata extraction as separate stages, as the MR notes propose, is an architecture option discussed in `architecture.md`.
+
+### Search goals (decided 2026-10-16)
+
+- **R30 (must)** The index serves search: it helps people find things that match a query, and once they have an anchor they make sense of the data themselves. Misgrouping is therefore not a disaster. Two outcomes are bad: flooding the results with hundreds or thousands of similar, related files, which should have been found as one collection; and not finding something although the file tree and file contents held enough information to match the query.
+- **R31 (should)** Grouping guideline, derived from R30: fewer than 10 files in a suspected series are always indexed individually as well; 10 to 100 depending on the case; more than 100 only as the group, unless some members are clearly distinct (one overview plus hundreds of detail images). Complex program outputs (a Quantum Espresso run, a TENSOR export, a Dr. Probe run) are one unit.
+- **R32 (should)** Where a handler can tell, a dataset records its relations: part of a collection, produced by a script or program (with the parameter file where there is one), belongs to a specimen or session. In `oai_dc` these go into `dc:relation` and `dc:source` with a documented convention; richer vocabularies are a later format.
 
 ### Carried over from earlier decisions
 

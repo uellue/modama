@@ -16,6 +16,8 @@ Decision: three stages.
 
 Consequences: stage 1 needs a cheap rule on a directory listing, available before descending; stage 3 is where sibling and directory logic lives, with the index as input, not the file system walk. An incremental crawl re-runs stage 2 for changed files and stage 3 for directories whose listing changed.
 
+Turn-around (walk-through, 2026-10-16): a full crawl of a large tree takes hours, while the survey takes minutes because it reads only listings. Re-running recognition with a different rule set, for a path subset, or only for previously unclaimed or failed items must stay possible without a re-walk, like `pytest --lf` or running one test file. The index already holds every listing with types and both timestamps, so stage 3 can run from the index alone and stage 2 needs the file system only for probes; the design must keep it that way. Speed itself is a later concern.
+
 Open, for the next round (Q16): what a reduction handler sees.
 - **A-a. One directory group at a time.** The core hands the handler a directory's entries with their types from the index; the handler returns datasets. Testable with a listing, order-independent by construction, bounded cost. Can't see across directories, unless the core also passes a declared number of parent levels, as Bio-Formats' `getRequiredDirectories` does.
 - **A-b. Free queries over the index.** The handler runs SQL. Global questions are one statement; handler changes re-run without a walk. This is what `mime_sql.py` was, which failed on anchoring, weights and O(handlers × files) scans, and SQL handlers are hard to test and to write by the hundred.
@@ -52,13 +54,15 @@ Nesting and shared membership (Q1, Q2): a single file can be a dataset, so "a fi
 
 Per dataset: `type` (R25), `anchor` (a path), `members` (sorted paths, including the anchor), `handler` (name and version), `basis` (text), `warnings` (list), and later metadata (R15). Nesting is a `parent` reference, used only by declared collection types, and a collection's record references its member datasets (in `oai_dc`, `dc:relation` entries with the members' browse URLs).
 
-**Series as the first collection type.** The series handler uses nesting to resolve the sweep ambiguity from `survey.md`: a suspected series is matched as a series *and* its files are matched individually. The handler decides per kind what the members are: plain files for a frame series, where 67,600 TIFF records would be noise, or datasets in their own right for a parameter sweep of DM4 files or a numbered set of acquisitions, each with its own record that the collection record references. Whether a sweep is one dataset or many then needs no global answer. Collapsed trees (environments, Zarr) have no datasets inside.
+**Series as the first collection type.** The series handler uses nesting to resolve the sweep ambiguity from `survey.md`: a suspected series is matched as a series *and* its files are matched individually. The handler decides per kind what the members are: plain files for a frame series, where 67,600 TIFF records would be noise, or datasets in their own right for a parameter sweep of DM4 files or a numbered set of acquisitions, each with its own record that the collection record references. Whether a sweep is one dataset or many then needs no global answer, and the grouping guideline R31 (under 10 always individually, over 100 only as the group unless members are clearly distinct) is the default the handler applies. A series record also carries, where the handler can tell, the script or program that produced it (R32). Collapsed trees (environments, Zarr) have no datasets inside.
 
 Anchor (Q4): the handler's decision; it can't be predicted across dataset types. What the handler chooses must be the same whichever member is seen first (R6), which the cleanup step in stage 3 enforces.
 
 What is indexed inside a collapsed tree (Q9): the handler's decision.
 
 ## E. Packaging, registration and deployment (partly decided)
+
+Decided (2026-10-16, deployment walk-through): "Modama" means modular data management, so the search feature (indexer plus OAI-PMH endpoint, with the EOSC warehouse or a matchmaker behind it) is deployable on its own, like every other component. A `survey` command is the entry point of a deployment: it runs the listing-only analysis from `survey.md` with the default collection, suggests collections for what it sees, flags ambiguous matches, generic-only matches that probably follow a specific schema, and unmatched or odd files, and asks the admin which application domains the deployment should cover. Handlers describe themselves (a docstring an agent can relate to a survey) and must be findable by web search; an overview page of external collections exists but is expected to be incomplete and needs a process to stay current. Weird files lead to the dataset-type workflow for deployment-specific handlers, with encouragement to publish them and to report issues with existing ones (R8, R14, R22). Installation follows pip conventions, including local paths and editable installs from requirements files, so a collection under development and a published one are installed the same way; no mechanism of our own. The primary output of survey and crawl is a report (unclaimed, ambiguous and generic-only files by extension and location, collisions, slow handlers, failures, incomplete datasets); the expectation file of T-D is optional, for CI and alerting, and may start empty. Helping with the per-deployment configuration is its own later story about making Modama easier to deploy elsewhere.
 
 Decided (Q7): collections are cut per application domain (office documents, source code per language, photography, music, video, electron microscopy, cryo-EM, neutron scattering, X-ray diffraction, …) and per software package, the way Linux distributions ship `gwyddion.xml` with the software that reads those formats. The core ships the common formats (R21).
 
@@ -67,7 +71,26 @@ Open (Q17): how a collection is packaged and found.
 - **E-b. A directory of XML files plus a Python path.** The deployment points at a directory; packages are copied in. Simplest; no packaging; versioning and tests of a collection become the deployment's problem.
 - **E-c. Both**: E-a for distribution, E-b as what E-a resolves to at runtime.
 
-Recommendation: E-c. Against: two mechanisms to document.
+Resolved by the walk-through: E-a, with E-b being nothing more than pip's own local-path and editable installs (`-e ./collections/xyz-detector` in a requirements file), so there is one mechanism. The selection syntax follows ruff, which copied flake8, because it is the model Python developers already know and its semantics fit in one sentence (prior art in `prior-art.md`, "Rule selection"):
+
+```toml
+[formats]
+select = ["core", "collapse", "series", "gatan", "merlin/mib"]   # a collection, or collection/format
+ignore = ["gatan/dm3-legacy"]
+# "more specific prefixes override less specific prefixes";
+# "ignore takes precedence over select if the same prefix appears in both" (ruff's rule, verbatim)
+
+[formats.per-path-ignores]                  # gitignore-style globs, additive only
+"/legacy/**" = ["empad"]                    # crawled and classified, but this handler never opens them
+"/scratch/**" = ["ALL"]
+
+[crawl]
+exclude = ["/tmp/**", "**/.Trash/**"]       # not crawled at all
+```
+
+Format ids are `collection/format` (ESLint and RuboCop namespacing) instead of opaque codes, so the ids read like the file system they describe. Per-path entries only subtract, which ruff adopted after trying to let negated patterns re-enable rules and reverting it as "too confusing". Selecting a whole collection implicitly enables formats added by an upgrade, as ruff's `ALL` does; the crawl report lists formats enabled for the first time, in the spirit of RuboCop's pending cops. Versions are pinned where Python versions are pinned, in the requirements file, with no mechanism of our own.
+
+Discovery and distribution follow pytest and flake8: collections are packages named `modama-formats-*` exposing an entry point in the group `modama.formats`, with unique names (duplicates are rejected at load time, as flake8 requires unique plugin prefixes), a package-name prefix so they can be searched on PyPI and the web, and a curated overview page in the documentation that is expected to be incomplete and has a submission process (pre-commit's hooks page is maintained by pull request with stated criteria). A PyPI classifier would need to be requested upstream.
 
 Enabling (R1): an explicit list in the deployment configuration, with wildcards per collection, plus path exclusions per handler and for the crawl as a whole.
 
@@ -156,6 +179,9 @@ known_bad = { "/adhoc/legacy/broken.xml" = "raw file missing" }
 | 2026-10-15 (@weber) | Reproducers from production are always scrubbed (allow-list) and reviewed; they go into the handler's repository by default; an internal store is deferred (T6) | A scrubbed, reviewed file has no reason to stay internal yet | Internal store by default |
 | 2026-10-15 (@weber) | Two purposes of test files: representative files (realistic, from the wild or a real-world producer, at least one per file-specific rule) and reproducers for invalid or incomplete files; synthetic and skeleton files only in the core's rule-processing tests (T-A, R29) | Synthetic files pass name rules and keep passing after content rules change, hiding the gap; skeletons test the engine, not the format | Skeletons generated from every rule; synthetic `.fake` files in handler tests |
 | 2026-10-15 (@weber) | A suspected series is matched as a series and its files individually: the series handler is a declared collection type whose members are plain files (frame series) or datasets with their own records (sweeps, numbered acquisitions), referenced from the collection record | Resolves per kind whether a sweep is one dataset or many; the first real case for nested datasets with references | Decide per instrument by labels only |
+| 2026-10-16 (@weber) | Search is a standalone Modama component; a `survey` command is the entry point of a deployment; the crawl report is the primary output and the expectation file is optional, recorded once the admin is happy and evaluated on a frozen sample to detect system changes (walk-through, T-D refined) | Modular data management; survey was the most useful step; expectations separate system from data changes | Expectation file as a required setup step |
+| 2026-10-16 (@weber) | Collections are pip packages installed with pip's own mechanisms including local paths; selection follows ruff's `select`/`ignore` model with `collection/format` ids and additive-only gitignore-style per-path ignores; discovery via entry points, the `modama-formats-*` prefix and a curated page maintained by pull request (Q17) | Familiar to Python developers; one sentence of precedence; no mechanism of our own | Config-pointed directories; positional glob lists; a central registry |
+| 2026-10-16 (@weber) | The unit is called a *format* (admin-facing, id `collection/format`); its code parts are a *recognizer* and an *extractor*; packages are `modama-formats-*`, entry-point group `modama.formats` | What people search for; "handler" named the code, not the thing | datatype (Galaxy), handler, type |
 | 2026-10-15 (@weber) | Preliminary, to be revisited after the spike: fixture layout with a fixture as a directory containing only wild files, provenance in one manifest per collection (purpose, validity, licence, source), expected outcomes recorded in a parallel `expected/` tree bound by name, and checks, skills and workflows around the trees (T-B layout) | Sidecars would be seen by sibling and directory rules; the hand-written part stays four keys | Sidecar record per fixture |
 
-Open for the next round: Q16 (the Python handler interface, sections A and B), Q17 (packaging and discovery, section E), and Q15 (generic extractors on subtypes, later).
+Open for the next round: Q16 (the recognizer interface, sections A and B) and Q15 (generic extractors on subtypes, later). Q17 is decided above; still to settle there: who curates the overview page.
