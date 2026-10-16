@@ -6,24 +6,19 @@ Status: second iteration, after @weber's review of the requirements on 2026-10-1
 
 Seven decisions, mostly independent of each other. A decided axis shows the decision, what follows from it, and the risk we accept. An open axis shows options, a provisional recommendation, the strongest argument against it, and what would change it. The decision log at the end is the authoritative record.
 
-## A. Flow of recognition (decided in outline, details open)
+## A. Flow of recognition (revised 2026-10-16 after the critique)
 
-Decision: three stages.
+Decision: a post-order walk with a pre-order check.
 
-1. **Walk with pruning.** Directories that are a dataset as a whole (`node_modules`, Python environments, Zarr arrays) are recognised from their listing during the walk, recorded as one dataset, and not entered (R11). What of their content is indexed is the handler's decision (Q9).
-2. **Per-file classification** with the XDG MIME rules, as implemented today in `mime.py`. Every regular file gets a type; files nothing matches are `application/octet-stream` and remain inspectable (R22).
-3. **Reduction.** Multi-file handlers run over the index in order of priority and claim their files, turning groups of files into datasets. A cleanup step ensures the anchor of a dataset is the same whichever member was seen first (R6).
+1. **Pre-order check, before descending.** From a directory's listing alone (names, sizes, no content), the walker asks the collapse formats whether this directory is a dataset as a whole, for example a Python environment, `node_modules`, a Zarr store or a Quantum Espresso run. If so it is recorded as one dataset and not entered: nothing below it is listed, classified or extracted (R11). This must stay cheap because such trees can hold a million files from well-known public packages, one `npm install` away. Which markers identify a kind of folder and which metadata it yields (for an environment, say, the Python version and the installed packages) is decided per format, case by case.
+2. **Descend, then recognise on the way back up.** Each file gets its MIME type from the XDG rules (`mime.py`). When a directory's children are done, its recognizers run with the directory's entries, their types, and the *results* of its subdirectories (the datasets they became, or that they were collapsed). A TENSOR export sees a `DiffractionPatterns/` child that is already a frame series; a nested Zarr is the outer marker swallowing an inner result.
+3. **Store.** Results go to the index, which is what the server reads and what incremental runs compare against. The index is not what recognition reads.
 
-Consequences: stage 1 needs a cheap rule on a directory listing, available before descending; stage 3 is where sibling and directory logic lives, with the index as input, not the file system walk. An incremental crawl re-runs stage 2 for changed files and stage 3 for directories whose listing changed.
+Consequences: order independence holds per subtree by construction, so there is no cleanup step; re-recognition after a format upgrade is per subtree from stored listings; a dataset spanning sibling directories or reaching across the tree (an HDF5 external link to `../other/`) is out of reach and would need a declared exception, as it would under any directory-local model. The earlier "index first, then reduce" design was dropped because a directory group cannot see its children, which the survey's dominant cases need, and because the cleanup step it required was never defined.
 
-Turn-around (walk-through, 2026-10-16): a full crawl of a large tree takes hours, while the survey takes minutes because it reads only listings. Re-running recognition with a different rule set, for a path subset, or only for previously unclaimed or failed items must stay possible without a re-walk, like `pytest --lf` or running one test file. The index already holds every listing with types and both timestamps, so stage 3 can run from the index alone and stage 2 needs the file system only for probes; the design must keep it that way. Speed itself is a later concern.
+Turn-around (walk-through, 2026-10-16): a full crawl of a large tree takes hours, while the survey takes minutes because it reads only listings. Re-running recognition with a different rule set, for a path subset, or only for previously unclaimed or failed items must stay possible without a re-walk, like `pytest --lf` or running one test file. The index already holds every listing with types and both timestamps, so stage 3 can run from the index alone and stage 2 needs the file system only for probes; the design must keep it that way. Output comes after the walk (H); with post-order recognition the result of a finished subtree is final, so per-subtree output would be possible if ever wanted. Speed itself is a later concern.
 
-Open, for the next round (Q16): what a reduction handler sees.
-- **A-a. One directory group at a time.** The core hands the handler a directory's entries with their types from the index; the handler returns datasets. Testable with a listing, order-independent by construction, bounded cost. Can't see across directories, unless the core also passes a declared number of parent levels, as Bio-Formats' `getRequiredDirectories` does.
-- **A-b. Free queries over the index.** The handler runs SQL. Global questions are one statement; handler changes re-run without a walk. This is what `mime_sql.py` was, which failed on anchoring, weights and O(handlers × files) scans, and SQL handlers are hard to test and to write by the hundred.
-- **A-c. Both.** A-a as the normal interface, A-b as an escape hatch for the few handlers that need it.
-
-Recommendation: A-a, with A-c if a spike handler can't be written against A-a. Against: cross-directory datasets (HDF5 external links to `../`) stay out of reach.
+Open (Q16): the exact recognizer interface. Settled by the revision: its input is plain data, a directory's entries with types plus the results of its subdirectories, and it reads file contents itself within a budget; it holds no database connection, so it can run in a worker later (G).
 
 Incomplete datasets (Q3): for now, a handler that can't complete a dataset reports it (a warning with the reason); the files stay what stage 2 made of them. A "revisit later" stash with a deadline, after which the dataset is reported as broken, is in the backlog.
 
@@ -31,14 +26,14 @@ Incomplete datasets (Q3): for now, a handler that can't complete a dataset repor
 
 Decision: valid, compatible XDG MIME rules (shared-mime-info XML) are the rule language. Python code is allowed only where a proven problem can't be solved with XDG MIME, and it should extend an XDG rule rather than replace one. Directory and sibling rules are the expected case for Python, since XDG MIME works on single files only.
 
-Also decided (Q12): the crawler uses only its own curated definitions and nothing from the host system. The full range of existing freedesktop types is to be imported into curated packages soon; this is a well-defined, large work item for an AI agent (backlog).
+Also decided (Q12): the crawler uses only its own curated definitions and nothing from the host system. `freedesktop.org.xml` from shared-mime-info (GPL-2.0-or-later) is vendored into the core collection as its own file with its licence notice, the package being MIT apart from that file (decided 2026-10-16; copying it from the distribution package at build or run time was judged messier). Curating it, and adding definitions of our own, is the backlog item for an AI agent.
 
 Consequences:
 - A handler collection is an XDG-style package: a `<name>.xml` with MIME types, globs and magic, plus an optional Python module for what the XML can't say. The core builds its private MIME database from the enabled packages (`XDG_DATA_HOME` and `XDG_DATA_DIRS` pointed at a directory it controls, then `update-mime-database`).
 - Conflict analysis, skeleton fixtures and candidate selection work on the XML, which is exactly what the prior art says a declarative layer buys.
 - The Python part needs a small, fixed interface (Q16, open): the MIME types it reacts to, its priority, and a function from a directory group to datasets. The expected spike count is one Python handler for EMPAD (XML plus raw), one for Zarr and one for Python environments (directory markers); DM4, notebooks and plain files are XML only.
 
-Risk accepted: XDG XML can't express "this XML file is EMPAD only if its `raw_file` attribute names a sibling that exists". The current `*.xml` glob trick for EMPAD stays until the Python part exists.
+Risk accepted: XDG XML can't express "this XML file is EMPAD only if its `raw_file` attribute names a sibling that exists". The proof of concept's `*.xml` glob for EMPAD, which forces a sniff of every XML file, is an implementation detail, not a requirement; whatever works best and is easiest to maintain replaces it.
 
 ## C. Priority and ambiguity (decided)
 
@@ -46,7 +41,7 @@ Decision: the XDG MIME model, numeric 0..100 weights on globs and priorities on 
 
 Rejected: computed specificity (apples and oranges across evidence kinds) and declared "wins over" relations (a handler would have to know the other side).
 
-Risk accepted, from the prior art: hand-negotiated numbers across contributors (Tika) and unlisted rules landing in the wrong place (Galaxy). Mitigations that stay: all definitions are curated packages that we assemble, so collisions are visible in one place; the core reports glob and magic collisions between unrelated types at load time; the skeleton suite (F) fails on files claimed by more than one type; ties are reported as ambiguous rather than resolved silently, and the file stays `application/octet-stream` with a warning.
+Risk accepted, from the prior art: hand-negotiated numbers across contributors (Tika) and unlisted rules landing in the wrong place (Galaxy). Mitigations that stay: all definitions are curated packages that we assemble, so collisions are visible in one place; the core reports glob and magic collisions between unrelated types at load time; the skeleton suite (F) fails on files claimed by more than one type; ties are reported as ambiguous rather than resolved silently. A tie between two legitimate types resolves to their common ancestor in the `sub-class-of` hierarchy (two HDF5 subtypes tie to HDF5), and only to `application/octet-stream` when they share nothing else (after the critique, 2026-10-16).
 
 Nesting and shared membership (Q1, Q2): a single file can be a dataset, so "a file in two datasets" and "a dataset inside a dataset" are the same question. Decision: the data model and the server allow nesting, but it is reported as a warning unless the outer handler is positively declared as a collection type. Everything else is exclusive membership.
 
@@ -59,6 +54,8 @@ Per dataset: `type` (R25), `anchor` (a path), `members` (sorted paths, including
 Anchor (Q4): the handler's decision; it can't be predicted across dataset types. What the handler chooses must be the same whichever member is seen first (R6), which the cleanup step in stage 3 enforces.
 
 What is indexed inside a collapsed tree (Q9): the handler's decision.
+
+**Identity across crawls (decided 2026-10-16, after the critique).** A dataset's identity is its anchor path, kept actionable (something the user can `open()`) and understandable on a repository that is in use. We deliberately drop the idea that an identifier points at something immutable: when members change, the same record is updated and the change is indicated (the record's datestamp, the newest member mtime in `dc:date`). If the anchor path disappears but members remain, the orphaned members are re-recognised, after a short grace period in case the user is deleting the whole thing and happened to start with the anchor. A rename is a disappearance plus a new dataset; what happens to the old record is the deleted-records item in the backlog. After a format changes (an upgrade, an edited rule) we re-crawl rather than invalidate selectively: datasets are navigation aids, not important entities, a newer format is assumed better, and if it isn't, that is what the issue-reporting and fixing workflow is for (R8, R27). Selective re-recognition per subtree stays possible but is an optimisation for later.
 
 ## E. Packaging, registration and deployment (partly decided)
 
@@ -88,9 +85,9 @@ ignore = ["gatan/dm3-legacy"]
 exclude = ["/tmp/**", "**/.Trash/**"]       # not crawled at all
 ```
 
-Format ids are `collection/format` (ESLint and RuboCop namespacing) instead of opaque codes, so the ids read like the file system they describe. Per-path entries only subtract, which ruff adopted after trying to let negated patterns re-enable rules and reverting it as "too confusing". Selecting a whole collection implicitly enables formats added by an upgrade, as ruff's `ALL` does; the crawl report lists formats enabled for the first time, in the spirit of RuboCop's pending cops. Versions are pinned where Python versions are pinned, in the requirements file, with no mechanism of our own.
+Format ids are `collection/format` (ESLint and RuboCop namespacing) instead of opaque codes, so the ids read like the file system they describe. Per-path entries only subtract, which ruff adopted after trying to let negated patterns re-enable rules and reverting it as "too confusing". Selecting a whole collection implicitly enables formats added by an upgrade, as ruff's `ALL` does, deliberately: new formats are field-tested that way, a newer format is assumed better, and bug reports and fixes follow (confirmed after the critique, 2026-10-16). The crawl report lists formats enabled for the first time, and deployments that don't want this pin versions in their requirements file. Versions are pinned where Python versions are pinned, in the requirements file, with no mechanism of our own.
 
-Discovery and distribution follow pytest and flake8: collections are packages named `modama-formats-*` exposing an entry point in the group `modama.formats`, with unique names (duplicates are rejected at load time, as flake8 requires unique plugin prefixes), a package-name prefix so they can be searched on PyPI and the web, and a curated overview page in the documentation that is expected to be incomplete and has a submission process (pre-commit's hooks page is maintained by pull request with stated criteria). A PyPI classifier would need to be requested upstream.
+Discovery and distribution follow pytest and flake8: collections are packages named `modama-formats-*` exposing an entry point in the group `modama.formats`, with unique names (duplicates are rejected at load time, as flake8 requires unique plugin prefixes), a package-name prefix so they can be searched on PyPI and the web, and an overview page in the documentation in two parts: a list generated from PyPI by the name prefix, like pytest's plugin list, so it is never stale, and above it a short curated section that we maintain by pull request with stated criteria (a published package, passing tests, a licence, a maintainer contact), like pre-commit's hooks page. A PyPI classifier would need to be requested upstream.
 
 Enabling (R1): an explicit list in the deployment configuration, with wildcards per collection, plus path exclusions per handler and for the crawl as a whole.
 
@@ -104,9 +101,19 @@ Decided (Q13): isolation per crawl for now. The whole crawler runs in a containe
 
 What the architecture keeps open for later hardening (R24): the handler interface takes a directory group and returns datasets, both plain data, so handlers can later run in worker subprocesses with timeouts (crash and hang isolation) without changing them. Per-handler sandboxes (gVisor, micro-VMs) stay an option, unjustified so far.
 
+## H. The development loop (decided 2026-10-16)
+
+`modama-crawler records [PATH]` runs the whole pipeline on a path (default: the current directory) with the installed collections (default: all, with `--select`/`--ignore` to try another selection) and prints the OAI-PMH `ListRecords` response for it, without pagination or sets, `oai_dc` by default, `from`/`until` as in the protocol. Its purpose is to observe every part of the stack in one go without the database or the server, to shorten the iterative loop when setting up a deployment, and to give humans and agents the same evidence to look at; it replaces the single-path `explain` command.
+
+Consequences:
+- The pipeline (walk, classify, recognise, build records, render) is a function from a tree to a *recognition result* (datasets with type, anchor, members, basis, warnings, plus unclaimed files) that runs without PostgreSQL. That result is the oracle for fixture tests (T4) and what the database stores; `oai_dc` is one renderer of it, which this command prints and the server serves. The renderer is tested once in the core.
+- Two phases, not streaming: progress and diagnostics go to stderr as the walk proceeds; the records are printed after the walk, because a directory's result is final only once its subtree is done and because complex multi-file matching needs the complete picture. `--verbose` adds, per record, the format and recognizer that claimed it, the basis, warnings, unclaimed files and timings, on stderr, so stdout stays valid OAI-PMH that can be piped to `less`, `xmllint --schema`, `diff`, or the EOSC harvester's XSLT.
+- Without a database there is no "when the record last changed", so the command's datestamp is the newest mtime of the members, which since the identity decision (D) is also what moves the server's datestamp when members change; `from`/`until` filter on that, documented in `--help`.
+- Later, the basis may travel in-band in the OAI-PMH `<about>` container, which the protocol provides for provenance; that needs a schema and is not part of the spike.
+
 ## Sketch
 
-A collection, as it would look under B, C and E-c. Illustration, not an API proposal:
+A collection, as it would look under B, C and E. Illustration, not an API proposal (the recognizer interface follows the revised section A: entries, types, children's results in; datasets out):
 
 ```
 empad/
@@ -116,12 +123,12 @@ empad/
 ```
 
 ```python
-# empad.py, interface still open (Q16)
+# empad.py, interface still open in detail (Q16)
 PRIORITY = 60
 REACTS_TO = ["application/x.empad+xml"]
 
-def reduce(group):
-    """group: one directory's entries with their types. Returns datasets."""
+def recognize(group):
+    """group: one directory's entries with their types and its subdirectories' results. Returns datasets."""
     for xml in group.of_type("application/x.empad+xml"):
         raw = group.sibling(xml.raw_file_attribute())   # bounded read
         if raw is None:
@@ -134,17 +141,17 @@ def reduce(group):
 A deployment configuration:
 
 ```toml
-[collections]
-enabled = ["core", "empad", "zarr", "python-env", "dm4", "ipynb"]
+[formats]                                # see E for the selection rules
+select = ["core", "collapse", "series", "empad", "zarr", "gatan/dm4", "ipynb"]
 
-[exclude]
-crawl = ["/scratch/*"]
-"some-reader" = ["/adhoc/legacy/*"]     # crawled and classified by name, never opened by this handler
+[formats.per-path-ignores]
+"/adhoc/legacy/**" = ["empad"]           # crawled and classified by name, never opened by this recognizer
 
-[expect]                                 # ensemble test, Q10
-known_good = ["/adhoc/empad/scan_001.xml", "/adhoc/zarr/sample.zarr"]
-known_bad = { "/adhoc/legacy/broken.xml" = "raw file missing" }
+[crawl]
+exclude = ["/scratch/**"]
 ```
+
+The expectation file (T-D) is separate and optional.
 
 ## Strongest arguments against the current state
 
@@ -182,6 +189,17 @@ known_bad = { "/adhoc/legacy/broken.xml" = "raw file missing" }
 | 2026-10-16 (@weber) | Search is a standalone Modama component; a `survey` command is the entry point of a deployment; the crawl report is the primary output and the expectation file is optional, recorded once the admin is happy and evaluated on a frozen sample to detect system changes (walk-through, T-D refined) | Modular data management; survey was the most useful step; expectations separate system from data changes | Expectation file as a required setup step |
 | 2026-10-16 (@weber) | Collections are pip packages installed with pip's own mechanisms including local paths; selection follows ruff's `select`/`ignore` model with `collection/format` ids and additive-only gitignore-style per-path ignores; discovery via entry points, the `modama-formats-*` prefix and a curated page maintained by pull request (Q17) | Familiar to Python developers; one sentence of precedence; no mechanism of our own | Config-pointed directories; positional glob lists; a central registry |
 | 2026-10-16 (@weber) | The unit is called a *format* (admin-facing, id `collection/format`); its code parts are a *recognizer* and an *extractor*; packages are `modama-formats-*`, entry-point group `modama.formats` | What people search for; "handler" named the code, not the thing | datatype (Galaxy), handler, type |
+| 2026-10-16 (@weber) | The collections overview page is generated from PyPI by name prefix, with a short curated section above it maintained by pull request with stated criteria (Q17 closed) | Never stale, with a quality signal on top; pytest's and pre-commit's models stacked | Curated only; per-domain maintainers; generated only |
+| 2026-10-16 (@weber) | `records [PATH]` prints the polished OAI-PMH ListRecords for a path without database or server, diagnostics on stderr, output only after the cleanup step, no streaming (H) | One observable for the whole stack; order invariance and multi-file matching need the complete picture | Streaming output; a separate explain command |
+| 2026-10-16 (@weber, after the critique) | Q11 revised: post-order walk, each directory's recognizers see its entries, their types and its subdirectories' results; a pre-order check on the listing collapses boring trees before anything below is visited; no cleanup step. An accidental split beats an accidental grouping (R30) | Dominant cases are a directory plus what its children are; the cleanup step was never defined; a million files from public packages must not be visited | Index first, then reduce over directory groups or queries |
+| 2026-10-16 (@weber, after the critique) | Identity is the anchor path, mutable: changes update the record and its datestamp; orphaned members are re-recognised after a short grace period when the anchor disappears | Identifiers stay actionable with `open()` and understandable on a live repository | Immutable identifiers (hash, UUID) |
+| 2026-10-16 (@weber) | After a format change, re-crawl; no selective invalidation. A newer format is assumed better; if not, the issue workflow applies | Datasets are navigation aids, not important entities; keeps the system simple | Invalidation rules per format version |
+| 2026-10-16 (@weber) | Our records follow the spirit of Dublin Core (or another schema later) as well as we can; what the warehouse, itself work in progress, makes of them is theirs. We only avoid what actively breaks it (identifier length) and, once our side is clean, suggest changes aligned with their plans | Keep responsibilities separate; don't design around a moving target | Shape records to the warehouse's current indexing |
+| 2026-10-16 (@weber) | Timestamps on `/er-c-data` are best effort: transfers are a mess, so timing features in the series rule degrade gracefully (identical mtimes mean no information) and issues are fixed as they appear; no reliance on storage features for incremental crawls | Only bad outcome is a user missing a result in a query that the data would have justified | Require preserved mtimes; snapshot-diff or notification based crawling |
+| 2026-10-16 (@weber) | Vendor `freedesktop.org.xml` (GPL-2.0-or-later) into the core collection with its licence notice | Fair, and simpler than extracting from a distribution package at build or run time | Build-time copy; own definitions only |
+| 2026-10-16 (@weber, after the critique) | Ties between legitimate types resolve to their common `sub-class-of` ancestor and are reported | Two good formats must not cancel to nothing | Fall to `application/octet-stream` |
+| 2026-10-16 (@weber, after the critique) | Formats added by an upgrade are auto-enabled under a whole-collection `select`, to field-test them; the report lists them; version pins for those who don't want it | A newer format is assumed better; bug reports and fixes follow | Pending state until acknowledged |
+| 2026-10-16 (@weber, after the critique) | The recognition result is the oracle and the stored form; `oai_dc` is a renderer; `records` prints the rendering (H) | One oracle, with members, basis and warnings in it | `oai_dc` output as oracle |
 | 2026-10-15 (@weber) | Preliminary, to be revisited after the spike: fixture layout with a fixture as a directory containing only wild files, provenance in one manifest per collection (purpose, validity, licence, source), expected outcomes recorded in a parallel `expected/` tree bound by name, and checks, skills and workflows around the trees (T-B layout) | Sidecars would be seen by sibling and directory rules; the hand-written part stays four keys | Sidecar record per fixture |
 
-Open for the next round: Q16 (the recognizer interface, sections A and B) and Q15 (generic extractors on subtypes, later). Q17 is decided above; still to settle there: who curates the overview page.
+Open for the next round: Q16 (the recognizer interface, sections A and B) and Q15 (generic extractors on subtypes, later). Q17 is closed.

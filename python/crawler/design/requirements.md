@@ -53,7 +53,7 @@ Priorities: **must** for the first working version, **should** for soon after, *
 
 ### Scale
 
-- **R10 (must)** Millions of files, petabytes, hundreds to thousands of new files per day. A full crawl stays feasible, and a re-crawl only does work for what changed.
+- **R10 (must)** Millions of files, petabytes, hundreds to thousands of new files per day. A full crawl stays feasible, and a re-crawl only does work for what changed. The survey of 2026-10-15 saw a quarter of the tree (525k files, 18 TB) and 58 files changed in a week; the rest is behind permissions. The gap is not a contradiction: `/er-c-data` and its user base are growing, and the design targets the situation two or more years out, not today's. The figures here are the planning assumption.
 - **R11 (should)** Large uninteresting trees (`node_modules`, Python and conda environments, large source trees, large Zarr arrays) are recognised early and not visited file by file. The contents of a multi-file dataset are not crawled individually; there is no point in indexing the chunks of a Zarr array (MR).
 - **R12 (must)** Every probe has a hard time limit. **(should)** Recognition is as fast and light as possible: reading file names and metadata is free, reading a bounded amount of content is allowed, reading whole files is not, and trying every handler on every file is out (MR). The crawl reports the slowest handlers, like pytest's `--durations`, so the impact of changes is visible.
 
@@ -87,7 +87,7 @@ Keeping guessing (cheap candidates), recognition (authoritative) and metadata ex
 
 ### Search goals (decided 2026-10-16)
 
-- **R30 (must)** The index serves search: it helps people find things that match a query, and once they have an anchor they make sense of the data themselves. Misgrouping is therefore not a disaster. Two outcomes are bad: flooding the results with hundreds or thousands of similar, related files, which should have been found as one collection; and not finding something although the file tree and file contents held enough information to match the query.
+- **R30 (must)** The index serves search: it helps people find things that match a query, and once they have an anchor they make sense of the data themselves. Misgrouping is therefore not a disaster. Two outcomes are bad: flooding the results with hundreds or thousands of similar, related files, which should have been found as one collection; and not finding something although the file tree and file contents held enough information to match the query. When in doubt, an accidental split beats an accidental grouping, because a grouping can hide distinctive items.
 - **R31 (should)** Grouping guideline, derived from R30: fewer than 10 files in a suspected series are always indexed individually as well; 10 to 100 depending on the case; more than 100 only as the group, unless some members are clearly distinct (one overview plus hundreds of detail images). Complex program outputs (a Quantum Espresso run, a TENSOR export, a Dr. Probe run) are one unit.
 - **R32 (should)** Where a handler can tell, a dataset records its relations: part of a collection, produced by a script or program (with the parameter file where there is one), belongs to a specimen or session. In `oai_dc` these go into `dc:relation` and `dc:source` with a documented convention; richer vocabularies are a later format.
 

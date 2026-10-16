@@ -49,7 +49,7 @@ Four mechanisms exist, and all four have evidence against them when used alone:
 
 Two things did work across projects: a **type hierarchy** so that a specific result refines a generic one (Tika `sub-class-of`, shared-mime-info `sub-class-of`, Bio-Formats' delegate readers), and an **explicit "ambiguous" outcome** instead of a forced winner (Siegfried's `single` mode returns UNKNOWN with a "multiple matches" warning; HyperSpy raises; Siegfried's default mode funnels to the most specific match and was criticised for it in #146).
 
-For us: computed specificity as the default order (so uncoordinated contributors don't need to agree on numbers), a hierarchy for refinement, explicit ambiguity as a first-class result, and an override only for the cases the tests prove need one. Whether the override is a number, a relation, or a hierarchy edge is open.
+For us, as recommended on 2026-10-14: computed specificity as the default order, a hierarchy for refinement, explicit ambiguity as a first-class result. Decided otherwise the same day (`architecture.md` C): the XDG 0..100 model, because it is proven and understandable; the hierarchy and explicit ambiguity were kept, and after the critique ties resolve to the common ancestor in the `sub-class-of` hierarchy rather than to `application/octet-stream`.
 
 ### Q1–Q4, Q11: multi-file datasets
 
