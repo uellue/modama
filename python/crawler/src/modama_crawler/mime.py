@@ -4,7 +4,7 @@ https://specifications.freedesktop.org/shared-mime-info/latest/ar01s02.html
 
 Only pyxdg's parsed databases are used: its get_type2() skips the
 longest-pattern rule, and its magic matching restricted to candidates checks
-the lowest priority first.
+the lowest priority first. Ties resolve to the common ancestor (architecture C).
 """
 
 import fnmatch
@@ -71,18 +71,58 @@ def _is_text(data: bytes) -> bool:
     return not any(b <= 0x8 or 0xE <= b < 0x20 or b == 0x7F for b in data[:32])
 
 
-def detect(path: str) -> str:
-    """MIME type of the file at path, without following symlinks.
+def _ancestors(mtype: Mime.MIMEtype) -> list[Mime.MIMEtype]:
+    """Ancestors nearest first, with the implicit parents last."""
+    out, queue = [], [mtype]
+    while queue:
+        t = queue.pop(0)
+        for p in sorted(t.inherits_from(), key=str):
+            p = p.canonical()
+            if p not in out:
+                out.append(p)
+                queue.append(p)
+    if mtype.media == "text" and Mime.text not in out:
+        out.append(Mime.text)
+    if mtype.media != "inode" and Mime.octet_stream not in out:
+        out.append(Mime.octet_stream)
+    return out
 
-    Raises OSError if path can't be stat'ed.
+
+def _common_ancestor(candidates: list[Mime.MIMEtype]) -> Mime.MIMEtype:
+    """The nearest type every candidate is-a: a candidate itself when the others are its subtypes."""
+    for a in [*candidates, *_ancestors(candidates[0])]:
+        if all(_is_a(c, a) for c in candidates):
+            return a
+    return Mime.octet_stream
+
+
+def _resolve(candidates: list[Mime.MIMEtype]) -> tuple[str, tuple[str, ...] | None]:
+    """The common ancestor of tied candidates; reported as a tie only when it is none of them."""
+    chosen = _common_ancestor(candidates)
+    if chosen in candidates:
+        return str(chosen), None
+    return str(chosen), tuple(map(str, candidates))
+
+
+def detect(path: str) -> str:
+    """MIME type of the file at path, without following symlinks. Raises OSError if path can't be stat'ed."""
+    return detect_with_tie(path)[0]
+
+
+def detect_with_tie(path: str) -> tuple[str, tuple[str, ...] | None]:
+    """MIME type of the file at path and, if candidates tied, the tied types.
+
+    A tie between candidates resolves to their nearest common ancestor in the
+    subclass hierarchy (architecture C); it counts as a tie only when that
+    ancestor is none of the candidates. Raises OSError if path can't be stat'ed.
     """
     mode = os.lstat(path).st_mode
     if stat.S_ISDIR(mode):
-        return "inode/directory"
+        return "inode/directory", None
     if stat.S_ISLNK(mode):
-        return "inode/symlink"
+        return "inode/symlink", None
     if not stat.S_ISREG(mode):
-        return str(Mime._get_type_by_stat(mode))
+        return str(Mime._get_type_by_stat(mode)), None
 
     # Globs with the biggest weight, then the longest pattern
     candidates = []
@@ -91,27 +131,34 @@ def detect(path: str) -> str:
         best = max((weight, length) for weight, length, _ in matches)
         candidates = sorted({t for w, n, t in matches if (w, n) == best}, key=str)
         if len(candidates) == 1:
-            return str(candidates[0])
+            return str(candidates[0]), None
 
     # No or conflicting globs: sniff the contents
     try:
         with open(path, "rb") as f:
             data = f.read(Mime.magic.maxlen)
     except OSError:
-        return str(candidates[0]) if candidates else str(Mime.octet_stream)
+        if candidates:
+            return _resolve(candidates)
+        return str(Mime.octet_stream), None
     sniffed = Mime.magic.match_data(data)
     if sniffed is not None:
         sniffed = sniffed.canonical()
     if not candidates:
         if sniffed is not None:
-            return str(sniffed)
-        return str(Mime.text if _is_text(data) else Mime.octet_stream)
-    for mtype in candidates:
-        if sniffed is not None and _is_a(mtype, sniffed):
-            return str(mtype)
+            return str(sniffed), None
+        return str(Mime.text if _is_text(data) else Mime.octet_stream), None
+    # A candidate that is the sniffed type or a subclass of it wins; the sniffed type itself first
+    related = [c for c in candidates if sniffed is not None and _is_a(c, sniffed)]
+    if sniffed in related:
+        return str(sniffed), None
+    if len(related) == 1:
+        return str(related[0]), None
+    if related:
+        candidates = related
     # Not in the spec: prefer the candidate whose own magic matches, highest priority first
     rules = [(p, t, r) for t in candidates for p, r in Mime.magic.bytype.get(t, ())]
     for _, mtype, rule in sorted(rules, key=lambda x: x[0], reverse=True):
         if rule.match(data):
-            return str(mtype)
-    return str(candidates[0])
+            return str(mtype), None
+    return _resolve(candidates)

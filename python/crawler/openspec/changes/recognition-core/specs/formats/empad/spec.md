@@ -2,7 +2,7 @@
 
 ## Purpose
 
-EMPAD acquisitions, which consist of an XML header and the raw frame file it names, as one dataset anchored at the header.
+EMPAD acquisitions, which consist of an XML header and the raw frame file it names, as one dataset anchored at the header. Known limits, from headers seen in the wild (2026-10-27): the raw file is looked up by base name beside the header (one 2017 header names it by absolute path); a header that does not start with `<root name=` within 64 bytes is not an EMPAD header; the raw file's size is not checked.
 
 ## ADDED Requirements
 
@@ -15,6 +15,10 @@ When an XML file is an EMPAD header and the raw file it names exists in the same
 
 ### Requirement: Headers are recognised by content
 An EMPAD header SHALL be recognised by its content, not by its name, so that other XML files are not read by the EMPAD format.
+
+#### Scenario: Header with an XML declaration
+- **WHEN** a header has been re-saved with an XML declaration before `<root name=`, as hand-edited copies in the wild have
+- **THEN** it is still recognised and paired with its raw file
 
 #### Scenario: Unrelated XML
 - **WHEN** a directory contains an XML file that is not an EMPAD header

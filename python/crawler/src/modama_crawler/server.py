@@ -13,24 +13,22 @@ from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Request, Response
 
 from .records import format_datestamp
-
-OAI_NS = "http://www.openarchives.org/OAI/2.0/"
-OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
-DC_NS = "http://purl.org/dc/elements/1.1/"
-XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
-XSI_SCHEMA_LOCATION = f"{{{XSI_NS}}}schemaLocation"
-OAI_DC_SCHEMA = "http://www.openarchives.org/OAI/2.0/oai_dc.xsd"
+from .render import (
+    OAI_DC_NS,
+    OAI_DC_SCHEMA,
+    OAI_NS,
+    XSI_NS,
+    XSI_SCHEMA_LOCATION,
+    element,
+    header,
+    record,
+    sub,
+    xml_text,
+)
 
 REPOSITORY_NAME = "ER-C data (modama)"
 GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-# The elements of unqualified Dublin Core, in the order we render them
-DC_ELEMENTS = (
-    "title", "creator", "subject", "description", "publisher", "contributor",
-    "date", "type", "format", "identifier", "source", "language", "relation",
-    "coverage", "rights",
-)  # fmt: skip
 
 # verb: (required arguments, optional arguments, exclusive argument)
 VERBS = {
@@ -48,8 +46,6 @@ VERBS = {
 
 DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 SECOND_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
-# Characters that XML 1.0 can't represent
-INVALID_XML_RE = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
 
 
 class OAIError(Exception):
@@ -57,21 +53,6 @@ class OAIError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
-
-
-def _xml_text(text: str) -> str:
-    return INVALID_XML_RE.sub("�", text)
-
-
-def _element(tag: str) -> etree._Element:
-    return etree.Element(f"{{{OAI_NS}}}{tag}", nsmap={None: OAI_NS})
-
-
-def _sub(parent, tag: str, text: str | None = None) -> etree._Element:
-    element = etree.SubElement(parent, f"{{{OAI_NS}}}{tag}")
-    if text is not None:
-        element.text = _xml_text(text)
-    return element
 
 
 def parse_arguments(params: MultiDict) -> tuple[str, dict[str, str]]:
@@ -194,19 +175,19 @@ class OAIServer:
             XSI_SCHEMA_LOCATION,
             f"{OAI_NS} http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd",
         )
-        _sub(root, "responseDate", format_datestamp(datetime.now(UTC)))
-        request = _sub(root, "request", self.base_url)
+        sub(root, "responseDate", format_datestamp(datetime.now(UTC)))
+        request = sub(root, "request", self.base_url)
         try:
             verb, args = parse_arguments(params)
             request.set("verb", verb)
             for key, value in args.items():
-                request.set(key, _xml_text(value))
+                request.set(key, xml_text(value))
             root.append(getattr(self, verb)(args))
         except OAIError as error:
             # The request element must not have attributes for these errors
             if error.code in ("badVerb", "badArgument"):
                 request.attrib.clear()
-            error_element = _sub(root, "error", error.message)
+            error_element = sub(root, "error", error.message)
             error_element.set("code", error.code)
         return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
@@ -222,24 +203,24 @@ class OAIServer:
 
     def Identify(self, args):
         ((earliest,),) = self._query("SELECT min(datestamp) FROM records")
-        identify = _element("Identify")
-        _sub(identify, "repositoryName", REPOSITORY_NAME)
-        _sub(identify, "baseURL", self.base_url)
-        _sub(identify, "protocolVersion", "2.0")
-        _sub(identify, "adminEmail", self.admin_email)
-        _sub(identify, "earliestDatestamp", format_datestamp(earliest or EPOCH))
-        _sub(identify, "deletedRecord", "no")
-        _sub(identify, "granularity", GRANULARITY)
+        identify = element("Identify")
+        sub(identify, "repositoryName", REPOSITORY_NAME)
+        sub(identify, "baseURL", self.base_url)
+        sub(identify, "protocolVersion", "2.0")
+        sub(identify, "adminEmail", self.admin_email)
+        sub(identify, "earliestDatestamp", format_datestamp(earliest or EPOCH))
+        sub(identify, "deletedRecord", "no")
+        sub(identify, "granularity", GRANULARITY)
         return identify
 
     def ListMetadataFormats(self, args):
         if "identifier" in args:
             self._check_exists(args["identifier"])
-        formats = _element("ListMetadataFormats")
-        metadata_format = _sub(formats, "metadataFormat")
-        _sub(metadata_format, "metadataPrefix", "oai_dc")
-        _sub(metadata_format, "schema", OAI_DC_SCHEMA)
-        _sub(metadata_format, "metadataNamespace", OAI_DC_NS)
+        formats = element("ListMetadataFormats")
+        metadata_format = sub(formats, "metadataFormat")
+        sub(metadata_format, "metadataPrefix", "oai_dc")
+        sub(metadata_format, "schema", OAI_DC_SCHEMA)
+        sub(metadata_format, "metadataNamespace", OAI_DC_NS)
         return formats
 
     def ListSets(self, args):
@@ -253,8 +234,8 @@ class OAIServer:
         )
         if not rows:
             raise OAIError("idDoesNotExist", f"No record {args['identifier']}")
-        get_record = _element("GetRecord")
-        _record(get_record, *rows[0])
+        get_record = element("GetRecord")
+        record(get_record, *rows[0])
         return get_record
 
     def ListIdentifiers(self, args):
@@ -283,35 +264,35 @@ class OAIServer:
             conditions.append("datestamp <= %s")
             params.append(until)
         if after is not None:
-            conditions.append("(datestamp, dataset_id) > (%s, %s)")
+            conditions.append("(datestamp, record_id) > (%s, %s)")
             params.extend(after)
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         rows = self._query(
             f"""
-            SELECT identifier, datestamp, metadata, dataset_id FROM records {where}
-            ORDER BY datestamp, dataset_id LIMIT %s
+            SELECT identifier, datestamp, metadata, record_id FROM records {where}
+            ORDER BY datestamp, record_id LIMIT %s
             """,
             (*params, self.page_size + 1),
         )
         if not rows:
             raise OAIError("noRecordsMatch", "No records match the request")
 
-        result = _element(verb)
+        result = element(verb)
         for identifier, datestamp, metadata, _ in rows[: self.page_size]:
             if verb == "ListRecords":
-                _record(result, identifier, datestamp, metadata)
+                record(result, identifier, datestamp, metadata)
             else:
-                _header(result, identifier, datestamp)
+                header(result, identifier, datestamp)
         if len(rows) > self.page_size:
-            _, datestamp, _, dataset_id = rows[self.page_size - 1]
-            _sub(
+            _, datestamp, _, record_id = rows[self.page_size - 1]
+            sub(
                 result,
                 "resumptionToken",
-                encode_token(from_, until, datestamp, dataset_id),
+                encode_token(from_, until, datestamp, record_id),
             )
         elif "resumptionToken" in args:
             # The last part of an incomplete list has an empty token
-            _sub(result, "resumptionToken")
+            sub(result, "resumptionToken")
         return result
 
 
@@ -320,23 +301,3 @@ def _check_prefix(prefix: str):
         raise OAIError(
             "cannotDisseminateFormat", f"Unsupported metadataPrefix {prefix!r}"
         )
-
-
-def _header(parent, identifier: str, datestamp: datetime):
-    header = _sub(parent, "header")
-    _sub(header, "identifier", identifier)
-    _sub(header, "datestamp", format_datestamp(datestamp))
-
-
-def _record(parent, identifier: str, datestamp: datetime, metadata: dict):
-    record = _sub(parent, "record")
-    _header(record, identifier, datestamp)
-    dc = etree.SubElement(
-        _sub(record, "metadata"),
-        f"{{{OAI_DC_NS}}}dc",
-        nsmap={"oai_dc": OAI_DC_NS, "dc": DC_NS, "xsi": XSI_NS},
-    )
-    dc.set(XSI_SCHEMA_LOCATION, f"{OAI_DC_NS} {OAI_DC_SCHEMA}")
-    for name in DC_ELEMENTS:
-        for value in metadata.get(name, ()):
-            etree.SubElement(dc, f"{{{DC_NS}}}{name}").text = _xml_text(value)

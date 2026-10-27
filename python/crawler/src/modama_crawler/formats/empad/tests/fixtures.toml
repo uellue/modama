@@ -1,0 +1,27 @@
+[pair]
+purpose = "representative"
+validity = "second-reader: libertem 0.16.0 opened the pair as shape (4, 128, 128) and ran SumUDF over all frames on 2026-10-16"
+licence = "MIT"
+source = "modama_crawler.formats.empad.cheat:pair: a real ER-C header reduced to 4 frames and a zero-filled raw file"
+generator = "modama_crawler.formats.empad.cheat:pair"
+
+[pair_declaration]
+purpose = "representative"
+validity = "parser-only"
+licence = "MIT"
+source = "modama_crawler.formats.empad.cheat:pair_declaration: the pair with an XML declaration before the root element, as in hand-edited copies of headers found in the wild (libertem-test-data)"
+generator = "modama_crawler.formats.empad.cheat:pair_declaration"
+
+[header_only]
+purpose = "reproducer"
+validity = "invalid-by-design: the raw file named by the header is missing, as during a copy"
+licence = "MIT"
+source = "modama_crawler.formats.empad.cheat:header_only"
+generator = "modama_crawler.formats.empad.cheat:header_only"
+
+[orphan_raw]
+purpose = "representative"
+validity = "parser-only"
+licence = "MIT"
+source = "modama_crawler.formats.empad.cheat:orphan_raw: a raw frame file without a header, next to an unrelated XML file"
+generator = "modama_crawler.formats.empad.cheat:orphan_raw"

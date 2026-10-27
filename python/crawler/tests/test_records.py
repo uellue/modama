@@ -3,12 +3,9 @@ import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from modama_crawler.records import (
-    MAX_LOCAL_ID,
-    browse_url,
-    oai_identifier,
-    publish_records,
-)
+from modama_crawler.formats import Dataset, Result
+from modama_crawler.records import MAX_LOCAL_ID, browse_url, build, oai_identifier
+from modama_crawler.store import store
 
 PREFIX = "oai:er-c-data-mgmt.fz-juelich.de:"
 
@@ -63,30 +60,82 @@ def test_shortened_identifiers_differ():
     assert oai_identifier(path + "1") != oai_identifier(path + "2")
 
 
-def test_publish_records(conn, tmp_path):
-    ((path_id,),) = conn.execute(
-        "INSERT INTO files (path, mtime, uid, mime) VALUES (%s, 0, %s, 'text/plain') "
-        "RETURNING path_id",
-        (str(tmp_path / "x.txt"), os.getuid()),
+def test_dublin_core_mapping():
+    dataset = Dataset(
+        anchor="/x.txt",
+        members=("/x.txt",),
+        type="text/plain",
+        mtime=0.0,
+        uid=os.getuid(),
     )
-    conn.execute("INSERT INTO datasets (path_id) VALUES (%s)", (path_id,))
-    conn.commit()
-
-    assert publish_records(conn, tmp_path) == 1
-    ((identifier, metadata),) = conn.execute("SELECT identifier, metadata FROM records")
+    identifier, metadata = build(dataset)
     assert identifier == oai_identifier("/x.txt")
+    assert metadata["title"] == ["/x.txt"]
     assert metadata["format"] == ["text/plain"]
+    assert metadata["type"] == ["Dataset"]
+    assert metadata["date"] == ["1970-01-01T00:00:00Z"]
+    assert metadata["identifier"] == [browse_url("/x.txt")]
+    assert "relation" not in metadata
 
-    # Unchanged metadata keeps its datestamp
+
+def test_collection_relations():
+    parent = Dataset(
+        anchor="/series", parts=("/series/a", "/series/b"), type="x/series"
+    )
+    part = Dataset(
+        anchor="/series/a", members=("/series/a",), type="text/plain", parent="/series"
+    )
+    assert build(parent)[1]["relation"] == [
+        browse_url("/series/a"),
+        browse_url("/series/b"),
+    ]
+    assert build(part)[1]["relation"] == [browse_url("/series")]
+
+
+def test_store_keeps_datestamps_and_drops_deleted(conn):
+    a = Dataset(
+        anchor="/a.txt",
+        members=("/a.txt",),
+        type="text/plain",
+        mtime=1e9,
+        uid=os.getuid(),
+    )
+    b = Dataset(
+        anchor="/b.txt",
+        members=("/b.txt",),
+        type="text/plain",
+        mtime=1e9,
+        uid=os.getuid(),
+    )
+    assert store(conn, Result([a, b])) == 2
     conn.execute("UPDATE records SET datestamp = '2000-01-01T00:00:00Z'")
     conn.commit()
-    assert publish_records(conn, tmp_path) == 0
-    ((datestamp,),) = conn.execute("SELECT datestamp FROM records")
-    assert datestamp == datetime(2000, 1, 1, tzinfo=UTC)
 
-    # Changed metadata gets the current time
-    conn.execute("UPDATE files SET mtime = 1e9")
-    conn.commit()
-    assert publish_records(conn, tmp_path) == 1
-    ((datestamp,),) = conn.execute("SELECT datestamp FROM records")
-    assert datetime.now(UTC) - datestamp < timedelta(minutes=1)
+    # Unchanged content keeps its datestamp
+    assert store(conn, Result([a, b])) == 0
+    assert {d for (d,) in conn.execute("SELECT datestamp FROM records")} == {
+        datetime(2000, 1, 1, tzinfo=UTC)
+    }
+
+    # A deleted dataset leaves; a changed one gets the current time
+    assert (
+        store(
+            conn,
+            Result(
+                [
+                    Dataset(
+                        anchor="/a.txt",
+                        members=("/a.txt",),
+                        type="text/csv",
+                        mtime=1e9,
+                        uid=os.getuid(),
+                    )
+                ]
+            ),
+        )
+        == 2
+    )
+    rows = conn.execute("SELECT identifier, datestamp FROM records").fetchall()
+    assert [identifier for identifier, _ in rows] == [oai_identifier("/a.txt")]
+    assert datetime.now(UTC) - rows[0][1] < timedelta(minutes=1)
+    assert conn.execute("SELECT count(*) FROM datasets").fetchone() == (1,)

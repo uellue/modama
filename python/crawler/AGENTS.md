@@ -47,14 +47,16 @@ Development happens in the devcontainer defined in `/.devcontainer/`. Everything
 Run from `python/crawler/`:
 
 ```bash
-pytest                                 # whole suite
-pytest tests/test_server.py            # one file
-pytest tests/test_server.py::test_post # one test
-pytest -k paging                       # by pattern
-pytest --cov                           # coverage (config in setup.cfg)
+pytest                                      # whole suite, including every collection's fixtures
+pytest tests/test_walk.py                   # one file
+pytest src/modama_crawler/formats/empad     # one collection
+pytest --regen-expected src/modama_crawler/formats/empad   # re-record its fixture results, then review the diff
+pytest --cov                                # coverage (config in setup.cfg)
 
-python -m modama_crawler crawl         # crawl MODAMA_DATA_ROOT and publish records
-python -m modama_crawler serve         # OAI-PMH endpoint, http://localhost:7654/oai (port forwarded)
+modama-crawler records [PATH] [--verbose] [--from D] [--until D] [--select ID] [--ignore ID]
+                                            # the oracle: ListRecords for a path, no database; diagnostics on stderr
+modama-crawler crawl                        # crawl MODAMA_DATA_ROOT into the database
+modama-crawler serve                        # OAI-PMH endpoint, http://localhost:7654/oai (port forwarded)
 
 # Lint/format from the repo root. CI and pre-commit run the same with uvx;
 # in the devcontainer, ruff is in the venv.
@@ -65,58 +67,42 @@ ruff format --check --diff && ruff check
 
 ```
 src/modama_crawler/
-├── __main__.py     # command line: crawl, serve; the only place that reads the environment
-├── database.py     # schema and crawl pipeline
-├── mime.py         # MIME type of a file per the shared-mime-info checking order
-├── recognition.py  # FileHandler registry for dataset types (step 2: rework)
-├── records.py      # OAI identifiers, browse URLs, Dublin Core mapping, publishing records
-└── server.py       # OAI-PMH WSGI app (werkzeug)
+├── cli.py          # crawl, serve, records; the only place that reads the environment
+├── walk.py         # post-order walk with pre-order collapse check -> Result
+├── formats/        # Entry, Directory, Dataset, Result, Format, Collection; the runner (run_pre, run_post)
+│   ├── TEMPLATE.md # how to write a collection
+│   ├── core/       # vendored freedesktop.org.xml (GPL-2.0-or-later, see its LICENSE file) + er-c.xml curation (ties that force content checks)
+│   ├── collapse/   # environments, .git, __pycache__, .ipynb_checkpoints, node_modules: collapsed pre-order
+│   ├── zarr/       # Zarr v3 stores, collapsed pre-order; nested stores belong to the outer one
+│   └── empad/      # XML header + raw pair; empad.xml rules, Empad recognizer, cheat fixture generator
+├── mime.py         # MIME type of one file per the shared-mime-info checking order; ties -> common ancestor
+├── mimedb.py       # builds the per-deployment MIME database from the enabled collections only
+├── selection.py    # entry-point discovery, ruff-style select/ignore, per-path ignores, crawl excludes
+├── records.py      # OAI identifier, browse URL, Dublin Core mapping of a Dataset
+├── render.py       # oai_dc XML, shared by the server and the records command
+├── store.py        # PostgreSQL schema (datasets, members, records) and storing a Result
+├── server.py       # OAI-PMH WSGI app (werkzeug), reads the records table only
+└── testing.py      # pytest plugin: fixtures, manifest, expected results, coverage rule
 ```
 
-Data flows from the file system to `files`, then to `datasets`, then to `records`, which is all the server reads. The server never touches the file system.
+The pipeline is a function from a tree to a **recognition result** (`walk()` → `Result` of `Dataset`s with type, anchor, members, parts, format, basis, warnings, parent, collapsed), which runs without PostgreSQL. The result is the oracle for fixture tests, what `store.py` writes, and what `records.py`/`render.py` turn into `oai_dc`. See `design/architecture.md` for the decisions; `openspec/specs/` for the behaviour contract once the first change is archived.
 
-**Records** (`records.py`):
-- `publish_records` builds the Dublin Core metadata and the identifier of every dataset, and upserts them into `records(dataset_id, identifier, datestamp, metadata)`.
-- The **datestamp** is the time the record last changed (identifier or metadata differ), truncated to seconds. It is not the file mtime: harvesters ask for records changed since their last run, and a file copied with an old mtime must still show up. Records are committed in batches to keep the gap between datestamp and commit short.
-- **Identifiers** are `oai:er-c-data-mgmt.fz-juelich.de:<path>`, with the path quoted like in the browse URL but with `:` escaped. The EOSC harvester keeps only the part after the last `:` and stores it as `VARCHAR(255)`, so local parts of 255 characters or more are shortened to exactly 255: a prefix, `~` and hex digits of the path's SHA-256.
+**Walk** (`walk.py`): symlinks, special files, unreadable files and unlistable directories are skipped with an info line and get no record (an unreadable root is an error). Per directory, a pre-order call with names and sizes (a collapse format may return a collapsed dataset, and nothing below is visited), then the subdirectories, then classification of files with `mime.py`, then a post-order call with entries, types and the subdirectories' parentless datasets. Formats run by priority then id; claims are exclusive; a format may claim its own directory's files and adopt child datasets (`parts`), which get it as `parent`; everything unclaimed becomes a single-file dataset of its MIME type. Every format call has a time limit and a byte budget; a failing format is a warning, not a crash. Results are sorted, so the walk is independent of listing order.
 
-**Server** (`server.py`):
-- `OAIServer(pool, base_url, admin_email, page_size=100)` is the WSGI app. It answers GET and POST on any path.
-- `parse_arguments` validates verb and arguments; `OAIError` carries the OAI-PMH error code.
-- Lists are paged by keyset over `(datestamp, dataset_id)`. The resumption token is `from,until,last datestamp,last dataset_id` in epoch seconds. `from`/`until` accept day and seconds granularity and are inclusive.
-- `oai_dc` only, no sets, `deletedRecord=no`.
+**Records** (`records.py`): identifier `oai:er-c-data-mgmt.fz-juelich.de:<quoted anchor path>` (shortened to 255 characters with a hash suffix if longer), `dc:identifier` is the browse URL, `dc:relation` links a collection to its parts and a part to its parent. In the database the datestamp moves only when a record's content changes; the `records` command uses the newest member mtime instead.
 
-**Crawl pipeline** (`database.crawl_and_populate`, to be reworked in step 2):
-1. `crawl_repository` walks the tree with `os.walk` (not following symlinks) into a TEMP table `crawl`, with `max(st_mtime, st_ctime)` and the owner's uid. Names that aren't valid UTF-8 are skipped with a warning.
-2. `populate_files_from_crawl` updates `files`. Deleted files cascade to their datasets and records. New and changed files get their MIME type from `mime.detect`, and every regular file gets a dataset.
-3. `publish_records` updates `records`.
-
-**MIME detection** (`mime.py`) follows the "recommended checking order" of the [shared-mime-info spec](https://specifications.freedesktop.org/shared-mime-info/latest/ar01s02.html), using pyxdg's parsed `globs2` and `magic` databases:
-- Globs match the file name only, case-insensitively unless flagged `cs`. Among matches, keep the biggest weight, then the longest pattern; a single remaining type is the result.
-- Otherwise read the first `Mime.magic.maxlen` bytes (about 18 KB) and sniff. Without glob matches, the magic result wins, else `text/plain` or `application/octet-stream`. With conflicting globs, the candidate that equals the magic result or is a subclass of it wins; failing that (not in the spec), the candidate whose own magic matches, highest priority first.
-- pyxdg's `get_type2()` is not used: it skips the longest-pattern rule, and `MagicDB.match_data(possible=...)` checks the lowest priority first.
-- Cost: about 10 µs per file with a decisive name, about 5 ms per sniffed file (pure-Python magic) plus reading.
-
-**Configuration** (environment variables, see `.env.example`): `MODAMA_DATA_ROOT` (default `/data`, the data root inside containers; the older `/storage/er-c-data` from bare-metal tests on one specific host is deprecated), `MODAMA_CRAWLER_DB`, `POSTGRES_*`, `OAI_BASE_URL`, `OAI_ADMIN_EMAIL`.
+**Configuration** (`cli.py --config file.toml`): `[formats] select = [...]`, `ignore = [...]` (ids `collection` or `collection/format`; more specific wins, ignore wins ties; nothing selected means everything installed; unknown ids are errors; a collection id also switches its MIME definitions), `[formats.per-path-ignores] "pattern" = [ids]`, `[crawl] exclude = [patterns]` (gitignore-style, `**` allowed). Environment: `MODAMA_DATA_ROOT`, `MODAMA_CRAWLER_DB`, `POSTGRES_*`, `OAI_BASE_URL`, `OAI_ADMIN_EMAIL`.
 
 ## Gotchas
 
-- There are no schema migrations: `ensure_dataset_tables` only creates missing tables. After a schema change, recreate the dev database, for example `dropdb -h db -U postgres modama_crawler && createdb -h db -U postgres modama_crawler`.
-- `FileHandler.install_mime_info()` writes the handlers' MIME definitions to `XDG_DATA_HOME`; the `crawl` command calls it.
-- `FileHandler._registry` is a global class registry. Defining a handler class (including in a test) registers it for the rest of the process.
+- There are no schema migrations: `store.ensure_tables` only creates missing tables. After a schema change, recreate the dev database, for example `dropdb -h db -U postgres modama_crawler && createdb -h db -U postgres modama_crawler`.
+- The MIME database is built into a temporary directory at startup from the enabled collections; nothing from the host is used. `update-mime-database` (package shared-mime-info) must be installed.
+- A format type with only magic rules is never detected for files whose name matches another type's glob: the checking order sniffs only when names tie. EMPAD's `empad.xml` therefore claims `*.xml` too, to force the content check.
+- Collection test modules are importable packages (`src/.../tests/__init__.py`); the plugin finds the collection from the test module's package.
 
 ## Tests
 
-- `tests/conftest.py`:
-  - A session-scoped autouse fixture points `XDG_DATA_HOME` at a temp dir and installs handler MIME info, with a `Canary` self-test handler.
-  - `conn`: a fresh `pytest-postgresql` database with the schema.
-  - `records`: five records with fixed datestamps, inserted directly through `add_record`. Their datestamps sit on the `from`/`until` boundaries the tests use, and with page size 2 they make three pages.
-  - `server`: an `OAIServer` with page size 2.
-  - `oai`: sends a request through the werkzeug test client, validates the response against the XSDs in `tests/schemas/`, and returns the parsed document.
-  - `base_url`: the server over real HTTP, for the client libraries.
-- `test_server.py`: protocol behaviour, including a table of error cases.
-- `test_clients.py`: the main verbs with `sickle`, `oaipmh-scythe` (used by the EOSC harvester) and `oaipmh`, one adapter per library.
-- `test_records.py`: identifiers, browse URLs and datestamp behaviour.
-- `test_crawl.py`: crawl a temporary tree and serve it.
-- `test_mime.py`: MIME detection, one case per rule of the checking order.
-- `test_recognition.py`: internals of the current dataset recognition; to be reworked in step 2.
+- `tests/conftest.py`: `conn` (a fresh `pytest-postgresql` database with the schema), `records`/`add_record` (five records with fixed datestamps on the `from`/`until` boundaries, page size 2 makes three pages), `server`, `oai` (werkzeug test client plus XSD validation), `base_url` (real HTTP for the client libraries). The plugin's session fixture `mime_database` builds the MIME database of all installed collections; it is autouse here.
+- `test_server.py`, `test_clients.py` (sickle, oaipmh-scythe, oaipmh): the OAI-PMH protocol and interoperability, unchanged by recognition.
+- `test_formats.py` (the runner on synthetic directories), `test_walk.py` (the walk on temporary trees), `test_selection.py`, `test_mimedb.py`, `test_mime.py`, `test_records.py` (identifiers, Dublin Core, store), `test_cli.py` (the `records` command as a subprocess, output validated against the XSDs).
+- Each collection's `tests/`: fixtures and expected results run by the plugin (`testing.py`); see `formats/TEMPLATE.md`.

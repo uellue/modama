@@ -34,12 +34,20 @@ The recognition result of a tree SHALL be identical whatever order the file syst
 - **WHEN** the same tree is crawled twice with directory entries returned in different orders
 - **THEN** both results are identical, including anchors, members and the order of members
 
-### Requirement: Unreadable and unstorable entries are reported, not fatal
-The crawl SHALL continue past directories it cannot read and names it cannot store, and SHALL report each with its path and reason.
+### Requirement: Entries that cannot make a useful record are skipped and logged
+The crawl SHALL skip symlinks, special files, files it cannot read and directories it cannot list, with an info line naming the entry and the reason, and SHALL continue with the rest of the tree; a skipped entry gets no record. Names it cannot store SHALL be reported as warnings. The root itself not being readable SHALL be an error.
 
 #### Scenario: Permission denied
-- **WHEN** a subdirectory cannot be listed
-- **THEN** the crawl records a warning naming it and recognises the rest of the tree
+- **WHEN** a subdirectory cannot be listed, or a file cannot be read
+- **THEN** it gets no record, an info line names it, and the rest of the tree is recognised
+
+#### Scenario: Symlink and FIFO
+- **WHEN** a directory contains a symlink to a file and a named pipe
+- **THEN** neither gets a record, each is named in an info line, and formats never see them
+
+#### Scenario: The root cannot be read
+- **WHEN** the path given to the crawl does not exist or cannot be listed
+- **THEN** the crawl fails with an error naming the path
 
 #### Scenario: A name that is not valid UTF-8
 - **WHEN** an entry's name cannot be decoded as UTF-8

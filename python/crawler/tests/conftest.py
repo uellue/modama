@@ -1,15 +1,14 @@
 import os
 import threading
-from importlib import reload
+from datetime import UTC, datetime
 from pathlib import Path
 
-import modama_crawler.recognition
 import pytest
-import xdg
 from lxml import etree
-from modama_crawler.database import ensure_dataset_tables
-from modama_crawler.records import dc_metadata, oai_identifier
+from modama_crawler.formats import Dataset
+from modama_crawler.records import build
 from modama_crawler.server import OAIServer
+from modama_crawler.store import ensure_tables
 from psycopg.conninfo import make_conninfo
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
@@ -30,35 +29,16 @@ RECORDS = {
     "/g+h%.txt": "2024-06-02T00:00:00Z",
 }
 
-# MIME type for the self test of the handler installation
-CANARY_MIME = xdg.Mime.MIMEtype("application", "x.modamatestfile")
-
-
-class Canary(modama_crawler.recognition.FileHandler):
-    file_types = (CANARY_MIME,)
-
-    @staticmethod
-    def xdg_mimeinfo():
-        return """
-<mime-type type="application/x.modamatestfile">
-  <comment>Canary file type to test database installation effect</comment>
-  <glob pattern="*.modamatestfile"/>
-</mime-type>
-"""
-
 
 @pytest.fixture(scope="session", autouse=True)
-def install_handlers(tmp_path_factory):
-    """Install the handlers' MIME info into a temporary XDG directory, not the user's."""
-    os.environ["XDG_DATA_HOME"] = str(tmp_path_factory.mktemp("localshare"))
-    reload(xdg.BaseDirectory)
-    modama_crawler.recognition.FileHandler.install_mime_info()
-    assert xdg.Mime.get_type_by_name("/home/whatever.modamatestfile") == CANARY_MIME
+def _mime_database(mime_database):
+    """Every test classifies with the MIME database of the installed collections (plugin fixture)."""
+    return mime_database
 
 
 @pytest.fixture
 def conn(postgresql):
-    ensure_dataset_tables(postgresql)
+    ensure_tables(postgresql)
     return postgresql
 
 
@@ -67,19 +47,17 @@ def add_record(conn):
     """Insert a record with the given datestamp, bypassing the crawl. Returns its identifier."""
 
     def add(path: str, datestamp: str) -> str:
-        ((path_id,),) = conn.execute(
-            "INSERT INTO files (path, mtime, uid) VALUES (%s, 0, %s) RETURNING path_id",
-            (path, os.getuid()),
+        dataset = Dataset(
+            anchor=path,
+            members=(path,),
+            type="text/plain",
+            basis="single file",
+            uid=os.getuid(),
         )
-        ((dataset_id,),) = conn.execute(
-            "INSERT INTO datasets (path_id) VALUES (%s) RETURNING dataset_id",
-            (path_id,),
-        )
-        identifier = oai_identifier(path)
-        metadata = dc_metadata(path, 0.0, os.getuid(), "text/plain")
+        identifier, metadata = build(dataset)
         conn.execute(
-            "INSERT INTO records VALUES (%s, %s, %s, %s)",
-            (dataset_id, identifier, datestamp, Jsonb(metadata)),
+            "INSERT INTO records (identifier, datestamp, metadata) VALUES (%s, %s, %s)",
+            (identifier, datestamp, Jsonb(metadata)),
         )
         conn.commit()
         return identifier
@@ -136,3 +114,6 @@ def base_url(server):
     threading.Thread(target=http.serve_forever, daemon=True).start()
     yield f"http://localhost:{http.server_port}/oai"
     http.shutdown()
+
+
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)

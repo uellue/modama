@@ -1,0 +1,29 @@
+{
+  "datasets": [
+    {
+      "anchor": "/a.zarr",
+      "basis": "zarr.json: zarr_format 3, node_type array",
+      "collapsed": true,
+      "format": "zarr/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}

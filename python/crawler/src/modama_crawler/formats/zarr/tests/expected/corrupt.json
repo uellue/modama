@@ -1,0 +1,18 @@
+{
+  "datasets": [
+    {
+      "anchor": "/broken.zarr",
+      "basis": "zarr.json present",
+      "collapsed": true,
+      "format": "zarr/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": [
+        "zarr.json cannot be parsed: Expecting value: line 1 column 1 (char 0)"
+      ]
+    }
+  ],
+  "warnings": []
+}

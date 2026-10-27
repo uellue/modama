@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <mime-type type="application/x.empad-raw">
+    <comment>Raw frame data of an EMPAD acquisition</comment>
+    <glob pattern="scan_x*_y*.raw" weight="80"/>
+    <glob pattern="series_x*.raw" weight="80"/>
+  </mime-type>
+  <mime-type type="application/x.empad+xml">
+    <comment>Header of an EMPAD acquisition</comment>
+    <sub-class-of type="application/xml"/>
+    <!-- The glob ties with application/xml at the same weight, which is what makes
+         the checking order sniff XML files; the magic then decides. Without it a
+         file named *.xml is application/xml by name and content is never read. -->
+    <glob pattern="*.xml"/>
+    <magic priority="60">
+      <!-- Instrument-written headers start with <root name=; files re-saved by
+           hand or by tools may carry an XML declaration first (seen in the wild). -->
+      <match type="string" offset="0:64" value="&lt;root name=">
+        <match type="string" offset="20:400" value="&lt;software_version&gt;"/>
+      </match>
+    </magic>
+  </mime-type>
+</mime-info>

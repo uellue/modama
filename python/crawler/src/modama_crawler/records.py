@@ -1,14 +1,14 @@
-"""OAI-PMH records for crawled datasets: identifier, Dublin Core metadata and datestamp."""
+"""OAI-PMH records of datasets: identifier, browse URL and the Dublin Core mapping."""
+
+from __future__ import annotations
 
 import hashlib
 import pwd
 from datetime import UTC, datetime
 from functools import cache
-from pathlib import Path
 from urllib.parse import quote_plus
 
-import psycopg
-from psycopg.types.json import Jsonb
+from .formats import Dataset
 
 OAI_NAMESPACE = "er-c-data-mgmt.fz-juelich.de"
 BROWSE_URL = "https://er-c-data-mgmt.fz-juelich.de/browse/?path="
@@ -60,59 +60,25 @@ def user_name(uid: int) -> str:
         return str(uid)
 
 
-def dc_metadata(path: str, mtime: float, uid: int, mime: str) -> dict[str, list[str]]:
-    """Dublin Core elements of the dataset at path, mapped approximately from the file system."""
-    return {
-        "title": [path],
-        "creator": [user_name(uid)],
-        "date": [format_datestamp(datetime.fromtimestamp(mtime, UTC))],
+def dc_metadata(dataset: Dataset) -> dict[str, list[str]]:
+    """Dublin Core elements of a dataset, mapped approximately from the file system (R25, R32)."""
+    relations = [browse_url(p) for p in dataset.parts]
+    if dataset.parent:
+        relations.append(browse_url(dataset.parent))
+    metadata = {
+        "title": [dataset.anchor],
+        "creator": [user_name(dataset.uid)],
+        "date": [format_datestamp(datetime.fromtimestamp(dataset.mtime, UTC))],
         "type": ["Dataset"],
-        "format": [mime],
-        "identifier": [browse_url(path)],
+        "format": [dataset.type],
+        "identifier": [browse_url(dataset.anchor)],
         "publisher": [PUBLISHER],
     }
+    if relations:
+        metadata["relation"] = relations
+    return metadata
 
 
-def publish_records(
-    conn: psycopg.Connection, root: Path, batch_size: int = 1000
-) -> int:
-    """Create or update the record of every dataset. Returns the number of changed records.
-
-    The datestamp is the time the record last changed, not the file mtime:
-    harvesters ask for records changed since their last run, and a file copied
-    with an old mtime must still show up. Committing in batches keeps the gap
-    between datestamp and commit short, so a concurrent harvest misses nothing.
-    """
-    changed = 0
-    with (
-        conn.cursor(name="publish_records", withhold=True) as datasets,
-        conn.cursor() as cur,
-    ):
-        datasets.execute(
-            """
-            SELECT d.dataset_id, f.path, f.mtime, f.uid, f.mime
-            FROM datasets d JOIN files f USING (path_id)
-            """
-        )
-        while rows := datasets.fetchmany(batch_size):
-            params = []
-            for dataset_id, abspath, mtime, uid, mime in rows:
-                path = "/" + str(Path(abspath).relative_to(root))
-                metadata = dc_metadata(path, mtime, uid, mime)
-                params.append((dataset_id, oai_identifier(path), Jsonb(metadata)))
-            cur.executemany(
-                """
-                INSERT INTO records (dataset_id, identifier, metadata, datestamp)
-                VALUES (%s, %s, %s, date_trunc('second', clock_timestamp()))
-                ON CONFLICT (dataset_id) DO UPDATE
-                SET identifier = EXCLUDED.identifier,
-                    metadata = EXCLUDED.metadata,
-                    datestamp = EXCLUDED.datestamp
-                WHERE (records.identifier, records.metadata)
-                    IS DISTINCT FROM (EXCLUDED.identifier, EXCLUDED.metadata)
-                """,
-                params,
-            )
-            changed += cur.rowcount
-            conn.commit()
-    return changed
+def build(dataset: Dataset) -> tuple[str, dict[str, list[str]]]:
+    """(identifier, Dublin Core metadata) of a dataset."""
+    return oai_identifier(dataset.anchor), dc_metadata(dataset)

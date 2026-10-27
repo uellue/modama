@@ -1,0 +1,70 @@
+{
+  "datasets": [
+    {
+      "anchor": "/a.png",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/a.png"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/png",
+      "warnings": []
+    },
+    {
+      "anchor": "/b.json",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/b.json"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/json",
+      "warnings": []
+    },
+    {
+      "anchor": "/c.py",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/c.py"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-python",
+      "warnings": []
+    },
+    {
+      "anchor": "/d.xml",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/d.xml"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/xml",
+      "warnings": []
+    },
+    {
+      "anchor": "/e.raw",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/e.raw"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/octet-stream",
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}

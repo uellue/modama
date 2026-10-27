@@ -127,15 +127,20 @@ empad/
 PRIORITY = 60
 REACTS_TO = ["application/x.empad+xml"]
 
+
 def recognize(group):
     """group: one directory's entries with their types and its subdirectories' results. Returns datasets."""
     for xml in group.of_type("application/x.empad+xml"):
-        raw = group.sibling(xml.raw_file_attribute())   # bounded read
+        raw = group.sibling(xml.raw_file_attribute())  # bounded read
         if raw is None:
-            group.warn(xml, "raw file missing")           # incomplete (Q3)
+            group.warn(xml, "raw file missing")  # incomplete (Q3)
             continue
-        yield Dataset(type="application/x.empad", anchor=xml, members=[xml, raw],
-                      basis=f"raw_file points to {raw.name}")
+        yield Dataset(
+            type="application/x.empad",
+            anchor=xml,
+            members=[xml, raw],
+            basis=f"raw_file points to {raw.name}",
+        )
 ```
 
 A deployment configuration:
@@ -210,5 +215,16 @@ The expectation file (T-D) is separate and optional.
 | 2026-10-16 (@weber, explore) | Collections live inside the crawler package with the standard layout and the entry-point group from day one; separate distributions as soon as more formats come | Get the core right first; the split is a move, not a redesign | Separate distributions now |
 | 2026-10-16 (@weber, explore) | Structure for a swarm of cheap agents implementing formats autonomously: one template, one interface, one test plugin, everything a format needs visible from its own directory | Scaling goal for hundreds of formats | Bespoke per-format setups |
 | 2026-10-15 (@weber) | Preliminary, to be revisited after the spike: fixture layout with a fixture as a directory containing only wild files, provenance in one manifest per collection (purpose, validity, licence, source), expected outcomes recorded in a parallel `expected/` tree bound by name, and checks, skills and workflows around the trees (T-B layout) | Sidecars would be seen by sibling and directory rules; the hand-written part stays four keys | Sidecar record per fixture |
+| 2026-10-27 (play test) | A tie that resolves to one of the tied candidates (the parent of the others) is not reported as ambiguous | Every `*.json` and every declaration-less `*.xml` tied with a subtype and produced a warning; the parent is exactly what a name match without the subtype would give | Report every tie |
+| 2026-10-27 (play test) | An unknown id in `select`, `ignore` or a per-path ignore is an error naming the installed ids | A typo (`collapse/vnev`, `collapse,zarr`, `nosuch`) silently changed what ran; ruff rejects unknown codes too | Warn and continue |
+| 2026-10-27 (play test) | Warnings carried by a dataset are logged and counted like the walk's own warnings | A store with an unparsable `zarr.json` showed "0 warnings" without `--verbose` | Dataset warnings only in `--verbose` |
+| 2026-10-27 (@weber, play test) | Symlinks, special files, unreadable files and unlistable directories are skipped with an info line and get no record; an unreadable root is an error | They would not make useful records; the path the user asked for is different | Records with a warning; silent skip (the state before) |
+| 2026-10-27 (@weber, play test) | A collection id in `select`/`ignore` covers the collection's MIME definitions too; ignoring a single format keeps them | Makes `--select core` mean "the common files only" and `--ignore empad` complete; the generic single-file path is the handler those definitions need | Definitions always from all installed collections (the state before) |
+| 2026-10-27 (@weber, play test) | Vendored definitions are curated in `core/er-c.xml` by forcing a content check with a tie (`*.raw` on `application/octet-stream` against Panasonic) rather than by editing `freedesktop.org.xml` | Keeps the vendored file pristine for updates; the tie trick is already the EMPAD pattern | Edit the vendored XML; a demotion list in the configuration |
+| 2026-10-27 (@weber, play test) | The datestamp of a collapsed dataset is the directory mtime as a baseline; a format may override it | Collapse does not descend by design; a format that reads the store knows better | Walk members for the newest mtime |
+| 2026-10-27 (@weber, play test) | A collapsed dataset contains everything below by default; a format may hand back entries that are not its own (warning or separate datasets, decided on wild examples); a top-level README is the dataset's description | R22 wants strays seen, but stores legitimately hold extra files | Report every non-format entry |
+| 2026-10-27 (@weber, play test) | New formats take an existing MIME type used in the wild if one exists, else an unofficial `application/x.…` type; never a misleading generic type | `text/plain` for MIB would mislabel data in the index | Generic types until a format exists |
+| 2026-10-27 (@weber) | `--select`/`--ignore` take comma-separated lists and may be repeated, as ruff's rule options do | No reason to differ from the model users know | One id per option, lists an error (the state before) |
+| 2026-10-27 (@weber, play test) | Paths to ignore entirely: gitignore-like, defaults proposed by collections, the actual list per deployment | `__pycache__` and the like are not worth a record (R30) | Records for everything (the state before) |
 
 Open for the next round: Q16 (the recognizer interface, sections A and B) and Q15 (generic extractors on subtypes, later). Q17 is closed.

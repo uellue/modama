@@ -60,3 +60,12 @@ def test_special_files(tmp_path):
     os.symlink(tmp_path / "dir", tmp_path / "link")
     assert detect(str(tmp_path / "dir")) == "inode/directory"
     assert detect(str(tmp_path / "link")) == "inode/symlink"
+
+
+def test_tie_with_parent_candidate_resolves_to_the_parent(tmp_path):
+    # *.json is a glob of application/json and of its subtype application/schema+json
+    from modama_crawler.mime import detect_with_tie
+
+    f = tmp_path / "data.json"
+    f.write_text('{"a": 1}')
+    assert detect_with_tie(str(f)) == ("application/json", None)

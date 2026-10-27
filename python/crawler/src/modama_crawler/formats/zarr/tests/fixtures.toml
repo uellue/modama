@@ -1,0 +1,27 @@
+[array]
+purpose = "representative"
+validity = "vendor-written"
+licence = "MIT"
+source = "a 4x4 float32 array store written by zarr-python at test time, next to a text file"
+generator = "modama_crawler.formats.zarr.tests.generate:array"
+
+[group_with_array]
+purpose = "representative"
+validity = "vendor-written"
+licence = "MIT"
+source = "a group store containing an array store, written by zarr-python at test time"
+generator = "modama_crawler.formats.zarr.tests.generate:group_with_array"
+
+[v2_group_with_array]
+purpose = "representative"
+validity = "vendor-written"
+licence = "MIT"
+source = "a Zarr v2 group store (.zgroup, .zattrs) containing an array (.zarray), written by zarr-python at test time; the layout found in the ER-C tree"
+generator = "modama_crawler.formats.zarr.tests.generate:v2_group_with_array"
+
+[corrupt]
+purpose = "reproducer"
+validity = "invalid-by-design: zarr.json is not JSON"
+licence = "MIT"
+source = "generated"
+generator = "modama_crawler.formats.zarr.tests.generate:corrupt"

@@ -1,0 +1,16 @@
+{
+  "datasets": [
+    {
+      "anchor": "/g.zarr",
+      "basis": ".zgroup present (Zarr v2)",
+      "collapsed": true,
+      "format": "zarr/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}

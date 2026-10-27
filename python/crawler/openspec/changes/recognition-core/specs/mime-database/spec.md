@@ -32,7 +32,11 @@ Classification SHALL follow the shared-mime-info checking order: name rules by w
 - **THEN** its type is `image/png`
 
 ### Requirement: Ties resolve to the common ancestor
-When two candidate types remain equally good, the result SHALL be their nearest common ancestor in the subclass hierarchy, and the tie SHALL be reported; only candidates with no common ancestor other than the fallback SHALL resolve to the fallback.
+When two candidate types remain equally good, the result SHALL be their nearest common ancestor in the subclass hierarchy, which is one of the candidates itself when the others are its subtypes; the tie SHALL be reported only when the result is none of the candidates; only candidates with no common ancestor other than the fallback SHALL resolve to the fallback.
+
+#### Scenario: A candidate is the parent of the others
+- **WHEN** `data.json` matches the globs of `application/json` and `application/schema+json`, a subtype of it
+- **THEN** its type is `application/json`, not their common parent `application/json5`, and no ambiguity is reported
 
 #### Scenario: Two HDF5 subtypes
 - **WHEN** a file matches two name rules of equal weight whose types are both subclasses of `application/x-hdf5` and content does not decide

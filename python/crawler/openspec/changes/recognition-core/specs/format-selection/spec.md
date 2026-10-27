@@ -20,6 +20,28 @@ The configuration SHALL accept `select` and `ignore` lists of ids, where an id i
 - **WHEN** the configuration has `select = ["gatan"]` and `ignore = ["gatan/dm3-legacy"]`
 - **THEN** every format of `gatan` except `dm3-legacy` is enabled
 
+### Requirement: A collection id covers its MIME definitions
+Selecting or ignoring a collection by name SHALL also decide whether its MIME definitions are built into the database; ignoring one of its formats SHALL leave the definitions in place. A collection without Python formats, such as `core`, is selected this way.
+
+#### Scenario: Only the common files
+- **WHEN** `records --select core PATH` is run
+- **THEN** files are classified with the core definitions only and no Python format runs
+
+#### Scenario: A collection switched off as a whole
+- **WHEN** `records --ignore empad PATH` is run on an EMPAD pair
+- **THEN** the raw file is not classified as `application/x.empad-raw`
+
+### Requirement: Unknown ids are rejected
+An id in `select`, `ignore` or a per-path ignore that names neither an installed collection nor an installed format SHALL be an error naming the id and the installed ids, before anything is crawled; a typo SHALL NOT silently change what runs.
+
+#### Scenario: Misspelled id on the command line
+- **WHEN** `records --select nosuch PATH` is run
+- **THEN** standard error names `nosuch`, the exit status is non-zero and nothing is written to standard output
+
+#### Scenario: Misspelled id in the configuration
+- **WHEN** the configuration file has `ignore = ["collapse/vnev"]`
+- **THEN** the command fails the same way
+
 ### Requirement: More specific wins, ignore wins ties
 When `select` and `ignore` overlap, the more specific id SHALL override the less specific one, and `ignore` SHALL take precedence over `select` when the same id appears in both.
 

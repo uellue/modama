@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- ER-C curation of the vendored definitions (design/playtest.md, @weber 2026-10-27).
+       Upstream gives *.raw to image/x-panasonic-rw; at an electron microscopy
+       institute almost every .raw file is detector data. The same glob on the
+       fallback type makes the name ambiguous, so the content decides: a real
+       Panasonic file matches its magic, anything else is application/octet-stream. -->
+  <mime-type type="application/octet-stream">
+    <glob pattern="*.raw"/>
+  </mime-type>
+</mime-info>
