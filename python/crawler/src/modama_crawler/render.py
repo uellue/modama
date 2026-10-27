@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from lxml import etree
@@ -79,13 +80,28 @@ def document(
     return root, request
 
 
-def list_records(base_url: str, records: list[tuple[str, datetime, dict]]) -> bytes:
-    """A complete ListRecords response without pagination, for the records command."""
+def comment(parent, text: str) -> None:
+    """An XML comment, with the two characters a comment cannot contain made harmless."""
+    parent.append(etree.Comment(f" {xml_text(text).replace('--', '- -').rstrip('-')} "))
+
+
+def list_records(
+    base_url: str, items: Iterable[str | tuple[str, datetime, dict]]
+) -> bytes:
+    """A complete ListRecords response without pagination, for the records command.
+
+    An item is a record (identifier, datestamp, metadata) or a string, which
+    becomes an XML comment at that place: diagnostics next to the records they
+    concern, in a document that stays valid.
+    """
     root, _ = document(base_url, "ListRecords", {"metadataPrefix": "oai_dc"})
     container = element("ListRecords")
     root.append(container)
-    for identifier, datestamp, metadata in records:
-        record(container, identifier, datestamp, metadata)
+    for item in items:
+        if isinstance(item, str):
+            comment(container, item)
+        else:
+            record(container, *item)
     return etree.tostring(
         root, xml_declaration=True, encoding="UTF-8", pretty_print=True
     )

@@ -7,6 +7,7 @@ RUN mkdir -p /etc/postgresql-common/createcluster.d \
     && echo "create_main_cluster = false" > /etc/postgresql-common/createcluster.d/no-main-cluster.conf \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+        xvfb xterm xdotool imagemagick xfonts-base \
         postgresql-17 \
         postgresql-client-17 \
         shared-mime-info \

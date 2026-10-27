@@ -58,12 +58,18 @@ def _ids(text: str) -> list[str]:
     return [x.strip() for x in text.split(",") if x.strip()]
 
 
+def _warnings(result) -> list[tuple[str, str]]:
+    """Every warning of the result, including those carried by datasets, in path order."""
+    return sorted(
+        list(result.warnings)
+        + [(d.anchor, text) for d in result.datasets for text in d.warnings]
+    )
+
+
 def _report(result) -> int:
-    """Log every warning of the result, including those carried by datasets; returns their number."""
-    warnings = list(result.warnings) + [
-        (d.anchor, text) for d in result.datasets for text in d.warnings
-    ]
-    for path, text in sorted(warnings):
+    """Log every warning of the result; returns their number."""
+    warnings = _warnings(result)
+    for path, text in warnings:
         log.warning("%s: %s", path, text)
     return len(warnings)
 
@@ -102,12 +108,21 @@ def cmd_serve(args) -> int:
 
 
 def cmd_records(args) -> int:
-    """Print the ListRecords response for a path, without a database: the datestamp is the newest member mtime."""
+    """Print the ListRecords response for a path, without a database: the datestamp is the newest member mtime.
+
+    With --verbose the diagnostics travel inside the document as XML comments
+    in path order, directly before the record they concern, so that
+    `records --verbose | less` shows both; standard error then carries only
+    errors. Without it, warnings and the summary follow the document on
+    standard error, so that they are the last thing on a bare terminal.
+    """
     try:
         from_, until = parse_range(args.from_, args.until)
     except OAIError as e:
         log.error("%s", e.message)
         return 2
+    if args.verbose:
+        logging.getLogger("modama_crawler").setLevel(logging.ERROR)
     config, formats = _configure(args)
     try:
         result = walk(
@@ -119,8 +134,13 @@ def cmd_records(args) -> int:
     except OSError as e:
         log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
         return 2
-    warnings = _report(result)
-    records = []
+    warnings = _warnings(result)
+    # Everything in path order: one note per skipped entry and per warning, a note and a record per dataset
+    NOTE, RECORD = 0, 1
+    events: list[tuple[str, int, object]] = [
+        (path, NOTE, f"{path}: SKIPPED: {reason}") for path, reason in result.skipped
+    ] + [(path, NOTE, f"{path}: WARNING: {text}") for path, text in warnings]
+    count = plain = 0
     for d in result.datasets:
         datestamp = datetime.fromtimestamp(d.mtime, UTC)
         if (from_ is not None and datestamp < from_) or (
@@ -128,12 +148,34 @@ def cmd_records(args) -> int:
         ):
             continue
         identifier, metadata = build(d)
-        log.debug("%s: %s by %s %s, basis: %s%s", d.anchor, d.type, d.format or "-", d.version, d.basis,
-                  "".join(f"; warning: {w}" for w in d.warnings))  # fmt: skip
-        records.append((identifier, datestamp, metadata))
+        if d.format:
+            note = f"{d.anchor}: {d.type} by {d.format} {d.version}, basis: {d.basis}"
+        else:  # a single file by its MIME type: routine, counted, not commented
+            note = None
+            plain += 1
+        events.append((d.anchor, RECORD, (note, identifier, datestamp, metadata)))
+        count += 1
+    events.sort(key=lambda e: (e[0], e[1]))
+    items: list = []
+    for _, kind, payload in events:
+        if kind == NOTE:
+            if args.verbose:
+                items.append(payload)
+        else:
+            note, identifier, datestamp, metadata = payload
+            if args.verbose and note:
+                items.append(note)
+            items.append((identifier, datestamp, metadata))
+    if args.verbose:
+        items.append(
+            f"{count} records ({plain} single files by type), "
+            f"{len(warnings)} warnings, {len(result.skipped)} skipped"
+        )
     base_url = os.environ.get("OAI_BASE_URL", "http://localhost:7654/oai")
-    sys.stdout.buffer.write(render.list_records(base_url, records))
-    log.info("%d records, %d warnings", len(records), warnings)
+    sys.stdout.buffer.write(render.list_records(base_url, items))
+    sys.stdout.flush()
+    _report(result)
+    log.info("%d records, %d warnings", count, len(warnings))
     return 0
 
 
@@ -200,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     load_dotenv()
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.INFO,
         stream=sys.stderr,
         format="%(levelname)s %(message)s",
     )

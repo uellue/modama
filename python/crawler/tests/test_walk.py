@@ -136,6 +136,10 @@ def test_unreadable_entries_are_skipped_and_logged(tmp_path, caplog):
         (tmp_path / "locked.txt").chmod(0o600)
     assert [d.anchor for d in result.datasets] == ["/open.txt"]
     assert result.warnings == []
+    assert result.skipped == [
+        ("/locked.txt", "not readable"),
+        ("/secret", "cannot list directory: Permission denied"),
+    ]
     assert "/secret: skipped, cannot list directory: Permission denied" in caplog.text
     assert "/locked.txt: skipped, not readable" in caplog.text
 
@@ -161,6 +165,12 @@ def test_symlinks_and_special_files_are_skipped_and_logged(tmp_path, caplog):
         result = walk(tmp_path, [Spy()])
     assert [d.anchor for d in result.datasets] == ["/target.txt"]
     assert set(seen) == {"file", "dir"}
+    assert result.skipped == [
+        ("/dangling", "symlink"),
+        ("/link.txt", "symlink"),
+        ("/linkdir", "symlink"),
+        ("/pipe", "other"),
+    ]
     for line in (
         "/link.txt: skipped, symlink",
         "/linkdir: skipped, symlink",

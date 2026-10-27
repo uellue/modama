@@ -49,7 +49,7 @@
 
 - [x] 9.1 Remove `recognition.py`, `tests/test_recognition.py`, `tests/test_crawl.py` and the old `database.py` paths; verify the whole suite passes (`pytest`) and `ruff check` and `ruff format --check` are clean.
 - [x] 9.2 Run `records --verbose` on a directory of `/er-c-data` that contains an EMPAD pair, a Zarr store and a Python environment; verify the output validates against the schemas and the diagnostics name the expected formats; record the directory and the outcome in `design/survey.md`.
-- [ ] 9.3 Run `crawl` on the visible `/er-c-data` tree into the development database and `serve`; verify a `ListRecords` harvest with the client tests' libraries completes and note the duration and the warning counts in `design/survey.md`.
+- [x] 9.3 Run `crawl` on the visible `/er-c-data` tree into the development database and `serve`; verify a `ListRecords` harvest with the client tests' libraries completes and note the duration and the warning counts in `design/survey.md`.
 
 ## Workflow follow-up
 

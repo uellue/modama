@@ -72,3 +72,22 @@ Frame series are unmistakable: one varying field, identical sizes, nothing else 
 | `aidenoise/grace-cachedata-backup` (a miniforge installation and more) | `miniforge3` collapsed at the top by `conda-meta/`, nothing below it visited; 134 records for the rest; no warnings | a few seconds |
 
 The Zarr run is the first instance of the intended loop: the oracle showed a wrong outcome on real data, the format and its spec were corrected, a representative v2 fixture written by zarr-python was added, and the recorded results were regenerated.
+
+## Full crawl of the visible tree (2026-10-27, task 9.3 of `recognition-core`)
+
+`MODAMA_DATA_ROOT=/er-c-data modama-crawler crawl` into the development database, single-threaded, run on the code as it stood before the play-test fixes of the same day (the first attempt on 2026-10-16 died with its session).
+
+| | |
+|---|---|
+| Duration | 2 h 00 min (11:15 to 13:15 UTC) |
+| Datasets and records | 428,856 |
+| of which single files by MIME type | 428,332 |
+| Collapsed | 475: 283 `.ipynb_checkpoints`, 131 Zarr stores, 53 `__pycache__`, 7 `.git`, 1 conda installation |
+| EMPAD pairs | 49 |
+| Warnings | 3,532 |
+
+Warnings by kind: 1,569 ties between `application/x.empad+xml` and `application/xml` (the glob trick; no longer reported since a tie resolved to a candidate is not an ambiguity), 431 ties between `application/json` and `application/schema+json` resolved to `json5` (the bug the play test found, fixed), 85 `.obj` files tied between `application/x-tgif` and `model/obj` and left at `application/octet-stream` (a curation candidate: at ER-C they are more likely Wavefront or compiled objects than tgif drawings), 1,228 directories that cannot be listed and 28 entries that cannot be stat'ed, all under `/adhoc` (permissions, as in the listing survey; now info lines, not warnings), and a handful of ties between text subtypes such as `text/x-matlab` and `text/x-objcsrc` for `.m` files (curation candidate).
+
+Compared with the listing survey of 2026-10-15 (525,533 files visible), the crawl produced fewer records because collapsed trees hide their contents and because unreadable files are skipped.
+
+Harvest check: `modama-crawler serve` on that database, harvested completely with oaipmh-scythe (the EOSC harvester's client): all 428,856 records in 58 s over 4,289 pages of 100, every request answered with 200. Task 9.3 done.

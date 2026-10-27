@@ -51,6 +51,7 @@ class Dataset:
 class Result:
     datasets: list[Dataset] = field(default_factory=list)
     warnings: list[tuple[str, str]] = field(default_factory=list)  # (path, text)
+    skipped: list[tuple[str, str]] = field(default_factory=list)  # (path, reason)
 
     def to_json(self) -> dict:
         datasets = sorted(self.datasets, key=lambda d: d.anchor)
@@ -70,6 +71,7 @@ class Result:
                 for d in datasets
             ],
             "warnings": [list(w) for w in sorted(self.warnings)],
+            "skipped": [list(s) for s in sorted(self.skipped)],
         }
 
     @classmethod
@@ -90,6 +92,7 @@ class Result:
                 for d in data["datasets"]
             ],
             warnings=[tuple(w) for w in data["warnings"]],
+            skipped=[tuple(s) for s in data.get("skipped", [])],
         )
 
 

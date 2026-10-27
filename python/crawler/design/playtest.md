@@ -53,6 +53,19 @@ The tester's open points, the decision, and the state. "Done" means implemented 
 11. **MIME type names for new formats:** look for an existing type used in the wild first (for example the Debian MIME support list), otherwise invent an unofficial `application/x.…` type; never a misleading generic one such as `text/plain` for MIB. *Recorded in `formats/TEMPLATE.md`.*
 12. **Requirements suggestions** from the tester: accepted by @weber with notes and folded into `requirements.md` as R33 to R39 (unknown ids, overrides of generic definitions, what recognition sees, severity model, datestamps, members in a record, identifier limits), R31's testable examples, and open questions Q20 and Q21 (severity details, member representation; both with user testing as a TODO). Comma lists follow ruff (R33).
 
+## Visual check of `records --verbose | less` (2026-10-27)
+
+@weber found that `records --verbose | less` hid the diagnostics, since they went to stderr, and asked for the requirement (now R40) and for a check by eye in a real terminal rather than by parsing text. The mechanism: with `--verbose` the diagnostics become XML comments in the document, in path order, directly before the record they concern (`records-cli` spec). A Sonnet agent drove an xterm under a virtual X server (`tools/xterm-shots.py`: start, keys, screenshot) through nine scenarios on the play-test trees and judged only the screenshots; its report and screenshots are in the session scratchpad.
+
+Verdict: the requirement holds. Association by position and by the path in each comment was unambiguous in every scenario, including a saved file, `head`, and 80 columns. Found and fixed the same day, each with a spec scenario and a test, and re-checked by eye:
+
+- **Bare terminal without `--verbose`:** warnings and the summary were printed before the document and scrolled off. They now follow the document on stderr, so they are the last thing on the screen.
+- **Large tree:** 557 "image/tiff, single file" comments carried no information and made the diagnostics about 5% of the screen. Single files that no format produced get no comment; the closing comment counts them: `557 records (557 single files by type), 0 warnings, 0 skipped`.
+- **Markers:** `WARNING:` and `SKIPPED:` in upper case, searchable in a pager without matching file names.
+- **One comment per diagnostic:** a dataset's own warning (an unparsable `zarr.json`) was merged into its recognition comment; it is now a comment of its own, like the walk's warnings.
+
+Not done, in the backlog: shorter recognition comments, the symlink target in `SKIPPED:` comments, colour on stderr when it is a terminal, a non-verbose hint pointing to `--verbose`.
+
 ---
 
 ## The tester's report: playtest of `modama-crawler records`

@@ -11,6 +11,7 @@ Top-level layout:
 - `modama-rs/` – Cargo workspace: `smbdrop` (SMB ingest share service), `modama-agent` (runs on lab/instrument PCs, mounts ingest shares), `modama-common`. Clippy denies `unwrap`/`expect` workspace-wide.
 - `mgmtinterface-new/` – React/TypeScript (Vite) rewrite of the management interface.
 - `deploy/` – Dockerfiles, `docker-compose.yml` + `docker-compose.override.yml` (test, the default) or `+ docker-compose.prod.yml` (prod), `build.sh`, `upprod.sh`/`downprod.sh`, `testconf/`/`prodconf/`. Test deployment data lives in `deploy/testfolder/` (`sudo ./preparefolders.sh`). Secrets are expected in `/var/local/data-mgmt/` outside the repo.
+- `devvm/` – `devvm.sh` creates/manages a libvirt/KVM VM (Debian + Docker) for running the test deployment and Docker-based tests in isolation. Generic settings in `defaults.env`, site-specific ones in gitignored `site.env`.
 - `prototypes/` – notebooks and experiments; excluded from ruff checks via pre-commit.
 
 ## Commands (mirrors `.gitlab-ci.yml`)

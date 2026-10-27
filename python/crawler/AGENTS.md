@@ -54,7 +54,7 @@ pytest --regen-expected src/modama_crawler/formats/empad   # re-record its fixtu
 pytest --cov                                # coverage (config in setup.cfg)
 
 modama-crawler records [PATH] [--verbose] [--from D] [--until D] [--select ID] [--ignore ID]
-                                            # the oracle: ListRecords for a path, no database; diagnostics on stderr
+                                            # the oracle: ListRecords for a path, no database; --verbose embeds diagnostics as XML comments
 modama-crawler crawl                        # crawl MODAMA_DATA_ROOT into the database
 modama-crawler serve                        # OAI-PMH endpoint, http://localhost:7654/oai (port forwarded)
 
@@ -98,6 +98,7 @@ The pipeline is a function from a tree to a **recognition result** (`walk()` →
 - There are no schema migrations: `store.ensure_tables` only creates missing tables. After a schema change, recreate the dev database, for example `dropdb -h db -U postgres modama_crawler && createdb -h db -U postgres modama_crawler`.
 - The MIME database is built into a temporary directory at startup from the enabled collections; nothing from the host is used. `update-mime-database` (package shared-mime-info) must be installed.
 - A format type with only magic rules is never detected for files whose name matches another type's glob: the checking order sniffs only when names tie. EMPAD's `empad.xml` therefore claims `*.xml` too, to force the content check.
+- Output meant for people (the `records` command) is checked by eye in a real terminal, not only by parsing text: `tools/xterm-shots.py` starts an xterm under a virtual X server, sends keys and takes screenshots (needs xvfb, xterm, xdotool, imagemagick from the devcontainer image); an agent reads the PNGs. See `design/playtest.md`, visual check.
 - Collection test modules are importable packages (`src/.../tests/__init__.py`); the plugin finds the collection from the test module's package.
 
 ## Tests

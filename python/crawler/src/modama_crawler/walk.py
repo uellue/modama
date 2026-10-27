@@ -26,6 +26,11 @@ def _kind(mode: int) -> str:
     return "other"
 
 
+def _skip(result: Result, rel: str, reason: str) -> None:
+    result.skipped.append((rel, reason))
+    log.info("%s: skipped, %s", rel, reason)
+
+
 def _entries(
     dirpath: str, rel: str, result: Result, exclude: Iterable[str]
 ) -> list[Entry]:
@@ -57,10 +62,10 @@ def _entries(
             continue
         kind = _kind(st.st_mode)
         if kind not in ("file", "dir"):
-            log.info("%s: skipped, %s", child_rel, kind)
+            _skip(result, child_rel, kind)
             continue
         if kind == "file" and not os.access(path, os.R_OK):
-            log.info("%s: skipped, not readable", child_rel)
+            _skip(result, child_rel, "not readable")
             continue
         entries.append(
             Entry(
@@ -99,7 +104,7 @@ def walk(
         except OSError as e:
             if rel == "/":
                 raise  # the root itself: the caller asked for it, so it is an error
-            log.info("%s: skipped, cannot list directory: %s", rel, e.strerror)
+            _skip(result, rel, f"cannot list directory: {e.strerror}")
             return []
         st = os.lstat(dirpath)
         active = formats_for(rel)
@@ -143,4 +148,5 @@ def walk(
 
     result.datasets = sorted(visit(root, "/"), key=lambda d: d.anchor)
     result.warnings.sort()
+    result.skipped.sort()
     return result

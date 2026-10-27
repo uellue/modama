@@ -38,19 +38,44 @@ def test_default_invocation(tmp_path):
     assert doc.find(f"{OAI}request").get("verb") == "ListRecords"
 
 
-def test_verbose_diagnostics_stay_on_stderr(tmp_path):
+def test_verbose_diagnostics_travel_with_the_records(tmp_path):
     cheat.pair(tmp_path / "scan")
-    # Typed as the documentation shows it: the flag after the subcommand
-    run = records("records", "--verbose", str(tmp_path))
+    cheat.header_only(tmp_path / "copying")
+    # Typed as the documentation shows it: the flag after the subcommand, through a pipe
+    run = subprocess.run(
+        f"{sys.executable} -m modama_crawler records --verbose {tmp_path} | cat",
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+        check=False,
+        timeout=120,
+    )
     assert run.returncode == 0, run.stderr
     validate_oai(run.stdout, SCHEMAS)
-    assert b"/scan/SCA2_rings.xml: application/x.empad+xml by empad/empad" in run.stderr
-    assert b"raw_file points to" in run.stderr
+    text = run.stdout.decode()
+    note = "<!-- /scan/SCA2_rings.xml: application/x.empad+xml by empad/empad 1, basis: raw_file points to series_x4.raw -->"
+    assert note in text
+    # The note comes directly before its record, the warning directly before the note of the header it concerns
+    assert text.index(note) < text.index(oai_identifier_of("/scan/SCA2_rings.xml"))
+    warning = "<!-- /copying/SCA2_rings.xml: WARNING: raw file series_x4.raw named by the header is missing -->"
+    assert warning in text
+    assert text.index(warning) < text.index(
+        oai_identifier_of("/copying/SCA2_rings.xml")
+    )
+    # A single file by its MIME type gets no comment of its own
+    assert "<!-- /copying/SCA2_rings.xml: application" not in text
+    assert "<!-- 2 records (1 single files by type), 1 warnings, 0 skipped -->" in text
+    # Nothing to look for on standard error
+    assert b"INFO" not in run.stderr and b"WARNING" not in run.stderr
     # Also accepted before the subcommand
     before = records("--verbose", "records", str(tmp_path))
-    assert before.returncode == 0 and before.stderr.count(b"DEBUG") == run.stderr.count(
-        b"DEBUG"
-    )
+    assert before.returncode == 0 and before.stdout.count(b"<!--") == text.count("<!--")
+
+
+def oai_identifier_of(path: str) -> str:
+    from modama_crawler.records import oai_identifier
+
+    return oai_identifier(path)
 
 
 def test_options_in_any_order(tmp_path):
@@ -80,7 +105,7 @@ def test_options_in_any_order(tmp_path):
         "application/octet-stream",
         "application/xml",
     ]
-    assert b"DEBUG" in run.stderr
+    assert b"<!--" in run.stdout
 
 
 def test_ignore_overrides_selection(tmp_path):
@@ -210,3 +235,22 @@ def test_dataset_warnings_are_reported_without_verbose(tmp_path):
     assert run.returncode == 0, run.stderr
     assert b"WARNING /broken.zarr: zarr.json cannot be parsed" in run.stderr
     assert b"1 records, 1 warnings" in run.stderr
+    # On a terminal the warnings and the summary come after the document, where the eye lands
+    merged = subprocess.run(
+        f"{sys.executable} -m modama_crawler records {tmp_path} 2>&1",
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+        check=False,
+        timeout=120,
+    ).stdout
+    assert (
+        merged.index(b"</OAI-PMH>")
+        < merged.index(b"WARNING")
+        < merged.index(b"1 records, 1 warnings")
+    )
+    # With --verbose the warning is a comment of its own, before the store's recognition comment
+    verbose = records("records", "--verbose", str(tmp_path)).stdout.decode()
+    assert verbose.index(
+        "<!-- /broken.zarr: WARNING: zarr.json cannot be parsed"
+    ) < verbose.index("<!-- /broken.zarr: application/x-zarr by zarr/zarr")
