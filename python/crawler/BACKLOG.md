@@ -40,15 +40,15 @@ Deferred items, roughly in the order they are likely to come up.
   - Every dataset's metadata is rebuilt on every crawl, not only the changed ones'.
 - **Datestamp window:** all records changed by one crawl share a datestamp taken just before the upsert, so the window is the upsert plus commit, plus clock skew between the crawler and the database host. A harvester should use an overlap margin on `from`.
 - **Enforced format timeouts (R23):** the time limit is checked after the call, so a hanging format stalls the crawl; isolation by worker subprocesses is the planned mechanism (review 2026-11-03, B14).
-- **CI job for the crawler:** none yet; it needs the devcontainer image (PostgreSQL, shared-mime-info, git, the `[test]` extras) and a non-root user, or the permission scenarios silently skip (review 2026-11-03, C5).
+- **CI job for the crawler:** none yet; it needs the VM setup of `AGENTS.md` as an image (PostgreSQL, shared-mime-info, git, the `[test]` extras) and a non-root user, or the permission scenarios silently skip (review 2026-11-03, C5).
 - **Symlinks** are skipped with an info line (decided 2026-10-27); a record for symlinks to files stays an open question.
 - **Schema migrations:** there are none, so every schema change means recreating the database. Needed before deployment.
-- **Local EOSC snapshot:** `prototypes/EOSC-Data-Commons/` is about three months behind upstream (v1.9.0, 2026-10-08) and has uncommitted local changes, including the `localhost:7654` endpoint in `seed.sql`.
+- **End-to-end test** (`prototypes/crawler-e2e/`, since 2026-11-03: crawl, harvest, index, search against the warehouse at v1.10.0): add the incremental harvest (a new file after the first harvest, `from` set, N+1 records) and a fixture tree with the real formats; move to `deploy/` with the deployment. Re-verify on every warehouse upgrade; the workarounds for the upstream compose are commented in `warehouse.e2e.yml` and `e2e.sh`.
 - **Deployment:** a container in `deploy/` behind the gateway, with a read-only data mount and a crawl schedule.
 - **Drop the pyxdg fork** once https://gitlab.freedesktop.org/xdg/pyxdg/-/merge_requests/18 is merged.
 - **Report or fix upstream** (pyxdg): `get_type2()` lacks the longest-pattern rule (`a.tar.gz` becomes `application/gzip`), and `MagicDB.match_data(possible=...)` checks the lowest priority first (an SVG checked against `[xml, svg]` becomes `application/xml`). `GlobDB.all_matches()` should return the pattern and keep every literal match (two types sharing a literal glob collapse to one today), and `_is_text` should be public; then `mime.py`'s glob index and the cache poke in `mimedb.activate` can go (review 2026-11-03, D10).
-- **Report upstream** (EOSC `metadata-crawlers`):
-  - Deletion detection reads `header.status`, but oaipmh-scythe exposes `header.deleted`, so deletions are never propagated.
-  - A `noRecordsMatch` response on an incremental harvest marks the run as failed.
-  - A single failed record blocks indexing of the whole run.
-  - OAI identifiers are cut at the last `:` and stored as `VARCHAR(255)`.
+- **Report upstream** (EOSC `metadata-crawlers`, checked against `9c120f5` on 2026-11-03):
+  - Deletion detection reads `header.status`, but oaipmh-scythe exposes `header.deleted`, so deletions are never propagated (the first harvest also passes `ignore_deleted=True`).
+  - OAI identifiers are cut at the last `:` and stored as `VARCHAR(255)` (`record_identifier`).
+  - Fixed upstream: `noRecordsMatch` on an incremental harvest no longer fails the run (`ea0ea11`); a record that fails transformation is skipped with `harvest_events.error_message` set instead of blocking the run (warehouse v1.10.0; logged at info level only).
+- **Report upstream** (EOSC `metadata-warehouse`, issue #151 on the first local deployment): the scheduler health check needs `AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK`; the search API gets no database settings and needs an `appdb` database; transform does not create the index; `harvest_runs.records_harvested` is never written.
