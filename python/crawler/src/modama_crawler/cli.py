@@ -114,7 +114,7 @@ def cmd_serve(args) -> int:
             base_url=os.environ.get("OAI_BASE_URL", DEFAULT_BASE_URL),
             admin_email=os.environ.get("OAI_ADMIN_EMAIL", "admin@example.org"),
         )
-        run_simple("localhost", 7654, server, threaded=True)
+        run_simple(os.environ.get("OAI_BIND", "localhost"), 7654, server, threaded=True)
     return 0
 
 
@@ -233,7 +233,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     selection_args(crawl)
     crawl.set_defaults(func=cmd_crawl)
-    serve = sub.add_parser("serve", help="serve the OAI-PMH endpoint on port 7654")
+    serve = sub.add_parser(
+        "serve",
+        help="serve the OAI-PMH endpoint on port 7654 (address from OAI_BIND, default localhost)",
+    )
     serve.set_defaults(func=cmd_serve)
     records = sub.add_parser(
         "records", help="print the ListRecords response for a path; no database needed"
