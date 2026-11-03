@@ -8,15 +8,23 @@ Fixtures are directories under `tests/fixtures/` holding only wild files, or
 generated at test time by a function named in the manifest `tests/fixtures.toml`
 (`generator = "module:function"`, called with the target directory). Every
 fixture has a manifest entry with `purpose`, `validity`, `licence` and `source`.
-The recognition result of each fixture is compared with `tests/expected/<name>.json`;
-`--regen-expected` rewrites it. Every rule the collection defines itself must fire
-on at least one representative fixture.
+
+The recognition result of each fixture is compared with `tests/expected/<name>.json`.
+A missing result is recorded on the first run, which fails and asks for a review
+(decision T4, the pytest-regressions model); `--regen-expected` rewrites the
+results and fails for every file that changed, naming the datasets, so that the
+run itself says what to review. Every rule the collection defines itself (each
+glob, each magic rule, each Python format) must fire on at least one
+representative fixture. A collection is tested with its own definitions plus
+the core's, whatever else is installed (R2, R3).
 """
 
 from __future__ import annotations
 
+import fnmatch
 import importlib
 import json
+import os
 import shutil
 import tomllib
 from dataclasses import dataclass
@@ -24,6 +32,7 @@ from pathlib import Path
 
 import pytest
 from lxml import etree
+from xdg import Mime
 
 from . import mimedb, selection
 from .formats import Collection, Result
@@ -31,6 +40,12 @@ from .walk import walk
 
 REQUIRED_KEYS = ("purpose", "validity", "licence", "source")
 NOT_WILD = ("fixtures.toml", "expected", "__pycache__", ".gitkeep")
+CORE = "core"
+VENDORED = (
+    "freedesktop.org.xml",
+)  # upstream definitions, exempt from the coverage rule
+
+_session_database: Path | None = None
 
 
 @dataclass
@@ -47,13 +62,14 @@ class CollectionTests:
     def expected_dir(self) -> Path:
         return self.tests_dir / "expected"
 
+    @property
+    def on_disk(self) -> set[str]:
+        if not self.fixtures_dir.is_dir():
+            return set()
+        return {p.name for p in self.fixtures_dir.iterdir()}
+
     def fixture_names(self) -> list[str]:
-        on_disk = (
-            {p.name for p in self.fixtures_dir.iterdir()}
-            if self.fixtures_dir.is_dir()
-            else set()
-        )
-        return sorted(on_disk | set(self.manifest))
+        return sorted(self.on_disk | set(self.manifest))
 
     def materialise(self, name: str, target: Path) -> Path:
         """The fixture as a directory: copied from disk, or written by its generator."""
@@ -95,41 +111,38 @@ def pytest_generate_tests(metafunc):
 @pytest.fixture(scope="session")
 def mime_database(tmp_path_factory):
     """The MIME database of every installed collection, built once per session."""
+    global _session_database
     collections = selection.discover()
-    mimedb.build(collections.values(), tmp_path_factory.mktemp("mime"))
+    _session_database = tmp_path_factory.mktemp("mime")
+    mimedb.build(collections.values(), _session_database)
     return collections
 
 
-@pytest.fixture
-def collection_tests(request, mime_database) -> CollectionTests:
-    return collection_tests_for(request.module)
-
-
-def _formats(ct: CollectionTests, installed: dict[str, Collection]):
-    core = installed.get("core")
-    return list(core.formats if core and core is not ct.collection else []) + list(
-        ct.collection.formats
+@pytest.fixture(scope="module")
+def collection_tests(request, mime_database, tmp_path_factory) -> CollectionTests:
+    """The collection under test, with a MIME database of its own definitions plus the core's."""
+    ct = collection_tests_for(request.module)
+    core = mime_database.get(CORE)
+    own = (
+        [ct.collection]
+        if core is None or core is ct.collection
+        else [core, ct.collection]
     )
+    mimedb.build(own, tmp_path_factory.mktemp("mime-collection"))
+    yield ct
+    mimedb.activate(_session_database)
 
 
-def recognise(
-    ct: CollectionTests, installed: dict[str, Collection], name: str, workdir: Path
-) -> Result:
-    path = ct.materialise(name, workdir)
-    return walk(path, _formats(ct, installed))
+def recognise(ct: CollectionTests, name: str, workdir: Path) -> Result:
+    return walk(ct.materialise(name, workdir), ct.collection.formats)
 
 
 def test_manifest(collection_tests: CollectionTests):
     ct = collection_tests
-    on_disk = (
-        {p.name for p in ct.fixtures_dir.iterdir()}
-        if ct.fixtures_dir.is_dir()
-        else set()
-    )
     generated = {name for name, entry in ct.manifest.items() if "generator" in entry}
-    missing = on_disk - set(ct.manifest)
+    missing = ct.on_disk - set(ct.manifest)
     assert not missing, f"fixtures without a manifest entry: {sorted(missing)}"
-    orphans = set(ct.manifest) - on_disk - generated
+    orphans = set(ct.manifest) - ct.on_disk - generated
     assert not orphans, f"manifest entries without a fixture: {sorted(orphans)}"
     for name, entry in ct.manifest.items():
         absent = [k for k in REQUIRED_KEYS if k not in entry]
@@ -137,7 +150,7 @@ def test_manifest(collection_tests: CollectionTests):
         assert entry["purpose"] in ("representative", "reproducer"), (
             f"fixture {name}: unknown purpose"
         )
-    for name in on_disk:
+    for name in ct.on_disk:
         for p in (ct.fixtures_dir / name).rglob("*"):
             assert p.name not in NOT_WILD and not p.name.endswith(".expected.json"), (
                 f"{p} is not a wild file"
@@ -149,66 +162,121 @@ def test_manifest(collection_tests: CollectionTests):
         assert not stale, f"recorded results without a fixture: {sorted(stale)}"
 
 
+def _changes(old: dict, new: dict) -> list[str]:
+    """What differs between two recorded results, by dataset anchor."""
+    before = {d["anchor"]: d for d in old["datasets"]}
+    after = {d["anchor"]: d for d in new["datasets"]}
+    changed = [
+        a for a in sorted(before.keys() | after.keys()) if before.get(a) != after.get(a)
+    ]
+    for key in ("warnings", "skipped"):
+        if old.get(key) != new.get(key):
+            changed.append(key)
+    return changed
+
+
 def test_fixture(
     collection_tests: CollectionTests,
-    mime_database,
     fixture_name: str,
     tmp_path: Path,
     request,
 ):
     ct = collection_tests
-    result = recognise(ct, mime_database, fixture_name, tmp_path).to_json()
+    result = recognise(ct, fixture_name, tmp_path).to_json()
     expected_file = ct.expected_dir / f"{fixture_name}.json"
-    if request.config.getoption("--regen-expected") or not expected_file.exists():
+    regen = request.config.getoption("--regen-expected")
+    if not expected_file.exists():
         ct.expected_dir.mkdir(exist_ok=True)
         expected_file.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
-        if not request.config.getoption("--regen-expected"):
+        pytest.fail(
+            f"recorded a new result in {expected_file}; review it and run again"
+        )
+    expected = json.loads(expected_file.read_text())
+    if regen:
+        changed = _changes(expected, result)
+        if changed:
+            expected_file.write_text(
+                json.dumps(result, indent=2, sort_keys=True) + "\n"
+            )
             pytest.fail(
-                f"recorded a new result in {expected_file}; review it and run again"
+                f"regenerated {expected_file}: changed {', '.join(changed)}; review the diff"
             )
         return
-    expected = json.loads(expected_file.read_text())
     assert result == expected, (
-        f"recognition of {fixture_name} differs from {expected_file}"
+        f"recognition of {fixture_name} differs from {expected_file}: "
+        f"{', '.join(_changes(expected, result))}"
     )
 
 
-def test_coverage(collection_tests: CollectionTests, mime_database, tmp_path: Path):
-    """Every rule the collection defines itself fires on at least one representative fixture."""
-    ct = collection_tests
-    own_types = set()
+def _own_rules(ct: CollectionTests) -> tuple[list[tuple[str, str, bool]], set[str]]:
+    """The collection's own globs as (type, pattern, case-sensitive) and the types with own magic."""
+    globs, magic_types = [], set()
     for xml in ct.collection.mime_files:
-        if xml.name == "freedesktop.org.xml":  # vendored upstream, exempt
+        if xml.name in VENDORED:
             continue
         for mt in etree.parse(str(xml)).getroot().iter("{*}mime-type"):
-            if any(
-                isinstance(c.tag, str) and c.tag.endswith(("glob", "magic")) for c in mt
-            ):
-                own_types.add(mt.get("type"))
+            for child in mt:
+                if not isinstance(child.tag, str):
+                    continue  # a comment
+                if child.tag.endswith("glob"):
+                    globs.append(
+                        (
+                            mt.get("type"),
+                            child.get("pattern"),
+                            child.get("case-sensitive") == "true",
+                        )
+                    )
+                elif child.tag.endswith("magic"):
+                    magic_types.add(mt.get("type"))
+    return globs, magic_types
+
+
+def _files(path: Path):
+    """(name, first bytes) of every regular file below path."""
+    for dirpath, _, names in os.walk(path):
+        for name in names:
+            file = Path(dirpath) / name
+            if file.is_file() and not file.is_symlink():
+                with open(file, "rb") as f:
+                    yield name, f.read(Mime.magic.maxlen)
+
+
+def test_coverage(collection_tests: CollectionTests, tmp_path: Path):
+    """Every rule the collection defines itself fires on at least one representative fixture."""
+    ct = collection_tests
+    globs, magic_types = _own_rules(ct)
     own_formats = {f.id for f in ct.collection.formats}
-    seen_types, seen_formats = set(), set()
+    unfired_globs = {(t, pattern) for t, pattern, _ in globs}
+    unfired_magic = {
+        (str(t), i)
+        for t in magic_types
+        for i, _ in enumerate(Mime.magic.bytype.get(Mime.lookup(t), ()))
+    }
+    seen_formats = set()
     for name, entry in ct.manifest.items():
         if entry.get("purpose") != "representative":
             continue
-        for d in recognise(ct, mime_database, name, tmp_path / name).datasets:
-            seen_types.add(d.type)
-            seen_formats.add(d.format)
-    assert own_types <= seen_types, (
-        f"rules without a representative fixture: {sorted(own_types - seen_types)}"
+        result = recognise(ct, name, tmp_path / name)
+        seen_formats |= {d.format for d in result.datasets}
+        for file_name, data in _files(tmp_path / name):
+            for t, pattern, cased in globs:
+                if (fnmatch.fnmatchcase if cased else fnmatch.fnmatch)(
+                    file_name if cased else file_name.lower(),
+                    pattern if cased else pattern.lower(),
+                ):
+                    unfired_globs.discard((t, pattern))
+            for t in magic_types:
+                for i, (_, rule) in enumerate(
+                    Mime.magic.bytype.get(Mime.lookup(t), ())
+                ):
+                    if rule.match(data):
+                        unfired_magic.discard((t, i))
+    assert not unfired_globs, (
+        f"globs without a representative fixture: {sorted(unfired_globs)}"
+    )
+    assert not unfired_magic, (
+        f"magic rules without a representative fixture (type, rule index): {sorted(unfired_magic)}"
     )
     assert own_formats <= seen_formats, (
         f"formats without a representative fixture: {sorted(own_formats - seen_formats)}"
     )
-
-
-def validate_oai(xml: bytes, schemas: Path) -> None:
-    """Validate an OAI-PMH response against the local XSDs (for the records command tests)."""
-
-    class LocalSchemas(etree.Resolver):
-        def resolve(self, url, public_id, context):
-            return self.resolve_filename(str(schemas / url.rsplit("/", 1)[-1]), context)
-
-    parser = etree.XMLParser()
-    parser.resolvers.add(LocalSchemas())
-    schema = etree.XMLSchema(etree.parse(str(schemas / "oai-pmh-oai-dc.xsd"), parser))
-    schema.assertValid(etree.fromstring(xml))

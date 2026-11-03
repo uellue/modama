@@ -14,7 +14,7 @@ Installed collections SHALL be discovered through the `modama.formats` entry-poi
 - **THEN** loading fails with an error naming both, and no crawl starts
 
 ### Requirement: Selection by id with prefixes
-The configuration SHALL accept `select` and `ignore` lists of ids, where an id is a collection name or `collection/format`; a collection name SHALL stand for all its formats, including formats added by a later version of the collection.
+The configuration SHALL accept `select` and `ignore` lists of ids, where an id is a collection name, `collection/format`, or `ALL` for every installed format; a collection name SHALL stand for all its formats, including formats added by a later version of the collection.
 
 #### Scenario: Whole collection, one exception
 - **WHEN** the configuration has `select = ["gatan"]` and `ignore = ["gatan/dm3-legacy"]`
@@ -56,8 +56,16 @@ The configuration SHALL accept a mapping from gitignore-style path patterns to l
 - **WHEN** `per-path-ignores` maps `/legacy/**` to `["empad"]`
 - **THEN** files under `/legacy` are classified by name and the EMPAD format never reads them
 
+#### Scenario: Every format kept away
+- **WHEN** `per-path-ignores` maps `/scratch/**` to `["ALL"]`
+- **THEN** no Python format runs under `/scratch`, and files there are still classified by name
+
 ### Requirement: Crawl exclusions
-The configuration SHALL accept gitignore-style patterns of paths that are not crawled at all.
+The configuration SHALL accept patterns of paths that are not crawled at all, with gitignore semantics: a slash at the start or in the middle anchors the pattern at the root, a trailing slash matches directories only, `!` negates, and the last matching pattern wins.
+
+#### Scenario: Patterns copied from a .gitignore
+- **WHEN** `exclude` contains `foo/bar`, `build/` and `*.txt` followed by `!keep.txt`
+- **THEN** `/foo/bar` is excluded but `/x/foo/bar` is not, a directory `build` is excluded but a file named `build` is not, and `keep.txt` stays in the crawl
 
 #### Scenario: Scratch space excluded
 - **WHEN** `exclude` contains `/scratch/**`

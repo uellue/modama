@@ -39,8 +39,8 @@ When two candidate types remain equally good, the result SHALL be their nearest 
 - **THEN** its type is `application/json`, not their common parent `application/json5`, and no ambiguity is reported
 
 #### Scenario: Two HDF5 subtypes
-- **WHEN** a file matches two name rules of equal weight whose types are both subclasses of `application/x-hdf5` and content does not decide
-- **THEN** its type is `application/x-hdf5` and a warning names both candidates
+- **WHEN** a file matches two name rules of equal weight whose types are both subclasses of `application/x-hdf` and content does not decide
+- **THEN** its type is `application/x-hdf` and a warning names both candidates
 
 ### Requirement: Fallback types
 A file that matches nothing SHALL be `text/plain` if its first bytes look like text and `application/octet-stream` otherwise, regardless of its permission bits.

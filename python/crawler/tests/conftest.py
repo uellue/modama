@@ -1,3 +1,4 @@
+import functools
 import os
 import threading
 from datetime import UTC, datetime
@@ -77,8 +78,8 @@ def server(conn):
         yield OAIServer(pool, BASE_URL, "admin@example.org", page_size=2)
 
 
-@pytest.fixture(scope="session")
-def oai_schema():
+@functools.cache
+def _oai_schema() -> etree.XMLSchema:
     class LocalSchemas(etree.Resolver):
         def resolve(self, url, public_id, context):
             return self.resolve_filename(str(SCHEMAS / url.rsplit("/", 1)[-1]), context)
@@ -86,6 +87,16 @@ def oai_schema():
     parser = etree.XMLParser()
     parser.resolvers.add(LocalSchemas())
     return etree.XMLSchema(etree.parse(str(SCHEMAS / "oai-pmh-oai-dc.xsd"), parser))
+
+
+def validate_oai(xml: bytes) -> None:
+    """Validate an OAI-PMH response against the local XSDs."""
+    _oai_schema().assertValid(etree.fromstring(xml))
+
+
+@pytest.fixture(scope="session")
+def oai_schema():
+    return _oai_schema()
 
 
 @pytest.fixture

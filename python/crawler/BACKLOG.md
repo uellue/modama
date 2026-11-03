@@ -11,7 +11,7 @@ Deferred items, roughly in the order they are likely to come up.
 - **Agent skill:** find an existing or propose a new MIME type for a format, in discussion with the user, as part of adding a handler. Sources for types used in the wild: https://wiki.debian.org/MimeTypesSupport/PackageList, reader libraries such as LiberTEM and HyperSpy; otherwise an unofficial `application/x.…` type, never a misleading generic one (see `formats/TEMPLATE.md`).
 - **Dataset-type development workflow (R14):** an agent looks at sample files or directories, works out what they are and how they group in a question-and-answer loop with the user, and develops matching rules, metadata extractor, relation extractor and fixtures together. Candidates found in the survey: TENSOR acquisition and orientation-mapping export, Dr. Probe run, Quantum Espresso run (`*.save`, `pw.x` input), cryo-EM grid surveys tied to a specimen.
 - **Relation extraction (R32):** "produced by" (script, program, parameter file), "part of", "specimen" or "session", expressed in `oai_dc` as `dc:relation` and `dc:source` with a documented convention; a richer vocabulary (DCMI terms, PROV) in a later format.
-- **Verbose output polish** (visual check 2026-10-27, `design/playtest.md`): shorter recognition comments (the basis text pushes lines past 100 columns), the symlink target in `SKIPPED:` comments, colour on stderr when it is a terminal, and a hint in non-verbose mode that `--verbose` shows the diagnostics. Re-check by eye with `tools/xterm-shots.py`.
+- **Verbose output polish** (visual check 2026-10-27, `design/playtest.md`): shorter recognition comments (the basis text pushes lines past 100 columns), the symlink target in `SKIPPED:` comments, colour on stderr when it is a terminal, and a hint in non-verbose mode that `--verbose` shows the diagnostics. When taken up, extract the merge in `cmd_records` into a function with in-process ordering tests (review D6). Re-check by eye with `tools/xterm-shots.py`.
 - **CLI conventions, as a written rule set for all commands:** graceful exit on a closed output pipe (done for `records`) and on Ctrl-C (status 130, no traceback), machine-readable output only on stdout, diagnostics on stderr, documented exit statuses, and tests that type command lines exactly as the documentation shows them. Apply to `crawl` and `serve` too.
 - **CLI parameter review:** comma-separated id lists work as in ruff (decided 2026-10-27). Instead of assuming that every option works in every order, go through the valid and invalid parameter combinations of each command with the developer, ideally from generated examples and permutations, and write down the expected outcome of each; then tighten the `records-cli` spec accordingly.
 - **Fixture-tree automation** (`design/testing.md`, T-B): deterministic checks in pre-commit and the core's pytest plugin (manifest completeness, wild-files-only trees, size policy, validity consistency, coverage rule, format validators, scrub heuristic); skills to add a fixture from a real file, review an expected-outcome diff, and triage a deployment failure into a reproducer and a fix; workflows to audit all collections' fixture trees.
@@ -21,31 +21,31 @@ Deferred items, roughly in the order they are likely to come up.
 - **EMPAD detection:** `application/x.empad+xml` registers `*.xml` only to make every XML file ambiguous and force sniffing. This belongs in dataset recognition (XML plus raw file), driven by the raw files' weight-80 globs.
 - **Next formats, from the play test (2026-10-27, `design/playtest.md`):** series directories (the dominant shape, next change), DM3/DM4 (`application/x-dm4-tem`, big-endian version header), `.npy` (`\x93NUMPY` magic, not in freedesktop.org.xml), TIA `.emi`+`.ser`, Merlin `.hdr`+`.mib` (text header, currently `text/plain`), Velox and NeXus as HDF5 subtypes.
 - **From the play test (`design/playtest.md`, decided by @weber 2026-10-27):**
-  - Default exclude lists proposed by collections (`__pycache__`, `.ipynb_checkpoints`, …), merged with the deployment's `[crawl] exclude`; needs an override syntax (gitignore's `!pattern`).
+  - Default exclude lists proposed by collections (`__pycache__`, `.ipynb_checkpoints`, …), merged with the deployment's `[crawl] exclude`; `!pattern` negation exists since the matcher moved to `pathspec` (2026-11-03), the defaults mechanism does not yet.
   - Collapse formats handing back entries that are not theirs (a warning or separate datasets): collect wild examples first (stray files in Zarr stores, notes beside pairs). A top-level README becomes the dataset's description.
   - Members of a multi-file dataset in `dc:description`, top-down for nested structures, cut at about 100 entries; refine on examples.
   - The format override of a collapsed dataset's datestamp, when a format needs it.
   - EMPAD software versions seen in the wild: 0.29 (2017, absolute raw path), 0.7.12 (2019), 1.2.2 (2021); watch for new versions changing the header (R22 maintenance review).
 - **Metadata extraction** per file format.
-- **`dc:date`** currently uses `max(mtime, ctime)` from the crawl, which becomes the copy time for files copied from instruments. The plain mtime, or a date from the file's own metadata, is probably closer to the acquisition time.
+- **`dc:date`** currently uses the newest member's mtime (the walk reads ctime too but nothing stores it), which becomes the copy time for files copied from instruments. The plain mtime, or a date from the file's own metadata, is probably closer to the acquisition time.
 - **Non-UTF-8 and control characters in file names:** decide how to store them and how to render them in XML.
 - **Per-user access checks** through the modama permission APIs.
 - **DataCite output,** if `oai_dc` turns out too lossy. The warehouse's DC→DataCite XSLT drops `dc:format`. The warehouse also accepts DataCite with `identifierType="URL"`, even though the DataCite schema documentation requires a DOI.
 - **Crawl scaling:**
   - The walk is single-threaded and has no checkpointing, so a failure restarts it from scratch.
-  - `DELETE … WHERE path NOT IN (SELECT path FROM crawl)` is an anti-join over the whole table.
+  - `datasets` and `members` are truncated and rewritten on every crawl and read by nothing until the survey command; their schema is free to change, and the rewrite is reconsidered with that reader (review 2026-11-03, B17).
+  - `DELETE FROM records WHERE identifier <> ALL(...)` carries every identifier of the crawl in one statement.
   - Paths are stored as absolute text, and keys are `SERIAL` (int4).
-  - `publish_records` recomputes the metadata of every dataset on every crawl, not only of changed ones.
-- **Datestamp window:** a harvest running in the same seconds as a publishing batch can miss that batch. Batching keeps the window small, but not zero.
+  - Every dataset's metadata is rebuilt on every crawl, not only the changed ones'.
+- **Datestamp window:** all records changed by one crawl share a datestamp taken just before the upsert, so the window is the upsert plus commit, plus clock skew between the crawler and the database host. A harvester should use an overlap margin on `from`.
+- **Enforced format timeouts (R23):** the time limit is checked after the call, so a hanging format stalls the crawl; isolation by worker subprocesses is the planned mechanism (review 2026-11-03, B14).
+- **CI job for the crawler:** none yet; it needs the devcontainer image (PostgreSQL, shared-mime-info, git, the `[test]` extras) and a non-root user, or the permission scenarios silently skip (review 2026-11-03, C5).
 - **Symlinks** are skipped with an info line (decided 2026-10-27); a record for symlinks to files stays an open question.
 - **Schema migrations:** there are none, so every schema change means recreating the database. Needed before deployment.
-- **`recognition.py` defects,** relevant if parts of it are kept in step 2:
-  - The members query never returns other members, and `files_in_datasets` is never populated.
-  - `matches()` and EMPAD glob the file system.
 - **Local EOSC snapshot:** `prototypes/EOSC-Data-Commons/` is about three months behind upstream (v1.9.0, 2026-10-08) and has uncommitted local changes, including the `localhost:7654` endpoint in `seed.sql`.
 - **Deployment:** a container in `deploy/` behind the gateway, with a read-only data mount and a crawl schedule.
 - **Drop the pyxdg fork** once https://gitlab.freedesktop.org/xdg/pyxdg/-/merge_requests/18 is merged.
-- **Report or fix upstream** (pyxdg): `get_type2()` lacks the longest-pattern rule (`a.tar.gz` becomes `application/gzip`), and `MagicDB.match_data(possible=...)` checks the lowest priority first (an SVG checked against `[xml, svg]` becomes `application/xml`).
+- **Report or fix upstream** (pyxdg): `get_type2()` lacks the longest-pattern rule (`a.tar.gz` becomes `application/gzip`), and `MagicDB.match_data(possible=...)` checks the lowest priority first (an SVG checked against `[xml, svg]` becomes `application/xml`). `GlobDB.all_matches()` should return the pattern and keep every literal match (two types sharing a literal glob collapse to one today), and `_is_text` should be public; then `mime.py`'s glob index and the cache poke in `mimedb.activate` can go (review 2026-11-03, D10).
 - **Report upstream** (EOSC `metadata-crawlers`):
   - Deletion detection reads `header.status`, but oaipmh-scythe exposes `header.deleted`, so deletions are never propagated.
   - A `noRecordsMatch` response on an incremental harvest marks the run as failed.

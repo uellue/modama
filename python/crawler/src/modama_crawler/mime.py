@@ -10,13 +10,17 @@ the lowest priority first. Ties resolve to the common ancestor (architecture C).
 import fnmatch
 import os
 import re
-import stat
 from collections import defaultdict
 from functools import cache
+from pathlib import Path
 
 from xdg import Mime
 
 WILDCARDS = re.compile(r"[*?\[]")
+
+# The directory of the active MIME database, set by mimedb.activate(). Detection
+# without one would silently use the host's definitions (Q12), so it refuses.
+database: Path | None = None
 
 
 @cache
@@ -105,24 +109,20 @@ def _resolve(candidates: list[Mime.MIMEtype]) -> tuple[str, tuple[str, ...] | No
 
 
 def detect(path: str) -> str:
-    """MIME type of the file at path, without following symlinks. Raises OSError if path can't be stat'ed."""
+    """MIME type of the regular file at path (a convenience for tests)."""
     return detect_with_tie(path)[0]
 
 
 def detect_with_tie(path: str) -> tuple[str, tuple[str, ...] | None]:
-    """MIME type of the file at path and, if candidates tied, the tied types.
+    """MIME type of the regular file at path and, if candidates tied, the tied types.
 
-    A tie between candidates resolves to their nearest common ancestor in the
-    subclass hierarchy (architecture C); it counts as a tie only when that
-    ancestor is none of the candidates. Raises OSError if path can't be stat'ed.
+    The walk guarantees a regular file; symlinks and special files never get
+    here. A tie between candidates resolves to their nearest common ancestor
+    in the subclass hierarchy (architecture C); it counts as a tie only when
+    that ancestor is none of the candidates.
     """
-    mode = os.lstat(path).st_mode
-    if stat.S_ISDIR(mode):
-        return "inode/directory", None
-    if stat.S_ISLNK(mode):
-        return "inode/symlink", None
-    if not stat.S_ISREG(mode):
-        return str(Mime._get_type_by_stat(mode)), None
+    if database is None:
+        raise RuntimeError("no MIME database active; call mimedb.build() first")
 
     # Globs with the biggest weight, then the longest pattern
     candidates = []
@@ -156,9 +156,4 @@ def detect_with_tie(path: str) -> tuple[str, tuple[str, ...] | None]:
         return str(related[0]), None
     if related:
         candidates = related
-    # Not in the spec: prefer the candidate whose own magic matches, highest priority first
-    rules = [(p, t, r) for t in candidates for p, r in Mime.magic.bytype.get(t, ())]
-    for _, mtype, rule in sorted(rules, key=lambda x: x[0], reverse=True):
-        if rule.match(data):
-            return str(mtype), None
     return _resolve(candidates)

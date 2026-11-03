@@ -41,6 +41,14 @@ def pair_declaration(target: Path) -> None:
     (target / "SCA2_rings.xml").write_text('<?xml version="1.0"?>\n' + HEADER + "\n")
 
 
+def pair_scan(target: Path) -> None:
+    """The pair with the raw file named like a 4D STEM scan (scan_x*_y*.raw), the other glob of the raw type."""
+    target.mkdir(parents=True)
+    raw = "scan_x4_y4.raw"
+    (target / "SCA2_rings.xml").write_text(HEADER.replace(RAW_NAME, raw))
+    (target / raw).write_bytes(bytes(FRAMES * FRAME_BYTES))
+
+
 def header_only(target: Path) -> None:
     target.mkdir(parents=True)
     (target / "SCA2_rings.xml").write_text(HEADER)

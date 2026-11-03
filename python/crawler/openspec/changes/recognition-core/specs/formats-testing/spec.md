@@ -21,15 +21,26 @@ A manifest file per collection SHALL name every fixture with its purpose (repres
 - **THEN** the collection's tests fail naming the fixture
 
 ### Requirement: Expected results are recorded and compared
-The plugin SHALL run recognition on each fixture and compare the recognition result with the recorded result stored next to the fixtures; a difference SHALL fail with a readable diff, and a regeneration option SHALL rewrite the recorded result.
+The plugin SHALL run recognition on each fixture and compare the recognition result with the recorded result stored next to the fixtures; a difference SHALL fail naming the datasets that differ, and a regeneration option SHALL rewrite the recorded results and fail for each one that changed, naming the datasets, so that the run itself asks for the review (decision T4).
 
 #### Scenario: First run records
-- **WHEN** a fixture has no recorded result and the tests run with regeneration enabled
-- **THEN** the result is written and the run reports it as newly recorded
+- **WHEN** a fixture has no recorded result, with or without regeneration enabled
+- **THEN** the result is written and the test fails asking for a review; the next run passes
+
+#### Scenario: Regeneration names what changed
+- **WHEN** the tests run with regeneration enabled and a recorded result differs from the recognition result
+- **THEN** the result is rewritten and the test fails naming the file and the changed datasets; unchanged results pass
 
 #### Scenario: A rule change alters the result
 - **WHEN** a format's rules change so that a fixture's dataset type differs from the recorded one
 - **THEN** the test fails and shows the old and new type
+
+### Requirement: A collection is tested with its own definitions
+The plugin SHALL classify a collection's fixtures with the MIME definitions of that collection and of the core only, whatever else is installed, so that recorded results do not depend on the environment.
+
+#### Scenario: Another collection adds a rule
+- **WHEN** an installed collection other than the one under test defines a glob that would match one of its fixture files
+- **THEN** the fixture's recorded result is unaffected
 
 ### Requirement: Every own rule is covered
 For the rules a collection defines itself (its XML rules and its recognizers), the plugin SHALL fail if a rule fires on no representative fixture of the collection; vendored upstream definitions are exempt.

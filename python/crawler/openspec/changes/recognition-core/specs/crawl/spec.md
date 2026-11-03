@@ -25,7 +25,7 @@ The crawl SHALL record for every entry its size, its modification time and its c
 
 #### Scenario: Copied series keep their original mtime
 - **WHEN** a file has an mtime older than its ctime
-- **THEN** both values are available to formats and stored unchanged
+- **THEN** both values are available to formats
 
 ### Requirement: The result does not depend on listing order
 The recognition result of a tree SHALL be identical whatever order the file system returns directory entries in.

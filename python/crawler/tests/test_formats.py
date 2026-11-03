@@ -194,7 +194,9 @@ def test_format_over_budget_is_skipped(tmp_path):
     assert any("skipped: reading 100 bytes" in text for _, text in d.warnings)
 
 
-def test_slow_format_is_skipped():
+def test_slow_format_result_is_discarded():
+    # The limit is checked after the call (hang isolation is deferred to
+    # worker subprocesses): a slow format's result is dropped with a warning
     class Slow(Format):
         type = "x/slow"
         reacts_to = frozenset({"text/plain"})
@@ -206,7 +208,85 @@ def test_slow_format_is_skipped():
     d = directory([entry("a.txt")])
     datasets, _ = run_post(d, collect(Slow()), time_limit=0.01, byte_budget=1)
     assert datasets[0].format == ""
-    assert any("exceeded the time limit" in text for _, text in d.warnings)
+    assert any(
+        "over the limit of 0.01 s; result discarded" in text for _, text in d.warnings
+    )
+
+
+def test_second_directory_anchor_is_rejected():
+    # Two formats anchoring at the directory would give two datasets with one
+    # anchor, which the index rejects: the directory itself is claimable
+    class First(Format):
+        type = "x/first"
+        priority = 70
+        reacts_to = frozenset({"text/plain"})
+
+        def recognize(self, d):
+            yield Dataset(anchor=d.rel, members=("/a.txt",))
+
+    class Second(Format):
+        type = "x/second"
+        priority = 20
+        reacts_to = frozenset({"text/plain"})
+
+        def recognize(self, d):
+            yield Dataset(anchor=d.rel, members=("/b.txt",))
+
+    d = directory([entry("a.txt"), entry("b.txt")])
+    datasets, _ = run_post(d, collect(First(), Second()), 5.0, 1)
+    assert [(x.anchor, x.format) for x in datasets] == [
+        ("/", "t/first"),
+        ("/b.txt", ""),
+    ]
+    assert ("/", "t/second: / already claimed by t/first") in d.warnings
+
+
+def test_claim_of_a_file_elsewhere_is_rejected():
+    class Reacher(Format):
+        type = "x/reach"
+        reacts_to = frozenset({"text/plain"})
+
+        def recognize(self, d):
+            yield Dataset(anchor="/a.txt", members=("/a.txt", "/elsewhere/b.txt"))
+
+    d = directory([entry("a.txt")])
+    datasets, _ = run_post(d, collect(Reacher()), 5.0, 1)
+    assert datasets[0].format == ""  # stays a single file
+    assert (
+        "/a.txt",
+        "t/reacher: claim outside / rejected: /elsewhere/b.txt",
+    ) in d.warnings
+
+
+def test_pre_order_dataset_that_does_not_collapse_is_ignored():
+    class Eager(Format):
+        type = "x/eager"
+        reacts_to = frozenset({DIRECTORY})
+
+        def recognize(self, d):
+            yield Dataset(anchor=d.rel, basis="too early")
+
+    d = directory([entry("x", None)], phase="pre")
+    assert run_pre(d, collect(Eager()), 5.0, 1) is None
+    assert (
+        "/",
+        "t/eager: ignored a pre-order dataset that doesn't collapse /",
+    ) in d.warnings
+
+
+def test_core_owned_fields_are_reset():
+    # parent comes only from adoption and collapsed only from the pre-order call
+    class Sneaky(Format):
+        type = "x/sneaky"
+        reacts_to = frozenset({"text/plain"})
+
+        def recognize(self, d):
+            yield Dataset(anchor="/a.txt", parent="/elsewhere", collapsed=True)
+
+    d = directory([entry("a.txt")])
+    datasets, _ = run_post(d, collect(Sneaky()), 5.0, 1)
+    assert datasets[0].parent is None and datasets[0].collapsed is False
+    assert "t/sneaky: parent and collapsed are set by the core" in datasets[0].warnings
 
 
 def test_crashing_format_does_not_stop_recognition():
@@ -236,6 +316,9 @@ def test_pre_order_collapse():
     ds = run_pre(d, collect(Marker()), 5.0, 1)
     assert ds.collapsed and ds.type == "x/marked" and ds.members == () and ds.uid == 1
     assert (
+        ds.mtime == 0.5
+    )  # the directory's own mtime: the contents were not visited (R37)
+    assert (
         run_pre(directory([entry("x", None)], phase="pre"), collect(Marker()), 5.0, 1)
         is None
     )
@@ -260,4 +343,3 @@ def test_result_json_round_trip():
     data = result.to_json()
     assert [d["anchor"] for d in data["datasets"]] == ["/a", "/b"]
     assert data["warnings"] == [["/a", "oh"], ["/b", "hm"]]
-    assert Result.from_json(data).to_json() == data

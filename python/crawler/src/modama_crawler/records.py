@@ -9,6 +9,7 @@ from functools import cache
 from urllib.parse import quote_plus
 
 from .formats import Dataset
+from .render import format_datestamp
 
 OAI_NAMESPACE = "er-c-data-mgmt.fz-juelich.de"
 BROWSE_URL = "https://er-c-data-mgmt.fz-juelich.de/browse/?path="
@@ -18,10 +19,6 @@ PUBLISHER = "ER-C"
 # and stores it as VARCHAR(255).
 MAX_LOCAL_ID = 255
 MIN_HASH_DIGITS = 32
-
-
-def format_datestamp(timestamp: datetime) -> str:
-    return timestamp.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def browse_url(path: str) -> str:

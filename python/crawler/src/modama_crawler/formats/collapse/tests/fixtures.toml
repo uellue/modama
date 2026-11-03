@@ -14,7 +14,7 @@ generator = "modama_crawler.formats.collapse.tests.generate:git"
 
 [caches]
 purpose = "representative"
-validity = "vendor-written"
+validity = "parser-only: name-based rules; only __pycache__ is CPython-written, the .ipynb_checkpoints, node_modules and conda-meta layouts are mimicked"
 licence = "MIT"
 source = "a __pycache__ written by CPython and an .ipynb_checkpoints, node_modules and conda-meta layout, next to a text file"
 generator = "modama_crawler.formats.collapse.tests.generate:caches"

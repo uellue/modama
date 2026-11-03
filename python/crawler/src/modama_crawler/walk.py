@@ -9,9 +9,21 @@ from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 
+from pathspec import GitIgnoreSpec
+
 from . import mime
-from .formats import Dataset, Directory, Entry, Format, Result, run_post, run_pre
-from .selection import path_excluded, path_ignored
+from .formats import (
+    BYTE_BUDGET,
+    TIME_LIMIT,
+    Dataset,
+    Directory,
+    Entry,
+    Format,
+    Result,
+    run_post,
+    run_pre,
+)
+from .selection import compile_patterns, compile_per_path, path_excluded, path_ignored
 
 log = logging.getLogger(__name__)
 
@@ -26,19 +38,16 @@ def _kind(mode: int) -> str:
     return "other"
 
 
-def _skip(result: Result, rel: str, reason: str) -> None:
-    result.skipped.append((rel, reason))
-    log.info("%s: skipped, %s", rel, reason)
-
-
 def _entries(
-    dirpath: str, rel: str, result: Result, exclude: Iterable[str]
+    dirpath: str, rel: str, notes: Result, exclude: GitIgnoreSpec
 ) -> list[Entry]:
     """The directory's regular files and subdirectories, sorted by name.
 
-    Symlinks, special files and files the crawler cannot read are skipped with
-    an info line: they would not make useful records. Raises OSError if the
-    directory itself cannot be listed.
+    Symlinks, special files and files the crawler cannot read are skipped:
+    they would not make useful records. Skips and name problems go into
+    `notes` (a throwaway Result), so that the caller can drop them if the
+    directory turns out to be collapsed. Raises OSError if the directory
+    itself cannot be listed.
     """
     with os.scandir(dirpath) as it:
         names = [e.name for e in it]
@@ -47,25 +56,25 @@ def _entries(
         try:
             name.encode()
         except UnicodeEncodeError:
-            result.warnings.append(
+            notes.warnings.append(
                 (rel, f"skipped a name that is not valid UTF-8: {name!r}")
             )
             continue
         path = os.path.join(dirpath, name)
         child_rel = rel.rstrip("/") + "/" + name
-        if path_excluded(child_rel, exclude):
-            continue
         try:
             st = os.lstat(path)
         except OSError as e:
-            result.warnings.append((child_rel, f"cannot stat: {e.strerror}"))
+            notes.warnings.append((child_rel, f"cannot stat: {e.strerror}"))
             continue
         kind = _kind(st.st_mode)
+        if path_excluded(child_rel, exclude, is_dir=kind == "dir"):
+            continue
         if kind not in ("file", "dir"):
-            _skip(result, child_rel, kind)
+            notes.skipped.append((child_rel, kind))
             continue
         if kind == "file" and not os.access(path, os.R_OK):
-            _skip(result, child_rel, "not readable")
+            notes.skipped.append((child_rel, "not readable"))
             continue
         entries.append(
             Entry(
@@ -88,32 +97,37 @@ def walk(
     *,
     exclude: Iterable[str] = (),
     per_path_ignores: dict[str, list[str]] | None = None,
-    time_limit: float = 5.0,
-    byte_budget: int = 1 << 20,
 ) -> Result:
     root = os.path.abspath(str(root))
-    ignores = per_path_ignores or {}
+    excluded = compile_patterns(exclude)
+    ignores = compile_per_path(per_path_ignores or {})
     result = Result()
 
     def formats_for(rel: str) -> list[Format]:
         return [f for f in formats if not path_ignored(f.id, rel, ignores)]
 
     def visit(dirpath: str, rel: str) -> list[Dataset]:
+        notes = Result()  # skips and name problems, kept only if not collapsed
         try:
-            entries = _entries(dirpath, rel, result, exclude)
+            entries = _entries(dirpath, rel, notes, excluded)
         except OSError as e:
             if rel == "/":
                 raise  # the root itself: the caller asked for it, so it is an error
-            _skip(result, rel, f"cannot list directory: {e.strerror}")
+            result.skipped.append((rel, f"cannot list directory: {e.strerror}"))
+            log.info("%s: skipped, cannot list directory: %s", rel, e.strerror)
             return []
         st = os.lstat(dirpath)
         active = formats_for(rel)
         pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
-        collapsed = run_pre(pre, active, time_limit, byte_budget)
+        collapsed = run_pre(pre, active, TIME_LIMIT, BYTE_BUDGET)
         result.warnings.extend(pre.warnings)
         if collapsed is not None:
             log.debug("%s collapsed by %s", rel, collapsed.format)
             return [collapsed]
+        for path, reason in notes.skipped:
+            log.info("%s: skipped, %s", path, reason)
+        result.skipped.extend(notes.skipped)
+        result.warnings.extend(notes.warnings)
         subtree: list[Dataset] = []
         for e in entries:
             if e.kind == "dir":
@@ -137,7 +151,7 @@ def walk(
             typed.append(e)
         children = [d for d in subtree if d.parent is None]
         post = Directory(rel, dirpath, typed, children, "post", st.st_uid, st.st_mtime)
-        datasets, adoptions = run_post(post, active, time_limit, byte_budget)
+        datasets, adoptions = run_post(post, active, TIME_LIMIT, BYTE_BUDGET)
         result.warnings.extend(post.warnings)
         subtree = [
             replace(d, parent=adoptions[d.anchor]) if d.anchor in adoptions else d

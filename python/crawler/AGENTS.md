@@ -8,7 +8,7 @@
 
 **Status:** the code started as a proof of concept with poor architecture and is being rewritten. The order of work:
 1. Clean up the OAI-PMH server and the tests. Done: `records.py`, `server.py` and their tests are new.
-2. Recognise datasets in the messy file tree. MIME detection (`mime.py`) is new; one dataset per regular file and `recognition.py` are still the proof of concept.
+2. Recognise datasets in the messy file tree. Done as change `recognition-core`: the walk, the format runner, four collections, the records oracle; reviewed 2026-11-03 (`design/review.md`). Next: series directories.
 3. Extract metadata per file format.
 
 Don't copy the proof-of-concept code's style or structure, and don't preserve it for its own sake.
@@ -55,7 +55,7 @@ pytest --cov                                # coverage (config in setup.cfg)
 
 modama-crawler records [PATH] [--verbose] [--from D] [--until D] [--select ID] [--ignore ID]
                                             # the oracle: ListRecords for a path, no database; --verbose embeds diagnostics as XML comments
-modama-crawler crawl                        # crawl MODAMA_DATA_ROOT into the database
+modama-crawler crawl [--root PATH]          # crawl MODAMA_DATA_ROOT (or PATH) into the database
 modama-crawler serve                        # OAI-PMH endpoint, http://localhost:7654/oai (port forwarded)
 
 # Lint/format from the repo root. CI and pre-commit run the same with uvx;
@@ -73,7 +73,7 @@ src/modama_crawler/
 │   ├── TEMPLATE.md # how to write a collection
 │   ├── core/       # vendored freedesktop.org.xml (GPL-2.0-or-later, see its LICENSE file) + er-c.xml curation (ties that force content checks)
 │   ├── collapse/   # environments, .git, __pycache__, .ipynb_checkpoints, node_modules: collapsed pre-order
-│   ├── zarr/       # Zarr v3 stores, collapsed pre-order; nested stores belong to the outer one
+│   ├── zarr/       # Zarr v2 and v3 stores, collapsed pre-order; nested stores belong to the outer one
 │   └── empad/      # XML header + raw pair; empad.xml rules, Empad recognizer, cheat fixture generator
 ├── mime.py         # MIME type of one file per the shared-mime-info checking order; ties -> common ancestor
 ├── mimedb.py       # builds the per-deployment MIME database from the enabled collections only
@@ -87,23 +87,23 @@ src/modama_crawler/
 
 The pipeline is a function from a tree to a **recognition result** (`walk()` → `Result` of `Dataset`s with type, anchor, members, parts, format, basis, warnings, parent, collapsed), which runs without PostgreSQL. The result is the oracle for fixture tests, what `store.py` writes, and what `records.py`/`render.py` turn into `oai_dc`. See `design/architecture.md` for the decisions; `openspec/specs/` for the behaviour contract once the first change is archived.
 
-**Walk** (`walk.py`): symlinks, special files, unreadable files and unlistable directories are skipped with an info line and get no record (an unreadable root is an error). Per directory, a pre-order call with names and sizes (a collapse format may return a collapsed dataset, and nothing below is visited), then the subdirectories, then classification of files with `mime.py`, then a post-order call with entries, types and the subdirectories' parentless datasets. Formats run by priority then id; claims are exclusive; a format may claim its own directory's files and adopt child datasets (`parts`), which get it as `parent`; everything unclaimed becomes a single-file dataset of its MIME type. Every format call has a time limit and a byte budget; a failing format is a warning, not a crash. Results are sorted, so the walk is independent of listing order.
+**Walk** (`walk.py`): symlinks, special files, unreadable files and unlistable directories are skipped with an info line and get no record (an unreadable root is an error). Per directory, a pre-order call with names and sizes (a collapse format may return a collapsed dataset, and nothing below is visited), then the subdirectories, then classification of files with `mime.py`, then a post-order call with entries, types and the subdirectories' parentless datasets. Formats run by priority then id; claims are exclusive; a format may claim its own directory's files and adopt child datasets (`parts`), which get it as `parent`; everything unclaimed becomes a single-file dataset of its MIME type. Every format call has a byte budget, enforced, and a time limit checked after the call (a result over it is discarded); a failing format is a warning, not a crash. Results are sorted, so the walk is independent of listing order.
 
 **Records** (`records.py`): identifier `oai:er-c-data-mgmt.fz-juelich.de:<quoted anchor path>` (shortened to 255 characters with a hash suffix if longer), `dc:identifier` is the browse URL, `dc:relation` links a collection to its parts and a part to its parent. In the database the datestamp moves only when a record's content changes; the `records` command uses the newest member mtime instead.
 
-**Configuration** (`cli.py --config file.toml`): `[formats] select = [...]`, `ignore = [...]` (ids `collection` or `collection/format`; more specific wins, ignore wins ties; nothing selected means everything installed; unknown ids are errors; a collection id also switches its MIME definitions), `[formats.per-path-ignores] "pattern" = [ids]`, `[crawl] exclude = [patterns]` (gitignore-style, `**` allowed). Environment: `MODAMA_DATA_ROOT`, `MODAMA_CRAWLER_DB`, `POSTGRES_*`, `OAI_BASE_URL`, `OAI_ADMIN_EMAIL`.
+**Configuration** (`cli.py --config file.toml`): `[formats] select = [...]`, `ignore = [...]` (ids `collection`, `collection/format` or `ALL`; more specific wins, ignore wins ties; nothing selected means everything installed; unknown ids are errors; comma lists as in ruff; a collection id also switches its MIME definitions), `[formats.per-path-ignores] "pattern" = [ids]`, `[crawl] exclude = [patterns]` (gitignore semantics through `pathspec`: a slash anchors, `dir/` matches directories only, `!` negates, last match wins). Environment: `MODAMA_DATA_ROOT`, `MODAMA_CRAWLER_DB`, `POSTGRES_*`, `OAI_BASE_URL`, `OAI_ADMIN_EMAIL`.
 
 ## Gotchas
 
 - There are no schema migrations: `store.ensure_tables` only creates missing tables. After a schema change, recreate the dev database, for example `dropdb -h db -U postgres modama_crawler && createdb -h db -U postgres modama_crawler`.
-- The MIME database is built into a temporary directory at startup from the enabled collections; nothing from the host is used. `update-mime-database` (package shared-mime-info) must be installed.
+- The MIME database is built into a temporary directory at startup from the enabled collections; nothing from the host is used, and detection without an active database raises. `update-mime-database` (package shared-mime-info) must be installed.
 - A format type with only magic rules is never detected for files whose name matches another type's glob: the checking order sniffs only when names tie. EMPAD's `empad.xml` therefore claims `*.xml` too, to force the content check.
 - Output meant for people (the `records` command) is checked by eye in a real terminal, not only by parsing text: `tools/xterm-shots.py` starts an xterm under a virtual X server, sends keys and takes screenshots (needs xvfb, xterm, xdotool, imagemagick from the devcontainer image); an agent reads the PNGs. See `design/playtest.md`, visual check.
 - Collection test modules are importable packages (`src/.../tests/__init__.py`); the plugin finds the collection from the test module's package.
 
 ## Tests
 
-- `tests/conftest.py`: `conn` (a fresh `pytest-postgresql` database with the schema), `records`/`add_record` (five records with fixed datestamps on the `from`/`until` boundaries, page size 2 makes three pages), `server`, `oai` (werkzeug test client plus XSD validation), `base_url` (real HTTP for the client libraries). The plugin's session fixture `mime_database` builds the MIME database of all installed collections; it is autouse here.
+- `tests/conftest.py`: `conn` (a fresh `pytest-postgresql` database with the schema), `records`/`add_record` (five records with fixed datestamps on the `from`/`until` boundaries, page size 2 makes three pages), `server`, `oai` (werkzeug test client plus XSD validation), `validate_oai`, `base_url` (real HTTP for the client libraries). The plugin's session fixture `mime_database` builds the MIME database of all installed collections; it is autouse here. A collection's own tests run with its definitions plus the core's only.
 - `test_server.py`, `test_clients.py` (sickle, oaipmh-scythe, oaipmh): the OAI-PMH protocol and interoperability, unchanged by recognition.
-- `test_formats.py` (the runner on synthetic directories), `test_walk.py` (the walk on temporary trees), `test_selection.py`, `test_mimedb.py`, `test_mime.py`, `test_records.py` (identifiers, Dublin Core, store), `test_cli.py` (the `records` command as a subprocess, output validated against the XSDs).
+- `test_formats.py` (the runner on synthetic directories), `test_walk.py` (the walk on temporary trees), `test_selection.py`, `test_mimedb.py`, `test_mime.py` (the checking order, one test per spec scenario), `test_render.py`, `test_records.py` (identifiers, Dublin Core, store, and the walk-to-store-to-harvest path), `test_cli.py` (the `records` command as a subprocess, output validated against the XSDs; one run through the `modama-crawler` script), `test_testing.py` (the plugin's own checks on a throwaway collection, via `pytester`).
 - Each collection's `tests/`: fixtures and expected results run by the plugin (`testing.py`); see `formats/TEMPLATE.md`.

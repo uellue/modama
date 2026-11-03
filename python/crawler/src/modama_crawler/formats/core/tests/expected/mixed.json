@@ -1,16 +1,16 @@
 {
   "datasets": [
     {
-      "anchor": "/a.png",
+      "anchor": "/a.zip",
       "basis": "single file",
       "collapsed": false,
       "format": "",
       "members": [
-        "/a.png"
+        "/a.zip"
       ],
       "parent": null,
       "parts": [],
-      "type": "image/png",
+      "type": "application/zip",
       "warnings": []
     },
     {

@@ -8,8 +8,6 @@ from datetime import UTC, datetime
 
 from lxml import etree
 
-from .records import format_datestamp
-
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 OAI_DC_NS = "http://www.openarchives.org/OAI/2.0/oai_dc/"
 DC_NS = "http://purl.org/dc/elements/1.1/"
@@ -23,6 +21,11 @@ DC_ELEMENTS = (
     "date", "type", "format", "identifier", "source", "language", "relation",
     "coverage", "rights",
 )  # fmt: skip
+
+
+def format_datestamp(timestamp: datetime) -> str:
+    return timestamp.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 # Characters that XML 1.0 can't represent
 INVALID_XML_RE = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
@@ -81,8 +84,8 @@ def document(
 
 
 def comment(parent, text: str) -> None:
-    """An XML comment, with the two characters a comment cannot contain made harmless."""
-    parent.append(etree.Comment(f" {xml_text(text).replace('--', '- -').rstrip('-')} "))
+    """An XML comment; a comment cannot contain "--", so every dash followed by a dash gets a space."""
+    parent.append(etree.Comment(f" {re.sub(r'-(?=-)', '- ', xml_text(text))} "))
 
 
 def list_records(

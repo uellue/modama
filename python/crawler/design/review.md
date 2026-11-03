@@ -1,0 +1,116 @@
+# Code review of the crawler (2026-10-27)
+
+Scope: `src/`, `tests/` and `tools/` of `python/crawler` as committed in `deaac56`. Method, as agreed with @weber: a mechanical scan (ruff with all rules, vulture, radon; hints only), then a workflow of five reviewers at high effort, one per dimension (correctness, YAGNI and prettification, not-invented-here, structure and anti-patterns, tests), each handed the code, the requirements, the specs, the decision log and the backlog rather than the author's conclusions, and each followed by a skeptic that tried to refute every finding against the code. Ten agents, 1.5 million tokens, 16 minutes. Nothing has been changed yet; the *Decision* column is for @weber.
+
+Tally: 62 findings, 37 confirmed as stated, 25 confirmed in observation but corrected in cause, severity or action ("partly"), 0 refuted outright. The verifiers' corrections are folded in below; line numbers are theirs (the reviewers' were often off). The full reviewer and verifier texts (25,000 words) and the mechanical scan are kept locally, not committed, in `.claude/review/` at the repository root.
+
+**Outcome (2026-11-03):** @weber accepted the recommendations as they stand, including the user-visible changes (gitignore semantics, no skipped entries inside collapsed directories, one datestamp per crawl, the honest time-limit message, loud failure without a MIME database) and the two CLI points (`crawl --verbose` dropped, `crawl --root` documented). Everything in A, B and C is applied, each with its spec scenario and test; the D decisions are recorded in the decision log, the backlog, `testing.md` and `playtest.md`. `pathspec` is the one new dependency. The suite stands at 185 tests. Still to do, by @weber: turn the lessons below into the short rules for AGENTS.md and the reviewer's standing instructions.
+
+Severity: **H** a defect at the stated scale or a crash; **M** a defect in a reachable case or a drift between code and contract; **L** cleanliness. Recommendation: **do** unless vetoed; **ask** where a dependency or a decision is involved; **defer** with the trigger.
+
+## A. Defects, confirmed
+
+| # | Where | Finding | Evidence | Action | Sev | Rec | Decision |
+|---|---|---|---|---|---|---|---|
+| A1 | `store.py:48` | `members.dataset_id` has no index, so `DELETE FROM datasets` cascades quadratically on every crawl after the first | Measured on a throwaway cluster: 5k datasets 2.5 s, 10k 9.8 s (×4 for ×2); extrapolates to about a day at 1M. Nothing reads these tables yet. | `TRUNCATE datasets, members` in `store()` (no schema change); add one test that stores twice on the same database | H | do | |
+| A2 | `mimedb.py:43` | MIME detection depends on unenforced global state; `walk()` or `detect()` without a prior `mimedb.build` silently uses the host's `/usr/share/mime`, against decision Q12 and the spec | Reproduced in a fresh interpreter: host types returned, no error. `activate()` writes `os.environ` and reloads a module; assigning `xdg.BaseDirectory.xdg_data_dirs` works without either. | A module attribute set by `activate()`; `detect_with_tie` raises `RuntimeError("no MIME database active")` when unset; replace the environ writes and reload by the attribute assignment; keep the `_cache_uptodate` poke | H | do | |
+| A3 | `cli.py:46` | Every `records`/`crawl` run leaves a 6.5 MB MIME database directory in `/tmp`; 3.1 GB on this machine already | `mkdtemp` with no cleanup anywhere | Hold a `tempfile.TemporaryDirectory` for the process lifetime | M | do | |
+| A4 | `render.py:85` | `records --verbose` crashes on any name or warning containing `---` (whole document lost) | `str.replace("--", "- -")` is not idempotent on runs; `etree.Comment` raises | `re.sub(r"-(?=-)", "- ", text)`, drop the `rstrip`; tests for `---` and a trailing dash | M | do | |
+| A5 | `formats/__init__.py:261` | Two post-order formats may both anchor at the directory; `store()` then fails on the unique anchor and `records` prints two records with one identifier | Reproduced with the test suite's own formats; not reachable with the shipped collections, but the planned series format is exactly this shape | Treat `d.rel` as claimable: include the anchor in the `taken` check and record it; the second gets the existing warning; test with two directory-anchored formats | M | do | |
+| A6 | `store.py:109` | Datestamps are stamped per row inside one transaction, so the harvest window is the whole records upsert plus commit, not "small" as the backlog says | Code reading; measured about 2 s per 10k datasets | One `datetime.now(UTC)` truncated to seconds taken before the upsert and passed as a parameter; keep the upsert last; correct the backlog entry (and note clock skew across hosts, overlap margin in harvesting) | M | do | |
+| A7 | `walk.py:43` + `collapse/tests/expected/venv.json:30` | Skipped entries inside a collapsed directory are recorded (every venv has a `lib64` symlink), so `records --verbose` shows a `SKIPPED` comment and the summary counts it; the recorded expectation enshrined it | Spec: a collapsed directory's result "contains no entries below it" | Buffer a directory's skips and name warnings and append them only if the directory was not collapsed; re-record `venv.json`, review the diff; assert in `test_collapsed_directory_is_not_entered` | M | do | |
+| A8 | `formats/__init__.py:199` | A post-order format can set `parent` or `collapsed` and the core keeps them; the spec's "parent only through adoption" is not enforced | Reproduced; no shipped format does it | In `run_post` reset both before `_fill` and warn when a claim had them set; two tests beside `test_undeclared_nesting_is_warned`. No separate `Claim` type (YAGNI, "one structure" decision) | M | do | |
+| A9 | `selection.py:134` | The "gitignore-style" matcher deviates from gitignore: a middle-slash pattern matches at any depth, `build/` matches a file named `build`, no `!` negation (wanted in the backlog) | Ran `path_excluded` on the cases; gitignore(5) says otherwise. `pathspec` (MPL-2.0, 505M downloads/month, used by black, mkdocs, pre-commit) implements all of it | Add `pathspec` as a dependency; compile one `GitIgnoreSpec` per pattern list in `walk()`; pass directories with a trailing slash; add the three edge cases and the existing `/scratch` cases as the contract; closes the `!pattern` backlog item | M | ask (new dependency) | |
+| A10 | `zarr/__init__.py:24` | A `zarr.json` that is valid JSON but not an object escapes the collapse (chunk flood); a `zarr.json` over 64 KiB is reported as "cannot be parsed" | Reproduced with `[]`, `null`, `"x"` and a 70 kB attribute | `isinstance(meta, dict)` check routed to the same warning; compare `marker.size` with the read limit and warn "too large to inspect"; fixture with `zarr.json = []` | L | do | |
+| A11 | `cli.py:145` | `records --until` drops files whose mtime is in the last second of the range, although the rendered datestamp lies inside it | Checked with 23:59:59.7 | Truncate the mtime to seconds before comparing and use that value in the record | L | do | |
+| A12 | `specs/mime-database/spec.md:42` | Scenario names `application/x-hdf5`, which does not exist; code and test use `application/x-hdf` | grep | Fix the scenario | L | do | |
+
+## B. Simplify or remove (YAGNI, confirmed)
+
+| # | Where | Finding | Action | Rec | Decision |
+|---|---|---|---|---|---|
+| B1 | `mime.py:159` | The "own magic" tie-break step is marked "not in the spec" and the suite passes without it (verified by running it); the case it claims to serve is decided by the common-ancestor rule | Remove the step and its comment; fix the `c.xml` test comment | do | |
+| B2 | `server.py:171` | `OAIServer.respond` rebuilds the OAI-PMH envelope that `render.document` provides; `document` returns a `request` element that only this non-caller needs | Call `document(self.base_url, None, {})` in `respond`, set verb and arguments after parsing; drop three namespace imports | do | |
+| B3 | `formats/__init__.py:78` | `Result.from_json` has no caller except its own round-trip test and is lossy (omits version, mtime, uid) | Delete it and the round-trip assertion; keep the `to_json` ordering test | do | |
+| B4 | `mime.py:119` | The directory/symlink/special-file branches in `detect_with_tie` are unreachable from the walk (R35) and cost an extra `lstat` per file; `detect()` is a test wrapper | Remove the branches and `test_special_files`; state in the docstring that a regular file is expected; keep `detect()` | do | |
+| B5 | `walk.py:91` | `time_limit` and `byte_budget` are keywords no caller sets | Module constants in `formats/__init__.py`; keep the `run_pre`/`run_post` parameters for the runner tests; a `[crawl]` setting when a format needs more | do | |
+| B6 | `store.py:16` | `conninfo_from_env(env=os.environ)` is injectable for nobody, and reads the environment outside `cli.py` against the stated placement rule | Move the five reads to `cli.py` and pass the conninfo string | do | |
+| B7 | `testing.py:108` | `_formats` prepends core's Python formats, which are empty by design | `walk(path, ct.collection.formats)`; delete the helper | do | |
+| B8 | `testing.py:204` | `validate_oai` duplicates conftest's XSD resolver inside the shipped plugin, is used by one test file and needs `tests/schemas`, which collections do not have | Move it to `tests/conftest.py` as a fixture on the session-scoped schema; `test_cli` imports from conftest as `test_server` does | do | |
+| B9 | `selection.py:143` | The `rel + "/-"` trick is duplicated and unexplained | Fold into `_matches` with a one-line comment (moot if A9 is adopted) | do | |
+| B10 | `testing.py:51` | `on_disk` is computed twice | One property | do | |
+| B11 | `formats/__init__.py:25` | `Entry.kind` documents values a format never sees | Comment: `"file" or "dir"; symlinks and special files never reach a format` | do | |
+| B12 | `cli.py:188` | Both `--verbose` help strings still say "on stderr"; `crawl --verbose` is a no-op; `crawl --root` is documented nowhere; the OAI base URL default is spelled twice; `cli._warnings` reaches into `Result` | Fix the help text; wire or drop `--verbose` on `crawl`; document or drop `--root` until the CLI parameter review; one `DEFAULT_BASE_URL`; `Result.all_warnings()` | do | |
+| B13 | `render.py:11` | `render` and `server` import `records` only for `format_datestamp`, the one upside-down edge in the layering | Move it to `render.py` | do | |
+| B14 | `formats/__init__.py:185` | The time limit is checked after the call, so it bounds nothing; the decision log defers enforcement to worker subprocesses, but R12, AGENTS.md and the test name promise a bound | Warning text "took X s, over the limit of Y s; result discarded"; align R12 and AGENTS.md with the decision; rename the test; backlog entry under R23 | do | |
+| B15 | `tools/xterm-shots.py:4` | Usage text names `term.py` | Fix; mention `type` in AGENTS.md's one line | do | |
+| B16 | docs | Stale: AGENTS.md and BACKLOG.md still describe `recognition.py`; BACKLOG says `dc:date` uses `max(mtime, ctime)` but only mtime exists; the crawl spec's "ctime stored unchanged" has no implementation; `ALL` in ids is designed (architecture E) but absent from AGENTS.md, the selection spec and the template; the plugin's record-on-first-run is decided (T4) but absent from the spec and the template | Fix the four stale spots; drop "stored unchanged" from the crawl scenario; add `ALL` and the first-run scenario to the docs | do | |
+| B17 | `store.py:31` | `datasets`/`members` are written on every crawl and read by nothing until the survey command; keep (decided), but say so | One backlog line under Crawl scaling: unread until survey, schema free to change, delete-and-reinsert reconsidered with the reader | do | |
+
+## C. Tests to add or fix (confirmed)
+
+| # | Where | Finding | Action | Sev | Rec | Decision |
+|---|---|---|---|---|---|---|
+| C1 | `testing.py:122` | The fixture plugin's failure paths (missing manifest entry, orphan entry, sidecar, stale expected file, changed result, uncovered rule) and the shipped-fixture path have never run; task 7.1 is ticked as if they had | `tests/test_testing.py` on pytest's own `pytester` with a throwaway collection, one test per `formats-testing` scenario; ship one small real fixture directory so `copytree` runs | H | do | |
+| C2 | `testing.py:196` | The coverage rule checks types, not rules: EMPAD's `scan_x*_y*.raw` glob has never fired on any fixture and the tests pass | Check each own glob and magic rule against the representative fixtures' names and first bytes; fail naming the rule; add a `scan_x*_y*` fixture | H | do | |
+| C3 | `testing.py:162` | `--regen-expected` rewrites silently, so "record and review" has no hook; two recordings enshrined bugs (json5, venv skip) | Compare before writing and fail with "recorded new" or "regenerated: changed", as pytest-regressions does; unchanged files pass | M | do | |
+| C4 | `tests/test_records.py:95` | `crawl`, `serve` and the walk-to-store-to-server path are untested; the real clients only ever see hand-inserted records | One test: walk a tree from the collections' generators, store, harvest through the `oai` fixture, delete a file, store again, assert | M | do | |
+| C5 | `.gitlab-ci.yml` | The crawler suite is not in CI; `test_unreadable_path_fails` returns early as root instead of skipping | `skipif` now; a CI job on the devcontainer image as non-root, or a backlog entry with the non-root requirement | M | ask (when) | |
+| C6 | `tests/test_walk.py:70` | Five scenarios are tested for half their THEN: no read spy under a collapsed directory; the "claim outside" branch; the "doesn't collapse" warning; per-path ignores through `--config`; R37's collapsed mtime | Add the five asserts | L | do | |
+| C7 | `tests/test_cli.py:56` | Assertions match whole comment lines the backlog plans to reword; shell boilerplate and `cheat.pair` repeated | Assert on components (path, format id, `WARNING:`, order); one exact counts check; a `shell()` helper and a `pair` fixture | L | do | |
+| C8 | `tests/test_cli.py:16` | Tests never run the documented `modama-crawler` entry point | One smoke test through `shutil.which("modama-crawler")` for `--help` and the pipe case | L | do | |
+| C9 | `tests/test_mimedb.py:50` | Checking-order cases duplicated from `test_mime.py`; the "host definitions ignored" test never involves a host; the walk-level "ambiguous" warning is asserted nowhere | Keep order cases in `test_mime.py` with the scenario names; rename or drop the host test; add the walk-level assertion | L | do | |
+| C10 | `*/tests/fixtures.toml` | `caches` is labelled vendor-written but three of four parts are hand-mimicked; three `parser-only` entries lack the required reason; core's PNG is hand-assembled although the rule asks for a real producer | Relabel; add reasons; replace the PNG by a stdlib-written file (zip or gzip) and re-record; Pillow only when a collection needs images | L | do | |
+| C11 | `testing.py:95` | Collection fixture tests classify with every installed collection's MIME definitions, so recorded results depend on what else is installed (against R2) | Build the database per collection module (core plus the one under test), about 0.5 s | L | do | |
+
+## D. Decisions for @weber
+
+| # | Question | Recommendation | Decision |
+|---|---|---|---|
+| D1 | Adopt `pathspec` for gitignore semantics (A9)? New third-party dependency, MPL-2.0. | Yes: it is the established implementation of the format the docs promise, and it brings the wanted negation. | |
+| D2 | Adopt `pytest-regressions` for expectation recording? | No: it would change four collections' committed JSON to YAML for a diff and a flag the 20-line plugin provides; record in `testing.md` T-B that `basename`/`fullpath` binding was considered. | |
+| D3 | Replace the hand-written OAI-PMH server by `oaipmh`'s server or `oai_repo`? | No: both paginate by offset over a re-run query, neither is tested with real clients; keyset pagination is an outcome we need. Record in the decision log; revisit with tombstones or sets. | |
+| D4 | Replace `xterm-shots.py` by charmbracelet `vhs`? | No: `vhs` renders xterm.js in a headless Chromium and runs a tape to completion; R40 asks for a real terminal and the play test drove it interactively. Note in `playtest.md`. | |
+| D5 | Split `formats/__init__.py` into author API and runner (`recognition.py`), with `run_post`'s three checks as one `_claim()` helper? | Defer to the series change, which touches `run_post` anyway; fix the stale `recognition.py` references now. | |
+| D6 | Extract `cmd_records`'s merge into `records.py` for in-process tests? | Defer to the "verbose output polish" backlog item. | |
+| D7 | Decompose `detect_with_tie` into stages? | No; B1 removes the one unnamed deviation, the rest mirrors the checking order. | |
+| D8 | Replace the `phase` string by two methods (`collapse`, `recognize`)? | No; the single method is a logged decision (worker isolation later). Revisit only if the series change shows the convention is error-prone. | |
+| D9 | A JSONB column or dropping the `datasets`/`members` tables? | Neither; architecture A keeps them for re-recognition, the reader decides their shape. B17 records that. | |
+| D10 | Extend the pyxdg fork so `mime.py`'s glob index and `_is_text` can go? | No; the fork is meant to disappear. Add to the upstream-report backlog item: `all_matches()` should return the pattern and keep every literal match. | |
+| D11 | CI job for the crawler now or after the merge (C5)? | Your call; the non-root requirement must be written down either way. | |
+
+## E. Proposals the verifiers turned down
+
+Kept here because they are instructive: the reviewer's observation was right, the action was not.
+
+- Remove the plugin's record-on-first-run: it is decision T4 (pytest-regressions' model); the docs lag, not the code.
+- `argparse` `parents=` for the duplicated option block: tried on 3.14, `set_defaults` on the shared action breaks `-v records`; the current factory is the working form.
+- Drop `-v`: a universal convention, not generality.
+- Drop `type` from the screenshot driver: five lines that make searching in `less` practical.
+- A `Claim` dataclass separate from `Dataset`: speculative; the "one structure" decision stands.
+- `alembic` for migrations: SQLAlchemy-based; a SQL-first tool when the item comes up.
+- Pillow for a 1×1 PNG: the stdlib is a real producer of zip and gzip; take Pillow when images are needed.
+- `from_json` is not dead code (its test calls it); it is code without a consumer, which is the YAGNI point.
+
+## Lessons learned
+
+Collected from the "why" of every confirmed finding, for the general rules @weber wants to derive. Grouped by cause.
+
+1. **The defects live where the tests do not go.** Every medium-or-worse correctness finding is a shape no test exercises: a second crawl on a populated database (A1), a process that runs long or often (A3, A6), an odd name (A4), a format that does not exist yet (A5), a caller who forgot the setup step (A2). Rule: for every store or cache, test the second write; for every escaping or filtering step, test runs and boundaries, not the minimal pair; benchmark once at the stated scale.
+2. **Code that drifted was added beside a fix, not from a scenario.** The non-spec tie-break step, the stale help text, the stale comments and usage text all came from reaction commits (B1, B11, B12, B15). Rule: at commit time, every mechanism names the scenario, requirement or decision that asks for it; what has none is removed or becomes a next step.
+3. **Hand-built code that claims an established format fails in that format's corners.** gitignore semantics (A9) and the shared-mime-info order (B1) went wrong; the project's own ideas (the walk, the selection model, the identifier) held. Rule: when the docs promise a format, use its library or test its documented edge cases as the contract.
+4. **Recorded expectations detect change, not correctness.** Two recordings enshrined bugs in one commit (json5, the venv skip) and `--regen-expected` says nothing (C3, A7). Rule: a recording is reviewed against the spec, not against the previous file; regeneration must report what changed; the planned diff-review skill is the mechanism.
+5. **A guard that never fires rots silently.** The plugin's failure paths never ran (C1) and the coverage rule counted types, not rules (C2), so a missing fixture passed. Rule: test the test machinery with a throwaway subject; coverage is counted at the granularity of the thing that can break.
+6. **Global state must fail loudly, not degrade.** The MIME database (A2) is the one unavoidable global; its "not initialised" state returned plausible wrong answers. Rule: an unset global raises.
+7. **Generality with one user is a cost, not an option.** Keywords nothing passes (B5), an injectable environment nobody injects (B6), a branch for a case the design rules out (B7), a deserialiser nobody calls (B3), reachable-only-from-tests branches (B4). Rule: a parameter, branch or function needs a second caller or a scenario; otherwise a constant, a deletion, or a backlog line.
+8. **Duplication appears when the second caller copies instead of calling.** The OAI envelope (B2), the XSD resolver (B8), the base URL (B12), the `/-` trick (B9). Rule: grep for the mechanism before writing it a second time; a helper with one caller is where the second caller should go.
+9. **Write-only data accumulates speculation.** The index tables (B17) and the hand-written field list that a new field touches in six places. Rule: say who reads a table; until a reader exists, its schema is provisional and small.
+10. **The decision log and the backlog earned their keep.** Eleven proposed refactors were turned down because a decision or backlog entry already covered them (section E, D2 to D10); the reviewers who had not read `testing.md` proposed undoing T4. Rule: reviewers get the decision log and the backlog as inputs; a decision that is not written down will be re-litigated.
+11. **Docs lag the code by one commit.** Stale references to a deleted module, a help text from before R40, a backlog line about ctime, the undocumented `ALL` (B16). Rule: the commit that changes behaviour changes AGENTS.md, the spec and the backlog in the same diff.
+12. **On the review itself.** The adversarial verifier earned its cost: 25 of 62 findings were corrected in cause, severity or action, mostly by reading the decision log, running the proposed fix, or counting lines; none was refuted outright, so the reviewers' observations were reliable and their prescriptions were not. The mechanical scan found the hotspots (`run_post`, `detect_with_tie`, `cmd_records`, the plugin) but not one of the defects. Line numbers from reviewers are unreliable and were corrected by verifiers reading the file.
+
+## Next steps
+
+1. @weber fills the Decision column, or vetoes items in A, B and C (default: do).
+2. Fixes go in grouped by file, each with its test and spec scenario where the contract changes; A1, A2 and A7 change recorded or stored results and need a look at the diffs.
+3. After the fixes, the lessons above become rules in AGENTS.md (short form) and in the reviewer's standing instructions.

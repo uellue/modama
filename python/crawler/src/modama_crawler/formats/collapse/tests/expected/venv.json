@@ -25,11 +25,6 @@
       "warnings": []
     }
   ],
-  "skipped": [
-    [
-      "/env/lib64",
-      "symlink"
-    ]
-  ],
+  "skipped": [],
   "warnings": []
 }

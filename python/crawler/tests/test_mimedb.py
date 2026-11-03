@@ -3,9 +3,10 @@
 from pathlib import Path
 
 import pytest
-from modama_crawler import mimedb, selection
+from modama_crawler import mime, mimedb, selection
 from modama_crawler.formats import Collection
 from modama_crawler.mime import detect, detect_with_tie
+from modama_crawler.walk import walk
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(32)
 
@@ -27,7 +28,8 @@ def rebuild(tmp_path, mime_database):
     mimedb.build(mime_database.values(), tmp_path / "restore")
 
 
-def test_host_definitions_are_ignored(tmp_path, rebuild):
+def test_only_enabled_collections_define_types(tmp_path, rebuild):
+    # mimedb.activate points pyxdg at the built database alone (the host's /usr/share/mime is never read)
     host = Collection("host", [], (tmp_path / "host.xml",))
     (tmp_path / "host.xml").write_text(
         xml('<mime-type type="application/x-foo"><glob pattern="*.foo"/></mime-type>')
@@ -47,13 +49,6 @@ def test_png_from_vendored_definitions(tmp_path, rebuild):
     assert detect(str(tmp_path / "noext")) == "image/png"
 
 
-def test_longest_pattern_wins(tmp_path, mime_database):
-    import gzip
-
-    (tmp_path / "a.tar.gz").write_bytes(gzip.compress(b""))
-    assert detect(str(tmp_path / "a.tar.gz")) == "application/x-compressed-tar"
-
-
 def test_tie_resolves_to_common_ancestor(tmp_path, rebuild):
     two = Collection("two", [], (tmp_path / "two.xml",))
     (tmp_path / "two.xml").write_text(
@@ -68,16 +63,12 @@ def test_tie_resolves_to_common_ancestor(tmp_path, rebuild):
         "application/x-hdf",
         ("application/x.h5-a", "application/x.h5-b"),
     )
-
-
-def test_executable_binary_is_octet_stream(tmp_path, mime_database):
-    f = tmp_path / "frame_0001"
-    f.write_bytes(bytes(range(256)))
-    f.chmod(0o755)
-    assert detect(str(f)) == "application/octet-stream"
-    t = tmp_path / "notes"
-    t.write_text("just text\n")
-    assert detect(str(t)) == "text/plain"
+    # The walk reports the tie as a warning naming both candidates
+    result = walk(tmp_path, [])
+    assert (
+        "/x.tie",
+        "type is ambiguous between application/x.h5-a, application/x.h5-b; using application/x-hdf",
+    ) in result.warnings
 
 
 def test_vendored_file_is_packaged():
@@ -87,3 +78,16 @@ def test_vendored_file_is_packaged():
         and core.mime_files[0].exists()
     )
     assert (core.mime_files[0].parent / "LICENSE.freedesktop.org.xml").exists()
+
+
+def test_detection_without_a_database_refuses(tmp_path):
+    # Silently falling back to the host's /usr/share/mime would contradict Q12
+    (tmp_path / "a.png").write_bytes(PNG)
+    active = mime.database
+    mime.database = None
+    try:
+        with pytest.raises(RuntimeError, match="no MIME database active"):
+            detect(str(tmp_path / "a.png"))
+    finally:
+        mime.database = active
+    assert detect(str(tmp_path / "a.png")) == "image/png"

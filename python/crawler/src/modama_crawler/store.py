@@ -2,29 +2,21 @@
 
 from __future__ import annotations
 
-import os
-from collections.abc import Mapping
+from datetime import UTC, datetime
 
 import psycopg
-from psycopg.conninfo import make_conninfo
 from psycopg.types.json import Jsonb
 
 from .formats import Result
 from .records import build
 
 
-def conninfo_from_env(env: Mapping = os.environ) -> str:
-    return make_conninfo(
-        dbname=env.get("MODAMA_CRAWLER_DB", "modama_crawler"),
-        user=env.get("POSTGRES_ADMIN", "postgres"),
-        password=env.get("POSTGRES_PASSWORD", ""),
-        host=env.get("POSTGRES_ADDRESS", "localhost"),
-        port=env.get("POSTGRES_PORT", "5432"),
-    )
-
-
 def ensure_tables(conn: psycopg.Connection) -> None:
-    """Create the schema if it does not exist. There are no migrations: recreate the database after a change."""
+    """Create the schema if it does not exist. There are no migrations: recreate the database after a change.
+
+    The datasets and members tables are written on every crawl and read by
+    nothing yet (the survey command will); their shape is provisional.
+    """
     cur = conn.cursor()
     cur.execute(
         """
@@ -72,10 +64,15 @@ def store(conn: psycopg.Connection, result: Result) -> int:
 
     Returns the number of records that changed. A record's datestamp moves only
     when its content changes, so an unchanged crawl leaves datestamps alone;
-    records of datasets that disappeared are deleted.
+    records of datasets that disappeared are deleted. All records changed by
+    one call get the same datestamp, taken just before they are written, so
+    that a harvester's window is the upsert and commit, not the whole call.
     """
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM datasets")
+        # The whole content is replaced, and nothing reads these tables while
+        # the crawl runs (the server reads records only), so TRUNCATE instead
+        # of a cascading DELETE, which is quadratic without an index on members.
+        cur.execute("TRUNCATE datasets, members")
         for d in result.datasets:
             cur.execute(
                 """
@@ -106,15 +103,16 @@ def store(conn: psycopg.Connection, result: Result) -> int:
             ([identifier for identifier, _ in records],),
         )
         changed = cur.rowcount
+        now = datetime.now(UTC).replace(microsecond=0)
         cur.executemany(
             """
             INSERT INTO records (identifier, metadata, datestamp)
-            VALUES (%s, %s, date_trunc('second', clock_timestamp()))
+            VALUES (%s, %s, %s)
             ON CONFLICT (identifier) DO UPDATE
             SET metadata = EXCLUDED.metadata, datestamp = EXCLUDED.datestamp
             WHERE records.metadata IS DISTINCT FROM EXCLUDED.metadata
             """,
-            [(identifier, Jsonb(metadata)) for identifier, metadata in records],
+            [(identifier, Jsonb(metadata), now) for identifier, metadata in records],
         )
         changed += cur.rowcount
     conn.commit()

@@ -3,9 +3,15 @@ import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from conftest import DC, OAI
+from modama_crawler import selection
 from modama_crawler.formats import Dataset, Result
+from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
+from modama_crawler.formats.empad import cheat
+from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
 from modama_crawler.records import MAX_LOCAL_ID, browse_url, build, oai_identifier
 from modama_crawler.store import store
+from modama_crawler.walk import walk
 
 PREFIX = "oai:er-c-data-mgmt.fz-juelich.de:"
 
@@ -108,6 +114,9 @@ def test_store_keeps_datestamps_and_drops_deleted(conn):
         uid=os.getuid(),
     )
     assert store(conn, Result([a, b])) == 2
+    # Every record changed by one call carries the same datestamp, taken just
+    # before the write, so a harvester's window is the upsert plus commit
+    assert len({d for (d,) in conn.execute("SELECT datestamp FROM records")}) == 1
     conn.execute("UPDATE records SET datestamp = '2000-01-01T00:00:00Z'")
     conn.commit()
 
@@ -139,3 +148,47 @@ def test_store_keeps_datestamps_and_drops_deleted(conn):
     assert [identifier for identifier, _ in rows] == [oai_identifier("/a.txt")]
     assert datetime.now(UTC) - rows[0][1] < timedelta(minutes=1)
     assert conn.execute("SELECT count(*) FROM datasets").fetchone() == (1,)
+
+
+def harvest_identifiers(oai) -> list[str]:
+    """Every identifier the server lists, following resumption tokens."""
+    found = []
+    doc = oai(verb="ListIdentifiers", metadataPrefix="oai_dc")
+    while True:
+        found += [e.text for e in doc.iter(f"{OAI}identifier")]
+        token = doc.find(f".//{OAI}resumptionToken")
+        if token is None or not token.text:
+            return found
+        doc = oai(verb="ListIdentifiers", resumptionToken=token.text)
+
+
+def test_recognised_tree_reaches_the_harvester(conn, oai, tmp_path):
+    # The whole path once: real formats on a tree, stored, served, re-crawled
+    cheat.pair(tmp_path / "scan")
+    zarr_fixtures.array(tmp_path / "store")
+    collapse_fixtures.venv(tmp_path / "env")
+    zarr_fixtures.corrupt(tmp_path / "broken")
+    formats = selection.enabled_formats(
+        selection.discover().values(), selection.Config()
+    )
+    result = walk(tmp_path, formats)
+    assert store(conn, result) == len(result.datasets)
+    expected = {oai_identifier(d.anchor) for d in result.datasets}
+    assert set(harvest_identifiers(oai)) == expected
+    record = oai(
+        verb="GetRecord",
+        identifier=oai_identifier("/scan/SCA2_rings.xml"),
+        metadataPrefix="oai_dc",
+    )
+    assert record.find(f".//{DC}format").text == "application/x.empad+xml"
+    before = dict(conn.execute("SELECT identifier, datestamp FROM records"))
+
+    # The header disappears: its record goes, the raw file becomes a record of
+    # its own, everything else keeps its datestamp
+    (tmp_path / "scan" / "SCA2_rings.xml").unlink()
+    store(conn, walk(tmp_path, formats))
+    after = dict(conn.execute("SELECT identifier, datestamp FROM records"))
+    assert oai_identifier("/scan/SCA2_rings.xml") not in after
+    assert oai_identifier("/scan/series_x4.raw") in after
+    unchanged = set(before) & set(after)
+    assert unchanged and all(before[i] == after[i] for i in unchanged)

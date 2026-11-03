@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/",
+      "basis": "zarr.json present",
+      "collapsed": true,
+      "format": "zarr/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": [
+        "zarr.json cannot be parsed: not a JSON object but list"
+      ]
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

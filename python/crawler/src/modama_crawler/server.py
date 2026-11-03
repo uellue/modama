@@ -12,14 +12,12 @@ from psycopg_pool import ConnectionPool
 from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Request, Response
 
-from .records import format_datestamp
 from .render import (
     OAI_DC_NS,
     OAI_DC_SCHEMA,
-    OAI_NS,
-    XSI_NS,
-    XSI_SCHEMA_LOCATION,
+    document,
     element,
+    format_datestamp,
     header,
     record,
     sub,
@@ -168,15 +166,7 @@ class OAIServer:
         return response(environ, start_response)
 
     def respond(self, params: MultiDict) -> bytes:
-        root = etree.Element(
-            f"{{{OAI_NS}}}OAI-PMH", nsmap={None: OAI_NS, "xsi": XSI_NS}
-        )
-        root.set(
-            XSI_SCHEMA_LOCATION,
-            f"{OAI_NS} http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd",
-        )
-        sub(root, "responseDate", format_datestamp(datetime.now(UTC)))
-        request = sub(root, "request", self.base_url)
+        root, request = document(self.base_url, None, {})
         try:
             verb, args = parse_arguments(params)
             request.set("verb", verb)

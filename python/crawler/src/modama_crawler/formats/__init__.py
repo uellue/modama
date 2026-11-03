@@ -22,7 +22,7 @@ class Entry:
     name: str
     path: str  # absolute, for reading
     rel: str  # relative to the root, with a leading "/"
-    kind: str  # "file", "dir", "symlink" or "other"
+    kind: str  # "file" or "dir"; symlinks and special files never reach a format
     size: int
     mtime: float
     ctime: float
@@ -53,6 +53,13 @@ class Result:
     warnings: list[tuple[str, str]] = field(default_factory=list)  # (path, text)
     skipped: list[tuple[str, str]] = field(default_factory=list)  # (path, reason)
 
+    def all_warnings(self) -> list[tuple[str, str]]:
+        """The walk's warnings and those carried by datasets, in path order."""
+        return sorted(
+            list(self.warnings)
+            + [(d.anchor, text) for d in self.datasets for text in d.warnings]
+        )
+
     def to_json(self) -> dict:
         datasets = sorted(self.datasets, key=lambda d: d.anchor)
         return {
@@ -73,27 +80,6 @@ class Result:
             "warnings": [list(w) for w in sorted(self.warnings)],
             "skipped": [list(s) for s in sorted(self.skipped)],
         }
-
-    @classmethod
-    def from_json(cls, data: dict) -> Result:
-        return cls(
-            datasets=[
-                Dataset(
-                    anchor=d["anchor"],
-                    type=d["type"],
-                    members=tuple(d["members"]),
-                    parts=tuple(d["parts"]),
-                    format=d["format"],
-                    basis=d["basis"],
-                    warnings=tuple(d["warnings"]),
-                    parent=d["parent"],
-                    collapsed=d["collapsed"],
-                )
-                for d in data["datasets"]
-            ],
-            warnings=[tuple(w) for w in data["warnings"]],
-            skipped=[tuple(s) for s in data.get("skipped", [])],
-        )
 
 
 class BudgetExceeded(Exception):
@@ -173,6 +159,12 @@ class Collection:
             f.id = f"{self.name}/{f.name}"
 
 
+# Per format call. The time limit is checked after the call (hang isolation is
+# deferred to worker subprocesses, architecture G); the byte budget is enforced.
+TIME_LIMIT = 5.0
+BYTE_BUDGET = 1 << 20
+
+
 def ordered(formats: Iterable[Format]) -> list[Format]:
     return sorted(formats, key=lambda f: (-f.priority, f.id))
 
@@ -190,8 +182,12 @@ def _call(
     except Exception as e:  # noqa: BLE001  a failing format must not stop the crawl
         d.warn(d.rel, f"{fmt.id} failed: {e!r}")
         return []
-    if time.monotonic() - start > time_limit:
-        d.warn(d.rel, f"{fmt.id} skipped: exceeded the time limit of {time_limit} s")
+    elapsed = time.monotonic() - start
+    if elapsed > time_limit:
+        d.warn(
+            d.rel,
+            f"{fmt.id} took {elapsed:.1f} s, over the limit of {time_limit} s; result discarded",
+        )
         return []
     return datasets
 
@@ -258,9 +254,10 @@ def run_post(
                     f"{fmt.id}: claim outside {d.rel} rejected: {', '.join(sorted(outside))}",
                 )
                 continue
-            taken = [
-                (x, claimed_by[x]) for x in sorted(members | parts) if x in claimed_by
-            ]
+            # The directory itself is claimable too: two formats anchoring at it
+            # would produce two datasets with one anchor, which the index rejects
+            claims = members | parts | ({d.rel} if ds.anchor == d.rel else set())
+            taken = [(x, claimed_by[x]) for x in sorted(claims) if x in claimed_by]
             if taken:
                 d.warn(
                     ds.anchor,
@@ -272,14 +269,17 @@ def run_post(
                 warnings += (
                     f"{fmt.id} is not a collection type but adopts {', '.join(sorted(parts))}",
                 )
-            for x in members | parts:
+            if ds.parent is not None or ds.collapsed:
+                warnings += (f"{fmt.id}: parent and collapsed are set by the core",)
+            for x in claims:
                 claimed_by[x] = fmt.id
             mtimes = [files[m].mtime for m in members] + [
                 children[p].mtime for p in parts
             ]
             uid = files[ds.anchor].uid if ds.anchor in files else d.uid
             filled = _fill(
-                replace(ds, members=tuple(sorted(members)), parts=tuple(sorted(parts)), warnings=warnings),
+                replace(ds, members=tuple(sorted(members)), parts=tuple(sorted(parts)),
+                        warnings=warnings, parent=None, collapsed=False),
                 fmt, d, max(mtimes, default=d.mtime), uid,
             )  # fmt: skip
             out.append(filled)

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
+from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
@@ -19,10 +20,26 @@ from . import mimedb, render, selection
 from .formats import Format
 from .records import build
 from .server import OAIError, OAIServer, parse_range
-from .store import conninfo_from_env, ensure_tables, store
+from .store import ensure_tables, store
 from .walk import walk
 
 log = logging.getLogger("modama_crawler")
+
+DEFAULT_BASE_URL = "http://localhost:7654/oai"
+
+# Removed at interpreter exit; held here because the database must outlive _configure
+_mime_directory: tempfile.TemporaryDirectory | None = None
+
+
+def conninfo_from_env() -> str:
+    """The database connection string from the modama compose environment."""
+    return make_conninfo(
+        dbname=os.environ.get("MODAMA_CRAWLER_DB", "modama_crawler"),
+        user=os.environ.get("POSTGRES_ADMIN", "postgres"),
+        password=os.environ.get("POSTGRES_PASSWORD", ""),
+        host=os.environ.get("POSTGRES_ADDRESS", "localhost"),
+        port=os.environ.get("POSTGRES_PORT", "5432"),
+    )
 
 
 def _configure(args) -> tuple[selection.Config, list[Format]]:
@@ -43,7 +60,9 @@ def _configure(args) -> tuple[selection.Config, list[Format]]:
     except (OSError, ValueError) as e:
         log.error("%s", e)
         raise SystemExit(2) from e
-    mimedb.build(definitions, Path(tempfile.mkdtemp(prefix="modama-mime-")))
+    global _mime_directory
+    _mime_directory = tempfile.TemporaryDirectory(prefix="modama-mime-")
+    mimedb.build(definitions, Path(_mime_directory.name))
     log.info(
         "%d formats enabled, MIME definitions from %d of %d collections",
         len(formats),
@@ -58,17 +77,9 @@ def _ids(text: str) -> list[str]:
     return [x.strip() for x in text.split(",") if x.strip()]
 
 
-def _warnings(result) -> list[tuple[str, str]]:
-    """Every warning of the result, including those carried by datasets, in path order."""
-    return sorted(
-        list(result.warnings)
-        + [(d.anchor, text) for d in result.datasets for text in d.warnings]
-    )
-
-
 def _report(result) -> int:
     """Log every warning of the result; returns their number."""
-    warnings = _warnings(result)
+    warnings = result.all_warnings()
     for path, text in warnings:
         log.warning("%s: %s", path, text)
     return len(warnings)
@@ -100,7 +111,7 @@ def cmd_serve(args) -> int:
     with ConnectionPool(conninfo, open=True) as pool:
         server = OAIServer(
             pool,
-            base_url=os.environ.get("OAI_BASE_URL", "http://localhost:7654/oai"),
+            base_url=os.environ.get("OAI_BASE_URL", DEFAULT_BASE_URL),
             admin_email=os.environ.get("OAI_ADMIN_EMAIL", "admin@example.org"),
         )
         run_simple("localhost", 7654, server, threaded=True)
@@ -134,7 +145,7 @@ def cmd_records(args) -> int:
     except OSError as e:
         log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
         return 2
-    warnings = _warnings(result)
+    warnings = result.all_warnings()
     # Everything in path order: one note per skipped entry and per warning, a note and a record per dataset
     NOTE, RECORD = 0, 1
     events: list[tuple[str, int, object]] = [
@@ -142,7 +153,8 @@ def cmd_records(args) -> int:
     ] + [(path, NOTE, f"{path}: WARNING: {text}") for path, text in warnings]
     count = plain = 0
     for d in result.datasets:
-        datestamp = datetime.fromtimestamp(d.mtime, UTC)
+        # Seconds, as the record shows it, so the filter agrees with the output
+        datestamp = datetime.fromtimestamp(int(d.mtime), UTC)
         if (from_ is not None and datestamp < from_) or (
             until is not None and datestamp > until
         ):
@@ -171,7 +183,7 @@ def cmd_records(args) -> int:
             f"{count} records ({plain} single files by type), "
             f"{len(warnings)} warnings, {len(result.skipped)} skipped"
         )
-    base_url = os.environ.get("OAI_BASE_URL", "http://localhost:7654/oai")
+    base_url = os.environ.get("OAI_BASE_URL", DEFAULT_BASE_URL)
     sys.stdout.buffer.write(render.list_records(base_url, items))
     sys.stdout.flush()
     _report(result)
@@ -185,19 +197,15 @@ def main(argv: list[str] | None = None) -> int:
         "--config", type=Path, help="TOML file with [formats] and [crawl] sections"
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="per-dataset diagnostics on stderr"
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="records: diagnostics as XML comments in the document",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     def selection_args(p):
-        # The global options again, so that they are accepted after the subcommand too
-        p.add_argument(
-            "-v",
-            "--verbose",
-            action="store_true",
-            default=argparse.SUPPRESS,
-            help="per-dataset diagnostics on stderr",
-        )
+        # The global --config again, so that it is accepted after the subcommand too
         p.add_argument(
             "--config",
             type=Path,
@@ -220,7 +228,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     crawl = sub.add_parser("crawl", help="crawl MODAMA_DATA_ROOT into the database")
-    crawl.add_argument("--root", type=Path)
+    crawl.add_argument(
+        "--root", type=Path, help="crawl this tree instead of MODAMA_DATA_ROOT"
+    )
     selection_args(crawl)
     crawl.set_defaults(func=cmd_crawl)
     serve = sub.add_parser("serve", help="serve the OAI-PMH endpoint on port 7654")
@@ -229,6 +239,13 @@ def main(argv: list[str] | None = None) -> int:
         "records", help="print the ListRecords response for a path; no database needed"
     )
     records.add_argument("path", nargs="?", default=".")
+    records.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="diagnostics as XML comments in the document",
+    )  # accepted after the subcommand too
     records.add_argument(
         "--from",
         dest="from_",

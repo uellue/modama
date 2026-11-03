@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Drive a real xterm under a virtual X server and take screenshots of it.
 
-    term.py start NAME [--cols N] [--rows N] -- COMMAND...   run COMMAND in a fresh xterm (bash -c)
-    term.py key NAME KEY...        send keys (xdotool names: space, Page_Down, slash, Return, q, ctrl+c)
-    term.py type NAME TEXT         type text
-    term.py shot NAME OUT.png      screenshot the terminal into OUT.png
-    term.py stop NAME              close the terminal and its X server
+    xterm-shots.py start NAME [--cols N] [--rows N] -- COMMAND...   run COMMAND in a fresh xterm (bash -c)
+    xterm-shots.py key NAME KEY...        send keys (xdotool names: space, Page_Down, slash, Return, q, ctrl+c)
+    xterm-shots.py type NAME TEXT         type text
+    xterm-shots.py shot NAME OUT.png      screenshot the terminal into OUT.png
+    xterm-shots.py stop NAME              close the terminal and its X server
 
 Each NAME has its own X display. The shell stays open after COMMAND exits
 and prints [exit N], so the final screen can be captured.

@@ -30,6 +30,12 @@ def v2_group_with_array(target: Path) -> None:
     inner[:] = numpy.zeros((2, 2), dtype="int8")
 
 
+def not_object(target):
+    """A zarr.json that is valid JSON but a list: the marker still collapses the store."""
+    target.mkdir(parents=True)
+    (target / "zarr.json").write_text("[]\n")
+
+
 def corrupt(target: Path) -> None:
     (target / "broken.zarr" / "c" / "0").mkdir(parents=True)
     (target / "broken.zarr" / "zarr.json").write_text("not json")

@@ -67,8 +67,8 @@ A dataset SHALL get a parent only through a format declared as a collection type
 - **THEN** the adoption stands and the result carries a warning naming both datasets
 
 ### Requirement: Budgets bound every format call
-Each format call on a directory SHALL be bounded by a time limit and a byte budget for reads; exceeding either SHALL skip that format for that directory with a warning, and SHALL NOT stop the crawl.
+Each format call on a directory SHALL have a byte budget for reads, enforced while reading, and a time limit, checked after the call returns (isolating a format that hangs is deferred to worker subprocesses, architecture G); exceeding either SHALL discard that format's result for that directory with a warning naming the format, and SHALL NOT stop the crawl.
 
-#### Scenario: A slow format is skipped
-- **WHEN** a format exceeds the time limit on a directory
-- **THEN** the directory is recognised by the remaining formats and a warning names the skipped format and the directory
+#### Scenario: A slow format's result is discarded
+- **WHEN** a format takes longer than the time limit on a directory
+- **THEN** its result is discarded, the directory is recognised by the remaining formats, and a warning names the format, the time it took and the limit

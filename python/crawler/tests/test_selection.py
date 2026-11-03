@@ -4,6 +4,8 @@ import pytest
 from modama_crawler import selection
 from modama_crawler.selection import (
     Config,
+    compile_patterns,
+    compile_per_path,
     enabled,
     load_config,
     path_excluded,
@@ -30,7 +32,7 @@ def test_enabled(select, ignore, expected):
 
 
 def test_per_path_ignores_only_subtract():
-    ignores = {"/legacy/**": ["empad"], "**/*.old": ["ALL"]}
+    ignores = compile_per_path({"/legacy/**": ["empad"], "**/*.old": ["ALL"]})
     assert path_ignored("empad/empad", "/legacy/run1", ignores)
     assert path_ignored("empad/empad", "/legacy", ignores)
     assert not path_ignored("empad/empad", "/new/run1", ignores)
@@ -38,11 +40,27 @@ def test_per_path_ignores_only_subtract():
     assert path_ignored("zarr/zarr", "/a/b/x.old", ignores)
 
 
+def excluded(patterns, rel, *, is_dir=False):
+    return path_excluded(rel, compile_patterns(patterns), is_dir=is_dir)
+
+
 def test_exclusions():
-    assert path_excluded("/scratch/x", ["/scratch/**"])
-    assert path_excluded("/scratch", ["/scratch/**"])
-    assert not path_excluded("/scratchy", ["/scratch/**"])
-    assert path_excluded("/a/.Trash/b", ["**/.Trash/**"])
+    assert excluded(["/scratch/**"], "/scratch/x")
+    assert excluded(["/scratch/**"], "/scratch", is_dir=True)
+    assert not excluded(["/scratch/**"], "/scratchy", is_dir=True)
+    assert excluded(["**/.Trash/**"], "/a/.Trash/b")
+
+
+def test_exclusions_follow_gitignore():
+    # The corners a user copies from a real .gitignore (review A9)
+    assert excluded(["foo/bar"], "/foo/bar")
+    assert not excluded(["foo/bar"], "/x/foo/bar")  # a middle slash anchors
+    assert excluded(["build/"], "/src/build", is_dir=True)
+    assert not excluded(["build/"], "/src/build")  # a trailing slash: directories only
+    assert excluded(["*.txt", "!keep.txt"], "/other.txt")
+    assert not excluded(
+        ["*.txt", "!keep.txt"], "/keep.txt"
+    )  # negation, last match wins
 
 
 def test_load_config(tmp_path):

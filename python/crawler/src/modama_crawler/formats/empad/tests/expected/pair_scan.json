@@ -1,0 +1,20 @@
+{
+  "datasets": [
+    {
+      "anchor": "/SCA2_rings.xml",
+      "basis": "raw_file points to scan_x4_y4.raw",
+      "collapsed": false,
+      "format": "empad/empad",
+      "members": [
+        "/SCA2_rings.xml",
+        "/scan_x4_y4.raw"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.empad+xml",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

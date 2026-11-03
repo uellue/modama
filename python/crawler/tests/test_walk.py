@@ -67,14 +67,33 @@ def test_parent_sees_child_result(tmp_path):
     assert by_anchor["/outer/note.txt"].parent == "/"
 
 
-def test_collapsed_directory_is_not_entered(tmp_path):
+def test_collapsed_directory_is_not_entered(tmp_path, monkeypatch):
+    import modama_crawler.walk as walk_module
+    from modama_crawler.formats import Directory
+
+    classified, read = [], []
+    real_detect, real_read = walk_module.mime.detect_with_tie, Directory.read
+    monkeypatch.setattr(
+        walk_module.mime,
+        "detect_with_tie",
+        lambda path: (classified.append(path), real_detect(path))[1],
+    )
+    monkeypatch.setattr(
+        Directory, "read", lambda d, e, n: (read.append(e.path), real_read(d, e, n))[1]
+    )
     (tmp_path / "boring" / "deep").mkdir(parents=True)
     (tmp_path / "boring" / "COLLAPSE").write_text("")
     for i in range(50):
         (tmp_path / "boring" / "deep" / f"{i}.bin").write_bytes(b"\0")
+    os.symlink("/nonexistent", tmp_path / "boring" / "lib64")  # as in every venv
+    os.mkfifo(tmp_path / "boring" / "pipe")
     result = walk(tmp_path, FORMATS)
     assert [d.anchor for d in result.datasets if d.anchor != "/"] == ["/boring"]
     assert result.datasets[-1].collapsed and result.datasets[-1].members == ()
+    # Nothing below a collapsed directory is reported, not even skipped entries
+    assert result.skipped == [] and result.warnings == []
+    # ... nor classified or opened
+    assert not [p for p in classified + read if "/boring/" in p]
 
 
 def test_entries_carry_both_timestamps(tmp_path):

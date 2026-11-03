@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
-import os
 import shutil
 import subprocess
 from collections.abc import Iterable
@@ -42,9 +40,10 @@ def build(collections: Iterable[Collection], directory: Path) -> Path:
 
 def activate(directory: Path) -> None:
     """Point pyxdg at directory and nothing else, and reload its caches."""
-    os.environ["XDG_DATA_HOME"] = str(directory)
-    os.environ["XDG_DATA_DIRS"] = str(directory)
-    importlib.reload(xdg.BaseDirectory)
-    Mime._cache_uptodate = False
+    # pyxdg reads these module attributes on every lookup; the environment is left alone
+    xdg.BaseDirectory.xdg_data_home = str(directory)
+    xdg.BaseDirectory.xdg_data_dirs = [str(directory)]
+    Mime._cache_uptodate = False  # no public way to make pyxdg reload yet
     Mime.update_cache()
     mime._glob_index.cache_clear()
+    mime.database = Path(directory)

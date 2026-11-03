@@ -11,7 +11,7 @@ A collection is a directory with this layout; copy it and rename:
     test_fixtures.py # one line: from modama_crawler.testing import test_coverage, test_fixture, test_manifest  # noqa: F401
     fixtures.toml    # provenance of every fixture: purpose, validity, licence, source, optional generator
     fixtures/<name>/ # fixture directories holding only wild files (or generated at test time)
-    expected/        # recorded recognition results, one JSON per fixture, written with --regen-expected
+    expected/        # recorded recognition results, one JSON per fixture, recorded on first run
     generate.py      # generators for fixtures that a real producer writes at test time (optional)
 ```
 
@@ -80,8 +80,13 @@ source = "where it came from, or what generated it"
 generator = "package.tests.generate:pair"   # optional: writes the fixture into the given directory
 ```
 
-Run `pytest <name>/tests --regen-expected` once to record the results, review
-`expected/*.json`, commit. From then on `pytest` compares against them, checks
-the manifest both ways, and fails if one of your rules never fires.
+Run `pytest <name>/tests` once: a fixture without a recorded result is recorded
+and its test fails asking for a review; review `expected/*.json`, commit. From
+then on `pytest` compares against them, checks the manifest both ways, and
+fails if one of your globs, magic rules or formats never fires on a
+representative fixture. After a rule change, `pytest --regen-expected
+<name>/tests` rewrites the results and fails naming what changed, so that the
+diff gets reviewed before it is committed. Your tests run with your definitions
+and the core's only, whatever else is installed.
 
 Try a directory by hand: `modama-crawler records --verbose PATH`.

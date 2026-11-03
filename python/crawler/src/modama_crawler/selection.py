@@ -2,7 +2,7 @@
 
 Selection follows ruff: `select` and `ignore` lists of ids (`collection` or
 `collection/format`); more specific wins, ignore wins ties. Per-path ignores
-and crawl exclusions are gitignore-style globs. See design/architecture.md E.
+and crawl exclusions are gitignore patterns, matched by pathspec. See design/architecture.md E.
 """
 
 from __future__ import annotations
@@ -11,7 +11,9 @@ import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
-from pathlib import Path, PurePosixPath
+from pathlib import Path
+
+from pathspec import GitIgnoreSpec
 
 from .formats import Collection, Format
 
@@ -131,24 +133,38 @@ def enabled_formats(collections: Iterable[Collection], config: Config) -> list[F
     ]
 
 
-def _matches(pattern: str, rel: str) -> bool:
-    """gitignore-style match of a root-relative path: a leading "/" anchors at the root."""
-    p = PurePosixPath(rel)
-    if pattern.startswith("/"):
-        return p.full_match(pattern)
-    return p.full_match(pattern) or p.full_match("/**/" + pattern)
+def compile_patterns(patterns: Iterable[str]) -> GitIgnoreSpec:
+    """Patterns with gitignore semantics: anchoring by a slash, directory-only
+    patterns with a trailing slash, `!` negation, last match wins."""
+    return GitIgnoreSpec.from_lines(patterns)
 
 
-def path_excluded(rel: str, exclude: Iterable[str]) -> bool:
-    return any(_matches(x, rel) or _matches(x, rel.rstrip("/") + "/-") for x in exclude)
+PerPath = list[tuple[GitIgnoreSpec, list[str]]]
+
+
+def compile_per_path(per_path_ignores: dict[str, list[str]]) -> PerPath:
+    return [
+        (compile_patterns([pattern]), ids) for pattern, ids in per_path_ignores.items()
+    ]
+
+
+def _git_path(rel: str, is_dir: bool) -> str:
+    """pathspec takes paths without the leading "/" and directories with a trailing "/"."""
+    path = rel.lstrip("/")
+    return path + "/" if is_dir and path else path
+
+
+def path_excluded(rel: str, exclude: GitIgnoreSpec, *, is_dir: bool = False) -> bool:
+    return exclude.match_file(_git_path(rel, is_dir))
 
 
 def path_ignored(
-    format_id: str, rel: str, per_path_ignores: dict[str, list[str]]
+    format_id: str, rel: str, per_path: PerPath, *, is_dir: bool = True
 ) -> bool:
-    for pattern, ids in per_path_ignores.items():
-        if any(_specificity(spec, format_id) is not None for spec in ids) and (
-            _matches(pattern, rel) or _matches(pattern, rel.rstrip("/") + "/-")
-        ):
-            return True
-    return False
+    """Whether a per-path ignore keeps the format away from the directory rel."""
+    path = _git_path(rel, is_dir)
+    return any(
+        spec.match_file(path)
+        and any(_specificity(spec_id, format_id) is not None for spec_id in ids)
+        for spec, ids in per_path
+    )
