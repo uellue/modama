@@ -26,13 +26,14 @@ Deferred items, roughly in the order they are likely to come up.
   - Members of a multi-file dataset in `dc:description`, top-down for nested structures, cut at about 100 entries; refine on examples.
   - The format override of a collapsed dataset's datestamp, when a format needs it.
   - EMPAD software versions seen in the wild: 0.29 (2017, absolute raw path), 0.7.12 (2019), 1.2.2 (2021); watch for new versions changing the header (R22 maintenance review).
+- **Requirements questionnaire gaps (Q22 to Q27 in `design/requirements.md`, deferred 2026-11-03):** what may leave the institute through the harvester and the licence summary; who operates the service and how a wrong index is noticed; allowed staleness and target crawl duration; lifetime of identifiers and decommissioning; the scientist's search scenario with figures; the principal, the payer and the sign-off.
 - **Metadata extraction** per file format.
 - **`dc:date`** currently uses the newest member's mtime (the walk reads ctime too but nothing stores it), which becomes the copy time for files copied from instruments. The plain mtime, or a date from the file's own metadata, is probably closer to the acquisition time.
 - **Non-UTF-8 and control characters in file names:** decide how to store them and how to render them in XML.
 - **Per-user access checks** through the modama permission APIs.
 - **DataCite output,** if `oai_dc` turns out too lossy. The warehouse's DC→DataCite XSLT drops `dc:format`. The warehouse also accepts DataCite with `identifierType="URL"`, even though the DataCite schema documentation requires a DOI.
 - **Crawl scaling:**
-  - The walk is single-threaded and has no checkpointing, so a failure restarts it from scratch.
+  - The walk is single-threaded and has no checkpointing, so a failure restarts it from scratch. The visible tree took two hours for 428,000 files (about 60 files per second, 2026-10-27). Profile first, then parallelise the walk by subtree and the metadata extraction; consider Rust (`modama-rs`) for the walk and MIME classification if the profile shows Python rather than I/O is the limit (@weber's notes, 2026-11-03).
   - `datasets` and `members` are truncated and rewritten on every crawl and read by nothing until the survey command; their schema is free to change, and the rewrite is reconsidered with that reader (review 2026-11-03, B17).
   - `DELETE FROM records WHERE identifier <> ALL(...)` carries every identifier of the crawl in one statement.
   - Paths are stored as absolute text, and keys are `SERIAL` (int4).
