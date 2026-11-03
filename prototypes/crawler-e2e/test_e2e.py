@@ -4,6 +4,7 @@ Runs inside the crawler container of compose.yml (./e2e.sh test), after ./e2e.sh
 """
 
 import json
+import shutil
 import subprocess
 import time
 import urllib.parse
@@ -13,7 +14,10 @@ from xml.etree import ElementTree as ET
 
 import psycopg
 import pytest
+from modama_crawler.formats import core
+from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
 from modama_crawler.formats.empad import cheat
+from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
 
 DATA = Path("/data")
 OAI_URL = "http://crawler:7654/oai"
@@ -28,6 +32,8 @@ NS = {
     "dc": "http://purl.org/dc/elements/1.1/",
 }
 DISTINCT_FILE = "notes/ferritin-lamella.txt"
+ADDED_FILE = "notes/added-after-the-first-harvest.txt"
+MIXED = Path(core.__file__).parent / "tests" / "fixtures" / "mixed"
 
 
 def http(url, data=None, method=None, headers=None):
@@ -106,16 +112,38 @@ def opensearch_count():
     return http(f"{OPENSEARCH}/{INDEX}/_count")["count"]
 
 
+def harvest_runs(conn):
+    return conn.execute(
+        "SELECT r.id, r.status, r.from_date FROM harvest_runs r "
+        "JOIN endpoints e ON e.id = r.endpoint_id WHERE e.harvest_url = %s "
+        "ORDER BY r.started_at",
+        (OAI_URL,),
+    ).fetchall()
+
+
+def event_count(conn, run_id):
+    return conn.execute(
+        "SELECT count(*), count(error_message) FROM harvest_events "
+        "WHERE harvest_run_id = %s",
+        (run_id,),
+    ).fetchone()
+
+
 @pytest.fixture(scope="module")
 def tree():
+    # The real formats, as in the crawler's own test of the whole path, plus plain files
     cheat.pair(DATA / "scan")
+    zarr_fixtures.array(DATA / "store")
+    collapse_fixtures.venv(DATA / "env")
+    zarr_fixtures.corrupt(DATA / "broken")
+    shutil.copytree(MIXED, DATA / "mixed")
     (DATA / "notes").mkdir()
     (DATA / DISTINCT_FILE).write_text("Ferritin lamella, thickness map\n")
     (DATA / "notes" / "readme.txt").write_text("Plain notes\n")
     (DATA / "notes" / "sample-list.csv").write_text("id,name\n1,a\n")
     crawl()
     expected = oracle()
-    assert len(expected) >= 4, expected
+    assert len(expected) >= 10, expected
     return expected
 
 
@@ -132,20 +160,13 @@ def test_harvest_and_index(tree):
     trigger_and_wait([OAI_URL])
     n = len(tree)
     with warehouse_db() as conn:
-        runs = conn.execute(
-            "SELECT status FROM harvest_runs r "
-            "JOIN endpoints e ON e.id = r.endpoint_id WHERE e.harvest_url = %s",
-            (OAI_URL,),
-        ).fetchall()
+        runs = harvest_runs(conn)
         # records_harvested is never filled in upstream, so the events are what counts
-        assert runs == [("closed",)], runs
-        events, errors = conn.execute(
-            "SELECT count(*), count(error_message) FROM harvest_events "
-            "WHERE endpoint_id = (SELECT id FROM endpoints WHERE harvest_url = %s)",
-            (OAI_URL,),
-        ).fetchone()
+        assert [(status, from_date) for _, status, from_date in runs] == [
+            ("closed", None)
+        ], runs
         # first: an empty harvest is its own failure, not "search found nothing"
-        assert (events, errors) == (n, 0)
+        assert event_count(conn, runs[0][0]) == (n, 0)
     http(f"{OPENSEARCH}/{INDEX}/_refresh", method="POST")
     assert opensearch_count() == n
 
@@ -155,3 +176,21 @@ def test_search_finds_the_file(tree):
     hits = http(f"{SEARCH}/search?q=ferritin&resource=datasets")
     urls = [h["_source"]["url"] for h in hits["hits"]]
     assert wanted in urls, (wanted, urls)
+
+
+def test_incremental_harvest_brings_only_the_new_file(tree):
+    # datestamps have seconds granularity; the new record must be newer than the first harvest
+    time.sleep(2)
+    (DATA / ADDED_FILE).write_text("Added after the first harvest\n")
+    crawl()
+    expected = oracle()
+    assert set(expected) - set(tree) and len(expected) == len(tree) + 1
+    trigger_and_wait([OAI_URL])
+    with warehouse_db() as conn:
+        runs = harvest_runs(conn)
+        assert [status for _, status, _ in runs] == ["closed", "closed"], runs
+        second, _, from_date = runs[1]
+        assert from_date is not None, "second harvest was not incremental"
+        assert event_count(conn, second) == (1, 0)
+    http(f"{OPENSEARCH}/{INDEX}/_refresh", method="POST")
+    assert opensearch_count() == len(expected)

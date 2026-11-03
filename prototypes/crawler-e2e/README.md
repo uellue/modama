@@ -12,7 +12,7 @@ One compose project: the unmodified upstream compose of `../EOSC-Data-Commons/me
 ./e2e.sh down    # or clean, which also removes the volumes
 ```
 
-The test builds a small tree in the crawler container, crawls it, triggers the Airflow DAG `warehouse_harvest_and_index` for our endpoint only, and checks, in this order: the harvest run is closed and has as many harvest events as `modama-crawler records` lists, none with an error, OpenSearch holds the same number, and `/search?q=ferritin` returns the right file.
+The test builds a tree in the crawler container from the crawler's own fixture generators (EMPAD pair, Zarr, a corrupt Zarr store, a venv, the core collection's mixed files, plain text files), crawls it, triggers the Airflow DAG `warehouse_harvest_and_index` for our endpoint only, and checks, in this order: the harvest run is closed and has as many harvest events as `modama-crawler records` lists, none with an error, OpenSearch holds the same number, and `/search?q=ferritin` returns the right file. Then it adds a file, crawls and harvests again: the second run is incremental (`from_date` set) and brings exactly the new record. About 2.5 minutes.
 
 For looking around by hand: the crawler on http://127.0.0.1:7654/oai, Airflow on :8081 (airflow/airflow), search API on :8000, OpenSearch on :9200. The frontend, dashboards and pgadmin are not started by `up`; `docker compose -f compose.yml up -d frontend` starts the frontend on :3000 (search works without `coordinator`; other functions may need it, unverified).
 
