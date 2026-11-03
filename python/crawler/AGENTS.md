@@ -15,6 +15,13 @@ Don't copy the proof-of-concept code's style or structure, and don't preserve it
 
 **Principles:** YAGNI. Make it work at ER-C first. Keep changes tight and simple, and add generality only when a concrete need appears.
 
+**Standing rules for agents** (from the review of 2026-11-03, `design/review.md`; the reasons are in `/docs/working-with-claude.md`):
+- Every mechanism, option, parameter or output detail names the requirement, spec scenario or decision-log row that asks for it. Without one, leave it out and suggest it as a next step; do not polish output or add generality on your own.
+- Before writing something an established library implements (argument parsing, pattern matching, serialisation, a protocol), search for the library. A common one replaces custom code by default; a niche one is proposed for discussion; every new dependency is flagged.
+- Prefer small modules with a tight, stable interface over one clever function; no abstraction without a second concrete user.
+- Report evidence, not claims: the command and its output, the screenshot, the diff of a re-recorded expectation.
+- Changes to behaviour update the spec scenario, the test, AGENTS.md and the backlog in the same change.
+
 **Decisions so far:**
 - **Scale:** petabytes and millions of files. Change is mostly additions, roughly hundreds to thousands of files per day.
 - **Datasets:** a dataset is a single file or a collection, for example header + data file(s), a Zarr directory, or a large "boring" tree such as `node_modules` or a Python environment that is collapsed into one dataset. One OAI-PMH record per dataset.
