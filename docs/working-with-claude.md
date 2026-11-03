@@ -94,6 +94,18 @@ What is not automatic and belongs in the standing rules: verify claims that woul
 
 Parallelise recognition and metadata extraction; profile before choosing (the full crawl of the visible tree took two hours for 428,000 files, about 60 files per second, single-threaded, which is slow); consider Rust (the repository already has `modama-rs`) for the walk and classification if profiling shows Python is the bottleneck rather than I/O.
 
+## Moving from the devcontainer to the devvm VM (2026-11-03)
+
+Development moves to a VM made with https://github.com/modama-rdm/devvm, so that the EOSC warehouse, the harvester and the crawler run together for end-to-end work; the devcontainer is retired. What the agent setup needs to survive the move, and where it is:
+
+- **Agent memory and session history** live in `~/.claude/projects/<slug>/` where the slug is the checkout path with slashes replaced by dashes (`-workspaces-data-management-system`). The devcontainer kept them on a named volume; the last copy is in the checkout's gitignored `.claude/home-backup/` (made by `.devcontainer/backup-claude-home.sh`, without the login credential). In the VM, devvm shares the host checkout at `/workspaces/<folder>`: if the folder name stays `data-management-system`, the slug is the same and the memory is restored with `cp -a .claude/home-backup/projects/-workspaces-data-management-system ~/.claude/projects/`; with another folder name, copy it under the new slug. The `memory/` directory is the part that matters; the transcripts are for debriefs.
+- **Plugins** (kaizen) are reinstalled from GitHub: `claude plugin marketplace add uellue/skills` and `claude plugin install kaizen@uellue --scope user`, best in devvm's provisioning.
+- **The read-only GitLab token** is in the checkout's gitignored `.claude/gitlab-token`; it travels with a shared checkout, and devvm passes no host credentials otherwise.
+- **Reference material** in the checkout's ignored `.claude/`: `survey/` (the listing of the data tree), `review/` (the full reviewer and verifier texts, the mechanical scan), `playtest/` (the tester's report, trees, run script and screenshots).
+- **The pyxdg fork** is a sibling checkout on the host (`/workspaces/pyxdg`); the VM needs the same sibling mount or a clone, until upstream merges MR 18.
+- **Not needed:** the development database and the `/data` volume are disposable; the skills repository clone in the home directory is on GitHub.
+- **To update after the move:** `python/crawler/AGENTS.md`'s development-environment section describes the devcontainer; rewrite it for the VM once the provisioning exists, and keep the general parts (memory location, backup, plugin install) as the template for other repositories.
+
 ## Open questions
 
 - Which documents does a new developer's agent need on day one, in what order.
