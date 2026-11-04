@@ -100,6 +100,16 @@ The crawler work had a ten-day gap with two background jobs and a play tester th
 - **Who answers the questions?** An agent or tester that needs the manager blocks while nobody answers. Give it standing answers, or let it park questions as a TODO list for the return.
 - **What is committed, and what does the next session need?** Uncommitted changes are named; the state that the next session cannot read from the repository goes into the agent memory or the backlog.
 
+## How much belongs in AGENTS.md: a measurement (2026-11-04)
+
+Question from the structure session: should `python/crawler/AGENTS.md` stay a self-contained briefing or shrink to orientation plus links? Measured instead of argued: three variants in separate git worktrees, (a) the current file (2,100 words), (b) the same without the volatile status and decision summary (2,000 words, invariants plus links), (c) 120 words of orientation and links with the rest moved to a `DEVELOPMENT.md`; four typical session starts (owner names in records, plan `.npy` recognition, run the e2e test, what is next and what blocks deployment), a fresh Sonnet agent per cell (12), an answer key written before the runs, blind grading by an Opus agent. Material in the gitignored `.claude/eval-agents-md-2026-11-04/`.
+
+Result: no meaningful difference. Scores 18.5, 18 and 18.5 of 20; tokens 196k, 197k, 186k; every (c) agent opened `DEVELOPMENT.md` as its second read. The agent's prior (b wins, c loses) was refuted. The one real error (a spec scenario skipped against a standing rule, from a false claim that format specs have no scenarios) came from (b), whose rules text was identical to (a)'s, so it reads as noise at n = 1. What all three missed is telling too: none applied the proposal rule added the same morning (state the behaviour change towards the user), so a rule in the file is not yet a habit.
+
+Limits: one run per cell; the answers were condensed by the orchestrating agent before grading; the tasks asked questions and named the job, so they test finding information, not whether an agent that is busy coding applies a rule it was never pointed at, which is where an auto-loaded briefing should matter most.
+
+Consequence: choose by maintenance cost, not by agent effectiveness. Duplicated summaries can go (they cost drift and buy nothing measurable); where the rest lives is free to decide for the human readers.
+
 ## Two audiences: humans and agents (2026-11-04)
 
 @weber, after posting the agent's draft for metadata-warehouse#151 only as a collapsed "details" block: it would be rude to post voluminous LLM output to upstream maintainers. The general point is that output should be split into a part for humans and details for agents. The human part is short: what is wrong or decided, what the reader should do, one reproduction or example. The agent part keeps what lets the next agent continue without redoing the work: versions and commits, file and line references, exact commands, error messages, what was verified and what was not.
