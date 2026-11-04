@@ -19,8 +19,8 @@ Top-level layout:
 - `python/` – Python services and clients: `mgmtinterface` (Flask management UI/API), `permissions`, `smbdrop-gui`, the `*-client` packages, `modama-common`, and `crawler` (see below).
 - `modama-rs/` – Cargo workspace: `smbdrop` (SMB ingest share service), `modama-agent` (runs on lab/instrument PCs, mounts ingest shares), `modama-common`. Clippy denies `unwrap`/`expect` workspace-wide.
 - `mgmtinterface-new/` – React/TypeScript (Vite) rewrite of the management interface.
-- `deploy/` – Dockerfiles, `docker-compose.yml` + `docker-compose.override.yml` (test, the default) or `+ docker-compose.prod.yml` (prod), `build.sh`, `upprod.sh`/`downprod.sh`, `testconf/`/`prodconf/`. Test deployment data lives in `deploy/testfolder/` (`sudo ./preparefolders.sh`). Secrets are expected in `/var/local/data-mgmt/` outside the repo.
-- `devvm/` – `devvm.sh` creates/manages a libvirt/KVM VM (Debian + Docker) for running the test deployment and Docker-based tests in isolation. Generic settings in `defaults.env`, site-specific ones in gitignored `site.env`.
+- `deploy/` – Dockerfiles, `docker-compose.yml` + `docker-compose.override.yml` (the self-contained test deployment, the default for `docker compose up`) or `+ docker-compose.prod.yml` (prod). Test deployment: `uptest.sh`, `runtest.sh` (PASS/FAIL per check), `downtest.sh [--reset]`, with throwaway secrets in `testconf/secrets/`, state in `testfolder/` and a test directory server instead of the production LDAP; see the guide's `development.md`, "Test deployment". Production: `upprod.sh`/`downprod.sh`/`pullprod.sh`, `prodconf/`, secrets in `/var/local/data-mgmt/` outside the repo. `wsl/` runs the test deployment in WSL2 for the Windows-side agent.
+- `.devvm/` – this project's settings (`config.env`, `provision.sh`) for [devvm](https://github.com/modama-rdm/devvm), which creates a libvirt/KVM VM (Debian + Docker) for development and Docker-based tests in isolation.
 - `prototypes/` – notebooks and experiments; the pre-commit ruff check skips them, `ruff.toml` excludes only the EOSC snapshot under `prototypes/EOSC-Data-Commons/`.
 
 ## Commands (mirrors `.gitlab-ci.yml`)
