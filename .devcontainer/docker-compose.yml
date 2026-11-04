@@ -6,8 +6,6 @@ services:
     command: sleep infinity
     volumes:
       - ..:/workspaces/data-management-system:cached
-      # Fork installed in editable mode, expected as a sibling of this repo
-      - ../../pyxdg:/workspaces/pyxdg:cached
       - crawler-data:/data
       # The real data for crawl experiments, read-only. If the host has no
       # such directory, Docker creates an empty one.
