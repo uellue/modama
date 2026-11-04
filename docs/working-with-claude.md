@@ -110,6 +110,8 @@ Limits: one run per cell; the answers were condensed by the orchestrating agent 
 
 Consequence: choose by maintenance cost, not by agent effectiveness. Duplicated summaries can go (they cost drift and buy nothing measurable); where the rest lives is free to decide for the human readers.
 
+Applied the same day: `python/crawler/README.md` became the developer documentation, written for humans, and `AGENTS.md` shrank to the agent-only rules, a code map and a table of where each kind of fact lives (130 to 70 lines). Check: T2 rerun once by a fresh Sonnet agent on the new layout. It read `README.md` second, met all six key points (the earlier three scored 5 to 5.5), and was the first to state the user-visible behaviour change (`.npy` records move from `application/octet-stream` to `application/x-npy`); 53k tokens. At n = 1 that shows the move lost nothing, not that it gained.
+
 ## Two audiences: humans and agents (2026-11-04)
 
 @weber, after posting the agent's draft for metadata-warehouse#151 only as a collapsed "details" block: it would be rude to post voluminous LLM output to upstream maintainers. The general point is that output should be split into a part for humans and details for agents. The human part is short: what is wrong or decided, what the reader should do, one reproduction or example. The agent part keeps what lets the next agent continue without redoing the work: versions and commits, file and line references, exact commands, error messages, what was verified and what was not.
