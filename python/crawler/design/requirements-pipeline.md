@@ -54,8 +54,35 @@ Walk-throughs in `walkthroughs/`, simulated by Claude on the e2e stack; question
 - **B. An admin traces a search result that looks wrong** (`admin-traces-a-search-result.md`, 2026-11-04): a file not found, a stale hit, counts that don't add up. Main findings: no crawl-run record; four stores with three different keys and no tool across them; a renamed file's old path stays in search as hit 1, confirmed live; members of a dataset are not findable by name; every query returns ten hits, so "found" needs a definition.
 - **A. An admin checks whether the chain works and how far along it is** (`admin-checks-the-chain.md`, 2026-11-04): a healthy stack can be idle forever (no crawl schedule, empty `HARVEST_SCHEDULE`, paused DAGs); `docker compose logs` is noise (1,374 dag-processor lines in 15 idle minutes, broker warnings) while the crawl's and the harvest's output are elsewhere; the harvest is the only stage with a run record (`GET /harvest_run`); T can't be computed today.
 - **C. A coding agent shows that the logic is sound** (`agent-checks-the-logic.md`, 2026-11-04, measured): two injected faults (a datestamp before the harvest window, a lost OpenSearch document behind a "synced" row), diagnosed correctly by a fresh agent from the documents alone in about 22 commands; what it asked for is the per-path trace of B. The assumption in 1.3 (agents pay the admin's cost per iteration) holds.
-### 2.2 Demand uncertainties
-### 2.3 Interfaces with existing systems
+### 2.2 Demand uncertainties   [answered]
+
+Confirmed by @weber (2026-11-04), nothing to add for now; fixed later as we learn more.
+
+- **Upstream is moving.** The warehouse switched to Airflow in v1.10.0 (2026-11-02); a shared Airflow deployment (`metadata-airflow`) is new; staging and production setups are still being worked out upstream. Each upgrade can change the stores, keys and schedules that our tools read.
+- **Deletions** don't work end to end (crawler and harvester); until they do, our own purge stands in (2.5).
+- **Growth** of the tree and its user base (R10 of `requirements.md`); the visible quarter of the tree today, the rest behind permissions.
+- **Per-user access** to search results comes later (`requirements.md`); it may change what the warehouse may hold.
+- **Ranking** is upstream's: whether a path query ranks its dataset first is measured, not controlled (2.5).
+- **Staying with upstream:** we expect to run the EOSC warehouse; if we become unhappy with upstream, we would probably fork it rather than replace it. So tools may know the warehouse's internals, kept in one place (walk-through C).
+- **More sites:** search is planned for more modama sites, not only ER-C (2.8).
+
+### 2.3 Interfaces with existing systems   [answered]
+
+| System | Direction | Through | Identity | Ours? |
+|---|---|---|---|---|
+| Data tree | read | mount, read-only | a reader with full access (`requirements.md`) | storage: no |
+| Crawler database | read, write | PostgreSQL | crawler | yes |
+| Warehouse harvester | it reads us | OAI-PMH, `oai_dc` | none (internal network) | no |
+| Airflow | read; trigger the harvest DAG | REST API inside the compose network | Viewer (status, trace); a trigger-capable account (crawler) | no |
+| Warehouse database | read; purge stale rows | PostgreSQL | read-only account; a separate one with delete rights for the purge | no |
+| OpenSearch | read; purge stale documents | REST | read; delete for the purge | no |
+
+Write access for the purge is acceptable (@weber), as long as nothing can damage the data in the file system: the search index and the warehouse are derived data and can always be recreated from the files. Nothing in the chain gets write access to the data tree.
+| Search API | read | HTTP | none | no |
+| Data browser | its URLs are our identifiers | `https://er-c-data-mgmt.fz-juelich.de/browse/?path=` | none | modama |
+| Management GUI | both ways, by links: a link to the search or a search box in the GUI; search hits link to the existing GUI (its data browser) | URLs | the user's own session | modama |
+
+Upstream quirks we depend on: the identifier cut after the last `:`, the URL as OpenSearch `_id`, `endpoint::path` record ids, the due rule `until_date + harvest_schedule`, metadata-warehouse#158 (walk-throughs A to C).
 ### 2.4 Operating conditions   [partly answered]
 
 - **Scheduling** (decision log, 2026-11-04): a timer of our own runs the crawl; after a crawl that changed something, the crawler triggers the harvest DAG for its endpoint; a watcher (inotify) later. Upstream's cron (`HARVEST_SCHEDULE`) can stay as a fallback; its per-endpoint interval must then be clearly shorter than the cron period (walk-through A).
@@ -71,22 +98,59 @@ From walk-through B's questions (@weber, 2026-11-04):
 
 Acceptance examples: in `walkthroughs/admin-traces-a-search-result.md`.
 
-### 2.6 Performance
-Freshness: see 1.1, and the guarantee in 2.5.
+### 2.6 Performance   [answered]
+
+Freshness: see 1.1, and the guarantee in 2.5: T no older than a day, ideally seconds.
+
+Measured so far:
+- **Crawl:** the visible quarter of `/er-c-data` (525,533 files, 17.9 TB) took two hours for 428,000 files, about 60 files per second, single-threaded (2026-10-27). The whole tree, if the proportions hold, is about four times that: some 8 hours, a third of the daily budget.
+- **OAI-PMH:** all 428,856 records harvested by oaipmh-scythe (the harvester's client) in 58 s, without the warehouse.
+- **Warehouse:** in the e2e stack, one harvest-and-index DAG run for one changed record takes about 70 s, mostly Airflow overhead. Transformation and embeddings for 430,000 records are **not measured**; they are the likely bottleneck of a first full harvest.
+- **Change rate:** hundreds to thousands of new files a day (R10); 58 changed files in a week in the visible quarter (2026-10-15).
+
+Answered (@weber, 2026-11-04):
+- **A first full harvest** may take long (hours or days) if the status shows its progress.
+- **Status and trace** within about a minute (walk-through A); **the stage comparison** on production may take a while to produce a large report. Settled when we get there.
 ### 2.7 Testing, installation and service   [partly answered]
 
 From an ER-C admin (relayed by @weber, 2026-11-04), for when the stack moves to `deploy/`:
 - **Per-service test environments.** Bring up a test environment for specific services only. The search stack (crawler, warehouse, Airflow, OpenSearch) is substantial weight and not needed for, say, work on smbdrop and the ingest mechanisms.
 - **The whole ensemble.** The production admin wants one way to bring up all services together; the search will likely interact with the management GUI in some form.
 - **Tests at both levels:** tests for the whole ensemble, and more detailed tests and test environments for specific services.
-### 2.8 Portability and distribution
-### 2.9 Jurisdictions
-### 2.10 Lifetime and decommissioning
-### 2.11 Safety and risks
-### 2.12 Applicable standards
+### 2.8 Portability and distribution   [answered: later]
+
+First make it work at ER-C and learn from that. Streamlining configuration and deployment per site is a bigger endeavour of its own, branding included (@weber, 2026-11-04). The points below are notes for then, not requirements now.
+
+- **More modama sites** will run the search (2.2). Per site, at least: the data root, the browse URL base and the OAI identifier's host (both ER-C's today, in `records.py`), the warehouse endpoint registration, credentials.
+- **Distribution:** container images and compose files in `deploy/`; per service or service group, so that a site or a developer can bring up the search stack alone or everything together (2.7). "Search is deployable on its own" is already decided (`architecture.md`, 2026-10-16).
+- **The warehouse** comes from upstream's repository and images, with our compose files and settings around it.
+### 2.9 Jurisdictions   [answered]
+
+- **Records stay inside the institute:** the warehouse runs internally (decision log, 2026-11-04), so owners' names and paths in the records are an internal matter (Q22 of `requirements.md`, narrowed).
+- **Except through the search API's language models.** The search API (`data-commons-search`) has chat and agent features that call external LLM providers (default `cesnet/agentic`, fallback `mistralai/mistral-medium-latest`, keys for OpenAI, OpenRouter, Mistral). With real keys, queries and the records they retrieve, paths and owner names included, would leave the institute. The e2e stack has placeholder keys; `/search` itself uses local models (fastembed embeddings, a local reranker). Downloading the models from Hugging Face is network egress, not data egress.
+- **Answered (@weber, 2026-11-04):** external services approved for the institute are fine, for example Blablador (FZJ). The team plans to run its own language model service on a large machine, *grace*. So the requirement is: language model calls go only to approved services; none of the commercial providers in the default configuration.
+- **Licences:** the warehouse and the search are upstream's (their licences apply as they are, nothing is redistributed by us beyond our compose files); the crawler's own are in `requirements.md`, 2.9.
+
+### 2.10 Lifetime and decommissioning   [assumed from the record]
+
+- The search index and the warehouse are derived data and can be recreated from the files (2.3); losing them costs time, not data.
+- The identifiers are browse URLs; they outlive a re-index only while the data browser keeps its URL scheme (Q25 of `requirements.md`).
+
+### 2.11 Safety and risks   [answered]
+
+- **No write access to the data tree** anywhere in the chain (2.3); the purge writes only to derived stores.
+- **Stale and missing entries** (walk-throughs B and C); the purge and the stage comparison are the mitigation.
+- **Silent stalls:** a failed harvest stops an endpoint for good (metadata-warehouse#158), a paused DAG never runs; the status must show them (walk-through A).
+- **Credentials:** read-only accounts for status and trace, a trigger account for the crawler, delete rights only for the purge; generated at setup, never committed (organisation rule).
+- **Load:** a full crawl's I/O on the storage that instruments write to is not measured (`requirements.md`, 2.11). To begin with, crawl outside business hours until the impact can be judged (@weber); this constrains the crawl timer (2.4) and, with eight hours for the whole tree (2.6), uses most of a night.
+- **External LLMs** in the search API, see 2.9.
+
+### 2.12 Applicable standards   [answered from the record]
+
+OAI-PMH 2.0 and `oai_dc` towards the harvester (incremental harvesting by `from`/`until`, `deletedRecord` once deletions work); DataCite inside the warehouse (its mapping, not ours); the institute's IT rules for the deployment.
 
 ## Release
-Decides: @weber. Builds: Claude with @weber. Pays: unknown. Signs off: unknown.
+Decides and signs off: the modama maintainer team, @weber included. Builds: Claude with @weber. Owns and controls: the team, for everything in the chain except Blablador (an FZJ service).
 
 ## Wishlist for upstream (harvester, warehouse, search)
 
@@ -100,4 +164,19 @@ Changes that would make our job easier or the outcomes better. The bugs already 
 - **A dataset's path as query ranks it first** (2.5): collect the examples where it doesn't, with query, expected and actual ranking.
 - **`harvest_runs.records_harvested` and friends filled in** (B, step 5): already in the BACKLOG's upstream list.
 
+## Handover: what the builder needs first
+
+**Unknowns**
+- Duration of a first full harvest and indexing (embeddings) at ER-C scale: measure, with progress in the status (2.6).
+- I/O load of a full crawl on the instruments' storage: crawl at night until judged (2.11).
+- The language model service on *grace*: endpoint, and whether the search API can use it (2.9).
+- How long identifiers must stay valid (Q25 of `requirements.md`, 2.10).
+- Per-site configuration and branding: later, a project of its own (2.8).
+
+**Interfaces outside our control** (2.3): the warehouse harvester, database and API; Airflow; OpenSearch; the search API and its language model providers. Their quirks: the identifier cut after the last `:`, the URL as OpenSearch `_id`, `endpoint::path` record ids, the due rule `until_date + harvest_schedule`, paused DAGs, metadata-warehouse#158, `opensearch_synced` set for failed documents.
+
+**Risks** (2.11): stale and missing entries without anyone noticing; silent stalls of the harvest; credentials with more rights than needed; crawl load on production storage; records reaching unapproved language model services.
+
 ## Open questions
+
+- The configuration of *grace* (planned language model service): not in this repository and not reachable from the development VM; for @weber, resolves 2.9.
