@@ -118,6 +118,17 @@ Applied the same day: `python/crawler/README.md` became the developer documentat
 
 The two parts need different places, or at least a visible boundary: a summary above a collapsed details block (as on #151), an issue that links to a backlog entry, a commit message whose subject and first paragraph are for people. Inside the repository the boundary already exists in places: `README.md` for people versus `AGENTS.md` for agents; `BACKLOG.md` entries are written for agents and are long because of it. The concern is external interaction, not the manager's own reading: @weber reads the agent's long replies fine and can ask for a breakdown inline. LLMs can saturate humans who did not ask for the text; but those humans increasingly use agents themselves, which handle the volume well and benefit from specifics, details and context. So the details serve the recipient's agent too, not only our own next one. Working hypothesis for external messages: a short human header, then details targeting agents (@weber, 2026-11-04: "very new for everyone"). Open: whether agent-facing details belong in a fixed place per artifact (an `<details>` convention for issues and merge requests, a `notes/` file per change), and whether the agent should produce both parts by default whenever its output leaves the repository.
 
+## Rebasing with an agent (2026-11-04)
+
+@weber, for the debrief and for colleagues: the agent's rebase of the `crawler` branch (123 commits) onto a master with 42 new commits, some of them modified versions of the branch's own, was "phenomenal"; a colleague also likes agentic tools for rebases. What it did, in order, as a pattern worth copying:
+1. **Fetch and look before acting:** list the new upstream commits; find the branch's commits that are already upstream, by patch (`git cherry`) and by subject; intersect the files changed on both sides to predict where conflicts can occur.
+2. **A backup branch** (`crawler-pre-rebase-<date>`) before rewriting anything.
+3. **A plain `git rebase`,** which drops patches already upstream by itself; conflicts resolved by intent, not by side: two additions to `.gitignore` both kept, upstream's new guide section kept with the branch's three lines after it.
+4. **Verify afterwards:** `git diff` between the backup and the result shows no change in the branch's own areas (`python/`, `prototypes/`, its docs); then read what upstream changed for things that make the branch's documents stale (here: `AGENTS.md`'s deploy section, the pyxdg mount), and propose follow-up commits instead of folding them into the rebase.
+5. **No push;** that stays with the person.
+
+Access was the only obstacle: the VM had no SSH key and the read-only token had expired. With a new token, the fetch went over HTTPS with the token in a per-command header, not in the remote URL or the git config.
+
 ## Crawler follow-ups from the same notes (also in `python/crawler/BACKLOG.md`)
 
 Parallelise recognition and metadata extraction; profile before choosing (the full crawl of the visible tree took two hours for 428,000 files, about 60 files per second, single-threaded, which is slow); consider Rust (the repository already has `modama-rs`) for the walk and classification if profiling shows Python is the bottleneck rather than I/O.
