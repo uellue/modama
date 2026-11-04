@@ -1,5 +1,7 @@
 # Backlog
 
+**Next:** series directories, as the next OpenSpec change (the dominant shape in the play test, see the "Next formats" item below).
+
 Deferred items, roughly in the order they are likely to come up.
 
 - **Deleted records:** support `deletedRecord` (`transient` or `persistent`) with tombstones for removed or renamed datasets. Currently `no`.
@@ -26,7 +28,7 @@ Deferred items, roughly in the order they are likely to come up.
   - Members of a multi-file dataset in `dc:description`, top-down for nested structures, cut at about 100 entries; refine on examples.
   - The format override of a collapsed dataset's datestamp, when a format needs it.
   - EMPAD software versions seen in the wild: 0.29 (2017, absolute raw path), 0.7.12 (2019), 1.2.2 (2021); watch for new versions changing the header (R22 maintenance review).
-- **Requirements questionnaire gaps (Q22 to Q27 in `design/requirements.md`, deferred 2026-11-03):** what may leave the institute through the harvester and the licence summary; who operates the service and how a wrong index is noticed; allowed staleness and target crawl duration; lifetime of identifiers and decommissioning; the scientist's search scenario with figures; the principal, the payer and the sign-off.
+- **Requirements questionnaire gaps:** Q22 to Q27 in `design/requirements.md`, deferred 2026-11-03.
 - **Metadata extraction** per file format.
 - **`dc:date`** currently uses the newest member's mtime (the walk reads ctime too but nothing stores it), which becomes the copy time for files copied from instruments. The plain mtime, or a date from the file's own metadata, is probably closer to the acquisition time.
 - **Non-UTF-8 and control characters in file names:** decide how to store them and how to render them in XML.
@@ -40,7 +42,9 @@ Deferred items, roughly in the order they are likely to come up.
   - Every dataset's metadata is rebuilt on every crawl, not only the changed ones'.
 - **Datestamp window:** all records changed by one crawl share a datestamp taken just before the upsert, so the window is the upsert plus commit, plus clock skew between the crawler and the database host. A harvester should use an overlap margin on `from`.
 - **Enforced format timeouts (R23):** the time limit is checked after the call, so a hanging format stalls the crawl; isolation by worker subprocesses is the planned mechanism (review 2026-11-03, B14).
-- **CI job for the crawler:** none yet; it needs the VM setup of `AGENTS.md` as an image (PostgreSQL, shared-mime-info, git, the `[test]` extras) and a non-root user, or the permission scenarios silently skip (review 2026-11-03, C5).
+- **CI job for the crawler:** none yet; it needs the setup of `README.md` as an image (PostgreSQL, shared-mime-info, git, the `[test]` extras) and a non-root user, or the permission scenarios silently skip (review 2026-11-03, C5).
+- **`uvx ruff check` fails on `prototypes/`** (found 2026-11-04, predates the docs restructure): the notebooks there have unsorted imports, `TRY002` and `C400`. The pre-commit hook skips `^prototypes/`, but CI runs `uvx ruff check` on the whole repo, and `ruff.toml` excludes only `prototypes/EOSC-Data-Commons`. Proposed fix, not yet agreed: add `prototypes` to `exclude` in `ruff.toml`.
+- **Structure, rest of option A** (2026-11-04): the README/AGENTS.md split is done; moving dated event records (review, playtest, critique, survey) into `design/history/` is not. Decide with the series-directories change, or drop it.
 - **Symlinks** are skipped with an info line (decided 2026-10-27); a record for symlinks to files stays an open question.
 - **Schema migrations:** there are none, so every schema change means recreating the database. Needed before deployment.
 - **End-to-end test** (`prototypes/crawler-e2e/`, since 2026-11-03: crawl, harvest, index, search against the warehouse at v1.10.0): incremental harvest and the fixture generators' formats are covered; changed and removed files are not (no `deletedRecord` yet, and the harvester drops deletions); move to `deploy/` with the deployment. Re-verify on every warehouse upgrade; the workarounds for the upstream compose are commented in `warehouse.e2e.yml` and `e2e.sh`.

@@ -167,6 +167,10 @@ existing ones. Check that it can fail, too: stop a service and run the script.
   missing when the container started. Remove the folder and create the file.
 * Ports are fixed. Another process using `1890`, `5001` or `8081` makes `up` fail.
 
+## Crawler
+
+The OAI-PMH crawler has its own developer documentation in `python/crawler/README.md` (on the `crawler` branch).
+
 ## Nextcloud
 
 For setting up the Nextcloud container for development for the first time, you need to configure its authentication. Currently, we authenticate against the production LDAP server. In the test deployment this works out of the box, see [Users and logins](#users-and-logins). To use the production LDAP server instead, which needs the site-specific settings described under [Testing against the production LDAP](#testing-against-the-production-ldap) above, the following steps are necessary:

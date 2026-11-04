@@ -21,7 +21,7 @@ Top-level layout:
 - `mgmtinterface-new/` – React/TypeScript (Vite) rewrite of the management interface.
 - `deploy/` – Dockerfiles, `docker-compose.yml` + `docker-compose.override.yml` (test, the default) or `+ docker-compose.prod.yml` (prod), `build.sh`, `upprod.sh`/`downprod.sh`, `testconf/`/`prodconf/`. Test deployment data lives in `deploy/testfolder/` (`sudo ./preparefolders.sh`). Secrets are expected in `/var/local/data-mgmt/` outside the repo.
 - `devvm/` – `devvm.sh` creates/manages a libvirt/KVM VM (Debian + Docker) for running the test deployment and Docker-based tests in isolation. Generic settings in `defaults.env`, site-specific ones in gitignored `site.env`.
-- `prototypes/` – notebooks and experiments; excluded from ruff checks via pre-commit.
+- `prototypes/` – notebooks and experiments; the pre-commit ruff check skips them, `ruff.toml` excludes only the EOSC snapshot under `prototypes/EOSC-Data-Commons/`.
 
 ## Commands (mirrors `.gitlab-ci.yml`)
 
@@ -47,4 +47,4 @@ cd docs/guide && mdbook serve --port 9991
 
 ## Crawler (`python/crawler`, active on the `crawler` branch)
 
-OAI-PMH server over the data file tree, backed by PostgreSQL (Python ≥ 3.14). The devcontainer in `.devcontainer/` is set up for this package. Commands, architecture, conventions and test fixtures are in `python/crawler/AGENTS.md`, which `python/crawler/CLAUDE.md` imports.
+OAI-PMH server over the data file tree, backed by PostgreSQL (Python ≥ 3.14). Developer documentation is in `python/crawler/README.md`; agent instructions in `python/crawler/AGENTS.md`, which `python/crawler/CLAUDE.md` imports.

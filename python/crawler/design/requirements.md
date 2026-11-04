@@ -2,7 +2,7 @@
 
 Status: second draft, after @weber's review of 2026-10-14 (comments on MR !106). Reviewers: @weber, @clausen, @shanker.
 
-This is step 2 of the crawler plan (see `../AGENTS.md`): turn the file tree into datasets. Step 3, metadata extraction, is covered only as far as it constrains the architecture.
+This is step 2 of the crawler plan (1: the OAI-PMH server, 2: dataset recognition, 3: metadata extraction): turn the file tree into datasets. Step 3, metadata extraction, is covered only as far as it constrains the architecture.
 
 How to review: edit this file directly, commit and push on the `crawler` branch. Comments go inline as quotes starting with your handle, for example:
 
