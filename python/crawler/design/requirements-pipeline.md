@@ -56,7 +56,10 @@ Walk-throughs in `walkthroughs/`, simulated by Claude on the e2e stack; question
 - **C. A coding agent shows that the logic is sound** (`agent-checks-the-logic.md`, 2026-11-04, measured): two injected faults (a datestamp before the harvest window, a lost OpenSearch document behind a "synced" row), diagnosed correctly by a fresh agent from the documents alone in about 22 commands; what it asked for is the per-path trace of B. The assumption in 1.3 (agents pay the admin's cost per iteration) holds.
 ### 2.2 Demand uncertainties
 ### 2.3 Interfaces with existing systems
-### 2.4 Operating conditions
+### 2.4 Operating conditions   [partly answered]
+
+- **Scheduling** (decision log, 2026-11-04): a timer of our own runs the crawl; after a crawl that changed something, the crawler triggers the harvest DAG for its endpoint; a watcher (inotify) later. Upstream's cron (`HARVEST_SCHEDULE`) can stay as a fallback; its per-endpoint interval must then be clearly shorter than the cron period (walk-through A).
+- **Airflow** stays inside the compose network. Two accounts, credentials generated at setup: a Viewer for status and trace, and one that may trigger DAGs, for the crawler.
 ### 2.5 Availability and reliability (consistency between file tree, OAI-PMH and search)   [partly answered]
 
 From walk-through B's questions (@weber, 2026-11-04):

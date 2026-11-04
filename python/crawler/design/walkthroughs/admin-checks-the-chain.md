@@ -36,7 +36,7 @@ What they wanted is a status in the style of `runtest.sh`: one line per stage, O
 - (2) **Log noise:** yes, reduce it in our override files; we will probably write our own compose files anyway.
 - (3) **Follow a long crawl:** yes, progress while it runs, not only a one-shot status.
 - (5) **Airflow access:** Airflow will not be exposed outside the compose environment, so the status and trace tools run inside it and get credentials injected or created at setup. Assumed (Claude), from the organisation rule against hardcoded secrets: a dedicated account with read-only rights (Airflow's Viewer role), its password generated at setup and kept with the other secrets, not the e2e stack's `airflow`/`airflow`.
-- (1) **Who runs crawl and harvest:** still open; see the upstream model below.
+- (1) **Who runs crawl and harvest:** options (b), and (d) later (below): our own timer for the crawl, and the crawler triggers the harvest after each crawl that changed something; a watcher later. Not tied to upstream more than necessary for now. Recorded in `../architecture.md`, decision log. Consequence: the crawler needs a second Airflow account that may trigger DAGs, besides the Viewer for status and trace.
 
 ## Upstream's scheduling model (researched 2026-11-04, sources checked by a sub-agent, key claims re-checked)
 
