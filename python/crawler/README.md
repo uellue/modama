@@ -18,16 +18,14 @@ The Dublin Core mapping onto a file system is approximate. For example, the file
 
 ## Getting started
 
-We develop in a Debian 13 VM made with [devvm](https://github.com/modama-rdm/devvm). The VM shares the host checkout at `/workspaces/data-management-system` and the `pyxdg` fork at `/workspaces/pyxdg`, and it has Docker. The same steps should work on any Debian 13 machine. Set up once:
+We develop in a Debian 13 VM made with [devvm](https://github.com/modama-rdm/devvm). The VM shares the host checkout at `/workspaces/data-management-system`, and its provisioning (`/.devvm/provision.sh`) installs Docker, `uv` and `pre-commit`. The same steps should work on any Debian 13 machine with those. Set up once:
 
 ```bash
-# uv: release binary from https://github.com/astral-sh/uv/releases into ~/.local/bin
 sudo mkdir -p /etc/postgresql-common/createcluster.d
 echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.d/no-main-cluster.conf
 sudo apt-get install -y --no-install-recommends postgresql-17 postgresql-client-17 shared-mime-info
 uv venv --python 3.14 ~/.venv
-uv pip install --python ~/.venv/bin/python -e /workspaces/pyxdg -e "/workspaces/data-management-system/python/crawler[test]"
-uv tool install pre-commit          # the repository's commit hook calls it
+uv pip install --python ~/.venv/bin/python -e "/workspaces/data-management-system/python/crawler[test]"
 # in ~/.bashrc:
 export PATH="$HOME/.venv/bin:/usr/lib/postgresql/17/bin:$HOME/.local/bin:$PATH"
 ```
@@ -37,7 +35,6 @@ Why each step is there:
 - Python 3.14 comes from `uv`, because Debian 13 ships 3.13.
 - The PostgreSQL server binaries are needed without a running cluster. The tests start their own throwaway servers through `pytest-postgresql`.
 - `shared-mime-info` provides `update-mime-database`. The crawler uses it to build its own MIME database at startup.
-- `pyxdg` is a fork that contains [merge request 18](https://gitlab.freedesktop.org/xdg/pyxdg/-/merge_requests/18). Its commit is on https://gitlab.freedesktop.org/uellue/pyxdg (branch `subprocess`), not on the GitHub mirror. Changes to it belong in that repository.
 
 Then, from `python/crawler/`:
 

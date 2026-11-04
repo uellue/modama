@@ -15,7 +15,7 @@ dependencies = [
     "pathspec",
     "psycopg[binary,pool]",
     "python-dotenv",
-    "pyxdg",
+    "pyxdg>=0.28",
     "werkzeug",
 ]
 classifiers = [

@@ -130,7 +130,7 @@ Development moves to a VM made with https://github.com/modama-rdm/devvm, so that
 - **Plugins** (kaizen) are reinstalled from GitHub: `claude plugin marketplace add uellue/skills` and `claude plugin install kaizen@uellue --scope user`, best in devvm's provisioning.
 - **The read-only GitLab token** is in the checkout's gitignored `.claude/gitlab-token`; it travels with a shared checkout, and devvm passes no host credentials otherwise.
 - **Reference material** in the checkout's ignored `.claude/`: `survey/` (the listing of the data tree), `review/` (the full reviewer and verifier texts, the mechanical scan), `playtest/` (the tester's report, trees, run script and screenshots).
-- **The pyxdg fork** is a sibling checkout on the host (`/workspaces/pyxdg`); the VM needs the same sibling mount or a clone, until upstream merges MR 18.
+- **The pyxdg fork** was a sibling checkout on the host (`/workspaces/pyxdg`). Not needed since 2026-11-04: the crawler works with pyxdg 0.28 from PyPI, because it runs `update-mime-database` itself instead of through the fork's `install_mime_info`.
 - **Not needed:** the development database and the `/data` volume are disposable; the skills repository clone in the home directory is on GitHub.
 - **To update after the move:** `python/crawler/AGENTS.md`'s development-environment section describes the devcontainer; rewrite it for the VM once the provisioning exists, and keep the general parts (memory location, backup, plugin install) as the template for other repositories.
 
