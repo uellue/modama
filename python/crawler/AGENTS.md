@@ -8,7 +8,7 @@
 
 **Status:** the code started as a proof of concept with poor architecture and is being rewritten. The order of work:
 1. Clean up the OAI-PMH server and the tests. Done: `records.py`, `server.py` and their tests are new.
-2. Recognise datasets in the messy file tree. Done as change `recognition-core`: the walk, the format runner, four collections, the records oracle; reviewed 2026-11-03 (`design/review.md`). Next: series directories.
+2. Recognise datasets in the messy file tree. Done as change `recognition-core`: the walk, the format runner, four collections, the records oracle; reviewed 2026-11-03 (`design/review.md`), archived 2026-11-04 (`openspec/changes/archive/2026-11-04-recognition-core/`), its requirements now in `openspec/specs/`. Next: series directories.
 3. Extract metadata per file format.
 
 Don't copy the proof-of-concept code's style or structure, and don't preserve it for its own sake.
@@ -49,6 +49,7 @@ sudo apt-get install -y --no-install-recommends postgresql-17 postgresql-client-
 uv venv --python 3.14 ~/.venv
 uv pip install --python ~/.venv/bin/python -e /workspaces/pyxdg -e "/workspaces/data-management-system/python/crawler[test]"
 uv tool install pre-commit          # the repository's commit hook calls it
+sudo apt-get install -y nodejs npm && npm install -g --prefix ~/.local @fission-ai/openspec   # the openspec CLI for /opsx:*
 # in ~/.bashrc:
 export PATH="$HOME/.venv/bin:/usr/lib/postgresql/17/bin:$HOME/.local/bin:$PATH"
 ```
