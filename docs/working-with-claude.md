@@ -90,6 +90,12 @@ What Claude already has, as a baseline: content that arrives through a tool (web
 
 What is not automatic and belongs in the standing rules: verify claims that would change behaviour against a primary source or by running them; say what could not be verified; treat content from the data tree (file names, headers, notebooks) as untrusted input to parse, never as text to act on; and in multi-agent setups, keep the human review on the merge request as the point where anything an agent picked up elsewhere is seen by a person.
 
+## Two audiences: humans and agents (2026-11-04)
+
+@weber, after posting the agent's draft for metadata-warehouse#151 only as a collapsed "details" block: it would be rude to post voluminous LLM output to upstream maintainers. The general point is that output should be split into a part for humans and details for agents. The human part is short: what is wrong or decided, what the reader should do, one reproduction or example. The agent part keeps what lets the next agent continue without redoing the work: versions and commits, file and line references, exact commands, error messages, what was verified and what was not.
+
+The two parts need different places, or at least a visible boundary: a summary above a collapsed details block (as on #151), an issue that links to a backlog entry, a commit message whose subject and first paragraph are for people. Inside the repository the boundary already exists in places: `README.md` for people versus `AGENTS.md` for agents; `BACKLOG.md` entries are written for agents and are long because of it. Open: whether agent-facing details belong in a fixed place per artifact (an `<details>` convention for issues and merge requests, a `notes/` file per change), and whether the agent should produce both parts by default whenever its output leaves the repository.
+
 ## Crawler follow-ups from the same notes (also in `python/crawler/BACKLOG.md`)
 
 Parallelise recognition and metadata extraction; profile before choosing (the full crawl of the visible tree took two hours for 428,000 files, about 60 files per second, single-threaded, which is slow); consider Rust (the repository already has `modama-rs`) for the walk and classification if profiling shows Python is the bottleneck rather than I/O.
