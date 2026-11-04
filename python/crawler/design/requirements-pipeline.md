@@ -52,7 +52,7 @@ Assessment (@weber): these tools were all new to him. In the end they helped; th
 
 Walk-throughs in `walkthroughs/`, simulated by Claude on the e2e stack; questions in each go to @weber.
 - **B. An admin traces a search result that looks wrong** (`admin-traces-a-search-result.md`, 2026-11-04): a file not found, a stale hit, counts that don't add up. Main findings: no crawl-run record; four stores with three different keys and no tool across them; a renamed file's old path stays in search as hit 1, confirmed live; members of a dataset are not findable by name; every query returns ten hits, so "found" needs a definition.
-- **A. An admin checks whether the chain works and how far along it is.** Pending.
+- **A. An admin checks whether the chain works and how far along it is** (`admin-checks-the-chain.md`, 2026-11-04): a healthy stack can be idle forever (no crawl schedule, empty `HARVEST_SCHEDULE`, paused DAGs); `docker compose logs` is noise (1,374 dag-processor lines in 15 idle minutes, broker warnings) while the crawl's and the harvest's output are elsewhere; the harvest is the only stage with a run record (`GET /harvest_run`); T can't be computed today.
 - **C. A coding agent shows that the logic is sound.** Pending.
 ### 2.2 Demand uncertainties
 ### 2.3 Interfaces with existing systems
