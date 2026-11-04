@@ -36,7 +36,7 @@ Standing instructions worth copying into any project's `CLAUDE.md` (adopted in `
 
 ## Goal 2: the shareable guide for colleagues
 
-To draft once the notes settle. Audience: ER-C research software engineers and scientists starting with AI coding tools, a mix of tooling to be checked. Candidate sections: the onboarding picture; the leadership habits above with the reasons; what to write down and where (instructions file, decision log, backlog); the review habit; what not to delegate; costs and how to see them.
+To draft once the notes settle. Audience: ER-C research software engineers and scientists starting with AI coding tools, a mix of tooling to be checked. Candidate sections: the onboarding picture; the leadership habits above with the reasons; what to write down and where (instructions file, decision log, backlog), and a lessons file started on day one of a project, not when the first summary loses something; the review habit; what not to delegate; costs and how to see them.
 
 ## Goal 3: modama as a multi-developer, multi-agent project
 

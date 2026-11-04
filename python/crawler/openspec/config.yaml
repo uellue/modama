@@ -24,6 +24,7 @@ context: |
 rules:
   proposal:
     - State what is out of scope and which R*/Q* items the change serves
+    - State which behaviour towards the user changes (output, commands, what a harvester or a searcher sees), or that none does
   specs:
     - One requirement per observable behaviour; scenarios must be testable with a fixture or a crawl of a test tree
   tasks:

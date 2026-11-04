@@ -21,6 +21,8 @@ Don't copy the proof-of-concept code's style or structure, and don't preserve it
 - Prefer small modules with a tight, stable interface over one clever function; no abstraction without a second concrete user.
 - Report evidence, not claims: the command and its output, the screenshot, the diff of a re-recorded expectation.
 - Changes to behaviour update the spec scenario, the test, AGENTS.md and the backlog in the same change.
+- Report "clean" or "passing" only from the command that CI or the commit hook runs (`uvx ruff …` from the repo root, `pre-commit run`, the e2e stack's `./e2e.sh test`), not from a similar command run elsewhere.
+- A change of more than a few hundred lines gets a review by an agent that did not write it, given the code and the requirements, not the author's conclusions; findings are verified before they are acted on (`design/review.md` is the pattern).
 
 **Decisions so far:**
 - **Scale:** petabytes and millions of files. Change is mostly additions, roughly hundreds to thousands of files per day.
