@@ -202,3 +202,37 @@ def test_rebuilt_keys_match_the_crawlers(path):
 
 def test_the_harvester_keeps_the_part_after_the_last_colon():
     assert local_id("oai:er-c-data-mgmt.fz-juelich.de:/e%3Af.txt") == "/e%3Af.txt"
+
+
+# Output layout A (@weber 2026-11-05): keys once, then short stage lines
+
+
+def test_trace_lines_show_the_keys_once_and_wrap_long_details():
+    from modama_chain.cli import trace_lines
+
+    stages = [
+        Stage(
+            "tree",
+            OK,
+            "/a.txt",
+            "ctime 2026-11-05T10:00:00Z",
+            "mtime 2026-11-05T09:00:00Z",
+        ),
+        Stage("crawler", OK, "oai:x:/a.txt", "2026-11-05T10:00:01Z", "dataset"),
+        Stage(
+            "harvest",
+            BEFORE_HARVEST_WINDOW,
+            "/a.txt",
+            "start .. 2026-11-05T10:05:00Z",
+            "word " * 40,
+        ),
+    ]
+    lines = trace_lines("/a.txt", stages)
+    assert lines[:3] == ["/a.txt", "  oai id    oai:x:/a.txt", ""]
+    assert (
+        lines[3]
+        == "  tree      ok                     ctime 2026-11-05T10:00:00Z  mtime 2026-11-05T09:00:00Z"
+    )
+    assert lines[5].startswith("> harvest   BEFORE-HARVEST-WINDOW  start .. ")
+    assert all(len(line) <= 100 for line in lines)
+    assert lines[6].startswith(" " * 12 + "word")

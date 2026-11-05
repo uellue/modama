@@ -103,7 +103,7 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
     try:
         st = os.lstat(stores.root / path.lstrip("/"))
         yield Stage(
-            "tree", OK, path, f"mtime {when(st.st_mtime)} ctime {when(st.st_ctime)}"
+            "tree", OK, path, f"ctime {when(st.st_ctime)}", f"mtime {when(st.st_mtime)}"
         )
         in_tree = True
     except FileNotFoundError:

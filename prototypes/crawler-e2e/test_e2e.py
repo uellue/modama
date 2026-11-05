@@ -289,11 +289,16 @@ def test_the_warehouse_database_is_down(tree):
         env={**os.environ, "MODAMA_CHAIN_WAREHOUSE_DB": "host=postgres port=1"},
     )
     assert run.returncode == 2
-    assert [line.split()[0] for line in run.stdout.splitlines()] == [
-        "tree",
-        "crawler",
-        "oai-pmh",
+    names = [
+        line.split()[0] for line in run.stdout.splitlines() if line[:2] in ("  ", "> ")
     ]
+    stages = [
+        n
+        for n in names
+        if n
+        in ("tree", "crawler", "oai-pmh", "harvest", "warehouse", "index", "search")
+    ]
+    assert stages == ["tree", "crawler", "oai-pmh"], run.stdout
     assert "cannot reach the warehouse database" in run.stderr
 
 

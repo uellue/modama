@@ -16,7 +16,7 @@ Written for the e2e stack (`/prototypes/crawler-e2e/`), where it is installed in
 
 ## Output
 
-`trace` prints stage, state, key, time and detail. The key is what that stage holds the item under: the path in the tree, the OAI identifier in the crawler and OAI-PMH, the identifier after its last `:` in the harvest, `<endpoint uuid>::<path>` in the warehouse, the record URL in the index, the dataset's path as the search query. A member file (the raw file of an EMPAD pair) is traced through the dataset that holds it. `>` marks the first stage that diverges.
+`trace` prints the path, then the keys the stages hold its dataset under (once, as a header), then one line per stage: stage, state, time and detail, with long details continued on indented lines. The keys: the path in the tree, the OAI identifier in the crawler and OAI-PMH, the identifier after its last `:` in the harvest, `<endpoint uuid>::<path>` in the warehouse, the record URL in the index, the dataset's path as the search query. A member file (the raw file of an EMPAD pair) is traced through the dataset that holds it. `>` marks the first stage that diverges.
 
 States: `ok`; `missing`; `differs` (holds another version than the stage before); `warn` (search: the dataset is a hit, but not the first); and flags in upper case:
 

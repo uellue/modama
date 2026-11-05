@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import textwrap
 from pathlib import Path
 
-from .chain import Stores, diverging, status, trace, when
+from .chain import Stage, Stores, diverging, status, trace, when
 from .warehouse import Unreachable
 
 
@@ -31,19 +32,54 @@ def stores_from_env() -> Stores:
     )
 
 
+WIDTH = 100  # longer details continue on indented lines
+# The keys each stage holds the item under, shown once above the stages (layout chosen by @weber 2026-11-05)
+HEADER_KEYS = [
+    ("dataset", "search"),
+    ("oai id", "crawler"),
+    ("warehouse", "warehouse"),
+    ("url", "index"),
+]
+
+
+def trace_lines(path: str, stages: list[Stage]) -> list[str]:
+    """The path, the keys found for it, then one line per stage, `>` marking the first that diverges."""
+    keys = {s.name: s.key for s in stages}
+    lines = [path] + [
+        f"  {label:<9} {keys[stage]}" for label, stage in HEADER_KEYS if keys.get(stage)
+    ]
+    lines.append("")
+    first = diverging(stages)
+    for i, s in enumerate(stages):
+        mark = ">" if i == first else " "
+        head = f"{mark} {s.name:<9} {s.state:<22} "
+        line = head + "  ".join(x for x in (s.time, s.detail) if x)
+        if len(line) <= WIDTH or not s.detail:
+            lines.append(line.rstrip())
+            continue
+        lines.append((head + s.time).rstrip())
+        lines += textwrap.wrap(
+            s.detail,
+            WIDTH,
+            initial_indent=" " * 12,
+            subsequent_indent=" " * 12,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+    return lines
+
+
 def cmd_trace(args) -> int:
-    stages = []
+    """Collects the stages first (the header needs their keys); an unreachable store ends the trace with what was found."""
+    stages, error = [], None
     try:
         for stage in trace(stores_from_env(), args.path):
-            stages.append(stage)
-            first = diverging(stages)
-            mark = ">" if first == len(stages) - 1 else " "
-            print(
-                f"{mark} {stage.name:<9} {stage.state:<23} {stage.key}  {stage.time}  {stage.detail}".rstrip(),
-                flush=True,
-            )
+            stages.append(stage)  # noqa: PERF402 -- keeps the stages found before an unreachable store
     except Unreachable as e:
-        print(f"modama-chain: cannot reach the {e}", file=sys.stderr)
+        error = f"modama-chain: cannot reach the {e}"
+    print("\n".join(trace_lines("/" + args.path.strip("/"), stages)), flush=True)
+    if error:
+        print(error, file=sys.stderr)
         return 2
     return 0 if diverging(stages) is None else 1
 
