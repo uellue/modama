@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modama-search-chain"
+description = "Trace a path of the modama data tree through crawler, harvester, warehouse and search"
+license = {file = "LICENSE"}
+requires-python = ">=3.14"
+version = "0.0.1.dev0"
+dependencies = [
+    "psycopg[binary]",
+]
+authors = [
+    {name="Dieter Weber", email="d.weber@fz-juelich.de"},
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.scripts]
+modama-chain = "modama_chain.cli:main"

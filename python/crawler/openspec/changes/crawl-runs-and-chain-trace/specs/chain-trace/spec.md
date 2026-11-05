@@ -7,11 +7,18 @@ Following one path through every stage of the search chain (file tree, crawler, 
 ## ADDED Requirements
 
 ### Requirement: A trace shows every stage of one path
-`modama-chain trace PATH`, with PATH relative to the data root, SHALL print on stdout one line per stage, in the order tree, crawler, OAI-PMH, harvest, warehouse, index, search. Each line SHALL name the stage, its state (`ok`, `missing`, or a flag), the key under which the stage holds the item, and the stage's time for it (mtime and ctime in the tree, datestamp in the crawler and OAI-PMH, the harvest run's window, the warehouse record's sync time, the search rank).
+`modama-chain trace PATH`, with PATH relative to the data root, SHALL print on stdout one line per stage, in the order tree, crawler, OAI-PMH, harvest, warehouse, index, search. Each line SHALL name the stage, its state, the key under which the stage holds the item, and the stage's time for it (mtime and ctime in the tree, datestamp in the crawler and OAI-PMH, the harvest run's window, the warehouse record's sync time, the search rank).
 
 #### Scenario: A file found everywhere
 - **WHEN** a file of the e2e tree has been crawled, harvested and indexed, and its path is traced
 - **THEN** every stage shows `ok` with its key (path, OAI identifier, the identifier as the warehouse keeps it, the URL as the index keeps it) and the search line shows rank 1, and the command exits with status 0
+
+### Requirement: Each stage has one state
+A stage's state SHALL be `ok`; `missing`; `differs` when the stage holds another version of the item than the stage before; `warn` for a search rank below 1; or one of the flags below.
+
+#### Scenario: A version not harvested yet
+- **WHEN** a record changed in the crawler after the harvest that took its earlier version, and no harvest has run since
+- **THEN** the harvest line shows `differs`
 
 ### Requirement: A member is traced through its dataset
 When PATH has no record of its own but is a member of a dataset, the trace SHALL say which dataset holds it and SHALL trace that dataset from the crawler stage on.
@@ -28,7 +35,7 @@ The trace SHALL mark the first stage at which the item is missing or differs fro
 - **THEN** the harvest line is the first one not `ok`, and the lines after it are `missing`
 
 ### Requirement: A record dated before the harvest window is flagged
-The trace SHALL flag the harvest stage as `before-harvest-window` when the crawler publishes the record, no harvest has an event for it, and its datestamp is before the `from` of the harvest run that followed its crawl.
+The trace SHALL flag the harvest stage as `before-harvest-window` when the crawler publishes the record, no harvest has an event for its current version, and its datestamp is before the `from` of the endpoint's last closed harvest run, so that no incremental harvest will take it.
 
 #### Scenario: A record dated before the harvest window
 - **WHEN** a record's datestamp in the crawler is set before the end of the last harvest run, and the next incremental harvest has run
@@ -63,7 +70,7 @@ The trace SHALL exit with status 0 when no stage is flagged or missing after the
 - **THEN** the stages before the harvest are shown, stderr names the warehouse database as unreachable, and the exit status is 2
 
 ### Requirement: The status states the freshness time
-`modama-chain status` SHALL print one line per stage (crawl, harvest, indexing) with its last run, outcome and time, and a last line with the freshness time T: the start of the most recent finished crawl run that ended before the `until` of a closed harvest run of the crawler's endpoint, which in turn was followed by a successful indexing run. When no crawl qualifies, the last line SHALL say so and name the stage that is missing.
+`modama-chain status` SHALL print one line per stage (crawl, harvest, indexing) with its last run, outcome and time, and a last line with the freshness time T: the start of the most recent finished crawl run that ended before the `until` of a closed harvest run of the crawler's endpoint, where that harvest run and every closed run before it were followed by a successful indexing run. When no crawl qualifies, the last line SHALL say so and name the stage that is missing.
 
 #### Scenario: A complete chain
 - **WHEN** a crawl finished, a harvest closed after its end, and the indexing run triggered by that harvest succeeded

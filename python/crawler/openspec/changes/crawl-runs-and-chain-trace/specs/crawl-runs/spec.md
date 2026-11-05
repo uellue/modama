@@ -39,16 +39,19 @@ A run without an end time SHALL be shown as running only while its last update i
 - **THEN** the run is shown as stale since its last update, not as running and not as finished
 
 ### Requirement: The runs command shows recent runs
-`modama-crawler runs` SHALL print the most recent runs, newest first, one per line on stdout: start, end or state, outcome, counts, and progress for a running crawl. `--follow` SHALL repeat the output of the running crawl's progress until it ends and then print its final line. Diagnostics SHALL go to stderr; a closed output pipe and Ctrl-C SHALL end the command without a traceback.
+`modama-crawler runs` SHALL print the most recent runs, newest first, one per line on stdout: start, end or state, outcome, counts, and progress for a running crawl. Diagnostics SHALL go to stderr; a closed output pipe and Ctrl-C SHALL end the command without a traceback.
 
 #### Scenario: No crawl yet
 - **WHEN** `modama-crawler runs` is run against an index without runs
 - **THEN** it prints a line saying that no crawl has run and exits with status 0
 
-#### Scenario: Following a crawl
-- **WHEN** `modama-crawler runs --follow` is started while a crawl runs
-- **THEN** it prints progress lines until the crawl ends, then the finished run's line, and exits with status 0
-
 #### Scenario: Piped into head
 - **WHEN** `modama-crawler runs | head -1` is run with several runs recorded
 - **THEN** one line is printed and the command exits without a traceback
+
+### Requirement: The runs command follows a running crawl
+`modama-crawler runs --follow` SHALL repeat the output of the running crawl's progress until it ends and then print its final line. When no crawl is running it SHALL print the latest run's line; when the followed run turns stale it SHALL end with status 1.
+
+#### Scenario: Following a crawl
+- **WHEN** `modama-crawler runs --follow` is started while a crawl runs
+- **THEN** it prints progress lines until the crawl ends, then the finished run's line, and exits with status 0

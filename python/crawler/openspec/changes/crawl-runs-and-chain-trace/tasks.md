@@ -10,20 +10,20 @@
 
 ## 2. The chain tool, smoke test first
 
-- [ ] 2.1 Package skeleton `python/search-chain/` (pyproject, `modama-chain` entry point, README with the stores, the environment variables and the crawler tables it reads as an interface), installed in the e2e crawler image. Verify: `docker compose -f compose.yml exec crawler modama-chain --help`.
-- [ ] 2.2 Viewer account for Airflow in `e2e.sh setup`/`reset`, password generated into `warehouse.env` (D8). Verify: a GET of `/api/v2/dags` with the account succeeds and a PATCH is refused.
-- [ ] 2.3 Smoke test, one scenario end to end before the rest: `trace` for "A file found everywhere", all seven stages, against the running e2e stack. Verify: the scenario as a test in `test_e2e.py`, and the output shown to @weber for the line layout (design, open question).
-- [ ] 2.4 Members through their dataset (D5). Verify: e2e scenario "The raw file of an EMPAD pair".
-- [ ] 2.5 Flags `before-harvest-window`, `synced-without-document`, `stale` (D6), with the fault injections of walk-through C as e2e scenarios. Verify: e2e scenarios "A record dated before the harvest window", "A lost index document", "A renamed file".
-- [ ] 2.6 Search rank with the warning below rank 1. Verify: a unit test of the rank rule with a canned search response; the e2e scenario "A file found everywhere" shows rank 1.
-- [ ] 2.7 Exit statuses and unreachable stores. Verify: e2e scenario "The warehouse database is down" (stop `postgres`, trace, start it again).
-- [ ] 2.8 Keys rebuilt for paths the crawler no longer has, from a crawled record's host and URL prefix (D5, risks). Verify: a test comparing a rebuilt key with a crawled one.
-- [ ] 2.9 `status` with T (D7). Verify: e2e scenarios "A complete chain", "A crawl that is not harvested yet", "A failed harvest" (a harvest of an unreachable endpoint URL, or the crawler stopped during a harvest).
-- [ ] 2.10 Read-only: the tool runs with a read-only warehouse database role and the Viewer account. Verify: e2e scenario "Read-only accounts suffice", with the role created in `e2e.sh reset`.
+- [x] 2.1 Package skeleton `python/search-chain/` (pyproject, `modama-chain` entry point, README with the stores, the environment variables and the crawler tables it reads as an interface), installed in the e2e crawler image. Verify: `docker compose -f compose.yml exec crawler modama-chain --help`.
+- [x] 2.2 Viewer account for Airflow in `e2e.sh setup`/`reset`, password generated into `chain.env` (D8). Verify: a GET of `/api/v2/dags` with the account succeeds and a PATCH is refused.
+- [x] 2.3 Smoke test, one scenario end to end before the rest: `trace` for "A file found everywhere", all seven stages, against the running e2e stack. Verify: the scenario as a test in `test_e2e.py`, and the output shown to @weber for the line layout (design, open question).
+- [x] 2.4 Members through their dataset (D5). Verify: e2e scenario "The raw file of an EMPAD pair".
+- [x] 2.5 Flags `before-harvest-window`, `synced-without-document`, `stale` (D6), with the fault injections of walk-through C as e2e scenarios. Verify: e2e scenarios "A record dated before the harvest window", "A lost index document", "A renamed file".
+- [x] 2.6 Search rank with the warning below rank 1. Verify: a unit test of the rank rule with a canned search response; the e2e scenario "A file found everywhere" shows rank 1.
+- [x] 2.7 Exit statuses and unreachable stores. Verify: e2e scenario "The warehouse database is down" (in the test an unreachable address stands in for the stopped service, since the test runs inside the stack; a real `docker compose stop postgres` checked by hand: exit 2, "cannot reach the warehouse database").
+- [x] 2.8 Keys rebuilt for paths the crawler no longer has, from a crawled record's host and URL prefix (D5, risks). Verify: a test comparing a rebuilt key with a crawled one.
+- [x] 2.9 `status` with T (D7). Verify: e2e scenarios "A complete chain", "A crawl that is not harvested yet", "A failed harvest" (a harvest of an unreachable endpoint URL, or the crawler stopped during a harvest).
+- [x] 2.10 Read-only: the tool runs with a read-only warehouse database role and the Viewer account. Verify: e2e scenario "Read-only accounts suffice", with the role created in `e2e.sh reset`.
 
 ## 3. The e2e test asserts with the trace
 
-- [ ] 3.1 Replace the count-only assertions in `test_e2e.py` by traces of every record of the oracle, keeping the counts as a summary. Verify: `./e2e.sh test` passes; a deliberately broken stage (one of 2.5's injections left in) fails with the stage named in the assertion message.
+- [x] 3.1 Replace the count-only assertions in `test_e2e.py` by traces of every record of the oracle, keeping the counts as a summary. Verify: `./e2e.sh test` passes; a deliberately broken stage (one of 2.5's injections left in) fails with the stage named in the assertion message.
 
 ## 4. Documentation and review
 
