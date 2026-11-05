@@ -5,14 +5,23 @@ modama crawler (OAI-PMH) → EOSC harvester (inside the warehouse's Airflow) →
 One compose project: the unmodified upstream compose of `../EOSC-Data-Commons/metadata-warehouse` (checked out at `v1.10.0`; the compose file is the source of truth, re-verify this setup on every upgrade), settings overridden in `warehouse.e2e.yml` and `warehouse.env`, plus our `crawler` and `crawler-db`. Needs Docker with compose ≥ 2.24 and `uv` (for the warehouse's own DB scripts); builds and pulls need network access (images, GitHub, Hugging Face for the embedding model).
 
 ```bash
-./e2e.sh setup   # once: generates warehouse.env (gitignored) with fresh secrets
+./e2e.sh setup   # once: generates warehouse.env and chain.env (gitignored) with fresh secrets
 ./e2e.sh up      # build and start; the first run takes a while
-./e2e.sh reset   # empty warehouse DB, index and crawler; registers http://crawler:7654/oai as the only endpoint to harvest
+./e2e.sh reset   # empty warehouse DB, index and crawler; registers http://crawler:7654/oai as the only endpoint to harvest;
+                 # creates the chain tool's read-only database role and Airflow Viewer account
 ./e2e.sh test    # pytest inside the crawler container
 ./e2e.sh down    # or clean, which also removes the volumes
 ```
 
-The test builds a tree in the crawler container from the crawler's own fixture generators (EMPAD pair, Zarr, a corrupt Zarr store, a venv, the core collection's mixed files, plain text files), crawls it, triggers the Airflow DAG `warehouse_harvest_and_index` for our endpoint only, and checks, in this order: the harvest run is closed and has as many harvest events as `modama-crawler records` lists, none with an error, OpenSearch holds the same number, and `/search?q=ferritin` returns the right file. Then it adds a file, crawls and harvests again: the second run is incremental (`from_date` set) and brings exactly the new record. About 2.5 minutes.
+The test builds a tree in the crawler container from the crawler's own fixture generators (EMPAD pair, Zarr, a corrupt Zarr store, a venv, the core collection's mixed files, plain text files), crawls it, triggers the Airflow DAG `warehouse_harvest_and_index` for our endpoint only, and checks, in this order: the harvest run is closed and has as many harvest events as `modama-crawler records` lists, none with an error, OpenSearch holds the same number, every record traces through all stages with `modama-chain` (a failure names the first diverging stage), the freshness time T, and `/search?q=ferritin` returns the right file. Then it adds a file, crawls and harvests again: the second run is incremental (`from_date` set) and brings exactly the new record. Last, faults that the trace must find, with one more crawl and harvest: a datestamp set back an hour (`BEFORE-HARVEST-WINDOW`), a deleted OpenSearch document behind a synced warehouse row (`SYNCED-WITHOUT-DOCUMENT`), a renamed file (`STALE`), and a harvest of an unreachable URL (`failed` in `status`; this one may block the endpoint, metadata-warehouse#158, so run `reset` before the next test). About 4 minutes.
+
+The chain tool is installed in the crawler container and runs with read-only credentials (`chain.env`):
+
+```bash
+docker compose -f compose.yml exec crawler modama-chain trace /notes/ferritin-lamella.txt
+docker compose -f compose.yml exec crawler modama-chain status
+docker compose -f compose.yml exec crawler modama-crawler runs
+```
 
 For looking around by hand: the crawler on http://127.0.0.1:7654/oai, Airflow on :8081 (airflow/airflow), search API on :8000, OpenSearch on :9200. The frontend, dashboards and pgadmin are not started by `up`; `docker compose -f compose.yml up -d frontend` starts the frontend on :3000 (search works without `coordinator`; other functions may need it, unverified).
 

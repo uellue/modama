@@ -52,8 +52,18 @@ To run the full chain (crawl, OAI-PMH server, harvester, warehouse and search), 
 
 ```bash
 modama-crawler crawl [--root PATH]      # crawl MODAMA_DATA_ROOT (or PATH) into the database
+modama-crawler runs [--follow]          # the last ten crawls, newest first; --follow: the running one until it ends
 modama-crawler serve                    # OAI-PMH on port 7654
 ```
+
+Every crawl is recorded as a run in the database before it starts walking, so that a crawl shows up while it runs. While walking it logs `N directories, M files so far` on stderr and updates its run once a minute. `runs` prints one line per run: start, state, end (or the last update), counts and root; a failed run ends with its error. The states are `finished`, `failed`, `running`, and `stale` for a run without an end that has not been updated for two minutes (killed, or the machine went down). `runs --follow` exits with status 1 if the run it follows turns stale.
+
+```
+2026-11-05T08:38:43Z  failed    2026-11-05T08:38:43Z  0 directories, 0 files  /srv/gone  [Errno 2] No such file or directory: '/srv/gone'
+2026-11-05T08:38:42Z  finished  2026-11-05T08:38:42Z  2 directories, 3 files, 3 datasets, 0 warnings, 0 records changed  /srv/data
+```
+
+Where an item went between the tree and a search hit, and how fresh the search is, is the job of `modama-chain` (`/python/search-chain/`), which reads the crawler's `crawl_runs`, `records`, `datasets` and `members` tables.
 
 Settings come from the environment or from `python/crawler/.env`. `.env.example` lists the keys: data root, database, PostgreSQL connection, the base URL reported to harvesters, and `OAI_BIND`. `OAI_BIND` is the address `serve` listens on. It defaults to `localhost`; use `0.0.0.0` inside a container.
 
@@ -109,6 +119,8 @@ The recognition result is the oracle throughout: what the fixture tests compare,
 | `design/testing.md`, `design/playtest.md`, `design/review.md` | the test strategy, the play test on real data, the code review of 2026-11-03 |
 | `AGENTS.md` | instructions for AI coding agents |
 | `/docs/working-with-claude.md` | how we work with Claude Code on this project, and what we learned |
+| `design/requirements-pipeline.md`, `design/walkthroughs/` | the chain crawler → harvester → warehouse → search: requirements, walk-throughs, wishlist for upstream |
+| `/python/search-chain/` | `modama-chain`: trace a path through the chain, freshness time T |
 
 ## How we work
 

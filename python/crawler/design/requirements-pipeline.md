@@ -163,6 +163,7 @@ Changes that would make our job easier or the outcomes better. The bugs already 
 - **A way to tell a match from a nearest neighbour** in the search API (B, step 8): every query returns ten hits.
 - **A dataset's path as query ranks it first** (2.5): collect the examples where it doesn't, with query, expected and actual ranking.
 - **`harvest_runs.records_harvested` and friends filled in** (B, step 5): already in the BACKLOG's upstream list.
+- **A failed harvest fails the DAG run** (found by the e2e scenario "A failed harvest", 2026-11-05): when the harvest task of `warehouse_harvest_and_index` fails, the DAG run still ends in `success`; only `harvest_runs.status` says `failed`, so Airflow's own view shows nothing wrong.
 
 ## Handover: what the builder needs first
 

@@ -15,7 +15,7 @@ def ensure_tables(conn: psycopg.Connection) -> None:
     """Create the schema if it does not exist. There are no migrations: recreate the database after a change.
 
     The datasets and members tables are written on every crawl and read by
-    nothing yet (the survey command will); their shape is provisional.
+    the chain tool (python/search-chain) only; their shape is provisional.
     """
     cur = conn.cursor()
     cur.execute(

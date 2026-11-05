@@ -12,6 +12,7 @@
 | What is next, what is deferred | `BACKLOG.md` |
 | How to write a format collection | `src/modama_crawler/formats/TEMPLATE.md` |
 | End-to-end test with the EOSC harvester and warehouse | `/prototypes/crawler-e2e/README.md` |
+| Tracing an item through the chain; the crawler tables it reads as an interface | `/python/search-chain/README.md` |
 | Lessons on working with agents, with the reasons behind the rules below | `/docs/working-with-claude.md` |
 
 ## Standing rules
@@ -36,7 +37,7 @@ The `/opsx:*` slash commands and their skills live in `.claude/` here and are re
 
 ```
 src/modama_crawler/
-├── cli.py          # crawl, serve, records; the only place that reads the environment
+├── cli.py          # crawl, runs, serve, records; the only place that reads the environment
 ├── walk.py         # post-order walk with pre-order collapse check -> Result
 ├── formats/        # Entry, Directory, Dataset, Result, Format, Collection; the runner (run_pre, run_post)
 │   ├── TEMPLATE.md # how to write a collection
@@ -49,7 +50,7 @@ src/modama_crawler/
 ├── selection.py    # entry-point discovery, ruff-style select/ignore, per-path ignores, crawl excludes
 ├── records.py      # OAI identifier, browse URL, Dublin Core mapping of a Dataset
 ├── render.py       # oai_dc XML, shared by the server and the records command
-├── store.py        # PostgreSQL schema (datasets, members, records) and storing a Result
+├── store.py        # PostgreSQL schema (datasets, members, records, crawl_runs), storing a Result, recording runs
 ├── server.py       # OAI-PMH WSGI app (werkzeug), reads the records table only
 └── testing.py      # pytest plugin: fixtures, manifest, expected results, coverage rule
 ```

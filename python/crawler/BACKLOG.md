@@ -1,6 +1,10 @@
 # Backlog
 
-**Next:** series directories, as the next OpenSpec change (the dominant shape in the play test, see the "Next formats" item below).
+**Next:** review and archive the change `crawl-runs-and-chain-trace` (crawl runs, `modama-chain`; the output layout with @weber). Then series directories, as the next OpenSpec change (the dominant shape in the play test, see the "Next formats" item below), and the chain items below.
+
+- **Comparison across stages** (`design/requirements-pipeline.md` 2.5, handover 3): identifier sets per stage, with the trace's rules applied to the differences; for the e2e test first, an admin command if it runs quickly on production and its results are actionable.
+- **Purge of stale entries** (handover 4): warehouse `records` and OpenSearch documents of datasets the crawler no longer publishes, as the trace flags them `STALE`; never touches the data tree.
+- **Crawl timer and harvest trigger** (handover 5, decision log 2026-11-04): a timer of our own, outside business hours at first; after a crawl that changed records, the crawler triggers the harvest DAG for its endpoint with an account allowed to trigger; our own compose files with unpaused DAGs and quieter logs. Later the inotify watcher.
 
 Deferred items, roughly in the order they are likely to come up.
 
