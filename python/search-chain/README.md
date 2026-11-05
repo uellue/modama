@@ -20,11 +20,11 @@ Written for the e2e stack (`/prototypes/crawler-e2e/`), where it is installed in
 
 States: `ok`; `missing`; `differs` (holds another version than the stage before); `warn` (search: the dataset is a hit, but not the first); and flags in upper case:
 
-- `BEFORE-HARVEST-WINDOW`: the crawler publishes the record, no harvest has its current version, and its datestamp is before the `from` of the last closed harvest, so no incremental harvest will take it.
+- `BEFORE-HARVEST-WINDOW`: the crawler publishes the record, no closed harvest has its current version, and its datestamp is before the `until` of the last closed harvest (cut to the second, as the harvester sends it), where the next incremental harvest starts; no harvest will take it.
 - `SYNCED-WITHOUT-DOCUMENT`: the warehouse marks the record as synced, the index has no document for its URL; the warehouse will not index it again.
 - `STALE`: the stage holds the item, the crawler no longer publishes it (a renamed or deleted file).
 
-`status`: T is the start of the newest finished crawl that ended before the end of the chain of closed harvest runs that were all indexed successfully. Every file whose ctime is before T is in the search, unless a trace flags it.
+`status`: T is the start of the newest finished crawl that ended before the end of the chain of closed harvest runs that were all indexed successfully. Every file whose ctime is before T is in the search, unless a trace flags it. Known gap: a harvest that starts while a crawl stores its records can skip them without T noticing (the backlog's "Datestamp window"; open in the change's `review.md`).
 
 ## Configuration
 

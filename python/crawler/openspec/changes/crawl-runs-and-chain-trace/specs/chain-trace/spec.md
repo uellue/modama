@@ -35,7 +35,7 @@ The trace SHALL mark the first stage at which the item is missing or differs fro
 - **THEN** the harvest line is the first one not `ok`, and the lines after it are `missing`
 
 ### Requirement: A record dated before the harvest window is flagged
-The trace SHALL flag the harvest stage as `before-harvest-window` when the crawler publishes the record, no harvest has an event for its current version, and its datestamp is before the `from` of the endpoint's last closed harvest run, so that no incremental harvest will take it.
+The trace SHALL flag the harvest stage as `before-harvest-window` when the crawler publishes the record, no closed harvest run has an event for its current version, and its datestamp is before the `until` of the endpoint's last closed harvest run, cut to the second as the harvester sends it: the next incremental harvest starts there, so no harvest will take the record.
 
 #### Scenario: A record dated before the harvest window
 - **WHEN** a record's datestamp in the crawler is set before the end of the last harvest run, and the next incremental harvest has run

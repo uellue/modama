@@ -29,7 +29,7 @@
 
 - [x] 4.1 Crawler `README.md` (the `runs` command, progress lines), `AGENTS.md` code map, the e2e README (the chain tool, the Viewer account, the fault scenarios), `BACKLOG.md` (Next, and the handover items 3 to 5 as entries), `design/architecture.md` decision log (option C, D4). Verify: the README's commands typed as written work.
 - [ ] 4.2 Review by an agent that did not write the code, given the code, the specs and `design/requirements-pipeline.md`, not this design's conclusions; findings verified before acting (`design/review.md` pattern). Verify: the review's findings and their outcomes listed in the change.
-- [ ] 4.3 Lint and tests as CI and the hook run them: `uvx ruff check`, `uvx ruff format --check` from the repo root, `pytest` in `python/crawler`, `./e2e.sh test`. Verify: the commands' output.
+- [x] 4.3 Lint and tests as CI and the hook run them: `uvx ruff check`, `uvx ruff format --check` from the repo root, `pytest` in `python/crawler`, `./e2e.sh test`. Verify: the commands' output.
 
 ## Workflow follow-up
 

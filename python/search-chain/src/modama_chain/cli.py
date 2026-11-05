@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from .chain import Stores, diverging, status, trace
+from .chain import Stores, diverging, status, trace, when
 from .warehouse import Unreachable
 
 
@@ -57,7 +57,7 @@ def cmd_status(args) -> int:
                     print(f"fresh     unknown   {reason}")
                 else:
                     print(
-                        f"fresh     as of {t:%Y-%m-%dT%H:%M:%SZ}: every file with a ctime before it is in the search"
+                        f"fresh     as of {when(t)}: every file with a ctime before it is in the search"
                     )
             else:
                 print(line, flush=True)

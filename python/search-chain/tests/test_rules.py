@@ -32,7 +32,7 @@ def harvest(id, minutes_from, minutes_until, status="closed"):
 
 
 def crawl(start, end, outcome="finished"):
-    return Run(at(start), at(end), at(end), outcome, 1, 1, 1, 1, None)
+    return Run(at(start), at(end), at(end), outcome, 1, 1, 1, 1, None, timedelta(0))
 
 
 URL = "https://example.org/browse/?path=/a.txt"
@@ -82,10 +82,29 @@ def test_after_the_last_harvest_is_not_harvested_yet():
     )
 
 
+def test_in_the_window_of_the_last_harvest_but_not_harvested_is_lost():
+    # the next incremental harvest starts at the last until, so this record is never asked for
+    stage = harvest_stage("/a.txt", at(45), None, harvest("h2", 30, 60))
+    assert stage.state == BEFORE_HARVEST_WINDOW
+
+
+def test_the_harvester_cuts_the_window_to_seconds():
+    last = HarvestRun(
+        "h2", "closed", at(60), at(30), at(60) + timedelta(microseconds=700000)
+    )
+    assert harvest_stage("/a.txt", at(60), None, last).state == MISSING
+
+
 def test_an_older_version_harvested_differs():
     old = Event(harvest("h1", None, 30), at(10), False, None)
-    stage = harvest_stage("/a.txt", at(40), old, harvest("h2", 30, 60))
+    stage = harvest_stage("/a.txt", at(70), old, harvest("h2", 30, 60))
     assert stage.state == DIFFERS
+
+
+def test_an_errored_event_is_not_a_harvest():
+    event = Event(harvest("h1", None, 30), at(10), False, "parse error")
+    stage = harvest_stage("/a.txt", at(70), event, harvest("h1", None, 30))
+    assert (stage.state, stage.detail) == (DIFFERS, "error: parse error")
 
 
 def test_the_current_version_harvested_is_ok():

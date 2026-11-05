@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from modama_crawler import cli
-from modama_crawler.store import end_run, progress_run, start_run
+from modama_crawler.store import Run, end_run, progress_run, start_run
 from modama_crawler.walk import walk
 
 CRAWLER = f"{sys.executable} -m modama_crawler"
@@ -84,49 +84,63 @@ def test_an_unchanged_crawl_leaves_a_run(conn, env, tree):
     assert (second[0], second[7]) == ("finished", 0)
 
 
-def test_the_root_disappears(conn, env, tmp_path):
+def test_the_root_disappears(conn, env, tree, tmp_path):
+    assert shell(f"{CRAWLER} crawl --root {tree}", env).returncode == 0
+    before = conn.execute(
+        "SELECT identifier, datestamp FROM records ORDER BY 1"
+    ).fetchall()
     run = shell(f"{CRAWLER} crawl --root {tmp_path / 'gone'}", env)
     assert run.returncode != 0
     assert "Traceback" not in run.stderr
-    ((outcome, *_, error),) = runs(conn)
+    *_, (outcome, *_, error) = runs(conn)
     assert outcome == "failed" and "No such file" in error
-    assert conn.execute("SELECT count(*) FROM records").fetchone() == (0,)
+    after = conn.execute(
+        "SELECT identifier, datestamp FROM records ORDER BY 1"
+    ).fetchall()
+    assert after == before
 
 
 def test_progress_of_a_slow_walk(conn, tree, caplog):
-    # The walk reports every directory; the CLI's throttle passes one update per
-    # interval. A fake clock makes each directory take longer than the interval.
+    # Each directory takes longer than the interval; the heartbeat writes in between
     run_id = start_run(conn, str(tree))
-    ticks = iter(range(0, 1000, 61))
-    progress = cli._Progress(conn, run_id, interval=60, clock=lambda: next(ticks))
+    heartbeat = cli._Heartbeat(
+        conn.info.dsn + f" password={conn.info.password or ''}", run_id, interval=0.05
+    )
     seen = []
 
-    def watch(directories, files):
-        progress(directories, files)
+    def slow(directories, files):
+        heartbeat(directories, files)
+        time.sleep(0.3)
+        conn.commit()
         seen.append(
             conn.execute(
-                "SELECT directories, files FROM crawl_runs WHERE run_id = %s",
+                "SELECT directories, files, now() - updated_at < interval '1 second'"
+                " FROM crawl_runs WHERE run_id = %s",
                 (run_id,),
             ).fetchone()
         )
 
+    heartbeat.start()
     with caplog.at_level("INFO", logger="modama_crawler"):
-        walk(tree, [], progress=watch)
-    assert seen == [(1, 2), (2, 3)]
-    assert [r.getMessage() for r in caplog.records] == [
-        "1 directories, 2 files so far",
-        "2 directories, 3 files so far",
-    ]
+        walk(tree, [], progress=slow)
+        heartbeat.stop()
+    assert seen == [(1, 2, True), (2, 3, True)]
+    messages = [r.getMessage() for r in caplog.records]
+    assert "1 directories, 2 files so far" in messages
+    assert messages[-1] == "2 directories, 3 files so far"
 
 
-def test_progress_is_throttled(conn, tree):
+def test_no_update_before_the_interval(conn, tree):
     run_id = start_run(conn, str(tree))
     updated = conn.execute(
         "SELECT updated_at FROM crawl_runs WHERE run_id = %s", (run_id,)
     ).fetchone()
-    progress = cli._Progress(conn, run_id, interval=60, clock=lambda: 0)
-    walk(tree, [], progress=progress)
-    assert (progress.directories, progress.files) == (2, 3)
+    heartbeat = cli._Heartbeat(conn.info.dsn, run_id, interval=60)
+    heartbeat.start()
+    walk(tree, [], progress=heartbeat)
+    heartbeat.stop()
+    assert (heartbeat.directories, heartbeat.files) == (2, 3)
+    conn.commit()
     assert (
         conn.execute(
             "SELECT updated_at FROM crawl_runs WHERE run_id = %s", (run_id,)
@@ -169,6 +183,9 @@ def test_piped_into_head(conn, env):
     assert run.returncode == 0
     assert len(run.stdout.splitlines()) == 1
     assert "Traceback" not in run.stderr
+    # a reader that is gone before anything is written: the write itself fails
+    run = shell(f"{CRAWLER} runs | true; exit ${{PIPESTATUS[0]}}", env)
+    assert (run.returncode, run.stderr) == (0, "")
 
 
 def test_following_a_crawl(conn, env, capsys, monkeypatch):
@@ -202,8 +219,23 @@ def test_following_a_crawl(conn, env, capsys, monkeypatch):
 
 
 def test_run_states():
-    now = datetime(2026, 11, 5, 12, tzinfo=UTC)
-    run = (1, "/data", now, now - timedelta(seconds=119), None, None) + (0,) * 6
-    assert cli._state(run, now) == "running"
-    stale = run[:3] + (now - timedelta(seconds=121),) + run[4:]
-    assert cli._state(stale, now) == "stale"
+    def run(age, finished=None):
+        now = datetime(2026, 11, 5, 12, tzinfo=UTC)
+        return Run(
+            1,
+            "/data",
+            now,
+            now,
+            finished,
+            None,
+            0,
+            0,
+            None,
+            None,
+            None,
+            None,
+            timedelta(seconds=age),
+        )
+
+    assert cli._state(run(119)) == "running"
+    assert cli._state(run(121)) == "stale"

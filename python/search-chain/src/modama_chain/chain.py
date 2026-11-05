@@ -61,8 +61,11 @@ def when(t: datetime | float | None) -> str:
 
 
 def connect(conninfo: str, store: str) -> psycopg.Connection:
+    """A connection whose transactions are read-only, whatever the account may do (spec: the tool only reads)."""
     try:
-        return psycopg.connect(conninfo, connect_timeout=10)
+        return psycopg.connect(
+            conninfo, connect_timeout=10, options="-c default_transaction_read_only=on"
+        )
     except psycopg.OperationalError as e:
         raise Unreachable(f"{store}: {str(e).strip()}") from e
 
@@ -84,6 +87,10 @@ def oai_datestamp(oai_url: str, identifier: str) -> datetime | None:
             root = ET.fromstring(response.read())
     except OSError as e:
         raise Unreachable(f"OAI-PMH server at {oai_url}: {e}") from e
+    except ET.ParseError as e:
+        raise Unreachable(
+            f"OAI-PMH server at {oai_url}: not an XML response: {e}"
+        ) from e
     stamp = root.find(".//{http://www.openarchives.org/OAI/2.0/}header/{*}datestamp")
     if stamp is None:
         return None
@@ -174,7 +181,15 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
 
     url = wrec.url if wrec else rules.url(anchor)
     if warehouse.has_document(stores.opensearch, stores.index, url):
-        yield Stage("index", holding(published, True), url)
+        if published and wrec and not wrec.synced:
+            yield Stage(
+                "index",
+                DIFFERS,
+                url,
+                detail="the warehouse holds a version not indexed yet",
+            )
+        else:
+            yield Stage("index", holding(published, True), url)
     elif wrec and wrec.synced:
         yield Stage(
             "index",
@@ -208,22 +223,17 @@ def harvest_stage(local: str, datestamp, event, last_closed) -> Stage:
         return Stage("harvest", state, local, span, f"error: {event.error}")
     if last_closed is None:
         return Stage("harvest", state, local, detail="no closed harvest run yet")
-    if last_closed.from_date is not None and datestamp < last_closed.from_date:
-        span = f"{when(last_closed.from_date)} .. {when(last_closed.until_date)}"
+    # The next incremental harvest asks from the last closed run's until, cut to
+    # the second as the harvester sends it; anything dated before is never asked for
+    next_from = last_closed.until_date.replace(microsecond=0)
+    if datestamp < next_from:
+        span = f"{when(last_closed.from_date) or 'start'} .. {when(last_closed.until_date)}"
         return Stage(
             "harvest",
             BEFORE_HARVEST_WINDOW,
             local,
             span,
-            f"datestamp {when(datestamp)} is before the window of the last harvest; no incremental harvest takes it",
-        )
-    if datestamp <= last_closed.until_date:
-        return Stage(
-            "harvest",
-            state,
-            local,
-            span,
-            "in the window of the last harvest, not harvested",
+            f"datestamp {when(datestamp)} is before {when(next_from)}, where the next incremental harvest starts; no harvest takes it",
         )
     return Stage(
         "harvest",
@@ -259,10 +269,11 @@ def diverging(stages: list[Stage]) -> int | None:
     return None
 
 
-def crawl_state(run: crawler.Run, now: datetime) -> str:
+def crawl_state(run: crawler.Run) -> str:
+    """By the crawler database's clock, like `modama-crawler runs`."""
     if run.finished_at is not None:
         return run.outcome
-    return "running" if now - run.updated_at <= STALE_AFTER else "stale"
+    return "running" if run.age <= STALE_AFTER else "stale"
 
 
 def freshness(
@@ -293,12 +304,11 @@ def freshness(
 
 def status(stores: Stores) -> Iterator[str | tuple[datetime | None, str]]:
     """The lines of `modama-chain status`: crawl, harvest, indexing, then (T, reason)."""
-    now = datetime.now(UTC)
     with connect(stores.crawler_db, "crawler database") as conn:
         crawls = crawler.runs(conn)
     if crawls:
         c = crawls[0]
-        state = crawl_state(c, now)
+        state = crawl_state(c)
         end = when(c.finished_at) if c.finished_at else f"updated {when(c.updated_at)}"
         counts = f"{c.directories} directories, {c.files} files"
         if state == "finished":

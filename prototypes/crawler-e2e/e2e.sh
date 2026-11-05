@@ -55,6 +55,7 @@ ALTER ROLE chain_reader PASSWORD '$chain_db_password';
 GRANT CONNECT ON DATABASE datasetdb TO chain_reader;
 GRANT USAGE ON SCHEMA public TO chain_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO chain_reader;
+ALTER DEFAULT PRIVILEGES FOR ROLE $POSTGRES_ADMIN IN SCHEMA public GRANT SELECT ON TABLES TO chain_reader;
 SQL
     # the chain tool's Airflow account, Viewer role (read-only API)
     chain_af_password=$(sed -n 's/^MODAMA_CHAIN_AIRFLOW_PASSWORD=//p' chain.env)

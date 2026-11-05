@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 import psycopg
+from psycopg.rows import class_row
 from psycopg.types.json import Jsonb
 
 from .formats import Result
@@ -88,8 +90,8 @@ def start_run(conn: psycopg.Connection, root: str) -> int:
     """
     now = datetime.now(UTC).replace(microsecond=0)
     ((run_id,),) = conn.execute(
-        "INSERT INTO crawl_runs (root, started_at, updated_at) VALUES (%s, %s, %s) RETURNING run_id",
-        (root, now, now),
+        "INSERT INTO crawl_runs (root, started_at, updated_at) VALUES (%s, %s, now()) RETURNING run_id",
+        (root, now),
     ).fetchall()
     conn.commit()
     return run_id
@@ -99,8 +101,8 @@ def progress_run(
     conn: psycopg.Connection, run_id: int, directories: int, files: int
 ) -> None:
     conn.execute(
-        "UPDATE crawl_runs SET directories = %s, files = %s, updated_at = %s WHERE run_id = %s",
-        (directories, files, datetime.now(UTC), run_id),
+        "UPDATE crawl_runs SET directories = %s, files = %s, updated_at = now() WHERE run_id = %s",
+        (directories, files, run_id),
     )
     conn.commit()
 
@@ -141,22 +143,39 @@ def end_run(
     conn.commit()
 
 
-_RUN_COLUMNS = """run_id, root, started_at, updated_at, finished_at, outcome,
-    directories, files, datasets, warnings, records_changed, error"""
+@dataclass(frozen=True)
+class Run:
+    run_id: int
+    root: str
+    started_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None
+    outcome: str | None
+    directories: int
+    files: int
+    datasets: int | None
+    warnings: int | None
+    records_changed: int | None
+    error: str | None
+    age: timedelta  # since the last update, by the database's clock, so that readers on other hosts agree
 
 
-def recent_runs(conn: psycopg.Connection, limit: int) -> list[tuple]:
-    """The newest runs first, as tuples in the table's column order."""
-    return conn.execute(
-        f"SELECT {_RUN_COLUMNS} FROM crawl_runs ORDER BY started_at DESC, run_id DESC LIMIT %s",
-        (limit,),
-    ).fetchall()
+_RUN_SELECT = """SELECT run_id, root, started_at, updated_at, finished_at, outcome,
+    directories, files, datasets, warnings, records_changed, error, now() - updated_at AS age
+    FROM crawl_runs"""
 
 
-def get_run(conn: psycopg.Connection, run_id: int) -> tuple:
-    return conn.execute(
-        f"SELECT {_RUN_COLUMNS} FROM crawl_runs WHERE run_id = %s", (run_id,)
-    ).fetchone()
+def recent_runs(conn: psycopg.Connection, limit: int) -> list[Run]:
+    """The newest runs first."""
+    with conn.cursor(row_factory=class_row(Run)) as cur:
+        return cur.execute(
+            f"{_RUN_SELECT} ORDER BY started_at DESC, run_id DESC LIMIT %s", (limit,)
+        ).fetchall()
+
+
+def get_run(conn: psycopg.Connection, run_id: int) -> Run:
+    with conn.cursor(row_factory=class_row(Run)) as cur:
+        return cur.execute(f"{_RUN_SELECT} WHERE run_id = %s", (run_id,)).fetchone()
 
 
 def store(conn: psycopg.Connection, result: Result) -> int:

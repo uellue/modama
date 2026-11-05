@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from .formats import Format
 from .records import build
 from .server import OAIError, OAIServer, parse_range
 from .store import (
+    Run,
     end_run,
     ensure_tables,
     get_run,
@@ -100,63 +102,84 @@ def _report(result) -> int:
     return len(warnings)
 
 
-class _Progress:
-    """The walk's progress callback: one database update and one log line per interval at most."""
+class _Heartbeat(threading.Thread):
+    """Keeps a crawl's run up to date: counts and update time every interval, and the same as a log line.
 
-    def __init__(
-        self, conn, run_id: int, interval: float | None = None, clock=time.monotonic
-    ):
-        self.conn, self.run_id, self.clock = conn, run_id, clock
+    A thread with its own connection, so that neither a directory that takes
+    minutes nor the store transaction holds the updates back (crawl-runs spec,
+    "at least once a minute"; review 2026-11-05). Also the walk's progress
+    callback, which only records the counts.
+    """
+
+    def __init__(self, conninfo: str, run_id: int, interval: float | None = None):
+        super().__init__(daemon=True)
+        self.conninfo, self.run_id = conninfo, run_id
         self.interval = PROGRESS_INTERVAL if interval is None else interval
         self.directories = self.files = 0
-        self.last = clock()
+        self.done = threading.Event()
 
     def __call__(self, directories: int, files: int) -> None:
         self.directories, self.files = directories, files
-        now = self.clock()
-        if now - self.last >= self.interval:
-            self.last = now
-            progress_run(self.conn, self.run_id, directories, files)
-            log.info("%d directories, %d files so far", directories, files)
+
+    def run(self) -> None:
+        with psycopg.connect(self.conninfo) as conn:
+            while not self.done.wait(self.interval):
+                progress_run(conn, self.run_id, self.directories, self.files)
+                log.info(
+                    "%d directories, %d files so far", self.directories, self.files
+                )
+
+    def stop(self) -> None:
+        self.done.set()
+        self.join()
 
 
 def cmd_crawl(args) -> int:
     config, formats = _configure(args)
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
-    with psycopg.connect(conninfo_from_env()) as conn:
+    conninfo = conninfo_from_env()
+    with psycopg.connect(conninfo) as conn:
         ensure_tables(conn)
         run_id = start_run(conn, root)
-        progress = _Progress(conn, run_id)
+        heartbeat = _Heartbeat(conninfo, run_id)
+        heartbeat.start()
         try:
             result = walk(
                 root,
                 formats,
                 exclude=config.exclude,
                 per_path_ignores=config.per_path_ignores,
-                progress=progress,
+                progress=heartbeat,
             )
             warnings = _report(result)
             changed = store(conn, result)
         except BaseException as e:  # Ctrl-C too: the run must not look running
-            conn.rollback()
-            end_run(
-                conn,
-                run_id,
-                "failed",
-                directories=progress.directories,
-                files=progress.files,
-                error=str(e) or type(e).__name__,
-            )
+            heartbeat.stop()
+            try:
+                conn.rollback()
+                end_run(
+                    conn,
+                    run_id,
+                    "failed",
+                    directories=heartbeat.directories,
+                    files=heartbeat.files,
+                    error=str(e) or type(e).__name__,
+                )
+            except (
+                psycopg.Error
+            ) as db_error:  # keep the original error; the run shows as stale
+                log.error("cannot record the failed run: %s", db_error)
             if isinstance(e, OSError):
                 log.error("cannot read %s: %s", e.filename or root, e.strerror)
                 return 2
             raise
+        heartbeat.stop()
         end_run(
             conn,
             run_id,
             "finished",
-            directories=progress.directories,
-            files=progress.files,
+            directories=heartbeat.directories,
+            files=heartbeat.files,
             datasets=len(result.datasets),
             warnings=warnings,
             records_changed=changed,
@@ -174,45 +197,26 @@ def _when(t: datetime) -> str:
     return t.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _state(run, now: datetime) -> str:
-    """finished, failed, running or stale (D3)."""
-    _, _, _, updated, finished, outcome, *_ = run
-    if finished is not None:
-        return outcome
-    if (now - updated).total_seconds() <= 2 * PROGRESS_INTERVAL:
-        return "running"
-    return "stale"
+def _state(run: Run) -> str:
+    """finished, failed, running or stale (D3), by the database's clock."""
+    if run.finished_at is not None:
+        return run.outcome
+    return "running" if run.age.total_seconds() <= 2 * PROGRESS_INTERVAL else "stale"
 
 
-def _run_line(run, now: datetime) -> str:
+def _run_line(run: Run) -> str:
     """Start, state, end or last update, counts, root; the error of a failed run last."""
-    (
-        _,
-        root,
-        started,
-        updated,
-        finished,
-        _,
-        dirs,
-        files,
-        datasets,
-        warnings,
-        changed,
-        error,
-    ) = run
-    state = _state(run, now)
+    state = _state(run)
     if state in ("running", "stale"):
-        when = f"updated {_when(updated)}"
-        counts = f"{dirs} directories, {files} files so far"
+        when = f"updated {_when(run.updated_at)}"
+        counts = f"{run.directories} directories, {run.files} files so far"
     else:
-        when = _when(finished)
-        counts = f"{dirs} directories, {files} files"
+        when = _when(run.finished_at)
+        counts = f"{run.directories} directories, {run.files} files"
         if state == "finished":
-            counts += (
-                f", {datasets} datasets, {warnings} warnings, {changed} records changed"
-            )
-    line = f"{_when(started)}  {state:<8}  {when}  {counts}  {root}"
-    return f"{line}  {error}" if state == "failed" else line
+            counts += f", {run.datasets} datasets, {run.warnings} warnings, {run.records_changed} records changed"
+    line = f"{_when(run.started_at)}  {state:<8}  {when}  {counts}  {run.root}"
+    return f"{line}  {run.error}" if state == "failed" else line
 
 
 def cmd_runs(args) -> int:
@@ -224,23 +228,25 @@ def cmd_runs(args) -> int:
             print("no crawl has run")
             return 0
         if not args.follow:
-            now = datetime.now(UTC)
             for run in runs:
-                print(_run_line(run, now))
+                print(_run_line(run))
             return 0
         run = runs[0]
-        if _state(run, datetime.now(UTC)) != "running":
+        if _state(run) != "running":
             log.info("no crawl is running; the latest run:")
-        last = None
+        shown = None
         while True:
-            state = _state(run, datetime.now(UTC))
-            if run != last:
-                print(_run_line(run, datetime.now(UTC)), flush=True)
-                last = run
+            state = _state(run)
+            if (
+                run.updated_at,
+                state,
+            ) != shown:  # a new update, or the run ended or turned stale
+                print(_run_line(run), flush=True)
+                shown = (run.updated_at, state)
             if state != "running":
                 return 1 if state == "stale" else 0
             time.sleep(FOLLOW_POLL)
-            run = get_run(conn, run[0])
+            run = get_run(conn, run.run_id)
 
 
 def cmd_serve(args) -> int:

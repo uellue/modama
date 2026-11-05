@@ -93,6 +93,8 @@ def latest_event(
         SELECT {_RUN}, e.datestamp, e.is_deleted, e.error_message
         FROM harvest_events e JOIN harvest_runs r ON r.id = e.harvest_run_id
         WHERE e.endpoint_id = %s AND e.record_identifier = %s
+            -- events of failed or open runs are not transformed; the next run harvests their window again
+            AND r.status = 'closed'
         ORDER BY r.started_at DESC, e.datestamp DESC LIMIT 1
         """,
         (endpoint_id, local),
@@ -151,18 +153,25 @@ def search(search_api: str, query: str) -> list[str]:
     return [hit["_source"]["url"] for hit in result["hits"]]
 
 
-def index_runs(
-    airflow: str, user: str, password: str, limit: int = 100
-) -> list[IndexRun]:
-    """The newest runs of the indexing DAG first, each with the harvest run it indexed."""
+def index_runs(airflow: str, user: str, password: str) -> list[IndexRun]:
+    """All runs of the indexing DAG, newest first, each with the harvest run it indexed.
+
+    All, page by page: T needs every closed harvest's indexing run, and the
+    API cannot filter by conf.
+    """
     token = get_json(
         f"{airflow}/auth/token", "Airflow", {"username": user, "password": password}
     )["access_token"]
-    runs = get_json(
-        f"{airflow}/api/v2/dags/{INDEX_DAG}/dagRuns?order_by=-start_date&limit={limit}",
-        "Airflow",
-        headers={"Authorization": f"Bearer {token}"},
-    )["dag_runs"]
+    runs, page = [], 100
+    while True:
+        batch = get_json(
+            f"{airflow}/api/v2/dags/{INDEX_DAG}/dagRuns?order_by=-start_date&limit={page}&offset={len(runs)}",
+            "Airflow",
+            headers={"Authorization": f"Bearer {token}"},
+        )["dag_runs"]
+        runs += batch
+        if len(batch) < page:
+            break
     return [
         IndexRun(
             r["state"],

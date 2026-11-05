@@ -123,8 +123,12 @@ def trace(path):
 
 
 def assert_consistent(path):
-    _, first = trace(path)
+    """Published by the crawler, and no stage after it diverges (a path in no stage would count as consistent)."""
+    stages, first = trace(path)
     assert first is None, f"{path}: first diverging stage {first.name}: {first}"
+    assert stages["crawler"].state == "ok", (
+        f"{path}: not published: {stages['crawler']}"
+    )
 
 
 def freshness():
@@ -374,4 +378,4 @@ def test_a_failed_harvest(faults):
             )
     t, _, lines = freshness()
     assert lines[1].split()[:2] == ["harvest", "failed"], lines
-    assert t == t_before
+    assert t is not None and t == t_before

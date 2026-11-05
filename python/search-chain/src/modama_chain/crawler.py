@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 
 import psycopg
@@ -58,6 +58,7 @@ class Run:
     datasets: int | None
     records_changed: int | None
     error: str | None
+    age: timedelta  # since the last update, by the database's clock
 
 
 def keys(conn: psycopg.Connection) -> Keys | None:
@@ -96,17 +97,16 @@ def record(conn: psycopg.Connection, identifier: str) -> Record | None:
     return Record(*row) if row else None
 
 
-def runs(conn: psycopg.Connection, limit: int = 100) -> list[Run]:
-    """The newest crawl runs first; none if the crawler predates crawl_runs."""
+def runs(conn: psycopg.Connection) -> list[Run]:
+    """All crawl runs, newest first; none if the crawler predates crawl_runs."""
     exists = conn.execute("SELECT to_regclass('crawl_runs')").fetchone()[0]
     if exists is None:
         return []
     rows = conn.execute(
         """
         SELECT started_at, updated_at, finished_at, outcome, directories, files,
-            datasets, records_changed, error
-        FROM crawl_runs ORDER BY started_at DESC, run_id DESC LIMIT %s
-        """,
-        (limit,),
+            datasets, records_changed, error, now() - updated_at
+        FROM crawl_runs ORDER BY started_at DESC, run_id DESC
+        """
     ).fetchall()
     return [Run(*row) for row in rows]
