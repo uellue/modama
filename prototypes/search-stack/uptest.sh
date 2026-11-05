@@ -5,5 +5,7 @@
 # images and downloads the embedding model, which takes a while.
 set -euo pipefail
 cd "$(dirname "$0")"
+# Like deploy/.env: the secrets directory; the test deployment's throwaway values unless set
+[ -e .env ] || echo "MODAMA_SECRETS_DIR=./testconf/secrets" > .env
 docker compose up -d --wait --wait-timeout "${UPTEST_TIMEOUT:-900}" "$@"
 echo "search stack is up; run ./runtest.sh to check it"

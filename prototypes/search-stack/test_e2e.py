@@ -1,6 +1,7 @@
 """End to end: crawl a fixture tree, harvest it through the warehouse's Airflow DAG, find it by search.
 
-Runs inside the crawler container of compose.yml (./e2e.sh test), after ./e2e.sh up and reset.
+Runs inside the crawler container of the search stack (./runtest.sh e2e), on a fresh stack:
+./downtest.sh --reset && ./uptest.sh first.
 Assertions trace items with the chain tool (python/search-chain), so that a
 failure names the first stage that diverged; the fault scenarios at the end
 check that the trace finds what it is meant to find.
@@ -58,20 +59,27 @@ def http(url, data=None, method=None, headers=None):
         return json.load(response)
 
 
-def airflow(path, data=None, method=None):
-    """Airflow's API with the crawler's account (role User), which the test deployment gives this container."""
-    if "t" not in TOKEN:
-        TOKEN["t"] = http(
-            AIRFLOW + "/auth/token",
-            {
-                "username": os.environ["MODAMA_CRAWLER_AIRFLOW_USER"],
-                "password": os.environ["MODAMA_CRAWLER_AIRFLOW_PASSWORD"],
-            },
-        )["access_token"]
-    return http(AIRFLOW + path, data, method, {"Authorization": f"Bearer {TOKEN['t']}"})
-
-
+ACCOUNTS = {
+    # starts harvests: role harvest-trigger, which the test deployment gives this container
+    "crawler": ("MODAMA_CRAWLER_AIRFLOW_USER", "MODAMA_CRAWLER_AIRFLOW_PASSWORD"),
+    # reads runs and their tasks: modama-chain's Viewer account
+    "chain": ("MODAMA_CHAIN_AIRFLOW_USER", "MODAMA_CHAIN_AIRFLOW_PASSWORD"),
+}
 TOKEN = {}
+
+
+def airflow(path, data=None, method=None):
+    """Airflow's API: writes with the crawler's account, reads with modama-chain's."""
+    account = "crawler" if data is not None else "chain"
+    if account not in TOKEN:
+        user, password = ACCOUNTS[account]
+        TOKEN[account] = http(
+            AIRFLOW + "/auth/token",
+            {"username": os.environ[user], "password": os.environ[password]},
+        )["access_token"]
+    return http(
+        AIRFLOW + path, data, method, {"Authorization": f"Bearer {TOKEN[account]}"}
+    )
 
 
 def wait_for(run_id, check=True):
@@ -164,9 +172,17 @@ def crawler_db():
     return psycopg.connect(host="crawler-db", dbname="modama_crawler", user="postgres")
 
 
+TREE_CRAWL = {}  # the start of the test tree's first crawl, set by the tree fixture
+
+
 def first_crawl_start():
+    """Not the earliest run: the timer crawls the empty tree when the stack starts."""
+    return TREE_CRAWL["started_at"]
+
+
+def latest_crawl_start():
     with crawler_db() as conn:
-        return conn.execute("SELECT min(started_at) FROM crawl_runs").fetchone()[0]
+        return conn.execute("SELECT max(started_at) FROM crawl_runs").fetchone()[0]
 
 
 def warehouse_db():
@@ -218,6 +234,7 @@ def tree():
     (DATA / "notes" / "readme.txt").write_text("Plain notes\n")
     (DATA / "notes" / "sample-list.csv").write_text("id,name\n1,a\n")
     crawl()
+    TREE_CRAWL["started_at"] = latest_crawl_start()
     expected = oracle()
     assert len(expected) >= 10, expected
     return expected
@@ -237,12 +254,15 @@ def test_the_crawl_started_the_harvest_and_index(tree):
     n = len(tree)
     with warehouse_db() as conn:
         runs = harvest_runs(conn)
-        # records_harvested is never filled in upstream, so the events are what counts
-        assert [(status, from_date) for _, status, from_date in runs] == [
-            ("closed", None)
-        ], runs
-        # first: an empty harvest is its own failure, not "search found nothing"
-        assert event_count(conn, runs[0][0]) == (n, 0)
+        # The timer crawled the empty tree when the stack started, and its harvest may
+        # have run before the tree was written or after (then it took the tree, and the
+        # tree crawl's own harvest found nothing new): count the events of all runs.
+        assert all(status == "closed" for _, status, _ in runs), runs
+        # records_harvested is never filled in upstream, so the events are what counts;
+        # first: an empty harvest is its own failure, not "search found nothing"; more
+        # than n would be a record harvested twice
+        counts = [event_count(conn, run_id) for run_id, _, _ in runs]
+        assert (sum(c for c, _ in counts), sum(e for _, e in counts)) == (n, 0), counts
     http(f"{OPENSEARCH}/{INDEX}/_refresh", method="POST")
     assert opensearch_count() == n
     # the counts are the summary; the traces name the stage of each item that diverged
@@ -299,11 +319,14 @@ def test_incremental_harvest_brings_only_the_new_file(tree):
     t, _, lines = freshness()
     assert t == first_crawl_start()
     assert "latest crawl not harvested yet" in lines[1], lines
+    with warehouse_db() as conn:
+        before = len(harvest_runs(conn))
     trigger_and_wait([OAI_URL])
     with warehouse_db() as conn:
         runs = harvest_runs(conn)
-        assert [status for _, status, _ in runs] == ["closed", "closed"], runs
-        second, _, from_date = runs[1]
+        assert len(runs) == before + 1, runs
+        assert all(status == "closed" for _, status, _ in runs), runs
+        second, _, from_date = runs[-1]
         assert from_date is not None, "second harvest was not incremental"
         assert event_count(conn, second) == (1, 0)
     http(f"{OPENSEARCH}/{INDEX}/_refresh", method="POST")

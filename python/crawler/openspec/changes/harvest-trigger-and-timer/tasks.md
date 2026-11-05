@@ -15,4 +15,5 @@ Written after the implementation; each task is done and verified.
 
 ## 3. Review
 
-- [ ] 3.1 Review by an agent that did not write it, given the code, this spec and `design/requirements-pipeline.md`; findings verified before acting, listed in `review.md`.
+- [x] 3.1 Review by an agent that did not write it, given the code, this spec and `design/requirements-pipeline.md`; findings verified before acting, listed in `review.md`.
+- [x] 3.2 The review's fixes (`review.md`). Verify: crawler tests (timer catch-up and SIGTERM, a crawl stopped by SIGTERM, the trigger after the commit and the lock release); from `./downtest.sh --reset`, `./uptest.sh`, `./runtest.sh` (eight checks), `./runtest.sh e2e`.

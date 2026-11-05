@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,7 @@ from .store import (
     end_run,
     ensure_tables,
     get_run,
+    last_finished,
     progress_run,
     recent_runs,
     start_run,
@@ -136,7 +138,16 @@ class _Heartbeat(threading.Thread):
         self.join()
 
 
+class Terminated(Exception):
+    """SIGTERM, as an exception, so that the crawl records its run as failed (docker stop)."""
+
+
+def _terminate(signum, frame):
+    raise Terminated("terminated (SIGTERM)")
+
+
 def cmd_crawl(args) -> int:
+    signal.signal(signal.SIGTERM, _terminate)
     config, formats = _configure(args)
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     conninfo = conninfo_from_env()
@@ -165,18 +176,23 @@ def cmd_crawl(args) -> int:
             )
             warnings = _report(result)
             changed = store(conn, result)
-        except BaseException as e:  # Ctrl-C too: the run must not look running
+        except (
+            BaseException
+        ) as e:  # Ctrl-C and SIGTERM too: the run must not look running
             heartbeat.stop()
+            # A signal may have interrupted a query: closing the connection makes the server
+            # roll back the store and release the crawl lock; the failure goes in on a new one
+            conn.close()
             try:
-                conn.rollback()
-                end_run(
-                    conn,
-                    run_id,
-                    "failed",
-                    directories=heartbeat.directories,
-                    files=heartbeat.files,
-                    error=str(e) or type(e).__name__,
-                )
+                with psycopg.connect(conninfo) as other:
+                    end_run(
+                        other,
+                        run_id,
+                        "failed",
+                        directories=heartbeat.directories,
+                        files=heartbeat.files,
+                        error=str(e) or type(e).__name__,
+                    )
             except (
                 psycopg.Error
             ) as db_error:  # keep the original error; the run shows as stale
@@ -234,8 +250,19 @@ def next_run(now: datetime, at: str) -> datetime:
     return run if run > now else run + timedelta(days=1)
 
 
+CATCH_UP = timedelta(days=1)
+
+
+def overdue(last_finished: datetime | None, now: datetime) -> bool:
+    """Whether the timer should crawl at once: no finished crawl, or none within a day (a crawl killed by a restart,
+    a stack that was down at the time of day)."""
+    return last_finished is None or now - last_finished > CATCH_UP
+
+
 def cmd_timer(args) -> int:
-    """Crawl every day at --at (UTC), each crawl a process of its own; runs until stopped."""
+    """Crawl every day at --at (UTC), each crawl a process of its own, and at once if the last finished crawl is more
+    than a day old; runs until stopped. SIGTERM (docker stop) is passed on to a running crawl, which records itself
+    as failed, and ends the timer."""
     try:
         next_run(datetime.now(UTC), args.at)
     except ValueError:
@@ -243,12 +270,33 @@ def cmd_timer(args) -> int:
         return 2
     config = ["--config", str(args.config)] if args.config else []
     command = [sys.executable, "-m", "modama_crawler", *config, "crawl"]
+    child: list[subprocess.Popen] = []
+
+    def stop(signum, frame):
+        for process in child:
+            process.terminate()
+            process.wait()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    with psycopg.connect(conninfo_from_env()) as conn:
+        ensure_tables(conn)
+        run_now = overdue(last_finished(conn), datetime.now(UTC))
     while True:
-        when = next_run(datetime.now(UTC), args.at)
-        log.info("next crawl at %s", _when(when))
-        time.sleep(max(0.0, (when - datetime.now(UTC)).total_seconds()))
-        status = subprocess.run(command, check=False).returncode
-        (log.info if status == 0 else log.error)("crawl ended with status %d", status)
+        if not run_now:
+            when = next_run(datetime.now(UTC), args.at)
+            log.info("next crawl at %s", _when(when))
+            time.sleep(max(0.0, (when - datetime.now(UTC)).total_seconds()))
+        else:
+            log.info("no finished crawl within a day: crawling now")
+        run_now = False
+        child[:] = [subprocess.Popen(command)]
+        status = child[0].wait()
+        child.clear()
+        if status == 0:
+            log.info("crawl ended with status 0")
+        else:
+            log.error("crawl ended with status %d", status)
 
 
 def _when(t: datetime) -> str:
@@ -491,4 +539,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except KeyboardInterrupt:
         return 130
+    except Terminated:
+        return 143
     return status

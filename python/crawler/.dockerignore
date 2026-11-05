@@ -1,0 +1,7 @@
+.env
+.claude/
+.pytest_cache/
+**/__pycache__/
+*.egg-info/
+design/
+openspec/

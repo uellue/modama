@@ -29,7 +29,7 @@ When the harvest cannot be started, the crawl's run SHALL stay finished, and `cr
 - **THEN** stderr says that the crawl finished but the harvest could not be started, with `HTTP 401`, the run is `finished`, and the exit status is 3
 
 ### Requirement: The timer crawls every day
-`modama-crawler timer --at HH:MM` SHALL run `crawl` as a process of its own every day at that time (UTC) until it is stopped, logging the next time and each crawl's exit status; a time that is not `HH:MM` SHALL end it with status 2 and an error line.
+`modama-crawler timer --at HH:MM` SHALL run `crawl` as a process of its own every day at that time (UTC) until it is stopped, logging the next time and each crawl's exit status; a time that is not `HH:MM` SHALL end it with status 2 and an error line. When it starts and the last finished crawl ended more than a day ago, or there is none, it SHALL crawl at once.
 
 #### Scenario: The next crawl
 - **WHEN** the timer is set to 02:00 and it is 01:00, 02:00 or 23:30
@@ -38,3 +38,19 @@ When the harvest cannot be started, the crawl's run SHALL stay finished, and `cr
 #### Scenario: A time that is not HH:MM
 - **WHEN** `modama-crawler timer --at 2am` is run
 - **THEN** it exits with status 2 and `--at takes HH:MM`
+
+#### Scenario: An overdue timer crawls at once
+- **WHEN** the timer starts with no finished crawl, and its time of day is hours away
+- **THEN** it crawls at once, then waits for the time of day
+
+### Requirement: A stopped crawl records its run as failed
+On SIGTERM, a crawl SHALL record its run as `failed` with the error `terminated (SIGTERM)` and exit with status 143, without a traceback, and without a change to the records; the timer SHALL pass SIGTERM on to its running crawl, wait for it, and end with status 0.
+
+#### Scenario: A crawl stopped while it writes
+- **WHEN** a crawl waits in its store for a request in flight and gets SIGTERM
+- **THEN** its run is `failed` with `terminated (SIGTERM)`, the exit status is 143, and no record was written
+
+#### Scenario: The timer is stopped
+- **WHEN** the timer gets SIGTERM while it waits for the time of day
+- **THEN** it ends with status 0 and without a traceback
+

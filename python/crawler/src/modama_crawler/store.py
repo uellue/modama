@@ -204,6 +204,13 @@ def get_run(conn: psycopg.Connection, run_id: int) -> Run:
         return cur.execute(f"{_RUN_SELECT} WHERE run_id = %s", (run_id,)).fetchone()
 
 
+def last_finished(conn: psycopg.Connection) -> datetime | None:
+    """When the newest finished crawl ended."""
+    return conn.execute(
+        "SELECT max(finished_at) FROM crawl_runs WHERE outcome = 'finished'"
+    ).fetchone()[0]
+
+
 def store(conn: psycopg.Connection, result: Result) -> int:
     """Replace the stored datasets with the result and bring the records up to date.
 

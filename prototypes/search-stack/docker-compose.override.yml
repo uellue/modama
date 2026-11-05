@@ -4,6 +4,10 @@
 # warehouse (with the admin credentials of testconf/, mounted with this folder).
 services:
   crawler:
+    # the e2e test crawls here and waits for the harvests it starts
+    env_file:
+      - ${MODAMA_SECRETS_DIR:?see README.md}/chain.env
+      - ${MODAMA_SECRETS_DIR:?see README.md}/crawler-airflow.env
     volumes:
       - testdata:/data
       - ./:/e2e:ro

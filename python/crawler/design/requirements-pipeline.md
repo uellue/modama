@@ -30,7 +30,7 @@ Found in the warehouse (`v1.10.0`):
 - **Warehouse API** (`/health`, `/config`, `GET /harvest_run` for the latest run per endpoint).
 - **`analytics/create_report.py`**: a Markdown report from SQL on the warehouse database (`summary`, `count_records_per_endpoint`, `duplicates`, `errors`). Warehouse side only; knows nothing of the crawler or the file tree.
 - **`HARVEST_SCHEDULE`** (cron, in `.env`) for the `harvest_and_index` DAG; without it the DAG runs only when triggered.
-- **Our e2e test** (`prototypes/crawler-e2e/`): checks counts along the chain once, for a test tree; not a status view.
+- **Our e2e test** (`prototypes/crawler-e2e/`; since 2026-11-05 `prototypes/search-stack/`, with traces): checks counts along the chain once, for a test tree; not a status view.
 - **The deployment's shell scripts** (`deploy/upprod.sh`, `downprod.sh`, `pullprod.sh`, …): the established pattern for admins, see 1.4.
 
 Assessment (@weber): these tools were all new to him. In the end they helped; the work was finding out where to look and what for. So the existing tools stay and are made findable and accessible, not replaced.
@@ -85,7 +85,7 @@ Write access for the purge is acceptable (@weber), as long as nothing can damage
 Upstream quirks we depend on: the identifier cut after the last `:`, the URL as OpenSearch `_id`, `endpoint::path` record ids, the due rule `until_date + harvest_schedule`, metadata-warehouse#158 (walk-throughs A to C).
 ### 2.4 Operating conditions   [partly answered]
 
-- **Scheduling** (decision log, 2026-11-04): a timer of our own runs the crawl; after a crawl that changed something, the crawler triggers the harvest DAG for its endpoint; a watcher (inotify) later. Upstream's cron (`HARVEST_SCHEDULE`) can stay as a fallback; its per-endpoint interval must then be clearly shorter than the cron period (walk-through A).
+- **Scheduling** (decision log, 2026-11-04): a timer of our own runs the crawl; after every finished crawl (refined 2026-11-05), the crawler triggers the harvest DAG for its endpoint; a watcher (inotify) later. Upstream's cron (`HARVEST_SCHEDULE`) could stay as a fallback; its per-endpoint interval must then be clearly shorter than the cron period (walk-through A), and the crawler's store lock makes its harvests come back later rather than race a crawl. The search stack leaves it off.
 - **Airflow** stays inside the compose network. Two accounts, credentials generated at setup: a Viewer for status and trace, and one that may trigger DAGs, for the crawler.
 ### 2.5 Availability and reliability (consistency between file tree, OAI-PMH and search)   [partly answered]
 

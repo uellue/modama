@@ -6,6 +6,7 @@
 #                         Airflow, test data. The next ./uptest.sh starts fresh.
 set -euo pipefail
 cd "$(dirname "$0")"
+[ -e .env ] || echo "MODAMA_SECRETS_DIR=./testconf/secrets" > .env  # as uptest.sh
 case "${1:-}" in
     "") docker compose down ;;
     --reset) docker compose down --volumes ;;

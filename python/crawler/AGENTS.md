@@ -25,7 +25,7 @@ From the review of 2026-11-03 (`design/review.md`):
 - Don't copy the proof-of-concept code's style or structure, and don't preserve it for its own sake.
 - Report evidence, not claims: the command and its output, the screenshot, the diff of a re-recorded expectation.
 - Changes to behaviour update the spec scenario, the test, `README.md` or this file where they describe it, and the backlog, in the same change.
-- Report "clean" or "passing" only from the command that CI or the commit hook runs (`uvx ruff …` from the repo root, `pre-commit run`, the e2e stack's `./e2e.sh test`), not from a similar command run elsewhere.
+- Report "clean" or "passing" only from the command that CI or the commit hook runs (`uvx ruff …` from the repo root, `pre-commit run`, the search stack's `./runtest.sh e2e` in `/prototypes/search-stack/`), not from a similar command run elsewhere.
 - A change of more than a few hundred lines gets a review by an agent that did not write it, given the code and the requirements, not the author's conclusions; findings are verified before they are acted on (`design/review.md` is the pattern).
 - A proposal states which behaviour towards the user changes, or that none does (also in `openspec/config.yaml`).
 
