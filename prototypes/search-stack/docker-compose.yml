@@ -1,0 +1,418 @@
+# The modama search stack: crawler (OAI-PMH) -> EOSC harvester and metadata warehouse
+# (Airflow) -> OpenSearch -> search API. Our own composition of the upstream images,
+# shaped like deploy/ so that it can move there: secrets as files from
+# MODAMA_SECRETS_DIR (default: the throwaway test values in testconf/secrets/), each
+# service with only the files it needs; one-shot init services instead of host scripts.
+#
+# Upstream: ../EOSC-Data-Commons/metadata-warehouse at v1.10.0, whose docker-compose.yml
+# this follows (re-check on every upgrade). Left out: pgadmin, tool-registry,
+# opensearch-dashboards, frontend, coordinator, and the toolmeta DAG bundle.
+#
+# Test deployment: docker-compose.override.yml (ports on 127.0.0.1, test data, the e2e
+# test), ./uptest.sh, ./runtest.sh, ./downtest.sh [--reset]. See README.md.
+name: search-stack
+
+x-warehouse-build: &warehouse-build
+  context: ../EOSC-Data-Commons/metadata-warehouse
+
+x-airflow-common: &airflow-common
+  build:
+    <<: *warehouse-build
+    dockerfile: ./docker/airflow/Dockerfile
+    args:
+      # metadata-crawlers (the harvester) installed in the image; upstream v1.10.0's pin
+      HARVESTER_REF: 9c120f5dc207cf46421211357cfea2419ddb8e8a
+  image: search-stack-airflow:3.3.2
+  networks: [search]
+  env_file:
+    - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/airflow.env
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    # every DAG has schedule=None (HARVEST_SCHEDULE empty): they run when triggered,
+    # by the crawler after a crawl that changed records
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+    AIRFLOW__CELERY__WORKER_CONCURRENCY: "4"
+    AIRFLOW__CORE__MAX_MAP_LENGTH: "10000"
+    PYTHONPATH: /opt/airflow/project/src:/opt/airflow/project
+    INDEX_NAME: test_datacite
+    CELERY_BATCH_SIZE: "250"
+    # no schedule of upstream's own: the crawler triggers the harvest after its commit
+    # (decision 2026-11-04), so a harvest never races a crawl's store (crawl spec)
+    HARVEST_SCHEDULE: ""
+    AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST: >-
+      [{"name": "dags-folder", "classpath": "airflow.dag_processing.bundles.local.LocalDagBundle", "kwargs": {}}]
+  volumes:
+    - airflow-logs:/opt/airflow/logs
+  depends_on: &airflow-depends-on
+    broker:
+      condition: service_healthy
+    airflow-postgres:
+      condition: service_healthy
+
+# What the DAG tasks need from the warehouse; the database password comes from warehouse-db.env
+x-warehouse-env: &warehouse-env
+  POSTGRES_ADDRESS_DOCKER: postgres
+  POSTGRES_PORT_DOCKER: "5432"
+  OPENSEARCH_ADDRESS_DOCKER: opensearch
+  OPENSEARCH_PORT_DOCKER: "9200"
+  WAREHOUSE_API_URL: http://transform:80
+
+services:
+  # ------------------------------------------------------------------ crawler
+  crawler:
+    build:
+      context: ../../python/crawler
+      dockerfile: ../../prototypes/search-stack/crawler.Dockerfile
+      additional_contexts:
+        chain: ../../python/search-chain
+    image: search-stack-crawler
+    command: modama-crawler serve
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/chain.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/crawler-airflow.env
+    environment: &crawler-env
+      OAI_BIND: 0.0.0.0
+      OAI_BASE_URL: http://crawler:7654/oai
+      MODAMA_DATA_ROOT: /data
+      MODAMA_CRAWLER_DB: modama_crawler
+      POSTGRES_ADMIN: postgres
+      POSTGRES_PASSWORD: ""
+      POSTGRES_ADDRESS: crawler-db
+      POSTGRES_PORT: "5432"
+      # after a crawl that changed records, trigger the harvest of OAI_BASE_URL
+      MODAMA_CRAWLER_AIRFLOW_URL: http://airflow-api-server:8080
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7654/oai?verb=Identify', timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    depends_on:
+      crawler-db:
+        condition: service_healthy
+    networks: [search]
+
+  # Runs the crawl every day at CRAWL_AT (UTC), outside business hours at first (requirements 2.11)
+  crawl-timer:
+    image: search-stack-crawler
+    pull_policy: never  # built by another service
+    command: modama-crawler timer --at 02:00
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/crawler-airflow.env
+    environment: *crawler-env
+    depends_on:
+      crawler:
+        condition: service_healthy
+    networks: [search]
+
+  crawler-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: modama_crawler
+      # only reachable inside the stack's network
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - crawler-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d modama_crawler"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [search]
+
+  # ------------------------------------------------------------------ warehouse
+  postgres:
+    build:
+      <<: *warehouse-build
+      dockerfile: ./docker/postgres/Dockerfile
+    image: search-stack-postgres
+    command: ["postgres", "-c", "shared_preload_libraries=pg_textsearch"]
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/warehouse-db.env
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [search]
+
+  opensearch:
+    image: opensearchproject/opensearch:3.2.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+      cluster.name: opensearch-cluster
+      # only reachable inside the stack's network: no security plugin, and no demo
+      # configuration, which would want an admin password
+      plugins.security.disabled: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+      nofile: {soft: 65536, hard: 65536}
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      retries: 30
+    networks: [search]
+
+  transform:
+    build:
+      <<: *warehouse-build
+      dockerfile: ./docker/transform/Dockerfile
+    image: search-stack-transform
+    command: ["fastapi", "run", "--host", "0.0.0.0", "app/routes.py", "--port", "80"]
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/warehouse-db.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/keys.env
+    environment:
+      <<: *warehouse-env
+      PYTHONPATH: /code/src:/code
+      EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+      EMBED_API_URL: ""
+    volumes:
+      - fastembed-transform:/root/.cache/fastembed
+    depends_on:
+      warehouse-init:
+        condition: service_completed_successfully
+    networks: [search]
+
+  # One-shot: databases, schema (alembic), index, our endpoint, the read-only role.
+  # Idempotent; uses the transform image with upstream's scripts mounted.
+  warehouse-init:
+    image: search-stack-transform
+    pull_policy: never  # built by another service
+    entrypoint: ["/bin/bash", "/init-warehouse.sh"]
+    restart: "no"
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/warehouse-db.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/chain.env
+    environment:
+      # upstream's scripts read these names
+      POSTGRES_ADDRESS_HOST: postgres
+      POSTGRES_PORT_HOST: "5432"
+      POSTGRES_ADDRESS: postgres
+      POSTGRES_PORT: "5432"
+      OPENSEARCH_ADDRESS_HOST: opensearch
+      OPENSEARCH_PORT_HOST: "9200"
+      INDEX_NAME: test_datacite
+      EMBEDDING_DIMS: "384"
+      ENDPOINT_URL: http://crawler:7654/oai
+    volumes:
+      - ./init-warehouse.sh:/init-warehouse.sh:ro
+      - ../EOSC-Data-Commons/metadata-warehouse/scripts:/warehouse/scripts:ro
+      - ../EOSC-Data-Commons/metadata-warehouse/alembic:/warehouse/alembic:ro
+      - ../EOSC-Data-Commons/metadata-warehouse/alembic.ini:/warehouse/alembic.ini:ro
+      - ../EOSC-Data-Commons/metadata-warehouse/config:/warehouse/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    networks: [search]
+
+  broker:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/broker.env
+    volumes:
+      - broker-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [search]
+
+  search-api:
+    image: ghcr.io/eosc-data-commons/data-commons-search:0.10.2
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/warehouse-db.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/keys.env
+    environment:
+      OPENSEARCH_URL: http://opensearch:9200
+      OPENSEARCH_INDEX: test_datacite
+      ZENODO_SEARCH_ENABLED: "false"
+      RATE_LIMITING_ENABLED: "false"
+      # its own database (users, conversations), created by warehouse-init (metadata-warehouse#151)
+      POSTGRES_DB: appdb
+    volumes:
+      - search-api-data:/app/data
+    depends_on:
+      warehouse-init:
+        condition: service_completed_successfully
+    networks: [search]
+
+  # ------------------------------------------------------------------ Airflow
+  airflow-postgres:
+    image: postgres:16
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/airflow-db.env
+    volumes:
+      - airflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow", "-d", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [search]
+
+  # One-shot: migrates Airflow's database, creates the admin, the crawler's account
+  # (role User: may trigger DAG runs) and modama-chain's (role Viewer). Idempotent.
+  airflow-init:
+    <<: *airflow-common
+    # root for the chown of the volumes; the image's entrypoint migrates the database and
+    # creates the admin (the _AIRFLOW_* variables) before it runs the command
+    user: "0:0"
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        mkdir -p /opt/airflow/logs /opt/airflow/cache/fastembed
+        chown -R 50000:0 /opt/airflow/logs /opt/airflow/cache/fastembed
+        for account in "crawler User $$MODAMA_CRAWLER_AIRFLOW_PASSWORD" "chain Viewer $$MODAMA_CHAIN_AIRFLOW_PASSWORD"; do
+          set -- $$account
+          airflow users delete -u "$$1" > /dev/null 2>&1 || true
+          airflow users create -u "$$1" -r "$$2" -p "$$3" -f "$$1" -l modama -e "$$1@localhost" > /dev/null
+          echo "Airflow account $$1 ($$2)"
+        done
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/airflow.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/airflow-admin.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/crawler-airflow.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/chain.env
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+    volumes:
+      - airflow-logs:/opt/airflow/logs
+      - fastembed-airflow:/opt/airflow/cache/fastembed
+    restart: "no"
+    depends_on: *airflow-depends-on
+
+  airflow-api-server:
+    <<: *airflow-common
+    command: api-server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Planning tasks and batches for the transform worker
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker --queues default
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/airflow.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/warehouse-db.env
+    environment:
+      <<: [*airflow-common-env, *warehouse-env]
+      DUMB_INIT_SETSID: "0"
+    healthcheck: &worker-health
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-api-server:
+        condition: service_healthy
+
+  # Transform tasks, one at a time because of the embedding model
+  airflow-worker-transform:
+    <<: *airflow-common
+    command: celery worker --queues transform --concurrency 1
+    restart: unless-stopped
+    env_file:
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/airflow.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/warehouse-db.env
+      - ${MODAMA_SECRETS_DIR:-./testconf/secrets}/keys.env
+    environment:
+      <<: [*airflow-common-env, *warehouse-env]
+      DUMB_INIT_SETSID: "0"
+      EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+      EMBED_API_URL: ""
+      FASTEMBED_CACHE_DIR: /opt/airflow/cache/fastembed
+    volumes:
+      - airflow-logs:/opt/airflow/logs
+      - fastembed-airflow:/opt/airflow/cache/fastembed
+    healthcheck: *worker-health
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-api-server:
+        condition: service_healthy
+
+volumes:
+  crawler-db-data:
+  postgres-data:
+  opensearch-data:
+  broker-data:
+  search-api-data:
+  airflow-postgres-data:
+  airflow-logs:
+  fastembed-airflow:
+  fastembed-transform:
+
+networks:
+  search:

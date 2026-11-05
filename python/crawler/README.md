@@ -46,15 +46,18 @@ modama-crawler records --verbose PATH   # the same, with why each dataset was re
 
 `records` is the quickest way to see what the crawler makes of a directory. Use it on real data to check a format, without setting up a database or server.
 
-To run the full chain (crawl, OAI-PMH server, harvester, warehouse and search), use the end-to-end stack in `/prototypes/crawler-e2e/`. Its README explains it, including an SSH tunnel for opening the search front end from your laptop.
+To run the full chain (crawl, OAI-PMH server, harvester, warehouse and search), use the search stack in `/prototypes/search-stack/`, our own composition of the warehouse's images and the crawler. Its README explains it, including an SSH tunnel for opening the search API and Airflow from your laptop.
 
 ## Running the crawler
 
 ```bash
 modama-crawler crawl [--root PATH]      # crawl MODAMA_DATA_ROOT (or PATH) into the database
 modama-crawler runs [--follow]          # the last ten crawls, newest first; --follow: the running one until it ends
+modama-crawler timer --at 02:00         # crawl every day at 02:00 UTC, each crawl a process of its own, until stopped
 modama-crawler serve                    # OAI-PMH on port 7654
 ```
+
+With `MODAMA_CRAWLER_AIRFLOW_URL` set (and `MODAMA_CRAWLER_AIRFLOW_USER`, `MODAMA_CRAWLER_AIRFLOW_PASSWORD`, an Airflow account allowed to start DAG runs), every finished crawl starts the EOSC warehouse's harvest of its own endpoint (`OAI_BASE_URL`), after its records are committed; also an unchanged crawl, so that a harvest covers it and the search's freshness time moves on. If the harvest cannot be started, the crawl still counts as finished, and the command exits with status 3. `/prototypes/search-stack/` runs both, the timer and the trigger.
 
 Every crawl is recorded as a run in the database before it starts walking, so that a crawl shows up while it runs. While walking it logs `N directories, M files so far` on stderr and updates its run once a minute. `runs` prints one line per run: start, state, end (or the last update), counts and root; a failed run ends with its error. Only one crawl runs at a time: a second one exits with status 1 and `another crawl is running on this database`; a crashed crawler leaves no lock behind. While a crawl writes its records, which is the last step and takes seconds to minutes, `serve` answers with HTTP 503 and `Retry-After: 60`, so that a harvester comes back after the commit instead of missing the records. The states are `finished`, `failed`, `running`, and `stale` for a run without an end that has not been updated for two minutes (killed, or the machine went down). `runs --follow` exits with status 1 if the run it follows turns stale.
 

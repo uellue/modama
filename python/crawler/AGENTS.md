@@ -11,7 +11,7 @@
 | Behaviour contract, one directory per capability | `openspec/specs/` |
 | What is next, what is deferred | `BACKLOG.md` |
 | How to write a format collection | `src/modama_crawler/formats/TEMPLATE.md` |
-| End-to-end test with the EOSC harvester and warehouse | `/prototypes/crawler-e2e/README.md` |
+| The search stack (crawler, harvester, warehouse, search) and its end-to-end test | `/prototypes/search-stack/README.md` |
 | Tracing an item through the chain; the crawler tables it reads as an interface | `/python/search-chain/README.md` |
 | Lessons on working with agents, with the reasons behind the rules below | `/docs/working-with-claude.md` |
 
@@ -37,7 +37,7 @@ The `/opsx:*` slash commands and their skills live in `.claude/` here and are re
 
 ```
 src/modama_crawler/
-├── cli.py          # crawl, runs, serve, records; the only place that reads the environment
+├── cli.py          # crawl, runs, timer, serve, records; the only place that reads the environment
 ├── walk.py         # post-order walk with pre-order collapse check -> Result
 ├── formats/        # Entry, Directory, Dataset, Result, Format, Collection; the runner (run_pre, run_post)
 │   ├── TEMPLATE.md # how to write a collection
@@ -48,6 +48,7 @@ src/modama_crawler/
 ├── mime.py         # MIME type of one file per the shared-mime-info checking order; ties -> common ancestor
 ├── mimedb.py       # builds the per-deployment MIME database from the enabled collections only
 ├── selection.py    # entry-point discovery, ruff-style select/ignore, per-path ignores, crawl excludes
+├── harvest.py      # starts the warehouse's harvest of this endpoint after a crawl (Airflow API)
 ├── records.py      # OAI identifier, browse URL, Dublin Core mapping of a Dataset
 ├── render.py       # oai_dc XML, shared by the server and the records command
 ├── store.py        # PostgreSQL schema (datasets, members, records, crawl_runs), storing a Result, recording runs, the crawl and store locks

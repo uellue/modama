@@ -11,8 +11,8 @@ modama-chain trace /notes/readme.txt   # one line per stage; exit 0 consistent, 
 modama-chain status                    # last crawl, harvest and indexing run, and the freshness time T
 ```
 
-Written for the e2e stack (`/prototypes/crawler-e2e/`), where it is installed in the crawler container:
-`docker compose -f compose.yml exec crawler modama-chain trace /notes/readme.txt`.
+Written for the search stack (`/prototypes/search-stack/`), where it is installed in the crawler container:
+`docker compose exec crawler modama-chain trace /notes/readme.txt`.
 
 ## Output
 
@@ -48,4 +48,4 @@ From upstream (EOSC metadata-warehouse v1.10.0, data-commons-search 0.10.2), all
 
 ## Tests
 
-`pytest` here: the rules (flags, rank, T, keys) with canned inputs. Against the real stack: `/prototypes/crawler-e2e/e2e.sh test`.
+`pytest` here: the rules (flags, rank, T, keys) with canned inputs. Against the real stack: `/prototypes/search-stack/runtest.sh e2e`.

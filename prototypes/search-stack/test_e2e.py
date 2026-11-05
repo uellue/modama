@@ -8,6 +8,7 @@ check that the trace finds what it is meant to find.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -26,6 +27,7 @@ from modama_crawler.formats.empad import cheat
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
 
 DATA = Path("/data")
+E2E = Path("/e2e")  # this folder, mounted by docker-compose.override.yml
 OAI_URL = "http://crawler:7654/oai"
 AIRFLOW = "http://airflow-api-server:8080"
 OPENSEARCH = "http://opensearch:9200"
@@ -57,24 +59,24 @@ def http(url, data=None, method=None, headers=None):
 
 
 def airflow(path, data=None, method=None):
+    """Airflow's API with the crawler's account (role User), which the test deployment gives this container."""
+    if "t" not in TOKEN:
+        TOKEN["t"] = http(
+            AIRFLOW + "/auth/token",
+            {
+                "username": os.environ["MODAMA_CRAWLER_AIRFLOW_USER"],
+                "password": os.environ["MODAMA_CRAWLER_AIRFLOW_PASSWORD"],
+            },
+        )["access_token"]
     return http(AIRFLOW + path, data, method, {"Authorization": f"Bearer {TOKEN['t']}"})
 
 
 TOKEN = {}
 
 
-def trigger_and_wait(urls, check=True):
-    TOKEN["t"] = http(
-        AIRFLOW + "/auth/token", {"username": "airflow", "password": "airflow"}
-    )["access_token"]
-    # DAGs are created paused; the outer one triggers the transform DAG, which has to run too
-    for dag in (DAG, "warehouse_transform_index"):
-        airflow(f"/api/v2/dags/{dag}", {"is_paused": False}, "PATCH")
-    run = airflow(
-        f"/api/v2/dags/{DAG}/dagRuns",
-        {"logical_date": None, "conf": {"harvest_urls": urls, "index_name": INDEX}},
-    )
-    run_id = urllib.parse.quote(run["dag_run_id"], safe="")
+def wait_for(run_id, check=True):
+    """Wait until the harvest DAG run ends; with check, it must succeed."""
+    run_id = urllib.parse.quote(run_id, safe="")
     deadline = time.time() + DAG_TIMEOUT
     while time.time() < deadline:
         state = airflow(f"/api/v2/dags/{DAG}/dagRuns/{run_id}")["state"]
@@ -90,8 +92,30 @@ def trigger_and_wait(urls, check=True):
         assert state == "success", f"DAG run ended in state {state!r}: {summary}"
 
 
-def crawl():
-    subprocess.run(["modama-crawler", "crawl", "--root", str(DATA)], check=True)
+def trigger_and_wait(urls, check=True):
+    """A harvest started by the test rather than by a crawl."""
+    run = airflow(
+        f"/api/v2/dags/{DAG}/dagRuns",
+        {"logical_date": None, "conf": {"harvest_urls": urls, "index_name": INDEX}},
+    )
+    wait_for(run["dag_run_id"], check)
+
+
+def crawl(trigger=True):
+    """Crawl; the crawler starts the harvest itself, which this waits for. Without trigger: crawl only."""
+    env = dict(os.environ)
+    if not trigger:
+        env.pop("MODAMA_CRAWLER_AIRFLOW_URL")
+    run = subprocess.run(
+        ["modama-crawler", "crawl", "--root", str(DATA)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if trigger:
+        (run_id,) = re.findall(r"harvest of \S+ started: (\S+)", run.stderr)
+        wait_for(run_id)
 
 
 def oracle():
@@ -146,8 +170,17 @@ def first_crawl_start():
 
 
 def warehouse_db():
+    """The warehouse as its admin, for injecting faults: the test deployment's credentials, from the mounted testconf."""
+    values = dict(
+        line.split("=", 1)
+        for line in (E2E / "testconf/secrets/warehouse-db.env").read_text().splitlines()
+        if line and not line.startswith("#")
+    )
     return psycopg.connect(
-        host="postgres", dbname="datasetdb", user="admin", password="test"
+        host="postgres",
+        dbname=values["POSTGRES_DB"],
+        user=values["POSTGRES_USER"],
+        password=values["POSTGRES_PASSWORD"],
     )
 
 
@@ -199,8 +232,8 @@ def test_crawler_serves_what_the_oracle_expects(tree):
     assert served == set(tree)
 
 
-def test_harvest_and_index(tree):
-    trigger_and_wait([OAI_URL])
+def test_the_crawl_started_the_harvest_and_index(tree):
+    # the tree fixture's crawl started the harvest and waited for it
     n = len(tree)
     with warehouse_db() as conn:
         runs = harvest_runs(conn)
@@ -259,7 +292,7 @@ def test_incremental_harvest_brings_only_the_new_file(tree):
     # datestamps have seconds granularity; the new record must be newer than the first harvest
     time.sleep(2)
     (DATA / ADDED_FILE).write_text("Added after the first harvest\n")
-    crawl()
+    crawl(trigger=False)
     expected = oracle()
     assert set(expected) - set(tree) and len(expected) == len(tree) + 1
     # a crawl that is not harvested yet: T stays at the first crawl
@@ -321,7 +354,8 @@ def faults(tree):
     time.sleep(2)
     (DATA / LATE_FILE).write_text("Arrived late\n")
     (DATA / RENAMED[0]).rename(DATA / RENAMED[1])
-    crawl()
+    # without the crawler's trigger: the fault must be in place before the harvest
+    crawl(trigger=False)
     # clock skew or the datestamp-window race: a datestamp an hour back, in whole seconds as store.py writes them
     with crawler_db() as conn:
         conn.execute(

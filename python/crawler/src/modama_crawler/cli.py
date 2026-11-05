@@ -1,15 +1,16 @@
-"""Command line: crawl, runs, serve, records. Configuration from environment variables and an optional TOML file."""
+"""Command line: crawl, runs, timer, serve, records. Configuration from environment variables and an optional TOML file."""
 
 from __future__ import annotations
 
 import argparse
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import psycopg
@@ -18,7 +19,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
-from . import mimedb, render, selection
+from . import harvest, mimedb, render, selection
 from .formats import Format
 from .records import build
 from .server import OAIError, OAIServer, parse_range
@@ -201,7 +202,53 @@ def cmd_crawl(args) -> int:
         warnings,
         changed,
     )
+    return _trigger_harvest()
+
+
+def _trigger_harvest() -> int:
+    """Start the warehouse's harvest of this endpoint, if configured; after every finished crawl, so that a harvest
+    covers it and the freshness time can move past it (decision log 2026-11-05). After the commit and the end of the
+    crawl lock, so the harvest reads every record of the crawl."""
+    airflow_url = os.environ.get("MODAMA_CRAWLER_AIRFLOW_URL")
+    if not airflow_url:
+        return 0
+    harvest_url = os.environ.get("OAI_BASE_URL", DEFAULT_BASE_URL)
+    try:
+        run_id = harvest.trigger(
+            airflow_url,
+            os.environ.get("MODAMA_CRAWLER_AIRFLOW_USER", ""),
+            os.environ.get("MODAMA_CRAWLER_AIRFLOW_PASSWORD", ""),
+            harvest_url,
+        )
+    except harvest.TriggerError as e:
+        log.error("crawl finished, but the harvest could not be started: %s", e)
+        return 3
+    log.info("harvest of %s started: %s", harvest_url, run_id)
     return 0
+
+
+def next_run(now: datetime, at: str) -> datetime:
+    """The next time of day `at` (HH:MM, in now's time zone) after now."""
+    hour, minute = (int(x) for x in at.split(":"))
+    run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return run if run > now else run + timedelta(days=1)
+
+
+def cmd_timer(args) -> int:
+    """Crawl every day at --at (UTC), each crawl a process of its own; runs until stopped."""
+    try:
+        next_run(datetime.now(UTC), args.at)
+    except ValueError:
+        log.error("--at takes HH:MM, not %r", args.at)
+        return 2
+    config = ["--config", str(args.config)] if args.config else []
+    command = [sys.executable, "-m", "modama_crawler", *config, "crawl"]
+    while True:
+        when = next_run(datetime.now(UTC), args.at)
+        log.info("next crawl at %s", _when(when))
+        time.sleep(max(0.0, (when - datetime.now(UTC)).total_seconds()))
+        status = subprocess.run(command, check=False).returncode
+        (log.info if status == 0 else log.error)("crawl ended with status %d", status)
 
 
 def _when(t: datetime) -> str:
@@ -396,6 +443,11 @@ def main(argv: list[str] | None = None) -> int:
         help="repeat the running crawl's progress until it ends",
     )
     runs.set_defaults(func=cmd_runs)
+    timer = sub.add_parser(
+        "timer", help="crawl every day at a time of day (UTC), until stopped"
+    )
+    timer.add_argument("--at", required=True, metavar="HH:MM", help="time of day, UTC")
+    timer.set_defaults(func=cmd_timer)
     serve = sub.add_parser(
         "serve",
         help="serve the OAI-PMH endpoint on port 7654 (address from OAI_BIND, default localhost)",
