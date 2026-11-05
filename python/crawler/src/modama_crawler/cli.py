@@ -1,4 +1,4 @@
-"""Command line: crawl, serve, records. Configuration from environment variables and an optional TOML file."""
+"""Command line: crawl, runs, serve, records. Configuration from environment variables and an optional TOML file."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,12 +21,26 @@ from . import mimedb, render, selection
 from .formats import Format
 from .records import build
 from .server import OAIError, OAIServer, parse_range
-from .store import ensure_tables, store
+from .store import (
+    end_run,
+    ensure_tables,
+    get_run,
+    progress_run,
+    recent_runs,
+    start_run,
+    store,
+)
 from .walk import walk
 
 log = logging.getLogger("modama_crawler")
 
 DEFAULT_BASE_URL = "http://localhost:7654/oai"
+
+# A running crawl updates its run this often; a run without an end whose last
+# update is older than twice this is shown as stale (crawl-runs spec, D3)
+PROGRESS_INTERVAL = 60.0
+RUNS_SHOWN = 10
+FOLLOW_POLL = 2.0
 
 # Removed at interpreter exit; held here because the database must outlive _configure
 _mime_directory: tempfile.TemporaryDirectory | None = None
@@ -85,16 +100,67 @@ def _report(result) -> int:
     return len(warnings)
 
 
+class _Progress:
+    """The walk's progress callback: one database update and one log line per interval at most."""
+
+    def __init__(
+        self, conn, run_id: int, interval: float | None = None, clock=time.monotonic
+    ):
+        self.conn, self.run_id, self.clock = conn, run_id, clock
+        self.interval = PROGRESS_INTERVAL if interval is None else interval
+        self.directories = self.files = 0
+        self.last = clock()
+
+    def __call__(self, directories: int, files: int) -> None:
+        self.directories, self.files = directories, files
+        now = self.clock()
+        if now - self.last >= self.interval:
+            self.last = now
+            progress_run(self.conn, self.run_id, directories, files)
+            log.info("%d directories, %d files so far", directories, files)
+
+
 def cmd_crawl(args) -> int:
     config, formats = _configure(args)
-    root = Path(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
-    result = walk(
-        root, formats, exclude=config.exclude, per_path_ignores=config.per_path_ignores
-    )
-    warnings = _report(result)
+    root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     with psycopg.connect(conninfo_from_env()) as conn:
         ensure_tables(conn)
-        changed = store(conn, result)
+        run_id = start_run(conn, root)
+        progress = _Progress(conn, run_id)
+        try:
+            result = walk(
+                root,
+                formats,
+                exclude=config.exclude,
+                per_path_ignores=config.per_path_ignores,
+                progress=progress,
+            )
+            warnings = _report(result)
+            changed = store(conn, result)
+        except BaseException as e:  # Ctrl-C too: the run must not look running
+            conn.rollback()
+            end_run(
+                conn,
+                run_id,
+                "failed",
+                directories=progress.directories,
+                files=progress.files,
+                error=str(e) or type(e).__name__,
+            )
+            if isinstance(e, OSError):
+                log.error("cannot read %s: %s", e.filename or root, e.strerror)
+                return 2
+            raise
+        end_run(
+            conn,
+            run_id,
+            "finished",
+            directories=progress.directories,
+            files=progress.files,
+            datasets=len(result.datasets),
+            warnings=warnings,
+            records_changed=changed,
+        )
     log.info(
         "%d datasets, %d warnings, %d records changed",
         len(result.datasets),
@@ -102,6 +168,79 @@ def cmd_crawl(args) -> int:
         changed,
     )
     return 0
+
+
+def _when(t: datetime) -> str:
+    return t.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _state(run, now: datetime) -> str:
+    """finished, failed, running or stale (D3)."""
+    _, _, _, updated, finished, outcome, *_ = run
+    if finished is not None:
+        return outcome
+    if (now - updated).total_seconds() <= 2 * PROGRESS_INTERVAL:
+        return "running"
+    return "stale"
+
+
+def _run_line(run, now: datetime) -> str:
+    """Start, state, end or last update, counts, root; the error of a failed run last."""
+    (
+        _,
+        root,
+        started,
+        updated,
+        finished,
+        _,
+        dirs,
+        files,
+        datasets,
+        warnings,
+        changed,
+        error,
+    ) = run
+    state = _state(run, now)
+    if state in ("running", "stale"):
+        when = f"updated {_when(updated)}"
+        counts = f"{dirs} directories, {files} files so far"
+    else:
+        when = _when(finished)
+        counts = f"{dirs} directories, {files} files"
+        if state == "finished":
+            counts += (
+                f", {datasets} datasets, {warnings} warnings, {changed} records changed"
+            )
+    line = f"{_when(started)}  {state:<8}  {when}  {counts}  {root}"
+    return f"{line}  {error}" if state == "failed" else line
+
+
+def cmd_runs(args) -> int:
+    """The recent crawl runs, newest first; with --follow, the running one until it ends."""
+    with psycopg.connect(conninfo_from_env(), autocommit=True) as conn:
+        ensure_tables(conn)
+        runs = recent_runs(conn, RUNS_SHOWN)
+        if not runs:
+            print("no crawl has run")
+            return 0
+        if not args.follow:
+            now = datetime.now(UTC)
+            for run in runs:
+                print(_run_line(run, now))
+            return 0
+        run = runs[0]
+        if _state(run, datetime.now(UTC)) != "running":
+            log.info("no crawl is running; the latest run:")
+        last = None
+        while True:
+            state = _state(run, datetime.now(UTC))
+            if run != last:
+                print(_run_line(run, datetime.now(UTC)), flush=True)
+                last = run
+            if state != "running":
+                return 1 if state == "stale" else 0
+            time.sleep(FOLLOW_POLL)
+            run = get_run(conn, run[0])
 
 
 def cmd_serve(args) -> int:
@@ -233,6 +372,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     selection_args(crawl)
     crawl.set_defaults(func=cmd_crawl)
+    runs = sub.add_parser("runs", help="show the recent crawl runs, newest first")
+    runs.add_argument(
+        "--follow",
+        action="store_true",
+        help="repeat the running crawl's progress until it ends",
+    )
+    runs.set_defaults(func=cmd_runs)
     serve = sub.add_parser(
         "serve",
         help="serve the OAI-PMH endpoint on port 7654 (address from OAI_BIND, default localhost)",
@@ -274,4 +420,6 @@ def main(argv: list[str] | None = None) -> int:
         # stdout at /dev/null so the interpreter's final flush has nowhere to fail.
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return 0
+    except KeyboardInterrupt:
+        return 130
     return status

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import stat
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 
@@ -97,11 +97,18 @@ def walk(
     *,
     exclude: Iterable[str] = (),
     per_path_ignores: dict[str, list[str]] | None = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> Result:
+    """Recognise the tree under root.
+
+    `progress`, if given, is called after each directory is listed with the
+    numbers of directories and files listed so far.
+    """
     root = os.path.abspath(str(root))
     excluded = compile_patterns(exclude)
     ignores = compile_per_path(per_path_ignores or {})
     result = Result()
+    seen = [0, 0]  # directories, files
 
     def formats_for(rel: str) -> list[Format]:
         return [f for f in formats if not path_ignored(f.id, rel, ignores)]
@@ -116,6 +123,10 @@ def walk(
             result.skipped.append((rel, f"cannot list directory: {e.strerror}"))
             log.info("%s: skipped, cannot list directory: %s", rel, e.strerror)
             return []
+        if progress is not None:
+            seen[0] += 1
+            seen[1] += sum(e.kind == "file" for e in entries)
+            progress(seen[0], seen[1])
         st = os.lstat(dirpath)
         active = formats_for(rel)
         pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)

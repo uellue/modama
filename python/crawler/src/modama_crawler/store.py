@@ -56,7 +56,107 @@ def ensure_tables(conn: psycopg.Connection) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS records_datestamp ON records (datestamp, record_id)"
     )
+    # One row per crawl (crawl-runs spec, D1). Read as an interface by the
+    # chain tool (python/search-chain); change it only together with that.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crawl_runs (
+            run_id SERIAL PRIMARY KEY,
+            root TEXT NOT NULL,
+            started_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            finished_at TIMESTAMPTZ,
+            outcome TEXT CHECK (outcome IN ('finished', 'failed')),
+            directories INTEGER NOT NULL DEFAULT 0,
+            files INTEGER NOT NULL DEFAULT 0,
+            datasets INTEGER,
+            warnings INTEGER,
+            records_changed INTEGER,
+            error TEXT
+        )
+        """
+    )
     conn.commit()
+
+
+def start_run(conn: psycopg.Connection, root: str) -> int:
+    """Record a new crawl run and commit it, so that it is visible while the walk runs. Returns its id.
+
+    The start time is cut to the second, like record datestamps, so that it is
+    never after a datestamp the crawl writes: every file whose ctime is before
+    it was there when the walk began.
+    """
+    now = datetime.now(UTC).replace(microsecond=0)
+    ((run_id,),) = conn.execute(
+        "INSERT INTO crawl_runs (root, started_at, updated_at) VALUES (%s, %s, %s) RETURNING run_id",
+        (root, now, now),
+    ).fetchall()
+    conn.commit()
+    return run_id
+
+
+def progress_run(
+    conn: psycopg.Connection, run_id: int, directories: int, files: int
+) -> None:
+    conn.execute(
+        "UPDATE crawl_runs SET directories = %s, files = %s, updated_at = %s WHERE run_id = %s",
+        (directories, files, datetime.now(UTC), run_id),
+    )
+    conn.commit()
+
+
+def end_run(
+    conn: psycopg.Connection,
+    run_id: int,
+    outcome: str,
+    *,
+    directories: int,
+    files: int,
+    datasets: int | None = None,
+    warnings: int | None = None,
+    records_changed: int | None = None,
+    error: str | None = None,
+) -> None:
+    now = datetime.now(UTC)
+    conn.execute(
+        """
+        UPDATE crawl_runs SET finished_at = %s, updated_at = %s, outcome = %s,
+            directories = %s, files = %s, datasets = %s, warnings = %s,
+            records_changed = %s, error = %s
+        WHERE run_id = %s
+        """,
+        (
+            now,
+            now,
+            outcome,
+            directories,
+            files,
+            datasets,
+            warnings,
+            records_changed,
+            error,
+            run_id,
+        ),
+    )
+    conn.commit()
+
+
+_RUN_COLUMNS = """run_id, root, started_at, updated_at, finished_at, outcome,
+    directories, files, datasets, warnings, records_changed, error"""
+
+
+def recent_runs(conn: psycopg.Connection, limit: int) -> list[tuple]:
+    """The newest runs first, as tuples in the table's column order."""
+    return conn.execute(
+        f"SELECT {_RUN_COLUMNS} FROM crawl_runs ORDER BY started_at DESC, run_id DESC LIMIT %s",
+        (limit,),
+    ).fetchall()
+
+
+def get_run(conn: psycopg.Connection, run_id: int) -> tuple:
+    return conn.execute(
+        f"SELECT {_RUN_COLUMNS} FROM crawl_runs WHERE run_id = %s", (run_id,)
+    ).fetchone()
 
 
 def store(conn: psycopg.Connection, result: Result) -> int:

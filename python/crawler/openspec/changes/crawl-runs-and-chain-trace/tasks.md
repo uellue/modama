@@ -2,11 +2,11 @@
 
 ## 1. Crawl runs in the crawler
 
-- [ ] 1.1 `crawl_runs` table in `ensure_tables`, run inserted and committed before the walk, ended with outcome, counts and end time after the store (D1). Verify: test "A finished crawl" and "An unchanged crawl leaves a run" with `pytest-postgresql`.
-- [ ] 1.2 Failure path: outcome `failed` with the error message, non-zero exit. Verify: test "The root disappears".
-- [ ] 1.3 Progress callback in `walk()` and throttled updates and log lines in `cmd_crawl` (D2), the interval injectable for tests. Verify: test "Progress of a slow walk" with a short interval; existing walk tests unchanged.
-- [ ] 1.4 Running, stale and finished from the row (D3). Verify: test "A crawl killed during the walk" (run row without end, old update time).
-- [ ] 1.5 `modama-crawler runs` and `--follow`, stdout/stderr split, broken pipe and Ctrl-C. Verify: tests "No crawl yet", "Following a crawl", "Piped into head", typed as command lines; the output checked by eye with `tools/xterm-shots.py` if xvfb is available, otherwise a captured transcript for @weber.
+- [x] 1.1 `crawl_runs` table in `ensure_tables`, run inserted and committed before the walk, ended with outcome, counts and end time after the store (D1). Verify: test "A finished crawl" and "An unchanged crawl leaves a run" with `pytest-postgresql`.
+- [x] 1.2 Failure path: outcome `failed` with the error message, non-zero exit. Verify: test "The root disappears".
+- [x] 1.3 Progress callback in `walk()` and throttled updates and log lines in `cmd_crawl` (D2), the interval injectable for tests. Verify: test "Progress of a slow walk" with a short interval; existing walk tests unchanged.
+- [x] 1.4 Running, stale and finished from the row (D3). Verify: test "A crawl killed during the walk" (run row without end, old update time).
+- [x] 1.5 `modama-crawler runs` and `--follow`, stdout/stderr split, broken pipe and Ctrl-C. Verify: tests "No crawl yet", "Following a crawl", "Piped into head", typed as command lines; the output checked by eye with `tools/xterm-shots.py` if xvfb is available, otherwise a captured transcript for @weber.
 
 ## 2. The chain tool, smoke test first
 
