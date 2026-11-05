@@ -50,8 +50,8 @@ src/modama_crawler/
 ├── selection.py    # entry-point discovery, ruff-style select/ignore, per-path ignores, crawl excludes
 ├── records.py      # OAI identifier, browse URL, Dublin Core mapping of a Dataset
 ├── render.py       # oai_dc XML, shared by the server and the records command
-├── store.py        # PostgreSQL schema (datasets, members, records, crawl_runs), storing a Result, recording runs
-├── server.py       # OAI-PMH WSGI app (werkzeug), reads the records table only
+├── store.py        # PostgreSQL schema (datasets, members, records, crawl_runs), storing a Result, recording runs, the crawl and store locks
+├── server.py       # OAI-PMH WSGI app (werkzeug), reads the records table only; 503 while a crawl writes records
 └── testing.py      # pytest plugin: fixtures, manifest, expected results, coverage rule
 ```
 

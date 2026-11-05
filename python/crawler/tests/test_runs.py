@@ -1,47 +1,13 @@
 """Crawl runs (the `crawl-runs` spec): crawl and runs as typed, against a throwaway database."""
 
-import os
-import subprocess
-import sys
 import threading
 import time
 from datetime import UTC, datetime, timedelta
 
-import pytest
+from conftest import CRAWLER, shell
 from modama_crawler import cli
 from modama_crawler.store import Run, end_run, progress_run, start_run
 from modama_crawler.walk import walk
-
-CRAWLER = f"{sys.executable} -m modama_crawler"
-
-
-@pytest.fixture
-def env(conn, monkeypatch):
-    """The environment that points the crawler at the test database, for subprocesses and in-process calls."""
-    info = conn.info
-    values = {
-        "MODAMA_CRAWLER_DB": info.dbname,
-        "POSTGRES_ADMIN": info.user,
-        "POSTGRES_PASSWORD": info.password or "",
-        "POSTGRES_ADDRESS": info.host,
-        "POSTGRES_PORT": str(info.port),
-    }
-    for name, value in values.items():
-        monkeypatch.setenv(name, value)
-    return {**os.environ, **values}
-
-
-def shell(command_line: str, env: dict):
-    return subprocess.run(
-        command_line,
-        shell=True,
-        executable="/bin/bash",
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=120,
-        env=env,
-    )
 
 
 def runs(conn) -> list[tuple]:
@@ -50,15 +16,6 @@ def runs(conn) -> list[tuple]:
         "SELECT outcome, started_at, finished_at, directories, files, datasets, warnings, records_changed, error"
         " FROM crawl_runs ORDER BY run_id"
     ).fetchall()
-
-
-@pytest.fixture
-def tree(tmp_path):
-    root = tmp_path / "data"
-    (root / "sub").mkdir(parents=True)
-    for name in ("a.txt", "b.txt", "sub/c.txt"):
-        (root / name).write_text(name)
-    return root
 
 
 def test_a_finished_crawl(conn, env, tree):

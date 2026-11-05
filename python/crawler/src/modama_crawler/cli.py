@@ -31,6 +31,7 @@ from .store import (
     recent_runs,
     start_run,
     store,
+    try_crawl_lock,
 )
 from .walk import walk
 
@@ -140,6 +141,16 @@ def cmd_crawl(args) -> int:
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
         ensure_tables(conn)
+        # held until this connection ends, also if the crawler crashes
+        if not try_crawl_lock(conn):
+            latest = recent_runs(conn, 1)
+            holder = (
+                f": run started {_when(latest[0].started_at)}, {_state(latest[0])}"
+                if latest
+                else ""
+            )
+            log.error("another crawl is running on this database%s", holder)
+            return 1
         run_id = start_run(conn, root)
         heartbeat = _Heartbeat(conninfo, run_id)
         heartbeat.start()

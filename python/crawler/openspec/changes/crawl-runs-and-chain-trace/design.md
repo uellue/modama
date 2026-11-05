@@ -41,13 +41,16 @@ See proposal.md for the why. State of the code and of upstream that shapes the a
 
 **D10. Output.** One line per stage, fixed columns: stage, state, key, time, detail; flags in upper case so they stand out without colour (`R36`'s spirit: warnings are actionable). Exit statuses as in the spec. Broken pipe and Ctrl-C as the crawler's `records` command handles them (CLI conventions).
 
+**D11. Locks in the crawler's database instead of timing (review 2026-11-05, findings 1 and 9).** One crawl at a time: a session-level `pg_try_advisory_lock`, which never waits (no deadlock) and which PostgreSQL releases when the session ends, also on a crash; a crawler that hangs while alive keeps it, and the refusal names the latest run, which `runs` shows as stale. Harvests and stores: `store()` takes an exclusive transaction lock just before it writes the records and only then takes the datestamp; every OAI-PMH request takes the same lock shared for its one-query transaction, or answers 503 with `Retry-After` if it can't. A record is thereby either committed before a harvest reads, or dated after the harvest's `until`. Upstream's harvester (oaipmh-scythe 0.14, `max_retries=3`, `Retry-After` honoured) retries; if a store outlasts the retries, the harvest run fails, and a failed run does not move the next window (`from` = last closed `until`), so nothing is lost, only delayed. Left: clock skew between the crawler's and the warehouse's hosts. *Alternatives:* a different `until` in the response (the harvester takes `until` from its own database, not from us); stalling requests until the commit (holds a connection and a thread per request, and the harvester's 180 s timeout then fails the run anyway); a short store via a staging table (narrows the race without closing it).
+
 ## Risks / Trade-offs
 
 - [Upstream changes a table, the cut or the `_id`] → all of it is in `warehouse.py`, and the e2e test traces real items through the real stack, so an upgrade that changes them fails the test.
 - [T trusts that a successful indexing run indexed everything; #158 and the sync flag show that runs can claim more than they did] → the trace checks per item; the stage comparison (next change) checks all items.
 - [Progress updates add a write per minute to a long crawl] → one small UPDATE per minute, in its own transaction; negligible against the walk.
 - [The run row and the store transaction are separate; a crash between the store's commit and the run's end leaves a finished store with a stale run] → the reader shows it as stale with its counts unknown; the next crawl corrects the data, and T ignores the run.
-- [Two crawls at the same time] → not prevented; both are recorded. A timer that never overlaps is the scheduling change's job.
+- [Two crawls at the same time] → the second is refused (D11).
+- [A store longer than the harvester's retries (3 × `Retry-After`)] → the harvest run fails and its window is harvested again next time; noise in `status`, nothing lost.
 - [Rebuilding keys for paths the crawler no longer has relies on the crawler's identifier rules] → the rules are read back from a record the crawler does have (host and URL prefix), not duplicated; a test compares a rebuilt key with a crawled one.
 
 ## Migration Plan

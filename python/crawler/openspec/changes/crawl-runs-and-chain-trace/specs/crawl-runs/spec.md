@@ -55,3 +55,14 @@ A run without an end time SHALL be shown as running only while its last update i
 #### Scenario: Following a crawl
 - **WHEN** `modama-crawler runs --follow` is started while a crawl runs
 - **THEN** it prints progress lines until the crawl ends, then the finished run's line, and exits with status 0
+
+### Requirement: One crawl at a time
+A crawl SHALL refuse to start, with an error line naming the latest run and a non-zero exit status, while another crawl runs against the same index; it SHALL record no run then. A crawl that ended in any way, including a crash, SHALL not keep another from starting.
+
+#### Scenario: A second crawl is refused
+- **WHEN** a crawl is started while another one runs against the same index
+- **THEN** it exits with status 1 and "another crawl is running on this database" on stderr, and no run is recorded
+
+#### Scenario: A crashed crawl leaves no lock
+- **WHEN** the crawler holding the lock is killed with SIGKILL
+- **THEN** the next crawl starts

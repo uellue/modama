@@ -24,7 +24,7 @@ States: `ok`; `missing`; `differs` (holds another version than the stage before)
 - `SYNCED-WITHOUT-DOCUMENT`: the warehouse marks the record as synced, the index has no document for its URL; the warehouse will not index it again.
 - `STALE`: the stage holds the item, the crawler no longer publishes it (a renamed or deleted file).
 
-`status`: T is the start of the newest finished crawl that ended before the end of the chain of closed harvest runs that were all indexed successfully. Every file whose ctime is before T is in the search, unless a trace flags it. Known gap: a harvest that starts while a crawl stores its records can skip them without T noticing (the backlog's "Datestamp window"; open in the change's `review.md`).
+`status`: T is the start of the newest finished crawl that ended before the end of the chain of closed harvest runs that were all indexed successfully. Every file whose ctime is before T is in the search, unless a trace flags it. This relies on the crawler's store lock (a harvest never reads half-written records) and on the crawler's and the warehouse's clocks agreeing.
 
 ## Configuration
 

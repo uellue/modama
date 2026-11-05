@@ -23,6 +23,7 @@ from .render import (
     sub,
     xml_text,
 )
+from .store import try_read_lock
 
 REPOSITORY_NAME = "ER-C data (modama)"
 GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
@@ -140,6 +141,10 @@ def decode_token(token: str):
         raise OAIError("badResumptionToken", "Invalid resumptionToken") from None
 
 
+class Busy(Exception):
+    """A crawl is writing records; the harvester should come back later."""
+
+
 class OAIServer:
     def __init__(
         self,
@@ -147,20 +152,31 @@ class OAIServer:
         base_url: str,
         admin_email: str,
         page_size: int = 100,
+        retry_after: int = 60,
     ):
         self.pool = pool
         self.base_url = base_url
         self.admin_email = admin_email
         self.page_size = page_size
+        self.retry_after = retry_after
 
     def __call__(self, environ, start_response):
         request = Request(environ)
-        if request.method == "GET":
-            body = self.respond(request.args)
-        elif request.method == "POST":
-            body = self.respond(request.form)
-        else:
+        if request.method not in ("GET", "POST"):
             response = Response(status=405, headers={"Allow": "GET, POST"})
+            return response(environ, start_response)
+        try:
+            body = self.respond(
+                request.args if request.method == "GET" else request.form
+            )
+        except Busy:
+            # HTTP flow control as OAI-PMH 2.0 allows it (section 3.1.2.2)
+            response = Response(
+                "A crawl is storing records; retry later.\n",
+                status=503,
+                headers={"Retry-After": str(self.retry_after)},
+                content_type="text/plain",
+            )
             return response(environ, start_response)
         response = Response(body, content_type="text/xml; charset=utf-8")
         return response(environ, start_response)
@@ -182,7 +198,10 @@ class OAIServer:
         return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
     def _query(self, sql: str, params=()) -> list[tuple]:
+        """One query in one transaction, holding the store lock shared; Busy while a crawl writes records."""
         with self.pool.connection() as conn:
+            if not try_read_lock(conn):
+                raise Busy
             return conn.execute(sql, params).fetchall()
 
     def _check_exists(self, identifier: str):

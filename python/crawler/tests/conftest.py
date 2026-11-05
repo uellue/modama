@@ -1,5 +1,7 @@
 import functools
 import os
+import subprocess
+import sys
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -128,3 +130,44 @@ def base_url(server):
 
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+CRAWLER = f"{sys.executable} -m modama_crawler"
+
+
+@pytest.fixture
+def env(conn, monkeypatch):
+    """The environment that points the crawler at the test database, for subprocesses and in-process calls."""
+    info = conn.info
+    values = {
+        "MODAMA_CRAWLER_DB": info.dbname,
+        "POSTGRES_ADMIN": info.user,
+        "POSTGRES_PASSWORD": info.password or "",
+        "POSTGRES_ADDRESS": info.host,
+        "POSTGRES_PORT": str(info.port),
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    return {**os.environ, **values}
+
+
+def shell(command_line: str, env: dict):
+    return subprocess.run(
+        command_line,
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+        env=env,
+    )
+
+
+@pytest.fixture
+def tree(tmp_path):
+    root = tmp_path / "data"
+    (root / "sub").mkdir(parents=True)
+    for name in ("a.txt", "b.txt", "sub/c.txt"):
+        (root / name).write_text(name)
+    return root

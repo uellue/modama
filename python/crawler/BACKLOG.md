@@ -44,7 +44,7 @@ Deferred items, roughly in the order they are likely to come up.
   - `DELETE FROM records WHERE identifier <> ALL(...)` carries every identifier of the crawl in one statement.
   - Paths are stored as absolute text, and keys are `SERIAL` (int4).
   - Every dataset's metadata is rebuilt on every crawl, not only the changed ones'.
-- **Datestamp window:** all records changed by one crawl share a datestamp taken just before the upsert, so the window is the upsert plus commit, plus clock skew between the crawler and the database host. A harvester should use an overlap margin on `from`.
+- **Datestamp window:** closed by the store lock (change `crawl-runs-and-chain-trace`, D11): requests get 503 while a crawl writes records, and the datestamp is taken after the requests in flight. Left: clock skew between the crawler and the warehouse's database host; a harvester overlap margin on `from` would cover it (wishlist).
 - **Enforced format timeouts (R23):** the time limit is checked after the call, so a hanging format stalls the crawl; isolation by worker subprocesses is the planned mechanism (review 2026-11-03, B14).
 - **CI job for the crawler:** none yet; it needs the setup of `README.md` as an image (PostgreSQL, shared-mime-info, git, the `[test]` extras) and a non-root user, or the permission scenarios silently skip (review 2026-11-03, C5).
 - **`uvx ruff check` fails on `prototypes/`** (found 2026-11-04, predates the docs restructure): the notebooks there have unsorted imports, `TRY002` and `C400`. The pre-commit hook skips `^prototypes/`, but CI runs `uvx ruff check` on the whole repo, and `ruff.toml` excludes only `prototypes/EOSC-Data-Commons`. Proposed fix, not yet agreed: add `prototypes` to `exclude` in `ruff.toml`.

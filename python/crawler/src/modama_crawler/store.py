@@ -12,6 +12,32 @@ from psycopg.types.json import Jsonb
 from .formats import Result
 from .records import build
 
+# Advisory lock keys (two 32-bit integers; the database is the crawler's own).
+# CRAWL_LOCK: one crawl at a time, held by the crawl's session and released by
+# PostgreSQL when that session ends, also when the crawler crashes. STORE_LOCK:
+# held exclusively by the transaction that writes records, shared by every
+# OAI-PMH request, so that a harvester never reads while a crawl's records are
+# half written (crawl spec, "A harvest does not miss a crawl's records").
+CRAWL_LOCK = (0x6D6F, 1)
+STORE_LOCK = (0x6D6F, 2)
+
+
+def try_crawl_lock(conn: psycopg.Connection) -> bool:
+    """Take the crawl lock for this session without waiting; False if another crawl holds it."""
+    ((taken,),) = conn.execute(
+        "SELECT pg_try_advisory_lock(%s, %s)", CRAWL_LOCK
+    ).fetchall()
+    conn.commit()
+    return taken
+
+
+def try_read_lock(conn: psycopg.Connection) -> bool:
+    """Take the store lock shared, for the current transaction, without waiting; False while records are written."""
+    ((taken,),) = conn.execute(
+        "SELECT pg_try_advisory_xact_lock_shared(%s, %s)", STORE_LOCK
+    ).fetchall()
+    return taken
+
 
 def ensure_tables(conn: psycopg.Connection) -> None:
     """Create the schema if it does not exist. There are no migrations: recreate the database after a change.
@@ -184,8 +210,10 @@ def store(conn: psycopg.Connection, result: Result) -> int:
     Returns the number of records that changed. A record's datestamp moves only
     when its content changes, so an unchanged crawl leaves datestamps alone;
     records of datasets that disappeared are deleted. All records changed by
-    one call get the same datestamp, taken just before they are written, so
-    that a harvester's window is the upsert and commit, not the whole call.
+    one call get the same datestamp, taken after the store lock is held: no
+    OAI-PMH request reads until the commit, so a harvest whose window ends
+    after the datestamp reads the records, and one whose window ended before
+    gets them in its next window.
     """
     with conn.cursor() as cur:
         # The whole content is replaced, and nothing reads these tables while
@@ -217,6 +245,8 @@ def store(conn: psycopg.Connection, result: Result) -> int:
                 [(dataset_id, m) for m in d.members],
             )
         records = [build(d) for d in result.datasets]
+        # waits for the requests in flight, which are single short queries
+        cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", STORE_LOCK)
         cur.execute(
             "DELETE FROM records WHERE identifier <> ALL(%s)",
             ([identifier for identifier, _ in records],),
