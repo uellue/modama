@@ -8,6 +8,8 @@
 
 Deferred items, roughly in the order they are likely to come up.
 
+- **Move to GitHub** (@weber, 2026-11-10): new work lives on https://github.com/modama-rdm/modama; migrate the iffgit merge request !106 (`weber/data-management-system`) to a pull request there, with its reviewer comments.
+
 - **Deleted records:** support `deletedRecord` (`transient` or `persistent`) with tombstones for removed or renamed datasets. Currently `no`.
 - **Collapsing trees:** treat large uninteresting trees (`node_modules`, Python/conda environments, known source trees such as a Linux kernel checkout) as one dataset, adding their members in bulk or ignoring them.
 - **Sniffing cost:** files without a decisive name cost about 5 ms each in pure-Python magic matching, plus reading 18 KB. Measure on real data; options are skipping or deferring them, parallelism, or libmagic.
