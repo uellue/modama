@@ -1,0 +1,49 @@
+# Staging: the search stack on real data, on a development server (field test of
+# 2026-11-10, python/crawler/design/field-tests/search-stack-staging-runbook.md).
+# Loaded instead of docker-compose.override.yml by ./upstaging.sh, as the project
+# search-staging, with the settings of staging.env (gitignored):
+#
+#   STAGING_DATA          the data tree, mounted read-only at /data (the data root)
+#   STAGING_USER          uid:gid the crawler reads the tree as (`id -u`:`id -g`), so that
+#                         it sees exactly what that user sees; NFS squashes root
+#   STAGING_GROUP         one more group of that user, needed for parts of the tree
+#   STAGING_CRAWL_CONFIG  the crawl's TOML file (formats, exclusions), in stagingconf/
+#
+# The tree is always mounted whole, and a first crawl of a subtree uses exclusions,
+# so that identifiers (relative to the data root) stay the same for the full crawl.
+# Ports on 127.0.0.1 only, offset from the test deployment's and deploy/'s by 10000.
+x-staging-crawler: &staging-crawler
+  user: ${STAGING_USER:?see staging.env in the runbook}
+  group_add:
+    - ${STAGING_GROUP:?see staging.env in the runbook}
+  volumes:
+    - ${STAGING_DATA:?see staging.env in the runbook}:/data:ro
+    - ./stagingconf:/stagingconf:ro
+
+services:
+  crawler:
+    <<: *staging-crawler
+    ports:
+      - "127.0.0.1:17654:7654"
+
+  crawl-timer:
+    <<: *staging-crawler
+    command:
+      - modama-crawler
+      - --config
+      - /stagingconf/${STAGING_CRAWL_CONFIG:?see staging.env in the runbook}
+      - timer
+      - --at
+      - "19:00"
+
+  airflow-api-server:
+    ports:
+      - "127.0.0.1:18081:8080"
+
+  search-api:
+    ports:
+      - "127.0.0.1:18000:8000"
+
+  opensearch:
+    ports:
+      - "127.0.0.1:19200:9200"

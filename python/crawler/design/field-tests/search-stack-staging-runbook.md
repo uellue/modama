@@ -1,0 +1,180 @@
+# Runbook: the search stack on real data (staging), 2026-11-10
+
+Field test, one shot: @weber runs the search stack (`/prototypes/search-stack/`, as the
+project `search-staging`) on the development server that hosts the devvm VM, on the real
+data tree: first `adhoc/libertem` only, then the whole tree. The state it builds is kept
+as the demo instance.
+
+Goals (@weber):
+
+- follow the development on real data;
+- show colleagues what works and collect their feedback (they search through SSH port
+  forwarding to the server's localhost);
+- collect real-world issues as test cases, and fix them;
+- a performance baseline on hot data over NFS: cache behaviour, latency and bandwidth, a
+  tree far larger than RAM, kernel prefetching;
+- on the way to merging the test deployment into `deploy/`.
+
+## Safety
+
+Agreed with @weber, co-admin of the server, 2026-11-10.
+
+- **Reads:** the data tree, read-only (a `:ro` bind mount, enforced by Docker), as
+  @weber's uid and groups (`user` and `group_add`, enforced by Docker; NFS squashes
+  root). The index shows only what @weber may see; the developers with access to the
+  server are trusted with it. No real secrets: the stack uses the throwaway test secrets
+  of `testconf/secrets/` (accepted: ports on localhost, trusted users).
+- **Writes:** Docker's images, volumes and build caches, as `docker compose up` does, and
+  the checkout (shared with the VM). Never `/storage`. Untracked files in the checkout
+  are never deleted.
+- **Load:** native, no limits. It is a development server, and finding problematic
+  behaviour before production is a goal; 24 cores to use. Disk use of `/` and Docker's
+  root is watched (`monitor.sh` warns above 90 %).
+- **Network:** ports on 127.0.0.1 only: 18000 search API, 18081 Airflow, 17654 crawler,
+  19200 OpenSearch. Colleagues reach them with SSH port forwarding. No external
+  interfaces.
+- **Stop:** `./downstaging.sh`; a running crawl records itself as failed. Clean-up:
+  `./downstaging.sh --reset` deletes the staging volumes, never the data tree.
+- **Never:** a write to `/storage`; deleting or changing anyone's files outside this
+  test; leaking secrets (SSH keys, tokens on the server); anything pushed or published
+  with the server's credentials (agent forwarding, `gh`, `docker login`). The agent has
+  no shell on the server: it reads the shared checkout only, and @weber runs every
+  command.
+- **Recording:** the terminal's output and timing, never keystrokes, go to
+  `.claude/field-tests/run-<n>/` in the checkout (gitignored, private). The agent reads
+  it as it goes, and it stays in the agent's transcript: keep secrets off the screen.
+  Look through it before anything is shared.
+
+## Settings
+
+`staging.env` in `prototypes/search-stack/` (gitignored), written in steps 3 to 7:
+
+```
+MODAMA_SECRETS_DIR=./testconf/secrets   # the throwaway test secrets
+STAGING_DATA=/storage/er-c-data         # the data tree, mounted whole at /data, so that
+                                        # identifiers stay the same for the full crawl
+STAGING_USER=<uid>:<gid>                # who the crawler reads the tree as
+STAGING_GROUP=<gid of iff>              # the group some of the tree needs
+STAGING_CRAWL_CONFIG=libertem.toml      # the crawl's exclusions in stagingconf/;
+                                        # full.toml for the whole tree
+```
+
+## Steps
+
+On the server, as yourself, one line at a time.
+
+**1.** Go to the stack's folder in the shared checkout:
+
+```bash
+cd ~/src/data-management-system/prototypes/search-stack
+```
+
+**2.** Start the recording (a copy of kaizen's `record.sh`) into the next `run-<n>`;
+`exit` ends it:
+
+```bash
+FIELD_TEST_DIR=$HOME/src/data-management-system/.claude/field-tests bash ../../.claude/field-tests/record.sh
+```
+
+**2a.** In the recorded shell, check the channel: type a note at the prompt, and wait
+until the agent has read it back from the recording before going on:
+
+```bash
+# probe
+```
+
+**3 to 7.** Write the settings:
+
+```bash
+echo "MODAMA_SECRETS_DIR=./testconf/secrets" > staging.env
+echo "STAGING_DATA=/storage/er-c-data" >> staging.env
+echo "STAGING_USER=$(id -u):$(id -g)" >> staging.env
+echo "STAGING_GROUP=$(getent group iff | cut -d: -f3)" >> staging.env
+echo "STAGING_CRAWL_CONFIG=libertem.toml" >> staging.env
+```
+
+**8.** Check what the stack will use, and that you can read the subtree:
+
+```bash
+cat staging.env; ls /storage/er-c-data/adhoc/libertem | head
+```
+
+**9.** Disk space before:
+
+```bash
+df -h / "$(docker info -f '{{.DockerRootDir}}')"
+```
+
+**10.** In a second terminal, in the same folder, start the monitor into the run's
+folder (`<n>` from step 2):
+
+```bash
+./monitor.sh "$HOME/src/data-management-system/.claude/field-tests/run-<n>/monitor.log"
+```
+
+**11.** Build the images and start the stack. The timer crawls at once and starts the
+harvest when the crawl is done:
+
+```bash
+./upstaging.sh --build
+```
+
+**12.** A shorthand for the commands below:
+
+```bash
+dc() { docker compose -p search-staging --env-file staging.env -f docker-compose.yml -f docker-compose.staging.yml "$@"; }
+```
+
+**13.** Follow the crawl until "harvest … started"; Ctrl-C leaves it running:
+
+```bash
+dc logs -f crawl-timer
+```
+
+**14.** Crawl, harvest, indexing, and the freshness time:
+
+```bash
+dc exec crawler modama-chain status
+```
+
+**15.** A first search:
+
+```bash
+curl -s 'http://127.0.0.1:18000/search?q=libertem&resource=datasets' | head -c 2000
+```
+
+**16.** One path through every stage (a path you know):
+
+```bash
+dc exec crawler modama-chain trace /adhoc/libertem/<path>
+```
+
+**17.** Stop, keeping the state:
+
+```bash
+./downstaging.sh
+```
+
+## The whole tree
+
+After the findings of the first run are dealt with. The timer itself crawls at 19:00
+UTC, or at once only when the last finished crawl is more than a day old, so the crawl
+is started by hand:
+
+```bash
+sed -i 's/=libertem.toml/=full.toml/' staging.env
+./upstaging.sh
+dc exec crawl-timer modama-crawler --config /stagingconf/full.toml crawl
+```
+
+## For colleagues
+
+```bash
+ssh -N -L 18000:127.0.0.1:18000 <you>@<server>
+```
+
+Then http://localhost:18000/search?q=…&resource=datasets.
+
+## Notes during the run
+
+`#` lines at the prompt, or in `run-<n>/notes.md`.
