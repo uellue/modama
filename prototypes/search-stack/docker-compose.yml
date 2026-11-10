@@ -39,7 +39,10 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__MAX_MAP_LENGTH: "10000"
     PYTHONPATH: /opt/airflow/project/src:/opt/airflow/project
     INDEX_NAME: test_datacite
-    CELERY_BATCH_SIZE: "250"
+    # harvest events per indexing task; each task is a fresh Python process that loads
+    # the embedding model, so larger batches save that per-batch cost (staging: 2000,
+    # field-test finding F9)
+    CELERY_BATCH_SIZE: ${CELERY_BATCH_SIZE:-250}
     # no schedule of upstream's own: the crawler triggers the harvest after its commit
     # (decision 2026-11-04), so a harvest never races a crawl's store (crawl spec)
     HARVEST_SCHEDULE: ""

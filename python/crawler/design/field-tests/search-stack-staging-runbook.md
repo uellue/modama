@@ -172,6 +172,13 @@ sed -i 's/=libertem.toml/=full.toml/' staging.env
 ./upstaging.sh
 ```
 
+Larger indexing batches (@weber, 2026-11-10; finding F9): 2,000 harvest events per task
+instead of 250, then `./upstaging.sh` again (it restarts the Airflow services):
+
+```bash
+echo "CELERY_BATCH_SIZE=2000" >> staging.env
+```
+
 Check that the timer waits for 19:00 with the new configuration:
 
 ```bash
