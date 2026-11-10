@@ -59,3 +59,14 @@ def test_tie_with_parent_candidate_resolves_to_the_parent(tmp_path):
     f = tmp_path / "data.json"
     f.write_text('{"a": 1}')
     assert detect_with_tie(str(f)) == ("application/json", None)
+
+
+def test_sniffing_reads_only_the_magic(tmp_path, bytes_read):
+    # Field-test finding F12: a buffered open reads a whole buffer (128 KiB in Python
+    # 3.14, st_blksize = 1 MiB on NFS) for a few bytes of magic
+    path = tmp_path / "frame_0001"
+    path.write_bytes(PNG + bytes(4 << 20))
+    detect(str(path))  # warm the caches
+    before = bytes_read()
+    assert detect(str(path)) == "image/png"
+    assert bytes_read() - before < 64 * 1024

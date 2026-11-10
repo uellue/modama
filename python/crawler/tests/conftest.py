@@ -171,3 +171,16 @@ def tree(tmp_path):
     for name in ("a.txt", "b.txt", "sub/c.txt"):
         (root / name).write_text(name)
     return root
+
+
+@pytest.fixture
+def bytes_read():
+    """Bytes this process has read with read(2) so far, from /proc/self/io (Linux)."""
+    if not os.path.exists("/proc/self/io"):
+        pytest.skip("needs /proc/self/io")
+
+    def read():
+        with open("/proc/self/io") as f:
+            return int(next(line for line in f if line.startswith("rchar:")).split()[1])
+
+    return read

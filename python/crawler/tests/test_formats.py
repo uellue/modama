@@ -174,6 +174,18 @@ def test_read_budget(tmp_path):
         d.read(entry("other.txt"), 1)
 
 
+def test_read_fetches_only_what_is_asked(tmp_path, bytes_read):
+    # Field-test finding F12: see test_mime.test_sniffing_reads_only_the_magic
+    size = 4 << 20
+    (tmp_path / "a.raw").write_bytes(bytes(size))
+    e = Entry("a.raw", str(tmp_path / "a.raw"), "/a.raw", "file", size, 1, 1, 7, None)
+    d = directory([e])
+    d._budget = size
+    before = bytes_read()
+    assert d.read(e, 100) == bytes(100)
+    assert bytes_read() - before < 64 * 1024
+
+
 def test_format_over_budget_is_skipped(tmp_path):
     (tmp_path / "a.txt").write_bytes(b"x" * 100)
     e = Entry(

@@ -127,7 +127,8 @@ class Directory:
         if n > self._budget:
             raise BudgetExceeded(f"reading {n} bytes of {entry.rel} exceeds the budget")
         self._budget -= n
-        with open(entry.path, "rb") as f:
+        # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole buffer
+        with open(entry.path, "rb", buffering=0) as f:
             return f.read(n)
 
     def warn(self, rel: str, text: str) -> None:

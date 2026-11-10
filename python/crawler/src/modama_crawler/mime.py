@@ -135,7 +135,8 @@ def detect_with_tie(path: str) -> tuple[str, tuple[str, ...] | None]:
 
     # No or conflicting globs: sniff the contents
     try:
-        with open(path, "rb") as f:
+        # Unbuffered: a buffered open reads a whole buffer, up to st_blksize (1 MiB on NFS)
+        with open(path, "rb", buffering=0) as f:
             data = f.read(Mime.magic.maxlen)
     except OSError:
         if candidates:

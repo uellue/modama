@@ -135,8 +135,11 @@ The crawler asks for a few bytes per file (`mime.py`: `Mime.magic.maxlen`;
 ahead. Hypothesis: Python's buffered `open(path, "rb")` sizes its buffer by
 `st_blksize`, which NFS reports as `wsize`, so `f.read(small)` fetches up to 1 MiB;
 kernel readahead may add to it. First half checked (20:40 UTC): `stat -c %o` gives
-1048576 for all 19,601 files of `many_mib`. Still to check: a crawl of a subtree with
-`buffering=0` (or `os.pread`), comparing the bytes received per open. Caveat: the counters are the host's, for everyone using the mount;
+1048576 for all 19,601 files of `many_mib`. Fixed on `crawler` (2026-11-10): both reads
+unbuffered, tested with the bytes the process reads (`/proc/self/io`, Python 3.14 locally
+read 128 KiB for 16 bytes before the fix). Recheck in staging: rebuild the crawler image,
+crawl `adhoc/libertem` again (cached on the server by now: compare with `nfs-stats.sh`
+and the bytes received per open, not with run 1's time), then the next full crawl. Caveat: the counters are the host's, for everyone using the mount;
 that the opens match the crawled files (73,080 of 74,525) points to the crawler. At 16
 files/s the whole tree takes hours to crawl: the crawl, not the indexing, sets the pace
 on cold NFS data. Expected after a fix: the bytes received per open near the bytes the

@@ -109,6 +109,7 @@ The recognition result is the oracle throughout: what the fixture tests compare,
 - The MIME database is built from the enabled collections only. Nothing from the host's MIME database is used.
 - Symlinks, special files and unreadable files are skipped with an info line and get no record.
 - The crawler doesn't publish deletions yet (`deletedRecord=no`).
+- Read file contents unbuffered (`open(path, "rb", buffering=0)`), as `mime.py` and `Directory.read` do. A buffered open reads a whole buffer for a few bytes: 128 KiB in Python 3.14, or the block size the file system reports, 1 MiB on our NFS (field-test finding F12). `tests/conftest.py` has a `bytes_read` fixture to check it.
 
 ## Where to read more
 
