@@ -9,7 +9,9 @@ Message size: comfortable, asked 2026-11-10.
 
 ## Skill friction
 - 2026-11-10, update: the skill assumes one instruction file and one `design/` per repository; here kaizen is rolled out for one subproject (`python/crawler/`) while the top level is shared with colleagues, so every record's place had to be asked.
+- 2026-11-10, sync: step 2 assumes `git fetch` from the tracker's remote; here `origin` is the legacy iffgit and GitHub is no remote yet, so it fetched the GitHub URL directly into `github/*`; `gh` is not installed, the public API stood in.
 
 ## Notes for the next debrief
-- 2026-11-10 (inbox, from the first look at GitHub): modama-rdm/modama#10 added `CONTEXT.md`, a glossary of the domain language; the standing rule on ambiguous words should point at it once the crawler branch has it (it is 107 commits behind origin).
-- 2026-11-10 (inbox): modama-rdm/modama#11 removed the GitLab CI; the top-level `AGENTS.md` ("mirrors `.gitlab-ci.yml`") and the crawler's rule on "clean only from the command CI runs" refer to what CI runs, now GitHub Actions; check after the rebase.
+- 2026-11-10: modama-rdm/modama#10 (`CONTEXT.md`, the glossary) → the rule on ambiguous words in `../AGENTS.md` points at it since the rebase; moving the crawler's terms there → `../BACKLOG.md`, "Move to GitHub".
+- 2026-11-10: modama-rdm/modama#11 (GitLab CI removed) → dropped: GitHub Actions runs the same `uvx ruff` commands, so the rule on "clean" holds; the ruff failure on `prototypes/` → `../BACKLOG.md`.
+- 2026-11-10: sync; read up to modama-rdm/modama#30, the next sync starts there. Issues and pull requests left undecided by @weber for now.

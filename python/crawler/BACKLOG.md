@@ -8,7 +8,7 @@
 
 Deferred items, roughly in the order they are likely to come up.
 
-- **Move to GitHub** (@weber, 2026-11-10): new work lives on https://github.com/modama-rdm/modama; migrate the iffgit merge request !106 (`weber/data-management-system`) to a pull request there, with its reviewer comments.
+- **Move to GitHub** (@weber, 2026-11-10): new work lives on https://github.com/modama-rdm/modama; migrate the iffgit merge request !106 (`weber/data-management-system`) to a pull request there, with its reviewer comments. The `crawler` branch is rebased onto GitHub's `master` (2026-11-10; the old one is in the local branch `crawler-before-github-rebase`), not pushed yet. Before the pull request: GitHub's CI runs `uvx ruff check` on the whole repository, which fails on the seven notebook errors in `prototypes/` (see the ruff item below); the crawler's terms move into the top-level glossary `/CONTEXT.md` (Matt Pocock's `domain-modeling` skill, more or less, agreed with the colleagues).
 
 - **Deleted records:** support `deletedRecord` (`transient` or `persistent`) with tombstones for removed or renamed datasets. Currently `no`.
 - **Collapsing trees:** treat large uninteresting trees (`node_modules`, Python/conda environments, known source trees such as a Linux kernel checkout) as one dataset, adding their members in bulk or ignoring them.
