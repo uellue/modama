@@ -34,6 +34,10 @@ Commit d2bb41d. Changed from run 1: the whole tree; indexing batches of 2,000 in
 `monitor.sh` and `nfs-stats.sh` (`run-1/nfs.log`, the mount's NFS counters, cumulative:
 take differences) running. Results: to be added.
 
+Interim, 20:23 UTC (1 h 23 min in): crawl running, 20,432 directories and 74,525 files,
+about 1,000 files/min (16/s, run 1: 100/s); load 2 to 8, the crawler at about 5 % CPU:
+waiting for NFS, see F12. Harvest and indexing not started yet.
+
 ## Findings
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
@@ -122,6 +126,21 @@ that is enough), or the names from the permissions service; decide with the move
 `descriptions` and `fileExtensions` empty, `publicationYear` 2022 (from the file's
 mtime, backlog "`dc:date`"). The title is the path. Usable for the demo as "the path is
 found", not yet as a search for data; recheck after F1.
+
+**F12 (crawler): about 500 kB read over NFS per file the crawler opens.** Run 2, 19:00:21
+to 20:23:22 UTC, the mount's counters (`nfs-stats.sh`): 73,080 opens, 594,735 READs of
+up to 64 KiB (`rsize`), 37.1 GB received (about 7.5 MB/s), 21 ms round trip per READ.
+The crawler asks for a few bytes per file (`mime.py`: `Mime.magic.maxlen`;
+`formats/__init__.py`: `n` bytes within a budget), so the rest is the client reading
+ahead. Hypothesis, not checked: Python's buffered `open(path, "rb")` sizes its buffer by
+`st_blksize`, which NFS reports as `wsize` (1 MiB here), so `f.read(small)` fetches up to
+1 MiB; kernel readahead adds to it. Check on the server: `stat -c %o` of a file on the
+mount, then a crawl of a subtree with `buffering=0` (or `os.pread`), comparing the bytes
+received per open. Caveat: the counters are the host's, for everyone using the mount;
+that the opens match the crawled files (73,080 of 74,525) points to the crawler. At 16
+files/s the whole tree takes hours to crawl: the crawl, not the indexing, sets the pace
+on cold NFS data. Expected after a fix: the bytes received per open near the bytes the
+crawler asks for.
 
 **F8 (stack, method): no tracing across the chain** (@weber, 2026-11-10). The stack is
 complex and the slow step was found by sampling `docker stats`. Proposed: OpenTelemetry,
