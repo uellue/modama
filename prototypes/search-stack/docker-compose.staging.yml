@@ -36,6 +36,12 @@ services:
       - --at
       - "19:00"
 
+  # Four indexing batches at once instead of upstream's one (@weber, 2026-11-10, field-test
+  # finding F9): a batch is mostly single-threaded, each process loads its own copy of the
+  # embedding model, and retries are safe (upserts, disjoint ranges).
+  airflow-worker-transform:
+    command: celery worker --queues transform --concurrency 4
+
   airflow-api-server:
     ports:
       - "127.0.0.1:18081:8080"

@@ -173,7 +173,8 @@ sed -i 's/=libertem.toml/=full.toml/' staging.env
 ```
 
 Larger indexing batches (@weber, 2026-11-10; finding F9): 2,000 harvest events per task
-instead of 250, then `./upstaging.sh` again (it restarts the Airflow services):
+instead of 250, and four batches at once (`docker-compose.staging.yml`); then
+`./upstaging.sh` again (it restarts the Airflow services):
 
 ```bash
 echo "CELERY_BATCH_SIZE=2000" >> staging.env
