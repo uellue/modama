@@ -157,15 +157,36 @@ dc exec crawler modama-chain trace /adhoc/libertem/<path>
 
 ## The whole tree
 
-After the findings of the first run are dealt with. The timer itself crawls at 19:00
-UTC, or at once only when the last finished crawl is more than a day old, so the crawl
-is started by hand:
+Run 2, overnight, right after run 1 (@weber, 2026-11-10). The timer crawls at 19:00 UTC
+with the configuration it was started with, then starts the harvest, which starts the
+indexing: nothing has to stay attached. (A crawl started with `dc exec` would end with
+the terminal.)
+
+Switch the crawl's configuration to the whole tree; `./upstaging.sh` then recreates
+only `crawl-timer`, whose command changed; the state stays:
 
 ```bash
 sed -i 's/=libertem.toml/=full.toml/' staging.env
-./upstaging.sh
-dc exec crawl-timer modama-crawler --config /stagingconf/full.toml crawl
 ```
+```bash
+./upstaging.sh
+```
+
+Check that the timer waits for 19:00 with the new configuration:
+
+```bash
+dc logs --tail 3 crawl-timer
+```
+
+Optional, for the performance baseline (F5), in a third terminal: the NFS counters of the
+data tree's mount, into the run's folder:
+
+```bash
+../../.claude/field-tests/nfs-stats.sh "$HOME/src/data-management-system/.claude/field-tests/run-1/nfs.log"
+```
+
+Leave `monitor.sh` (and `nfs-stats.sh`) running overnight in a terminal that survives
+the night (screen or tmux).
 
 ## For colleagues
 
