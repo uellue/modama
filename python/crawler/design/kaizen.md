@@ -14,4 +14,5 @@ Message size: comfortable, asked 2026-11-10.
 ## Notes for the next debrief
 - 2026-11-10: modama-rdm/modama#10 (`CONTEXT.md`, the glossary) → the rule on ambiguous words in `../AGENTS.md` points at it since the rebase; moving the crawler's terms there → `../BACKLOG.md`, "Move to GitHub".
 - 2026-11-10: modama-rdm/modama#11 (GitLab CI removed) → dropped: GitHub Actions runs the same `uvx ruff` commands, so the rule on "clean" holds; the ruff failure on `prototypes/` → `../BACKLOG.md`.
+- 2026-11-10 (inbox): Matt Pocock's skills installed (`mattpocock-skills` 1.3.2, user scope). Its `domain-modeling` keeps `GLOSSARY.md` (or `GLOSSARY-MAP.md` for several contexts), the top level has `CONTEXT.md`: which name, settle with the colleagues before moving the crawler's terms. The VM's provisioning reinstalls only kaizen (`/docs/working-with-claude.md`, devvm move).
 - 2026-11-10: sync; read up to modama-rdm/modama#30, the next sync starts there. Issues and pull requests left undecided by @weber for now.
