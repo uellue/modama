@@ -27,6 +27,13 @@ Commit 9bc9efd on `crawler` (rebased onto GitHub `master`). The dev server: 24 c
   below 0.7 GB each.
 - **Disk:** `/` 84 % (71 GB free), `/cachedata` 84 % (919 GB free), unchanged by the run.
 
+### Run 2, 2026-11-10/11: the whole tree (`stagingconf/full.toml`), overnight
+
+Commit d2bb41d. Changed from run 1: the whole tree; indexing batches of 2,000 instead of
+250 and four at once instead of one (F9). Started by the crawl timer at 19:00 UTC, with
+`monitor.sh` and `nfs-stats.sh` (`run-1/nfs.log`, the mount's NFS counters, cumulative:
+take differences) running. Results: to be added.
+
 ## Findings
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
