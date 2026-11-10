@@ -132,11 +132,11 @@ to 20:23:22 UTC, the mount's counters (`nfs-stats.sh`): 73,080 opens, 594,735 RE
 up to 64 KiB (`rsize`), 37.1 GB received (about 7.5 MB/s), 21 ms round trip per READ.
 The crawler asks for a few bytes per file (`mime.py`: `Mime.magic.maxlen`;
 `formats/__init__.py`: `n` bytes within a budget), so the rest is the client reading
-ahead. Hypothesis, not checked: Python's buffered `open(path, "rb")` sizes its buffer by
-`st_blksize`, which NFS reports as `wsize` (1 MiB here), so `f.read(small)` fetches up to
-1 MiB; kernel readahead adds to it. Check on the server: `stat -c %o` of a file on the
-mount, then a crawl of a subtree with `buffering=0` (or `os.pread`), comparing the bytes
-received per open. Caveat: the counters are the host's, for everyone using the mount;
+ahead. Hypothesis: Python's buffered `open(path, "rb")` sizes its buffer by
+`st_blksize`, which NFS reports as `wsize`, so `f.read(small)` fetches up to 1 MiB;
+kernel readahead may add to it. First half checked (20:40 UTC): `stat -c %o` gives
+1048576 for all 19,601 files of `many_mib`. Still to check: a crawl of a subtree with
+`buffering=0` (or `os.pread`), comparing the bytes received per open. Caveat: the counters are the host's, for everyone using the mount;
 that the opens match the crawled files (73,080 of 74,525) points to the crawler. At 16
 files/s the whole tree takes hours to crawl: the crawl, not the indexing, sets the pace
 on cold NFS data. Expected after a fix: the bytes received per open near the bytes the
