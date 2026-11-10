@@ -13,6 +13,7 @@
 | How to write a format collection | `src/modama_crawler/formats/TEMPLATE.md` |
 | The search stack (crawler, harvester, warehouse, search) and its end-to-end test | `/prototypes/search-stack/README.md` |
 | Tracing an item through the chain; the crawler tables it reads as an interface | `/python/search-chain/README.md` |
+| The staging field test on real data: runbook and findings, kept across runs | `design/field-tests/` |
 | Lessons on working with agents, with the reasons behind the rules below | `/docs/working-with-claude.md` |
 | Proposals on how we work with agents and the kaizen plugin, skill friction, the inbox | `design/kaizen.md` |
 
