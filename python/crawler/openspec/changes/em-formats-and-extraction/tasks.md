@@ -18,5 +18,5 @@
 ## 3. Stack and real data
 
 - [ ] 3.1 Crawler image installs `modama-formats-em`; e2e test with an EMPAD fixture shows description and subjects in the search hit. Verify: `./runtest.sh e2e`.
-- [ ] 3.2 Review by an agent that did not write the code, given the code, these specs and `design/requirements.md`; findings verified, listed in `review.md` of this change. Verify: the review file, fixes with tests.
+- [x] 3.2 Review by an agent that did not write the code, given the code, these specs and `design/requirements.md`; findings verified, listed in `review.md` of this change. Verify: the review file, fixes with tests. Done 2026-11-11: nine findings, all fixed.
 - [ ] 3.3 Staging on the real tree, @weber at the host: rebuild, reset warehouse and index, full crawl overnight; then extraction counts, failures, bytes per file and time, and the demo queries from `BACKLOG.md` Next. Verify: the findings file, run 3 or later, with numbers.
