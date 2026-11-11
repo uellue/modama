@@ -22,4 +22,4 @@ A record with extracted metadata SHALL carry `dc:subject` elements for its short
 
 #### Scenario: A DM file's format is named for people
 - **WHEN** a DM3 file's metadata is extracted
-- **THEN** its record's first `dc:subject` is `Gatan Digital Micrograph`, not the format id `dm3`
+- **THEN** its record's first `dc:subject` is `Gatan Digital Micrograph (DM3)`, not the format id `dm3`

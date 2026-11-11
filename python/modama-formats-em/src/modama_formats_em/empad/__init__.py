@@ -22,7 +22,7 @@ class Empad(Format):
     display_name = "EMPAD"
     priority = 60
     reacts_to = frozenset({HEADER})
-    extractor_version = "1"
+    extractor_version = "2"  # 2: exposure time without a unit
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for header in d.of_type(HEADER):
@@ -71,11 +71,13 @@ class Empad(Format):
             subjects.append("4D-STEM")
         values["frame"] = list(FRAME)
         summary.append("{}×{} pixel frames".format(*FRAME))
-        # In milliseconds: 1 in the headers seen, with backgrounds named img_exp_1
+        # TODO: the unit of exposure_time (1 in the headers seen, backgrounds named
+        # img_exp_1); until a source says, the number goes out without one. Term:
+        # "exposure time" as in ../../../GLOSSARY.md; the same for Merlin and DM.
         exposure = header.findtext("exposure_time")
         if exposure is not None:
-            values["exposure_ms"] = float(exposure)
-            summary.append(f"{float(exposure):g} ms exposure")
+            values["exposure_time"] = float(exposure)
+            summary.append(f"exposure time {float(exposure):g} (unit unknown)")
         stamp = header.find("timestamp")
         if stamp is not None and "isoformat" in stamp.attrib:
             acquired = datetime.fromisoformat(stamp.attrib["isoformat"])
