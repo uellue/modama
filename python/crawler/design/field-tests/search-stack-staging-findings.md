@@ -112,7 +112,39 @@ types them `application/x.dm4`, names them "Gatan Digital Micrograph (DM4)", and
 extraction fails with `TypeError("'NoneType' object is not iterable")` (no image in them):
 72 % of run 3's extraction failures. Recognition by content, whatever the name, is what
 spec `formats/dm` asks for; whether workspaces and tag files get types of their own (and
-which metadata their tags give) is open (@weber).
+which metadata their tags give) is open (@weber). Decided 2026-11-11 (71): types of their
+own; @weber asked whether `.gtg` files belong to K2IS captures, and LiberTEM's K2IS
+reader says so (one `.gtg` and 8 `.bin` sector files; 32 of the 33 are named `<stem>_.gtg`,
+two in `libertem-test-data`). OpenSpec change `dm-containers-and-k2is`, branch
+`dm-containers` (f9b3c9d), for review.
+
+**F16 (warehouse): harvest and indexing spend little of their time on the embedding.**
+Run 3: the harvest of 1,451,848 records, from 19:06 UTC, ran for hours at about 1.2 cores
+on 24: `transform` 42 %, warehouse `postgres` 58 to 60 %, the harvest worker 21 %, the
+crawler's OAI-PMH server near idle. Reproduced in the VM's test deployment (8 CPUs,
+16,000 synthetic records, `prototypes/search-stack/perf/`, untracked; raw data in the
+session's scratchpad `indexing-perf/`):
+- **Harvest:** 68 records/s, serial: one task, one record per `POST /harvest_event`
+  (12.5 ms each: a new PostgreSQL connection 6.6 ms, mostly SCRAM authentication; the
+  insert 3.2 ms on a fresh backend against 0.31 ms on an open one; commit 0.6 ms), the
+  `oai_dc` XSLT compiled again per record (1 ms). The OAI-PMH pages are about 1 % of
+  the time. At that rate staging's 1.45 million records take about 6 hours
+  (extrapolated). Upstream already has `POST /harvest_event_bulk` (`routes.py:74`), used
+  by its import script, not by the harvester (`db_api_functions.py:106`).
+- **Indexing:** batches of 250, one at a time (F9's settings) 26 records/s; batches of
+  2,000, four at once (staging's) 62 records/s, the same CPU spent in parallel. Inside a
+  batch of 250, `jsonschema.validate` per record (`transform_core.py:179`) takes 21 ms,
+  because it checks the schema itself on every call (0.18 ms with one validator): about
+  60 % of the batch. The embedding: ONNX pins 7 pool threads per process to the same
+  cores, so 4 processes oversubscribe them (load 27 on 8 CPUs); 4 × 2 threads give 194
+  texts/s against 118 with the default.
+- **Options, by expected gain (estimates from component timings):** the harvester on the
+  bulk route (about 8×); one validator per process (2.5× at batch 250); pooled database
+  connections in the warehouse API (about 3× for the harvest, a new dependency or one
+  connection per thread); ONNX threads ≈ cores / concurrency (with the validator, 3 to 4×
+  over staging's settings). Not worth it: a long-lived worker, skipping the empty
+  file-metadata batches. All are changes upstream (EOSC Data Commons), as patches like
+  the search API's first; not decided.
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
 `libertem-test-data/many_mib` holds 19,601 `.mib` frames, each its own dataset: 90 % of
