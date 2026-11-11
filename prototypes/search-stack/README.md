@@ -21,7 +21,7 @@ It is our own composition of the upstream images (EOSC metadata-warehouse `v1.10
 ./uptest.sh            # build and start, wait until healthy; the first start takes a while
 ./runtest.sh           # quick checks, one PASS/FAIL line each
 ./downtest.sh --reset  # stop and delete all state; ./uptest.sh then starts fresh
-./uptest.sh && ./runtest.sh e2e   # the end-to-end test, on a fresh stack, about 4 minutes
+./uptest.sh && ./runtest.sh e2e   # the end-to-end test, on a fresh stack, about 6 minutes
 ./downtest.sh          # stop, keeping the state
 ```
 

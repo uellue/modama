@@ -29,6 +29,7 @@ Earlier proposals (debrief of 2026-11-03, `/docs/debriefs/2026-11-03.md`): 1 to 
 - 2026-11-11, debrief: reader agents cite the file's line numbers instead of the `L<n>` markers in places (one reader gave L2326 for the moment marked L1111), so every citation had to be mapped back; the brief could ask readers to quote the marker line itself.
 
 ## Notes for the next debrief
+- 2026-11-11 (@weber, on the demo plan): "that message was too long! Let's first go to where you need my input now". Status, conclusions, six questions and a 14-row plan in one message; ask first, plan after.
 - 2026-11-11, debrief: the field-test notes of 2026-11-10 below (language, runbook format, probe outside the runbook, the GO point) → routed: being fixed upstream in the plugin update under way (@weber); new field-test frictions → proposal 14. The `CONTEXT.md`/`GLOSSARY.md` note → proposal 13.
 - 2026-11-10: modama-rdm/modama#10 (`CONTEXT.md`, the glossary) → the rule on ambiguous words in `../AGENTS.md` points at it since the rebase; moving the crawler's terms there → `../BACKLOG.md`, "Move to GitHub".
 - 2026-11-10: modama-rdm/modama#11 (GitLab CI removed) → dropped: GitHub Actions runs the same `uvx ruff` commands, so the rule on "clean" holds; the ruff failure on `prototypes/` → `../BACKLOG.md`.

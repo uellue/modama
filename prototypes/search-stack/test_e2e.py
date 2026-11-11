@@ -371,6 +371,50 @@ def test_read_only_accounts_suffice(tree):
     assert run.returncode == 0 and "fresh     as of" in run.stdout, run
 
 
+def test_a_changed_record_replaces_the_old_one(tree):
+    # Same identifier, new content: the owner changes, which records.py maps to
+    # dc:creator and the warehouse to creators (it drops dc:format, so a changed
+    # type would not reach the index). Nothing else changes, mtime included.
+    path = "/" + DISTINCT_FILE
+    url = next(u for t, u in tree.values() if t == path)
+    identifier = next(i for i, (t, _) in tree.items() if t == path)
+    with crawler_db() as conn:
+        ((before, creator),) = conn.execute(
+            "SELECT datestamp, metadata->'creator'->>0 FROM records WHERE identifier = %s",
+            (identifier,),
+        ).fetchall()
+    assert creator == "root"
+    count = opensearch_count()
+    time.sleep(2)  # datestamps have seconds granularity
+    os.chown(DATA / DISTINCT_FILE, 4242, -1)  # a uid without a name: creator "4242"
+    crawl()  # starts the harvest and waits for it
+    with crawler_db() as conn:
+        ((after, creator),) = conn.execute(
+            "SELECT datestamp, metadata->'creator'->>0 FROM records WHERE identifier = %s",
+            (identifier,),
+        ).fetchall()
+    assert (creator, after > before) == ("4242", True)
+    with warehouse_db() as conn:
+        rows = conn.execute(
+            "SELECT r.datestamp, r.opensearch_synced FROM records r "
+            "JOIN endpoints e ON e.id = r.endpoint_id "
+            "WHERE e.harvest_url = %s AND r.record_identifier = %s",
+            (OAI_URL, path),
+        ).fetchall()
+    assert rows == [(after, True)], rows
+    http(f"{OPENSEARCH}/{INDEX}/_refresh", method="POST")
+    assert opensearch_count() == count
+    docs = http(f"{OPENSEARCH}/{INDEX}/_search", {"query": {"term": {"_id": url}}})[
+        "hits"
+    ]["hits"]
+    assert [[c.get("creatorName") for c in d["_source"]["creators"]] for d in docs] == [
+        ["4242"]
+    ], docs
+    hits = http(f"{SEARCH}/search?q=ferritin&resource=datasets")["hits"]
+    assert [h["_source"]["url"] for h in hits].count(url) == 1, hits
+    assert_consistent(path)
+
+
 @pytest.fixture(scope="module")
 def faults(tree):
     """Walk-through C's faults and a rename, with one crawl and one harvest."""
