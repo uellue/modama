@@ -4,7 +4,7 @@
 
 - **Comparison across stages** (`design/requirements-pipeline.md` 2.5, handover 3): identifier sets per stage, with the trace's rules applied to the differences; for the e2e test first, an admin command if it runs quickly on production and its results are actionable.
 - **Purge of stale entries** (handover 4): warehouse `records` and OpenSearch documents of datasets the crawler no longer publishes, as the trace flags them `STALE`; never touches the data tree.
-- **Crawl timer and harvest trigger** (handover 5): done in the change `harvest-trigger-and-timer` and `prototypes/search-stack/` (2026-11-05), review findings resolved; to archive. Later the inotify watcher.
+- **Crawl timer and harvest trigger** (handover 5): done in the change `harvest-trigger-and-timer` and `prototypes/search-stack/` (2026-11-05), review findings resolved; archived 2026-11-11 (spec `harvest-trigger`). Later the inotify watcher.
 
 Deferred items, roughly in the order they are likely to come up.
 
