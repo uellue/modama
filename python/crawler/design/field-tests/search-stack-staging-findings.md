@@ -200,3 +200,19 @@ for `staging.env` (R5); unbuffered `read(n)` may return fewer than n bytes on so
 FUSE or CIFS (R6, F12); readahead may dominate F12's remaining reads, `posix_fadvise`
 would turn it off per file (R7); the staging timer repeats `--at 19:00` and the base
 file's "one at a time" comment no longer holds for staging (R8).
+
+## Demo queries: before and after
+
+Queries for the demo of 2026-11-17, each with its answer before the metadata extraction
+(index of run 1: `adhoc/libertem` only, titles are paths, no descriptions) and, after the
+re-index with `modama-formats-em`, the answer to compare.
+
+**Q1, chat: "Find Merlin acquisitions"** (@weber, 2026-11-11, `POST /chat`, Blablador
+`alias-large`). Before: 3 search tool calls, then an answer listing the
+`merlin_scan_header` `.mib` and its `.hdr` as two hits, four single frames of `many_mib`
+as "a large set of numbered raw frame acquisitions", and the MDMC 2024 slides; its values
+("200 kV", "1 ms") read off the file name; "LibreTEM" for LiberTEM (the model's slip);
+then a question whether MERLIN the radio interferometer or the lidar was meant (the model
+knows no context). The text stream began with stray `{\{\{\n`. Expected after: one hit
+per Merlin acquisition (`.hdr` with its frames, `many_mib` as one), values from the
+header (frames, frame size, bit depth, time).
