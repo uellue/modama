@@ -143,14 +143,34 @@ class _Heartbeat(threading.Thread):
 class Terminated(SystemExit):
     """SIGTERM, as an exception, so that the crawl records its run as failed (docker stop).
 
-    A SystemExit, as KeyboardInterrupt is a BaseException: asyncio logs and
-    drops an Exception raised in one of its callbacks, where the signal
-    handler mostly runs during the walk (parallel-walk review, finding 1).
+    A SystemExit, as KeyboardInterrupt is a BaseException, so that no
+    `except Exception` on the way, asyncio's among them, drops it.
     """
 
 
+# SIGTERM sets _sigterm; the crawl checks it at every directory of the walk
+# and between its phases. Outside the walk the handler also raises, so that
+# a blocking wait (the store's lock) ends at once. Not during the walk: its
+# main thread runs the loop's callbacks, where a raise from the handler is
+# dropped (in a weakref callback, __del__, the garbage collector) or leaves
+# a futures lock held, and the walk hangs (parallel-walk review, finding 1).
+_sigterm = threading.Event()
+_sigterm_raises = True
+
+
 def _terminate(signum, frame):
-    raise Terminated("terminated (SIGTERM)")
+    _sigterm.set()
+    if _sigterm_raises:
+        raise Terminated("terminated (SIGTERM)")
+
+
+def _check_terminated() -> None:
+    if _sigterm.is_set():
+        raise Terminated("terminated (SIGTERM)")
+
+
+class _Stopped(Exception):
+    """Ends the walk after SIGTERM."""
 
 
 def crawl_tree(
@@ -177,16 +197,32 @@ def crawl_tree(
     conn.commit()
     conn.autocommit = True
     stored = previous(conn, rules)
-    result = walk(
-        root,
-        formats,
-        exclude=config.exclude,
-        per_path_ignores=config.per_path_ignores,
-        progress=progress,
-        previous=stored,
-        threads=threads,
-        processes=_workers() or extraction.default_workers(),
-    )
+
+    def on_directory(directories: int, files: int) -> None:
+        if _sigterm.is_set():
+            # An Exception: it ends the walk's tasks as asyncio expects, quietly
+            raise _Stopped
+        if progress is not None:
+            progress(directories, files)
+
+    global _sigterm_raises
+    _sigterm_raises = False
+    try:
+        result = walk(
+            root,
+            formats,
+            exclude=config.exclude,
+            per_path_ignores=config.per_path_ignores,
+            progress=on_directory,
+            previous=stored,
+            threads=threads,
+            processes=_workers() or extraction.default_workers(),
+        )
+    except _Stopped:
+        raise Terminated("terminated (SIGTERM)") from None
+    finally:
+        _sigterm_raises = True
+    _check_terminated()
     report = extraction.extract(
         result,
         formats,
@@ -196,6 +232,7 @@ def crawl_tree(
         memory=_memory(),
     )
     conn.autocommit = autocommit
+    _check_terminated()
     changed = store(conn, result, format_names(formats), run_id, rules)
     return result, report, changed
 
@@ -228,6 +265,7 @@ def _threads() -> int:
 
 
 def cmd_crawl(args) -> int:
+    _sigterm.clear()  # one crawl per process, but tests run several
     signal.signal(signal.SIGTERM, _terminate)
     threads = _threads()
     config, formats, rules = _configure(args)

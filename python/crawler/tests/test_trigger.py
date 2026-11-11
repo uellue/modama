@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import weakref
 from datetime import UTC, datetime, timedelta
 
 import psycopg
@@ -201,25 +202,48 @@ def test_a_crawl_stopped_by_sigterm_records_its_run_as_failed(conn, env, tree):
     assert conn.execute("SELECT count(*) FROM records").fetchone() == (0,)
 
 
+def _kill_in_weakref_callback():
+    """SIGTERM handled inside a weakref callback, where CPython ignores what the handler raises."""
+
+    class Dropped:
+        pass
+
+    dropped = Dropped()
+    ref = weakref.ref(dropped, lambda ref: os.kill(os.getpid(), signal.SIGTERM))
+    del dropped
+    assert ref() is None
+
+
 class _Terminating(Format):
-    """Has the walk's loop send SIGTERM from the walk's last format call, the root's post-order one."""
+    """Has the walk's loop send SIGTERM during the root's pre-order call; records the calls."""
 
     type = "x/terminating"
     reacts_to = frozenset({DIRECTORY})
     loop: asyncio.AbstractEventLoop
 
+    def __init__(self, kill):
+        self.kill, self.calls = kill, []
+
     def recognize(self, d):
-        if d.phase == "post" and d.rel == "/":
+        self.calls.append((d.phase, d.rel))
+        if d.phase == "pre" and d.rel == "/":
             # In a callback of the loop, where a busy walk mostly gets the signal (review finding 1)
-            self.loop.call_soon_threadsafe(os.kill, os.getpid(), signal.SIGTERM)
+            self.loop.call_soon_threadsafe(self.kill)
         return ()
 
 
-def test_a_crawl_stopped_by_sigterm_during_the_walk(conn, env, tree, monkeypatch):
+@pytest.mark.parametrize(
+    "kill",
+    [lambda: os.kill(os.getpid(), signal.SIGTERM), _kill_in_weakref_callback],
+    ids=["in a callback", "in a weakref callback"],
+)
+def test_a_crawl_stopped_by_sigterm_during_the_walk(
+    conn, env, tree, monkeypatch, capfd, kill
+):
     import modama_crawler.walk as walk_module
 
     (tree / "unnamed").write_bytes(b"\0")  # no name a glob decides: matched
-    terminating = _Terminating()
+    terminating = _Terminating(kill)
     formats = Collection("t", [terminating]).formats
     monkeypatch.setattr(
         cli, "_configure", lambda args: (selection.Config(), formats, "r1")
@@ -238,11 +262,15 @@ def test_a_crawl_stopped_by_sigterm_during_the_walk(conn, env, tree, monkeypatch
     finally:
         signal.signal(signal.SIGTERM, handler)
     assert status == 143
+    stderr = capfd.readouterr().err
+    assert "Traceback" not in stderr and "asyncio" not in stderr, stderr
     conn.commit()
     assert conn.execute("SELECT outcome, error FROM crawl_runs").fetchall() == [
         ("failed", "terminated (SIGTERM)")
     ]
     assert conn.execute("SELECT count(*) FROM records").fetchone() == (0,)
+    # The walk stopped: the root's post-order call never came
+    assert ("post", "/") not in terminating.calls
     # The pools are shut down: no walk threads, no matching processes
     assert not [t for t in threading.enumerate() if t.name.startswith("walk")]
     assert multiprocessing.active_children() == []
