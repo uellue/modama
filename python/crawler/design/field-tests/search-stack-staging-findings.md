@@ -154,7 +154,11 @@ on cold NFS data. Confirmed overnight: about 1.1 MB received per open from 21:00
 22:00 UTC (691,289 READs, 39,527 opens) and from 04:00 to 05:00 (17.0 GB, 15,896 opens),
 the 1 MiB buffer per file; READ round trips rose from 16 ms to 43 ms during the night.
 Expected after a fix: the bytes received per open near the bytes the
-crawler asks for.
+crawler asks for. The crawl benchmark (`../../benchmark/`, 2026-11-11) shows the fix on
+an emulated mount with production's options: 18 READs and 1.18 MB per file before, 3
+READs and 197 kB after; what is left is the client's readahead (128 kB there).
+Production's `read_ahead_kb` for the mount is not known yet:
+`cat /sys/class/bdi/$(mountpoint -d /storage/er-c-data)/read_ahead_kb` on the server.
 
 **F13 (crawler): the crawl's memory grows with the files crawled.** Run 2: `crawl-timer`
 at 270 MiB at 20:00 UTC, 1 GiB at midnight, 1.9 GiB at 05:25, roughly 2.5 kB per file.
