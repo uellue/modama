@@ -41,7 +41,7 @@ Deferred items, roughly in the order they are likely to come up.
 - **Per-user access checks** through the modama permission APIs.
 - **DataCite output,** if `oai_dc` turns out too lossy. The warehouse's DC→DataCite XSLT drops `dc:format`. The warehouse also accepts DataCite with `identifierType="URL"`, even though the DataCite schema documentation requires a DOI.
 - **Crawl scaling:**
-  - The walk is single-threaded and has no checkpointing, so a failure restarts it from scratch. The visible tree took two hours for 428,000 files (about 60 files per second, 2026-10-27). Profile first, then parallelise the walk by subtree and the metadata extraction; consider Rust (`modama-rs`) for the walk and MIME classification if the profile shows Python rather than I/O is the limit (@weber's notes, 2026-11-03).
+  - The walk keeps many NFS requests in flight (change `parallel-walk`, on its branch for review: threads for the I/O, magic matching in processes); its prediction for the next staging run is in that change's proposal. Left: no checkpointing, so a failure restarts the walk from scratch; memory if all directories in progress at once outgrow the container (F13); an ACL that denies what the mode bits grant is not seen as unreadable (D4 there). Rust (`modama-rs`) only if a profile shows Python rather than I/O as the limit.
   - `datasets` and `members` persist from crawl to crawl (D3 of `em-formats-and-extraction`); `store` still sends one upsert per dataset, unchanged ones included (no row is rewritten unless it changed).
   - `DELETE FROM records WHERE identifier <> ALL(...)` carries every identifier of the crawl in one statement.
   - Paths are stored as absolute text, and keys are `SERIAL` (int4).

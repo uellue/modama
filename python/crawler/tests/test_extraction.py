@@ -294,7 +294,7 @@ def test_other_failures_of_the_environment_are_retried(conn, tmp_path, command):
     assert (report.run, report.reused, report.failed) == (1, 0, 1)
 
 
-def _unreadable(path):
+def _unreadable(path, **kw):
     raise PermissionError(13, "Permission denied", path)
 
 

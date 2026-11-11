@@ -112,3 +112,31 @@ measured with `measure.sh`; first cold (nothing had read the tree), then warm:
   counters and production's round trips instead.
 - Warm, the development server's page cache served every READ; opens still go to the
   server.
+
+## The parallel walk (2026-11-11, devvm, 20 ms round trip)
+
+Change `parallel-walk` (`../openspec/changes/parallel-walk/`), `records` on the reference
+tree (3,273 directories, 22,109 files), `BENCH_DELAY=10ms`, `BENCH_MEMORY=1G`, 8 CPUs;
+CPU time of the command and its worker processes. Before: the crawler at 8d1dec8, after:
+dd508fa (32 threads, 8 matching processes), each run on a frozen copy of the code.
+
+| | before | after |
+|---|---|---|
+| wall time | 1,275 s | 40.5 s (40.0 s on a second run) |
+| files/s | 17.3 | 546 |
+| NFS operations | 94,663 (4.3 per file) | 54,346 (2.5 per file) |
+| READ | 26,489 | 10,269 |
+| ACCESS | 21,746 | 2,673 (directories only) |
+| GETATTR | 7,279 | 6,238 |
+| DELEGRETURN | 9,272 | 5,289 |
+| OPEN, CLOSE, LOOKUP, READDIR | 10,288, 10,288, 6,620, 2,681 | the same |
+| MB received per file opened | 0.157 | 0.018 |
+| CPU user, sys | 44.3 s, 2.9 s | 50.6 s, 4.7 s |
+| largest RSS of one process | 210 MB | 219 MB |
+| cgroup memory.peak (with page cache) | 1,074 MB (at the limit; 824 MB cache) | 596 MB |
+| load average at the start | 2.68 | 1.38 (14.29 on the second run) |
+
+Every round trip took 20.2 ms in both. The output of `records --verbose` without the
+delay is byte for byte the same before, after, and after with one thread and one process
+(apart from `responseDate`): 18,719 records, 39 warnings. The mean number of requests in
+flight after: 54,346 × 20.2 ms / 40.5 s ≈ 27, near the server's 30 session slots.

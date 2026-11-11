@@ -7,10 +7,13 @@ longest-pattern rule, and its magic matching restricted to candidates checks
 the lowest priority first. Ties resolve to the common ancestor (architecture C).
 """
 
+import contextlib
 import fnmatch
 import os
 import re
 from collections import defaultdict
+from collections.abc import Callable
+from concurrent.futures import Executor
 from functools import cache
 from pathlib import Path
 
@@ -113,13 +116,43 @@ def detect(path: str) -> str:
     return detect_with_tie(path)[0]
 
 
-def detect_with_tie(path: str) -> tuple[str, tuple[str, ...] | None]:
+def init_worker(directory: Path) -> None:
+    """In a worker process for match_in: activate the parent's MIME database."""
+    from . import mimedb  # mimedb imports this module
+
+    mimedb.activate(directory)
+
+
+def _match_name(data: bytes) -> str | None:
+    found = Mime.magic.match_data(data)
+    return None if found is None else str(found)
+
+
+def match_in(pool: Executor) -> Callable[[bytes], Mime.MIMEtype | None]:
+    """Magic matching in a pool of processes started with init_worker (parallel-walk D5).
+
+    pyxdg's matching is pure Python and holds the GIL for about 4 ms per file;
+    the type found is looked up in this process's database, so the rest of
+    the detection is the same.
+    """
+
+    def match(data: bytes) -> Mime.MIMEtype | None:
+        name = pool.submit(_match_name, data).result()
+        return None if name is None else Mime.lookup(name)
+
+    return match
+
+
+def detect_with_tie(
+    path: str, match: Callable[[bytes], Mime.MIMEtype | None] | None = None
+) -> tuple[str, tuple[str, ...] | None]:
     """MIME type of the regular file at path and, if candidates tied, the tied types.
 
     The walk guarantees a regular file; symlinks and special files never get
     here. A tie between candidates resolves to their nearest common ancestor
     in the subclass hierarchy (architecture C); it counts as a tie only when
-    that ancestor is none of the candidates.
+    that ancestor is none of the candidates. `match` replaces pyxdg's magic
+    matching of the bytes read (match_in).
     """
     if database is None:
         raise RuntimeError("no MIME database active; call mimedb.build() first")
@@ -137,12 +170,15 @@ def detect_with_tie(path: str) -> tuple[str, tuple[str, ...] | None]:
     try:
         # Unbuffered: a buffered open reads a whole buffer, up to st_blksize (1 MiB on NFS)
         with open(path, "rb", buffering=0) as f:
+            # No readahead either: on NFS it fetches 128 kB or more for these few bytes (parallel-walk D6)
+            with contextlib.suppress(OSError):
+                os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
             data = f.read(Mime.magic.maxlen)
     except OSError:
         if candidates:
             return _resolve(candidates)
         return str(Mime.octet_stream), None
-    sniffed = Mime.magic.match_data(data)
+    sniffed = (match or Mime.magic.match_data)(data)
     if sniffed is not None:
         sniffed = sniffed.canonical()
     if not candidates:

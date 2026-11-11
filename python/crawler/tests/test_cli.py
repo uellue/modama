@@ -197,6 +197,20 @@ def test_unreadable_path_fails(tmp_path):
     assert run.stdout == b""
 
 
+@pytest.mark.parametrize("value", ["0", "many", "-1"])
+def test_walk_threads_not_a_number_fails(tmp_path, value):
+    run = subprocess.run(
+        [sys.executable, "-m", "modama_crawler", "records", str(tmp_path)],
+        check=False,
+        capture_output=True,
+        timeout=120,
+        env={**os.environ, "MODAMA_CRAWLER_WALK_THREADS": value},
+    )
+    assert run.returncode == 2
+    assert b"MODAMA_CRAWLER_WALK_THREADS" in run.stderr
+    assert b"Traceback" not in run.stderr and run.stdout == b""
+
+
 def test_comma_separated_ids(store):
     venv = store / "venv"
     venv.mkdir()

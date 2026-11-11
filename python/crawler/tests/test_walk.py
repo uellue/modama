@@ -1,10 +1,18 @@
 """The post-order walk (the `crawl` spec)."""
 
+import importlib
 import logging
 import os
+import threading
+import time
+from importlib.metadata import entry_points
+from pathlib import Path
 
 import pytest
+from modama_crawler import cli
 from modama_crawler.formats import DIRECTORY, Collection, Dataset, Format
+from modama_crawler.store import previous, start_run, store
+from modama_crawler.testing import collection_tests_for
 from modama_crawler.walk import walk
 
 
@@ -76,7 +84,7 @@ def test_collapsed_directory_is_not_entered(tmp_path, monkeypatch):
     monkeypatch.setattr(
         walk_module.mime,
         "detect_with_tie",
-        lambda path: (classified.append(path), real_detect(path))[1],
+        lambda path, **kw: (classified.append(path), real_detect(path, **kw))[1],
     )
     monkeypatch.setattr(
         Directory, "read", lambda d, e, n: (read.append(e.path), real_read(d, e, n))[1]
@@ -261,3 +269,133 @@ def test_unreadable_root_is_an_error(tmp_path):
             walk(tmp_path, FORMATS)
     finally:
         tmp_path.chmod(0o700)
+
+
+def test_a_readable_file_costs_no_access_call(tmp_path, monkeypatch):
+    # The mode bits grant it; os.access would be one more NFS round trip (parallel-walk D4)
+    (tmp_path / "open.txt").write_text("o")
+    (tmp_path / "open.txt").chmod(0o644)
+    real_access, calls = os.access, []
+    monkeypatch.setattr(
+        os, "access", lambda *a, **kw: (calls.append(a), real_access(*a, **kw))[1]
+    )
+    result = walk(tmp_path, FORMATS)
+    assert [d.anchor for d in result.datasets] == ["/open.txt"]
+    assert calls == []
+
+
+def _whole(result) -> tuple:
+    """Everything a walk returns, in its order."""
+    return (
+        result.datasets,
+        result.warnings,
+        result.skipped,
+        list(result.listings.items()),
+        result.unchanged,
+    )
+
+
+def _fixture_tests_modules() -> list[str]:
+    """The tests package of every installed collection (and sub-collection) with fixtures."""
+    found = []
+    for ep in entry_points(group="modama.formats"):
+        base = Path(importlib.import_module(ep.module).__file__).parent
+        for manifest in sorted(base.rglob("tests/fixtures.toml")):
+            parts = manifest.parent.relative_to(base).parts
+            found.append(".".join([ep.module, *parts]))
+    return found
+
+
+@pytest.mark.parametrize("tests_module", _fixture_tests_modules())
+def test_one_thread_against_many_on_the_fixture_trees(
+    tests_module, mime_database, tmp_path, monkeypatch
+):
+    import modama_crawler.walk as walk_module
+
+    ct = collection_tests_for(importlib.import_module(tests_module))
+    formats = [f for c in mime_database.values() for f in c.formats]
+    for name in ct.fixture_names():
+        ct.materialise(name, tmp_path)
+    # One file without a name a glob decides, so that matching runs in any case
+    (tmp_path / "unnamed").write_bytes(b"\x89PNG\r\n\x1a\n")
+    one = walk(tmp_path, formats, threads=1)
+    assert len(one.datasets) >= len(ct.fixture_names())
+    assert _whole(walk(tmp_path, formats, threads=16)) == _whole(one)
+    # Magic matching in worker processes (parallel-walk D5)
+    real_match_in, matched = walk_module.mime.match_in, []
+
+    def match_in(pool):
+        match = real_match_in(pool)
+        return lambda data: (matched.append(data), match(data))[1]
+
+    monkeypatch.setattr(walk_module.mime, "match_in", match_in)
+    assert _whole(walk(tmp_path, formats, threads=16, processes=2)) == _whole(one)
+    assert matched
+
+
+def test_many_threads_with_the_last_crawls_state(conn, tmp_path, monkeypatch):
+    import modama_crawler.walk as walk_module
+
+    if os.geteuid() == 0:
+        pytest.skip("root lists every directory")
+    root = tmp_path / "data"
+    for d in ("a/b/c", "x/y", "x/private", "r"):
+        (root / d).mkdir(parents=True)
+    for d in ("a", "a/b", "a/b/c", "x", "x/y", "r"):
+        for name in ("1.txt", "2.txt"):
+            (root / d / name).write_text(name)
+    (root / "r" / "unread").write_bytes(b"\0")  # no name a glob decides: read
+    real_detect = walk_module.mime.detect_with_tie
+
+    def detect(path, **kw):
+        if path.endswith("/unread"):
+            raise PermissionError(13, "Permission denied", path)
+        return real_detect(path, **kw)
+
+    # The state the review fixes added: an unlistable directory, a listing to retry
+    monkeypatch.setattr(walk_module.mime, "detect_with_tie", detect)
+    os.chmod(root / "x" / "private", 0)
+    try:
+        result = walk(root, FORMATS, threads=16)
+        store(conn, result, {}, start_run(conn, str(root)), "r1")
+        (root / "a" / "b" / "c" / "1.txt").write_text("changed, three levels down")
+        stored = previous(conn, "r1")
+        one = walk(root, FORMATS, previous=stored, threads=1)
+        many = walk(root, FORMATS, previous=stored, threads=16)
+    finally:
+        os.chmod(root / "x" / "private", 0o755)
+    assert one.unchanged == 2  # /x and /x/y; /a/b/c, /a/b, /a, /r and / again
+    assert one.listings["/x/private"].digest == walk_module.UNLISTABLE
+    assert one.listings["/r"].retry and not one.listings["/x"].retry
+    assert _whole(many) == _whole(one)
+
+
+def test_a_limit_on_reads_in_flight(tmp_path, monkeypatch):
+    import modama_crawler.walk as walk_module
+
+    for i in range(50):
+        (tmp_path / f"f{i}").write_bytes(b"\0")  # no name a glob decides: read
+    real_detect = walk_module.mime.detect_with_tie
+    lock, now, most = threading.Lock(), [0], [0]
+
+    def spy(path, **kw):
+        with lock:
+            now[0] += 1
+            most[0] = max(most[0], now[0])
+        time.sleep(0.01)
+        try:
+            return real_detect(path, **kw)
+        finally:
+            with lock:
+                now[0] -= 1
+
+    monkeypatch.setattr(walk_module.mime, "detect_with_tie", spy)
+    walk(tmp_path, FORMATS, threads=4)
+    assert most[0] == 4  # never more, and not one at a time
+
+
+def test_the_number_of_threads_is_a_setting(monkeypatch):
+    monkeypatch.delenv("MODAMA_CRAWLER_WALK_THREADS", raising=False)
+    assert cli._threads() == 32
+    monkeypatch.setenv("MODAMA_CRAWLER_WALK_THREADS", "4")
+    assert cli._threads() == 4

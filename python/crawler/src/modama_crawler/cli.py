@@ -38,7 +38,7 @@ from .store import (
     store,
     try_crawl_lock,
 )
-from .walk import walk
+from .walk import DEFAULT_THREADS, walk
 
 log = logging.getLogger("modama_crawler")
 
@@ -157,6 +157,7 @@ def crawl_tree(
     rules: str,
     *,
     progress=None,
+    threads: int = DEFAULT_THREADS,
 ) -> tuple[Result, extraction.Report, int]:
     """Walk, extract and store one crawl: the result, the extraction report and the number of records changed.
 
@@ -178,6 +179,8 @@ def crawl_tree(
         per_path_ignores=config.per_path_ignores,
         progress=progress,
         previous=stored,
+        threads=threads,
+        processes=_workers() or extraction.default_workers(),
     )
     report = extraction.extract(
         result,
@@ -193,7 +196,7 @@ def crawl_tree(
 
 
 def _workers() -> int | None:
-    """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1)."""
+    """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1); also the walk's matching processes."""
     value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
     return int(value) if value else None
 
@@ -204,8 +207,20 @@ def _memory() -> int:
     return int(value) << 20 if value else extraction.MEMORY
 
 
+def _threads() -> int:
+    """MODAMA_CRAWLER_WALK_THREADS, or the walk's default; exits with status 2 if it is not a positive integer."""
+    value = os.environ.get("MODAMA_CRAWLER_WALK_THREADS")
+    if value is None:
+        return DEFAULT_THREADS
+    if not value.isdigit() or int(value) < 1:
+        log.error("MODAMA_CRAWLER_WALK_THREADS must be a positive integer: %r", value)
+        raise SystemExit(2)
+    return int(value)
+
+
 def cmd_crawl(args) -> int:
     signal.signal(signal.SIGTERM, _terminate)
+    threads = _threads()
     config, formats, rules = _configure(args)
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     conninfo = conninfo_from_env()
@@ -226,7 +241,14 @@ def cmd_crawl(args) -> int:
         heartbeat.start()
         try:
             result, report, changed = crawl_tree(
-                conn, run_id, root, formats, config, rules, progress=heartbeat
+                conn,
+                run_id,
+                root,
+                formats,
+                config,
+                rules,
+                progress=heartbeat,
+                threads=threads,
             )
             warnings = _report(result)
         except (
@@ -444,6 +466,7 @@ def cmd_records(args) -> int:
         return 2
     if args.verbose:
         logging.getLogger("modama_crawler").setLevel(logging.ERROR)
+    threads = _threads()
     config, formats, _ = _configure(args)
     try:
         result = walk(
@@ -451,6 +474,8 @@ def cmd_records(args) -> int:
             formats,
             exclude=config.exclude,
             per_path_ignores=config.per_path_ignores,
+            threads=threads,
+            processes=_workers() or extraction.default_workers(),
         )
     except OSError as e:
         log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
