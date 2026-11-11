@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/test-MonarcCL_mono-image.dm4",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/test-MonarcCL_mono-image.dm4"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm4",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

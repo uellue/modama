@@ -1,0 +1,17 @@
+[misnamed]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named image.dm4 without a Digital Micrograph header (spec formats/dm, a misnamed file)"
+licence = "MIT"
+source = "written by hand"
+
+[stem_image_dm3]
+purpose = "representative"
+validity = "vendor-written: a 68x68 STEM image saved by Gatan Microscopy Suite 2.31 (GMS Version tag), Microscope Info of an FEI Tecnai, 213 tags; read by rosettasciio 0.15.0 on 2026-11-11"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/test_STEM_image.dm3, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/digitalmicrograph/2D/test_STEM_image.dm3, sha256 fcba806af75bc3c2e50e7d7b0626cba545c1464f39e99c8922b225b0b0b0224c, unchanged"
+
+[cl_image_dm4]
+purpose = "representative"
+validity = "vendor-written: a 2x2 cathodoluminescence image saved by Gatan Microscopy Suite 3.40 (GMS Version tag), Microscope Info of a Zeiss SEM, 274 tags; read by rosettasciio 0.15.0 on 2026-11-11"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/test-MonarcCL_mono-image.dm4, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/digitalmicrograph/2D/test-MonarcCL_mono-image.dm4, sha256 4ea04a10ad46595de79a20c283555f299dd07b4667f6112b44db1699f28993b6, unchanged"

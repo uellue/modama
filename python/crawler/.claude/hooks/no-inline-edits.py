@@ -18,9 +18,10 @@ and the command is appended to FLAG_LOG.
 """
 
 import json
+import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 PATTERNS = [
     (r"\bsed\b[^|;&]*\s(-[a-zA-Z]*i|--in-place)", "sed -i"),
@@ -34,7 +35,9 @@ PATTERNS = [
 
 # > or >> (not >&, not part of 2>&1), or tee, followed by a target path
 REDIRECT = re.compile(r"(?:(?<![>&0-9])\d?>>?(?!&)|\btee\s+(?:-a\s+)?)\s*([^\s;|&)]+)")
-FLAG_LOG = "/workspaces/data-management-system/.claude/hook-flags.log"
+FLAG_LOG = os.environ.get(
+    "HOOK_FLAG_LOG", "/workspaces/data-management-system/.claude/hook-flags.log"
+)
 
 
 def redirect_targets(command: str) -> list[str]:
@@ -65,7 +68,7 @@ def main() -> int:
         )
         try:
             with open(FLAG_LOG, "a") as log:
-                stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                stamp = datetime.now(UTC).isoformat(timespec="seconds")
                 log.write(f"{stamp}\t{targets}\t{command[:300]!r}\n")
         except OSError:
             pass

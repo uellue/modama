@@ -1,0 +1,12 @@
+fixtures/single_frame/Single_1_Frame_CounterDepth_6_Rows_256.hdr and .mib are
+test files of RosettaSciIO (https://github.com/hyperspy/rosettasciio), taken
+unchanged from the archive rsciio/tests/data/quantumdetector/Merlin_Single_Quad.zip
+at its tag v0.15.0.
+
+Copyright 2007-2026 The HyperSpy developers.
+
+They are distributed under the GNU General Public License, version 3 or (at
+your option) any later version, as RosettaSciIO is; the licence text is in
+../../../../COPYING.rosettasciio, copied from RosettaSciIO's COPYING.txt.
+
+The rest of modama-formats-em is MIT-licensed; see ../../../../LICENSE.

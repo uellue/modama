@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/test_STEM_image.dm3",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/test_STEM_image.dm3"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm3",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

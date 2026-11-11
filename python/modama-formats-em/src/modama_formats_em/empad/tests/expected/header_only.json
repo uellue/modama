@@ -1,0 +1,24 @@
+{
+  "datasets": [
+    {
+      "anchor": "/SCA2_rings.xml",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/SCA2_rings.xml"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.empad+xml",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": [
+    [
+      "/SCA2_rings.xml",
+      "raw file series_x4.raw named by the header is missing"
+    ]
+  ]
+}

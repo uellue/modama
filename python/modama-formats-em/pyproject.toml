@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modama-formats-em"
+description = "Electron microscopy formats for the modama crawler: recognition and metadata extraction"
+license = {file = "LICENSE"}
+requires-python = ">=3.14"
+version = "0.0.1.dev0"
+dependencies = [
+    "defusedxml",
+    "modama-crawler",
+    "rosettasciio==0.15.0",
+]
+authors = [
+    {name="Dieter Weber", email="d.weber@fz-juelich.de"},
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.entry-points."modama.formats"]
+em = "modama_formats_em:COLLECTION"
+
+[tool.setuptools.package-data]
+"*" = ["*.xml", "*.toml", "*.json", "LICENSE*"]

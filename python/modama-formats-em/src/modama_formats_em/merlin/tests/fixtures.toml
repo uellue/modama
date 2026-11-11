@@ -1,0 +1,11 @@
+[misnamed]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named acq.hdr without a Merlin header"
+licence = "MIT"
+source = "written by hand"
+
+[single_frame]
+purpose = "representative"
+validity = "vendor-written: a one-frame 256x256 acquisition, counter depth 6, written by the Merlin software 0.77 (header) of a Merlin Quad readout; read by rosettasciio 0.15.0 as shape (256, 256) uint8 on 2026-11-11"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/quantumdetector/Merlin_Single_Quad.zip (sha256 38cc7f4f580502c591e4b83c25e15b2e50cdc7e678881698dcd9b17ff5096048), https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/quantumdetector/Merlin_Single_Quad.zip; of its 20 acquisitions only Single_1_Frame_CounterDepth_6_Rows_256.hdr and .mib, unchanged"
