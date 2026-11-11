@@ -6,12 +6,12 @@
 
 ## 2. The parallel walk
 
-- [ ] 2.1 The walk as asyncio tasks over a thread pool (D1), the result sorted (D2), `threads` as a parameter of `walk()` with default 32. Verify: the whole crawler suite and `modama-formats-em`'s suite pass unchanged, among them the stored-state tests in `test_extraction.py` and `test_walk.py`.
-- [ ] 2.2 One thread against many: a test that walks every installed collection's fixture trees and a tree with the stored state (a change three levels down) with 1 and 16 threads and compares datasets, warnings, skipped entries, listings and the count of unchanged directories. Verify: the test, spec scenarios "One thread against many on the fixture trees" and "Many threads with the last crawl's state"; the existing `test_collapsed_directory_is_not_entered` with the default threads covers "A collapsed directory with many threads".
-- [ ] 2.3 Readability by mode bits, `os.access` only where they deny (D4). Verify: `test_unreadable_entries_are_skipped_and_logged`; a test that a readable file costs no `os.access` call.
-- [ ] 2.4 `posix_fadvise(POSIX_FADV_RANDOM)` on the sniffing open (D6). Verify: `test_mime.py` still passes; the benchmark's bytes per sniffed file (task 3.1).
-- [ ] 2.5 Magic matching in worker processes (D5). Verify: a test that a walk with processes gives the same result as one without on the fixture trees.
-- [ ] 2.6 The setting `MODAMA_CRAWLER_WALK_THREADS` for `crawl` and `records`, and `MODAMA_CRAWLER_EXTRACT_WORKERS` for the matching processes; README and backlog updated. Verify: spec scenarios "A limit on reads in flight" and "Not a number" as tests in `test_cli.py`/`test_walk.py`; `uvx ruff check`, `uvx ruff format --check`.
+- [x] 2.1 The walk as asyncio tasks over a thread pool (D1), the result sorted (D2), `threads` as a parameter of `walk()` with default 32. Verify: the whole crawler suite and `modama-formats-em`'s suite pass unchanged, among them the stored-state tests in `test_extraction.py` and `test_walk.py`.
+- [x] 2.2 One thread against many: a test that walks every installed collection's fixture trees and a tree with the stored state (a change three levels down) with 1 and 16 threads and compares datasets, warnings, skipped entries, listings and the count of unchanged directories. Verify: the test, spec scenarios "One thread against many on the fixture trees" and "Many threads with the last crawl's state"; the existing `test_collapsed_directory_is_not_entered` with the default threads covers "A collapsed directory with many threads". Checked that it can fail: without sorting the listings, 5 of its 6 cases fail.
+- [x] 2.3 Readability by mode bits, `os.access` only where they deny (D4). Verify: `test_unreadable_entries_are_skipped_and_logged`; a test that a readable file costs no `os.access` call.
+- [x] 2.4 `posix_fadvise(POSIX_FADV_RANDOM)` on the sniffing open (D6). Verify: `test_mime.py` still passes; the benchmark's bytes per sniffed file (task 3.1).
+- [x] 2.5 Magic matching in worker processes (D5). Verify: a test that a walk with processes gives the same result as one without on the fixture trees.
+- [x] 2.6 The setting `MODAMA_CRAWLER_WALK_THREADS` for `crawl` and `records`, and `MODAMA_CRAWLER_EXTRACT_WORKERS` for the matching processes; README and backlog updated. Verify: spec scenarios "A limit on reads in flight" and "Not a number" as tests in `test_cli.py`/`test_walk.py`; `uvx ruff check`, `uvx ruff format --check`.
 
 ## 3. After
 
