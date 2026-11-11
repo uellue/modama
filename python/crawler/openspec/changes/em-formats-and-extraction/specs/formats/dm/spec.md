@@ -18,7 +18,11 @@ A file whose header is that of a Digital Micrograph file of version 3 or 4 SHALL
 - **THEN** it does not get the DM4 type
 
 ### Requirement: DM metadata is extracted from the tags
-For a DM3 or DM4 dataset, the extractor SHALL yield, where the file's tags hold them: the acceleration voltage, the magnification or camera length, the pixel size with its unit, the image dimensions, the detector or signal name, the instrument or microscope name, and the acquisition date and time.
+For a DM3 or DM4 dataset, the extractor SHALL yield, where the file's tags hold them: the acceleration voltage, the magnification or camera length, the pixel size with its unit, the image dimensions, the detector or signal name, the instrument or microscope name, and the acquisition date and time. Values SHALL appear as the reader gives them, under its names, with a unit only where the reader gives one.
+
+#### Scenario: No unit the reader does not give
+- **WHEN** the reader gives the beam energy as a number without a unit
+- **THEN** the description shows `beam_energy` and the number, with no unit added
 
 #### Scenario: A representative DM4 image
 - **WHEN** a representative DM4 file with known tags is crawled

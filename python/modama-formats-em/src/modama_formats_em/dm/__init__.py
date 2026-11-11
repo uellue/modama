@@ -16,7 +16,7 @@ class Dm(Format):
     """A DM file of the version its `type` names, as one dataset."""
 
     priority = 60
-    extractor_version = "1"
+    extractor_version = "2"  # 2: the reader's names and numbers, no units added
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for e in d.of_type(self.type):
@@ -38,14 +38,11 @@ class Dm(Format):
             )
         }
         summary, subjects = [], []
-        if (kv := instrument.get("beam_energy")) is not None:
-            summary.append(f"{kv:g} kV")
-        if (mag := instrument.get("magnification")) is not None:
-            summary.append(f"{mag:,.0f}×")
-        # An SEM's files carry the STEM camera length tag too, at a meaningless 1 mm
-        length = instrument.get("camera_length")
-        if length is not None and instrument.get("acquisition_mode") != "SEM":
-            summary.append(f"camera length {length:g} mm")
+        # The reader's names and numbers as it gives them, no unit added (README,
+        # "Values and units"). TODO: units and meaning (BACKLOG, "Units and meaning")
+        for name in ("beam_energy", "magnification", "camera_length"):
+            if (value := instrument.get(name)) is not None:
+                summary.append(f"{name} {value:g}")
         axes = image["axes"]
         x = next((a for a in axes if a["name"] == "x"), None)
         if x is not None and x["units"] and x["units"] != "<undefined>":
