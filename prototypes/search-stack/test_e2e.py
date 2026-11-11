@@ -296,6 +296,25 @@ def test_the_raw_file_of_an_empad_pair(tree):
     assert stages["index"].key.endswith(f"/scan/{header.name}")
 
 
+def test_extracted_metadata_reaches_the_search(tree):
+    # The EMPAD header's extracted values reach the index as description and subjects
+    # (dc:description, dc:subject), and the search API returns them in the hit.
+    (header,) = (DATA / "scan").glob("*.xml")
+    url = next(u for t, u in tree.values() if t == f"/scan/{header.name}")
+    (doc,) = http(f"{OPENSEARCH}/{INDEX}/_search", {"query": {"term": {"_id": url}}})[
+        "hits"
+    ]["hits"]
+    descriptions = [d["description"] for d in doc["_source"].get("descriptions", [])]
+    subjects = [s["subject"].lower() for s in doc["_source"].get("subjects", [])]
+    assert descriptions and "128×128 pixel frames" in descriptions[0], descriptions
+    assert any("empad" in s for s in subjects), subjects
+    hits = http(
+        f"{SEARCH}/search?q={urllib.parse.quote(header.stem)}&resource=datasets"
+    )
+    (hit,) = [h for h in hits["hits"] if h["_source"]["url"] == url]
+    assert "128×128 pixel frames" in json.dumps(hit, ensure_ascii=False), hit
+
+
 def test_status_of_a_complete_chain(tree):
     t, reason, lines = freshness()
     assert t == first_crawl_start(), (reason, lines)
@@ -310,9 +329,10 @@ def test_search_finds_the_file(tree):
 
 # The search API's hybrid score is the weighted mean of its two legs, each normalized
 # to 0..1 (min_max): kNN 0.6, keyword 0.4 (upstream's hybrid_weights), times 0.1 for a
-# record without a description (description_penalty), as all of ours are. The kNN leg
-# alone gives at most 0.6 * 0.1; only a keyword match lifts a hit above that.
-KNN_ONLY_MAX = 0.6 * 0.1
+# record without a description (description_penalty); every record of ours has one since
+# change em-formats-and-extraction. The kNN leg alone gives at most 0.6; only a keyword
+# match lifts a hit above that.
+KNN_ONLY_MAX = 0.6
 
 
 def test_the_keyword_leg_finds_a_word_of_the_title(tree):
