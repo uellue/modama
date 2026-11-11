@@ -30,6 +30,9 @@ Markers per item: [answered] said or confirmed by the principal; [record] taken 
 - [answered] Real (@weber): the same test tree also on the actual storage (there is space to spare), and the same benchmark run against it there, to see what is actually going on and to check that the emulation behaves like the real thing. The tree on the storage also serves a planned test suite that monitors production.
 - [answered] Profiled (@weber): any run can be done with a full system profile (`perf`), so that what happens in the kernel, NFS client and the crawler shows up together.
 - [answered] Where (72): first the VM; the development server with the real storage; CI decided later.
+- [answered] A unit of its own (@weber, 2026-11-11): separate from the functional tests (the crawler's test suite, the search stack's e2e test) and from the staging field test on production data. The unit tests of F12 (`bytes_read`) stay functional tests of the Python crawler.
+- [answered] The setup (80, @weber): an NFS server and client in a VM, with the production mount options, network delay (`tc netem`) and the crawler in a memory-limited cgroup. Closest to production, and it shows what NFS actually does instead of guessing it from production's counters. The benchmark collects events (operations, bytes, re-reads) and predicts the production time from them with the round-trip times measured there, instead of running at production's pace; that keeps it fast.
+- [answered] Reproducible elsewhere (@weber): a complete list of what the setup needs (2.7), so that another machine can be set up the same way.
 - [answered] Test tree (71): generated from the survey's figures (file sizes, types, large frame-series directories, environments to collapse), scaled down, still much larger than the emulated cache.
 
 ### 2.2 Demand uncertainties
@@ -49,11 +52,18 @@ Not asked yet.
 - [answered] Turnaround (69): one run under 5 minutes in the VM, so that every change can be tried.
 - [answered] What it measures (70): first counters (bytes read, NFS operations per file, files read more than once and whether from cache), as they repeat; second wall time under the emulated latency.
 
-### 2.7 to 2.12
+### 2.7 Testing, installation and service
+- [answered] Root: in the VM the agent may be root; on the development server @weber runs everything, `perf` included (78). No private information on the server except some tokens and SSH keys, which `perf` does not leak as far as @weber knows.
+- [record] What the setup needs, as installed in the devvm on 2026-11-11 (Debian 13, kernel 6.12.115+deb13.1-cloud-amd64, 8 CPUs, 23 GiB):
+  - Kernel (all present in Debian's cloud kernel): `CONFIG_NFSD=m`, `CONFIG_NFS_FS=m`, `CONFIG_NFS_V4_1=y`, `CONFIG_NET_SCH_NETEM=m`, `CONFIG_FUSE_FS=y`, `CONFIG_PERF_EVENTS=y`, `CONFIG_BPF_EVENTS=y`; cgroup v2.
+  - Debian packages: `nfs-kernel-server` and `nfs-common` 2.8.3 (server, `mount.nfs`, `nfsiostat`), `iproute2` 6.15 (`tc`), `linux-perf` 6.12.116, `bpftrace` 0.23.2, `bpfcc-tools` 0.31.0 (`cachestat-bpfcc`), `strace` 6.13, `hyperfine` 1.19.0, `vmtouch` 1.3.1, `util-linux-extra` 2.41.5 (`fincore`), `fio` 3.39, `sysstat` 12.7.5. To go into `.devvm/provision.sh` once the setup works.
+  - `perf`: `kernel.perf_event_paranoid` is 3 on Debian, so `sudo`; `perf stat -G <cgroup>` counts for one container only; `perf trace -s` summarises system calls per thread; tracepoints `sunrpc:*`, `nfs:*`, `filemap:*` (143 present before NFS v4 was loaded), `nfs4:*` once `nfsv4` is loaded. Python 3.14 shows its own functions in `perf` with `-X perf` (checked: `sys.is_stack_trampoline_active()` is true).
+
+### 2.8 to 2.12
 Not asked yet.
 
 ## Release
-Decides: @weber. Builds: Claude with @weber. Owns the shared system it acts on: the emulation, none; the test tree on the actual storage: open (76).
+Decides: @weber. Builds: Claude with @weber. Owns the shared system it acts on: the emulation, none; the test tree on the actual storage: @weber (76: Claude prepares the tree, @weber copies it to the storage, says where, and manages it, like the LiberTEM test tree).
 
 ## Open questions
 - 73 Vocabulary: common terms from the performance literature (cold and hot cache, working set) for now; glossary entries for `/CONTEXT.md` proposed once the prior art shows which are established. @weber, after the research.
