@@ -5,10 +5,16 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from conftest import DC, OAI
 from modama_crawler import selection
-from modama_crawler.formats import Dataset, Extracted, Extraction, Result
+from modama_crawler.formats import Dataset, Extracted, Extraction, Format, Result
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
-from modama_crawler.records import MAX_LOCAL_ID, browse_url, build, oai_identifier
+from modama_crawler.records import (
+    MAX_LOCAL_ID,
+    browse_url,
+    build,
+    format_names,
+    oai_identifier,
+)
 from modama_crawler.store import store
 from modama_crawler.walk import walk
 
@@ -73,7 +79,7 @@ def test_dublin_core_mapping():
         mtime=0.0,
         uid=os.getuid(),
     )
-    identifier, metadata = build(dataset)
+    identifier, metadata = build(dataset, {})
     assert identifier == oai_identifier("/x.txt")
     assert metadata["title"] == ["/x.txt"]
     assert metadata["format"] == ["text/plain"]
@@ -95,7 +101,7 @@ def test_a_file_without_an_extractor():
         size=1234,
         uid=os.getuid(),
     )
-    metadata = build(dataset)[1]
+    metadata = build(dataset, {})[1]
     assert metadata["description"] == ["Plain text document, 1 file, 1.2 kB, in notes/"]
     assert "subject" not in metadata
 
@@ -112,7 +118,7 @@ def test_a_file_with_extracted_metadata():
             ["acceleration voltage 300 kV", "magnification 50,000"], []
         ),
     )
-    (text,) = build(dataset)[1]["description"]
+    (text,) = build(dataset, {})[1]["description"]
     assert text == (
         "acceleration voltage 300 kV, magnification 50,000; "
         "Unknown, 1 file, 5.0 MB, in tem/"
@@ -126,10 +132,36 @@ def test_subjects_of_an_extracted_record():
         type="application/octet-stream",
         format="em/dm",
         uid=os.getuid(),
-        extraction=extracted(["voltage 300 kV"], ["Titan", "TEM", "dm"]),
+        extraction=extracted(
+            ["voltage 300 kV"], ["Titan", "TEM", "Gatan Digital Micrograph"]
+        ),
     )
-    # One per term, the format's name first, no duplicates
-    assert build(dataset)[1]["subject"] == ["dm", "Titan", "TEM"]
+    # One per term, the format's display name first, no duplicates
+    names = {"em/dm": "Gatan Digital Micrograph"}
+    assert build(dataset, names)[1]["subject"] == [
+        "Gatan Digital Micrograph",
+        "Titan",
+        "TEM",
+    ]
+    # A format not among the enabled ones is named by its id
+    assert build(dataset, {})[1]["subject"][0] == "em/dm"
+
+
+def display_format(type: str, display_name: str = "") -> Format:
+    fmt = Format()
+    fmt.type, fmt.display_name, fmt.id = type, display_name, "t/f"
+    return fmt
+
+
+def test_a_format_s_display_name():
+    # Its own, else its MIME type's comment, else its id
+    assert format_names([display_format("text/plain", "Notes")]) == {"t/f": "Notes"}
+    assert format_names([display_format("text/plain")]) == {
+        "t/f": "Plain text document"
+    }
+    assert format_names([display_format("application/x.no-such-type")]) == {
+        "t/f": "t/f"
+    }
 
 
 def test_a_failed_extraction_gives_no_subjects():
@@ -141,7 +173,7 @@ def test_a_failed_extraction_gives_no_subjects():
         uid=os.getuid(),
         extraction=Extraction("em/dm", "1", "", None, "ValueError('truncated')"),
     )
-    metadata = build(dataset)[1]
+    metadata = build(dataset, {})[1]
     assert "subject" not in metadata
     assert metadata["description"][0].endswith("1 file, 0 B, in /")
 
@@ -153,11 +185,11 @@ def test_collection_relations():
     part = Dataset(
         anchor="/series/a", members=("/series/a",), type="text/plain", parent="/series"
     )
-    assert build(parent)[1]["relation"] == [
+    assert build(parent, {})[1]["relation"] == [
         browse_url("/series/a"),
         browse_url("/series/b"),
     ]
-    assert build(part)[1]["relation"] == [browse_url("/series")]
+    assert build(part, {})[1]["relation"] == [browse_url("/series")]
 
 
 def test_store_keeps_datestamps_and_drops_deleted(conn):
@@ -175,7 +207,7 @@ def test_store_keeps_datestamps_and_drops_deleted(conn):
         mtime=1e9,
         uid=os.getuid(),
     )
-    assert store(conn, Result([a, b])) == 2
+    assert store(conn, Result([a, b]), {}) == 2
     # Every record changed by one call carries the same datestamp, taken just
     # before the write, so a harvester's window is the upsert plus commit
     assert len({d for (d,) in conn.execute("SELECT datestamp FROM records")}) == 1
@@ -183,7 +215,7 @@ def test_store_keeps_datestamps_and_drops_deleted(conn):
     conn.commit()
 
     # Unchanged content keeps its datestamp
-    assert store(conn, Result([a, b])) == 0
+    assert store(conn, Result([a, b]), {}) == 0
     assert {d for (d,) in conn.execute("SELECT datestamp FROM records")} == {
         datetime(2000, 1, 1, tzinfo=UTC)
     }
@@ -203,6 +235,7 @@ def test_store_keeps_datestamps_and_drops_deleted(conn):
                     )
                 ]
             ),
+            {},
         )
         == 2
     )
@@ -233,7 +266,7 @@ def test_recognised_tree_reaches_the_harvester(conn, oai, tmp_path):
         selection.discover().values(), selection.Config()
     )
     result = walk(tmp_path, formats)
-    assert store(conn, result) == len(result.datasets)
+    assert store(conn, result, format_names(formats)) == len(result.datasets)
     expected = {oai_identifier(d.anchor) for d in result.datasets}
     assert set(harvest_identifiers(oai)) == expected
     record = oai(
@@ -247,7 +280,7 @@ def test_recognised_tree_reaches_the_harvester(conn, oai, tmp_path):
     # The store's marker disappears: the store's record goes, the file left in
     # it becomes a record of its own, everything else keeps its datestamp
     (tmp_path / "broken" / "broken.zarr" / "zarr.json").unlink()
-    store(conn, walk(tmp_path, formats))
+    store(conn, walk(tmp_path, formats), format_names(formats))
     after = dict(conn.execute("SELECT identifier, datestamp FROM records"))
     assert oai_identifier("/broken/broken.zarr") not in after
     assert oai_identifier("/broken/broken.zarr/c/0/0") in after

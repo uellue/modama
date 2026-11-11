@@ -27,6 +27,7 @@ class Collapse(Format):
 
 class Venv(Collapse):
     type = "application/x.python-venv"
+    display_name = "Python virtual environment"
 
     def basis(self, d):
         return "contains pyvenv.cfg" if d.entry("pyvenv.cfg") else None
@@ -34,6 +35,7 @@ class Venv(Collapse):
 
 class Conda(Collapse):
     type = "application/x.conda-env"
+    display_name = "Conda environment"
 
     def basis(self, d):
         e = d.entry("conda-meta")
@@ -55,21 +57,25 @@ class NamedDirectory(Collapse):
 
 class NodeModules(NamedDirectory):
     type = "application/x.node-modules"
+    display_name = "Node.js modules"
     directory_name = "node_modules"
 
 
 class Git(NamedDirectory):
     type = "application/x.git"
+    display_name = "Git repository"
     directory_name = ".git"
 
 
 class Pycache(NamedDirectory):
     type = "application/x.python-cache"
+    display_name = "Python bytecode cache"
     directory_name = "__pycache__"
 
 
 class IpynbCheckpoints(NamedDirectory):
     type = "application/x.ipynb-checkpoints"
+    display_name = "Jupyter notebook checkpoints"
     directory_name = ".ipynb_checkpoints"
 
 

@@ -20,7 +20,7 @@ def test_a_record_with_description_and_subjects_is_valid_oai_dc():
             "em/dm", "1", "", Extracted(["voltage 300 kV"], ["TEM", "Titan"], {})
         ),
     )
-    identifier, metadata = build(dataset)
+    identifier, metadata = build(dataset, {})
     validate_oai(
         list_records(
             "http://localhost/oai",

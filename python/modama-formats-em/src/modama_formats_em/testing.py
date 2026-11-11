@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from modama_crawler.formats import Dataset, Extraction
-from modama_crawler.records import description, subjects
+from modama_crawler.records import description, format_names, subjects
 from modama_crawler.testing import CollectionTests
 from modama_crawler.walk import walk
 
@@ -33,6 +33,7 @@ def described(ct: CollectionTests, fixture: str, workdir: Path) -> list[Describe
     """
     tree = ct.materialise(fixture, workdir)
     formats = {f.id: f for f in ct.collection.formats if f.has_extractor}
+    names = format_names(ct.collection.formats)
     out = []
     for d in walk(tree, ct.collection.formats).datasets:
         fmt = formats.get(d.format)
@@ -46,7 +47,7 @@ def described(ct: CollectionTests, fixture: str, workdir: Path) -> list[Describe
             d,
             extraction=Extraction(fmt.id, fmt.extractor_version, d.stamp, extracted),
         )
-        out.append(Described(d, description(d), subjects(d), read))
+        out.append(Described(d, description(d), subjects(d, names), read))
         print(
             f"{fixture}{d.anchor}: {out[-1].description!r}, subjects {out[-1].subjects}, "
             f"{read} bytes read of {d.size}"

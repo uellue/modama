@@ -12,6 +12,7 @@ READ_LIMIT = 64 * 1024  # zarr.json with large attributes is legal, but not read
 
 class Zarr(Format):
     type = "application/x-zarr"
+    display_name = "Zarr"
     priority = 80
     reacts_to = frozenset({DIRECTORY})
 

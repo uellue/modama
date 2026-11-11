@@ -44,6 +44,14 @@ def test_an_unchanged_crawl_leaves_a_run(conn, env, tree):
     assert "extraction: 0 run, 0 reused, 0 failed; 2 directories unchanged" in (
         crawls[1].stderr
     )
+    # The run keeps the extraction counts the crawl logged, and the runs command shows them
+    counts = conn.execute(
+        "SELECT extractions_run, extractions_reused, extractions_failed, directories_unchanged"
+        " FROM crawl_runs ORDER BY run_id"
+    ).fetchall()
+    assert counts == [(0, 0, 0, 0), (0, 0, 0, 2)]
+    newest = shell(f"{CRAWLER} runs", env).stdout.splitlines()[0]
+    assert "extraction: 0 run, 0 reused, 0 failed; 2 directories unchanged" in newest
 
 
 def test_the_root_disappears(conn, env, tree, tmp_path):
@@ -133,7 +141,8 @@ def test_runs_newest_first(conn, env, tree):
     shell(f"{CRAWLER} crawl --root {tree / 'gone'}", env)
     lines = shell(f"{CRAWLER} runs", env).stdout.splitlines()
     assert [line.split()[1] for line in lines] == ["failed", "finished", "finished"]
-    assert lines[1].endswith(f"0 records changed  {tree}")
+    assert lines[1].endswith(f"2 directories unchanged  {tree}")
+    assert "0 records changed; extraction: 0 run" in lines[1]
     assert "No such file" in lines[0]
 
 
@@ -192,6 +201,10 @@ def test_run_states():
             None,
             0,
             0,
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,

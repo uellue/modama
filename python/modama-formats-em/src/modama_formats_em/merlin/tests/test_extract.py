@@ -30,4 +30,4 @@ def test_a_representative_acquisition(collection_tests, tmp_path):
     assert acq.description.startswith(
         "1 frame, 256×256 pixels, 6-bit, Merlin Quad, 2021-04-15 14:43; "
     )
-    assert acq.subjects == ["merlin", "Merlin Quad"]
+    assert acq.subjects == ["Quantum Detectors Merlin", "Merlin Quad"]

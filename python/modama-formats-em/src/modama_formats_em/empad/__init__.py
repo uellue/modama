@@ -19,6 +19,7 @@ FRAME = (
 
 class Empad(Format):
     type = HEADER
+    display_name = "EMPAD"
     priority = 60
     reacts_to = frozenset({HEADER})
     extractor_version = "1"

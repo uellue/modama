@@ -18,6 +18,7 @@ FRAMES = "application/x.merlin-mib"
 
 class Merlin(Format):
     type = HEADER
+    display_name = "Quantum Detectors Merlin"
     priority = 60
     reacts_to = frozenset({HEADER, FRAMES})
     extractor_version = "1"

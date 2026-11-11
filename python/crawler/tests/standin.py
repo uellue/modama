@@ -17,6 +17,7 @@ from modama_crawler.formats import DIRECTORY, Collection, Dataset, Extracted, Fo
 
 class Stand(Format):
     type = "application/x.stand"
+    display_name = "Stand-in format"
     reacts_to = frozenset({DIRECTORY})
     extractor_version = "1"
 

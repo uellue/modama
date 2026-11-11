@@ -15,6 +15,7 @@ HERE = Path(__file__).parent
 class Dm(Format):
     """A DM file of the version its `type` names, as one dataset."""
 
+    display_name = "Gatan Digital Micrograph"
     priority = 60
     extractor_version = "1"
 
