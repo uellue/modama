@@ -121,7 +121,10 @@ two in `libertem-test-data`). OpenSpec change `dm-containers-and-k2is`, branch
 **F16 (warehouse): harvest and indexing spend little of their time on the embedding.**
 Run 3: the harvest of 1,451,848 records, from 19:06 UTC, ran for hours at about 1.2 cores
 on 24: `transform` 42 %, warehouse `postgres` 58 to 60 %, the harvest worker 21 %, the
-crawler's OAI-PMH server near idle. Reproduced in the VM's test deployment (8 CPUs,
+crawler's OAI-PMH server near idle. At 22:08 UTC (3 h in) still open, the same CPU, while
+the warehouse database's writes per 16.5 minutes grew from 2.5 GB (19:27) to 4.3 GB
+(21:56): more bytes per interval at the same CPU, not explained yet (no record count:
+the monitor does not reach the warehouse). Reproduced in the VM's test deployment (8 CPUs,
 16,000 synthetic records, `prototypes/search-stack/perf/`, untracked; raw data in the
 session's scratchpad `indexing-perf/`):
 - **Harvest:** 68 records/s, serial: one task, one record per `POST /harvest_event`
