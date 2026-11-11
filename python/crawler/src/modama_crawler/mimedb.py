@@ -5,13 +5,18 @@ from __future__ import annotations
 import shutil
 import subprocess
 from collections.abc import Iterable
+from functools import cache
 from pathlib import Path
 
 import xdg.BaseDirectory
+from lxml import etree
 from xdg import Mime
 
 from . import mime
 from .formats import Collection
+
+FREEDESKTOP_NS = "http://www.freedesktop.org/standards/shared-mime-info"
+XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 
 
 def build(collections: Iterable[Collection], directory: Path) -> Path:
@@ -36,6 +41,29 @@ def build(collections: Iterable[Collection], directory: Path) -> Path:
         raise RuntimeError(f"update-mime-database failed: {e.stderr}") from None
     activate(Path(directory))
     return Path(directory)
+
+
+def comment(mime_type: str) -> str:
+    """The type's English <comment> in the active database, or the type itself if it has none (D4).
+
+    Read from the compiled per-type file directly: pyxdg's get_comment picks
+    the comment by the locale, and the records must not depend on it.
+    """
+    if mime.database is None:
+        raise RuntimeError("no MIME database active; call mimedb.build() first")
+    return _comment(mime.database, mime_type)
+
+
+@cache
+def _comment(database: Path, mime_type: str) -> str:
+    try:
+        root = etree.parse(database / "mime" / f"{mime_type}.xml").getroot()
+    except OSError:
+        return mime_type
+    for element in root.iterfind(f"{{{FREEDESKTOP_NS}}}comment"):
+        if XML_LANG not in element.attrib and element.text:
+            return element.text
+    return mime_type
 
 
 def activate(directory: Path) -> None:

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
 import psycopg
 from psycopg.rows import class_row
 from psycopg.types.json import Jsonb
 
-from .formats import Result
+from .formats import Dataset, Extracted, Extraction, Listing, Result
 from .records import build
 
 # Advisory lock keys (two 32-bit integers; the database is the crawler's own).
@@ -42,8 +42,9 @@ def try_read_lock(conn: psycopg.Connection) -> bool:
 def ensure_tables(conn: psycopg.Connection) -> None:
     """Create the schema if it does not exist. There are no migrations: recreate the database after a change.
 
-    The datasets and members tables are written on every crawl and read by
-    the chain tool (python/search-chain) only; their shape is provisional.
+    The datasets, members and directories tables carry the state of the last
+    stored crawl over to the next one (D3), and are read by the chain tool
+    (python/search-chain); their shape is provisional.
     """
     cur = conn.cursor()
     cur.execute(
@@ -59,15 +60,37 @@ def ensure_tables(conn: psycopg.Connection) -> None:
             parent TEXT,
             collapsed BOOLEAN NOT NULL,
             mtime DOUBLE PRECISION NOT NULL,
-            uid INTEGER NOT NULL
+            uid INTEGER NOT NULL,
+            parts JSONB NOT NULL,
+            size BIGINT NOT NULL,
+            stamp TEXT NOT NULL,
+            directory TEXT NOT NULL,
+            extractor TEXT,
+            extractor_version TEXT,
+            extracted JSONB,
+            extract_error TEXT,
+            extract_seconds DOUBLE PRECISION
         )
         """
     )
+    cur.execute("CREATE INDEX IF NOT EXISTS datasets_directory ON datasets (directory)")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS members (
             dataset_id INTEGER REFERENCES datasets(dataset_id) ON DELETE CASCADE,
             path TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS members_dataset ON members (dataset_id)")
+    # One row per directory listed by the last stored crawl (D3)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS directories (
+            path TEXT PRIMARY KEY,
+            digest TEXT NOT NULL,
+            pre_warnings JSONB NOT NULL,
+            post_warnings JSONB NOT NULL
         )
         """
     )
@@ -100,7 +123,8 @@ def ensure_tables(conn: psycopg.Connection) -> None:
             datasets INTEGER,
             warnings INTEGER,
             records_changed INTEGER,
-            error TEXT
+            error TEXT,
+            rules TEXT
         )
         """
     )
@@ -211,8 +235,129 @@ def last_finished(conn: psycopg.Connection) -> datetime | None:
     ).fetchone()[0]
 
 
-def store(conn: psycopg.Connection, result: Result) -> int:
-    """Replace the stored datasets with the result and bring the records up to date.
+# The columns of a dataset row besides its id, in the order of _row()
+_COLUMNS = (
+    "anchor", "type", "format", "version", "basis", "warnings", "parent",
+    "collapsed", "mtime", "uid", "parts", "size", "stamp", "directory",
+    "extractor", "extractor_version", "extracted", "extract_error", "extract_seconds",
+)  # fmt: skip
+_COLUMN_LIST = ", ".join(_COLUMNS)
+_VALUES = ", ".join(f"EXCLUDED.{c}" for c in _COLUMNS[1:])
+_CURRENT = ", ".join(f"datasets.{c}" for c in _COLUMNS[1:])
+_UPSERT_DATASET = f"""
+    INSERT INTO datasets ({_COLUMN_LIST}) VALUES ({", ".join(["%s"] * len(_COLUMNS))})
+    ON CONFLICT (anchor) DO UPDATE SET ({", ".join(_COLUMNS[1:])}) = ({_VALUES})
+    WHERE ({_CURRENT}) IS DISTINCT FROM ({_VALUES})
+    RETURNING dataset_id
+"""
+
+
+def _row(d: Dataset) -> tuple:
+    x = d.extraction
+    return (
+        d.anchor, d.type, d.format, d.version, d.basis, Jsonb(list(d.warnings)),
+        d.parent, d.collapsed, d.mtime, d.uid, Jsonb(list(d.parts)), d.size,
+        d.stamp, d.directory,
+        x and x.extractor, x and x.version,
+        Jsonb(asdict(x.extracted)) if x and x.extracted else None,
+        x and x.error, x and x.seconds,
+    )  # fmt: skip
+
+
+class Stored:
+    """The datasets and directory listings of the last stored crawl, read as the walk asks for them (D3)."""
+
+    def __init__(self, conn: psycopg.Connection):
+        self.conn = conn
+        self._listings = {
+            path: Listing(digest, _pairs(pre), _pairs(post))
+            for path, digest, pre, post in conn.execute(
+                "SELECT path, digest, pre_warnings, post_warnings FROM directories"
+            )
+        }
+
+    def listing(self, rel: str) -> Listing | None:
+        return self._listings.get(rel)
+
+    def datasets(self, rel: str) -> list[Dataset]:
+        rows = self.conn.execute(
+            f"""
+            SELECT {_COLUMN_LIST},
+                coalesce(array_agg(m.path ORDER BY m.path) FILTER (WHERE m.path IS NOT NULL), '{{}}')
+            FROM datasets d LEFT JOIN members m USING (dataset_id)
+            WHERE d.directory = %s GROUP BY d.dataset_id
+            """,
+            (rel,),
+        ).fetchall()
+        return [_dataset(row) for row in rows]
+
+    def extractions(self, anchors: list[str]) -> dict[str, Extraction]:
+        """The stored extractions of the datasets at these anchors."""
+        rows = self.conn.execute(
+            """
+            SELECT anchor, extractor, extractor_version, stamp, extracted, extract_error, extract_seconds
+            FROM datasets WHERE anchor = ANY(%s) AND extractor IS NOT NULL
+            """,
+            (anchors,),
+        ).fetchall()
+        return {row[0]: _extraction(*row[1:]) for row in rows}
+
+
+def _pairs(warnings: list) -> tuple[tuple[str, str], ...]:
+    return tuple((path, text) for path, text in warnings)
+
+
+def _extraction(extractor, version, stamp, extracted, error, seconds) -> Extraction:
+    return Extraction(
+        extractor,
+        version,
+        stamp,
+        Extracted(**extracted) if extracted is not None else None,
+        error,
+        seconds,
+    )
+
+
+def _dataset(row: tuple) -> Dataset:
+    v = dict(zip(_COLUMNS, row, strict=False))
+    return Dataset(
+        anchor=v["anchor"],
+        members=tuple(row[len(_COLUMNS)]),
+        parts=tuple(v["parts"]),
+        basis=v["basis"],
+        warnings=tuple(v["warnings"]),
+        collapsed=v["collapsed"],
+        type=v["type"],
+        format=v["format"],
+        version=v["version"],
+        parent=v["parent"],
+        mtime=v["mtime"],
+        uid=v["uid"],
+        size=v["size"],
+        stamp=v["stamp"],
+        directory=v["directory"],
+        extraction=_extraction(
+            v["extractor"], v["extractor_version"], v["stamp"], v["extracted"],
+            v["extract_error"], v["extract_seconds"],
+        ) if v["extractor"] is not None else None,
+    )  # fmt: skip
+
+
+def previous(conn: psycopg.Connection, rules: str) -> Stored | None:
+    """The last stored crawl, if it ran under the same rule set; else None: everything is recognised again (D3)."""
+    row = conn.execute(
+        "SELECT rules FROM crawl_runs WHERE rules IS NOT NULL ORDER BY run_id DESC LIMIT 1"
+    ).fetchone()
+    return Stored(conn) if row is not None and row[0] == rules else None
+
+
+def store(
+    conn: psycopg.Connection,
+    result: Result,
+    run_id: int | None = None,
+    rules: str | None = None,
+) -> int:
+    """Bring the stored datasets, directory listings and records up to date with the result.
 
     Returns the number of records that changed. A record's datestamp moves only
     when its content changes, so an unchanged crawl leaves datestamps alone;
@@ -220,37 +365,42 @@ def store(conn: psycopg.Connection, result: Result) -> int:
     one call get the same datestamp, taken after the store lock is held: no
     OAI-PMH request reads until the commit, so a harvest whose window ends
     after the datestamp reads the records, and one whose window ended before
-    gets them in its next window.
+    gets them in its next window. With a run, its rule set is stored in the
+    same transaction, so that the next crawl knows what the stored datasets
+    were recognised under.
     """
     with conn.cursor() as cur:
-        # The whole content is replaced, and nothing reads these tables while
-        # the crawl runs (the server reads records only), so TRUNCATE instead
-        # of a cascading DELETE, which is quadratic without an index on members.
-        cur.execute("TRUNCATE datasets, members")
+        # Rows stay from crawl to crawl (D3): only what changed is written
+        cur.execute(
+            "DELETE FROM datasets WHERE anchor <> ALL(%s)",
+            ([d.anchor for d in result.datasets],),
+        )
         for d in result.datasets:
-            cur.execute(
-                """
-                INSERT INTO datasets (anchor, type, format, version, basis, warnings, parent, collapsed, mtime, uid)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING dataset_id
-                """,
-                (
-                    d.anchor,
-                    d.type,
-                    d.format,
-                    d.version,
-                    d.basis,
-                    Jsonb(list(d.warnings)),
-                    d.parent,
-                    d.collapsed,
-                    d.mtime,
-                    d.uid,
-                ),
-            )
-            ((dataset_id,),) = cur.fetchall()
-            cur.executemany(
-                "INSERT INTO members (dataset_id, path) VALUES (%s, %s)",
-                [(dataset_id, m) for m in d.members],
-            )
+            row = cur.execute(_UPSERT_DATASET, _row(d)).fetchone()
+            if row is not None:  # inserted or changed
+                cur.execute("DELETE FROM members WHERE dataset_id = %s", row)
+                cur.executemany(
+                    "INSERT INTO members (dataset_id, path) VALUES (%s, %s)",
+                    [(row[0], m) for m in d.members],
+                )
+        cur.execute(
+            "DELETE FROM directories WHERE path <> ALL(%s)", (list(result.listings),)
+        )
+        cur.executemany(
+            """
+            INSERT INTO directories (path, digest, pre_warnings, post_warnings)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (path) DO UPDATE
+            SET digest = EXCLUDED.digest, pre_warnings = EXCLUDED.pre_warnings,
+                post_warnings = EXCLUDED.post_warnings
+            WHERE (directories.digest, directories.pre_warnings, directories.post_warnings)
+                IS DISTINCT FROM (EXCLUDED.digest, EXCLUDED.pre_warnings, EXCLUDED.post_warnings)
+            """,
+            [
+                (path, x.digest, Jsonb([list(w) for w in x.pre]), Jsonb([list(w) for w in x.post]))
+                for path, x in result.listings.items()
+            ],
+        )  # fmt: skip
         records = [build(d) for d in result.datasets]
         # waits for the requests in flight, which are single short queries
         cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", STORE_LOCK)
@@ -271,5 +421,11 @@ def store(conn: psycopg.Connection, result: Result) -> int:
             [(identifier, Jsonb(metadata), now) for identifier, metadata in records],
         )
         changed += cur.rowcount
+        # Not before the store lock: a crawl stopped while it waits for the
+        # lock would hold the run's row, and could not record its failure
+        if run_id is not None:
+            cur.execute(
+                "UPDATE crawl_runs SET rules = %s WHERE run_id = %s", (rules, run_id)
+            )
     conn.commit()
     return changed

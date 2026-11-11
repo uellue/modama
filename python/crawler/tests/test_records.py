@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from conftest import DC, OAI
 from modama_crawler import selection
-from modama_crawler.formats import Dataset, Result
+from modama_crawler.formats import Dataset, Extracted, Extraction, Result
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
 from modama_crawler.formats.empad import cheat
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
@@ -82,6 +82,69 @@ def test_dublin_core_mapping():
     assert metadata["date"] == ["1970-01-01T00:00:00Z"]
     assert metadata["identifier"] == [browse_url("/x.txt")]
     assert "relation" not in metadata
+
+
+def extracted(summary, subjects) -> Extraction:
+    return Extraction("em/dm", "1", "", Extracted(summary, subjects, {}))
+
+
+def test_a_file_without_an_extractor():
+    dataset = Dataset(
+        anchor="/notes/todo.txt",
+        members=("/notes/todo.txt",),
+        type="text/plain",
+        size=1234,
+        uid=os.getuid(),
+    )
+    metadata = build(dataset)[1]
+    assert metadata["description"] == ["Plain text document, 1 file, 1.2 kB, in notes/"]
+    assert "subject" not in metadata
+
+
+def test_a_file_with_extracted_metadata():
+    dataset = Dataset(
+        anchor="/tem/scan.dm4",
+        members=("/tem/scan.dm4",),
+        type="application/octet-stream",
+        format="em/dm",
+        size=5_000_000,
+        uid=os.getuid(),
+        extraction=extracted(
+            ["acceleration voltage 300 kV", "magnification 50,000"], []
+        ),
+    )
+    (text,) = build(dataset)[1]["description"]
+    assert text == (
+        "acceleration voltage 300 kV, magnification 50,000; "
+        "Unknown, 1 file, 5.0 MB, in tem/"
+    )
+
+
+def test_subjects_of_an_extracted_record():
+    dataset = Dataset(
+        anchor="/tem/scan.dm4",
+        members=("/tem/scan.dm4",),
+        type="application/octet-stream",
+        format="em/dm",
+        uid=os.getuid(),
+        extraction=extracted(["voltage 300 kV"], ["Titan", "TEM", "dm"]),
+    )
+    # One per term, the format's name first, no duplicates
+    assert build(dataset)[1]["subject"] == ["dm", "Titan", "TEM"]
+
+
+def test_a_failed_extraction_gives_no_subjects():
+    dataset = Dataset(
+        anchor="/broken.dm4",
+        members=("/broken.dm4",),
+        type="application/octet-stream",
+        format="em/dm",
+        uid=os.getuid(),
+        extraction=Extraction("em/dm", "1", "", None, "ValueError('truncated')"),
+    )
+    metadata = build(dataset)[1]
+    assert "subject" not in metadata
+    assert metadata["description"][0].endswith("1 file, 0 B, in /")
 
 
 def test_collection_relations():

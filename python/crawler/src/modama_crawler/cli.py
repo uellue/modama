@@ -20,16 +20,18 @@ from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
-from . import harvest, mimedb, render, selection
-from .formats import Format
+from . import extraction, harvest, mimedb, render, selection
+from .formats import Format, Result
 from .records import build
 from .server import OAIError, OAIServer, parse_range
 from .store import (
     Run,
+    Stored,
     end_run,
     ensure_tables,
     get_run,
     last_finished,
+    previous,
     progress_run,
     recent_runs,
     start_run,
@@ -63,8 +65,8 @@ def conninfo_from_env() -> str:
     )
 
 
-def _configure(args) -> tuple[selection.Config, list[Format]]:
-    """The configuration and the enabled formats, with the MIME database built and activated.
+def _configure(args) -> tuple[selection.Config, list[Format], str]:
+    """The configuration, the enabled formats and the rule set's fingerprint, with the MIME database built and activated.
 
     Exits with status 2 and an error line when the configuration cannot be
     loaded or names a format that is not installed.
@@ -90,7 +92,7 @@ def _configure(args) -> tuple[selection.Config, list[Format]]:
         len(definitions),
         len(collections),
     )
-    return config, formats
+    return config, formats, selection.fingerprint(formats, definitions, config)
 
 
 def _ids(text: str) -> list[str]:
@@ -146,9 +148,51 @@ def _terminate(signum, frame):
     raise Terminated("terminated (SIGTERM)")
 
 
+def crawl_tree(
+    conn: psycopg.Connection,
+    run_id: int,
+    root: str,
+    formats: list[Format],
+    config: selection.Config,
+    rules: str,
+    *,
+    progress=None,
+) -> tuple[Result, extraction.Report, int]:
+    """Walk, extract and store one crawl: the result, the extraction report and the number of records changed.
+
+    The last stored crawl's datasets are taken over for unchanged directories
+    if it ran under the same rule set, and its extractions are reused where
+    the extractor and the files are the same (D3).
+    """
+    stored = previous(conn, rules)
+    result = walk(
+        root,
+        formats,
+        exclude=config.exclude,
+        per_path_ignores=config.per_path_ignores,
+        progress=progress,
+        previous=stored,
+    )
+    report = extraction.extract(
+        result,
+        formats,
+        root,
+        stored=(stored or Stored(conn)).extractions,
+        workers=_workers(),
+    )
+    changed = store(conn, result, run_id, rules)
+    return result, report, changed
+
+
+def _workers() -> int | None:
+    """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1)."""
+    value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
+    return int(value) if value else None
+
+
 def cmd_crawl(args) -> int:
     signal.signal(signal.SIGTERM, _terminate)
-    config, formats = _configure(args)
+    config, formats, rules = _configure(args)
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
@@ -167,15 +211,10 @@ def cmd_crawl(args) -> int:
         heartbeat = _Heartbeat(conninfo, run_id)
         heartbeat.start()
         try:
-            result = walk(
-                root,
-                formats,
-                exclude=config.exclude,
-                per_path_ignores=config.per_path_ignores,
-                progress=heartbeat,
+            result, report, changed = crawl_tree(
+                conn, run_id, root, formats, config, rules, progress=heartbeat
             )
             warnings = _report(result)
-            changed = store(conn, result)
         except (
             BaseException
         ) as e:  # Ctrl-C and SIGTERM too: the run must not look running
@@ -212,6 +251,7 @@ def cmd_crawl(args) -> int:
             warnings=warnings,
             records_changed=changed,
         )
+    log.info("%s", report)
     log.info(
         "%d datasets, %d warnings, %d records changed",
         len(result.datasets),
@@ -385,7 +425,7 @@ def cmd_records(args) -> int:
         return 2
     if args.verbose:
         logging.getLogger("modama_crawler").setLevel(logging.ERROR)
-    config, formats = _configure(args)
+    config, formats, _ = _configure(args)
     try:
         result = walk(
             args.path,
@@ -396,6 +436,9 @@ def cmd_records(args) -> int:
     except OSError as e:
         log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
         return 2
+    report = extraction.extract(
+        result, formats, os.path.abspath(args.path), workers=_workers()
+    )
     warnings = result.all_warnings()
     # Everything in path order: one note per skipped entry and per warning, a note and a record per dataset
     NOTE, RECORD = 0, 1
@@ -438,6 +481,7 @@ def cmd_records(args) -> int:
     sys.stdout.buffer.write(render.list_records(base_url, items))
     sys.stdout.flush()
     _report(result)
+    log.info("%s", report)
     log.info("%d records, %d warnings", count, len(warnings))
     return 0
 

@@ -80,6 +80,16 @@ def test_vendored_file_is_packaged():
     assert (core.mime_files[0].parent / "LICENSE.freedesktop.org.xml").exists()
 
 
+def test_a_types_comment():
+    # The English <comment>, whatever the locale, for the description (D4)
+    assert mimedb.comment("text/plain") == "Plain text document"
+
+
+def test_a_type_without_a_comment_falls_back_to_the_type():
+    assert mimedb.comment("application/x-zarr") == "application/x-zarr"
+    assert mimedb.comment("x/not-defined") == "x/not-defined"
+
+
 def test_detection_without_a_database_refuses(tmp_path):
     # Silently falling back to the host's /usr/share/mime would contradict Q12
     (tmp_path / "a.png").write_bytes(PNG)

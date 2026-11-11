@@ -96,6 +96,17 @@ def test_collapsed_directory_is_not_entered(tmp_path, monkeypatch):
     assert not [p for p in classified + read if "/boring/" in p]
 
 
+def test_dataset_size_is_the_total_of_its_members(tmp_path):
+    # From the walk's stat, for the description (D4); no file is opened for it
+    (tmp_path / "s").mkdir()
+    (tmp_path / "s" / "a.txt").write_text("x" * 10)
+    (tmp_path / "s" / "b.txt").write_text("y" * 5)
+    (tmp_path / "single.bin").write_bytes(b"\0" * 7)
+    by_anchor = {d.anchor: d for d in walk(tmp_path, FORMATS).datasets}
+    assert by_anchor["/s"].size == 15
+    assert by_anchor["/single.bin"].size == 7
+
+
 def test_entries_carry_both_timestamps(tmp_path):
     f = tmp_path / "old.txt"
     f.write_text("x")

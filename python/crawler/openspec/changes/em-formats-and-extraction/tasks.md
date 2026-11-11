@@ -2,10 +2,10 @@
 
 ## 1. Crawler: extraction and description
 
-- [ ] 1.1 `size` on datasets from the walk's `stat`; the MIME type's comment available from the MIME database. Verify: `test_walk.py`, `test_mimedb.py` (a type's comment, a fallback without one).
-- [ ] 1.2 Extractor interface (`Format.extract`, `extractor_version`, `Extracted`) and the extraction module: process pool, time limit from outside, failure as warning, report counts and time per format (D1, D2). Verify: tests with a stand-in format whose extractor returns, raises, kills its process and hangs (spec `extraction`, scenarios 1 to 3, 6).
-- [ ] 1.3 Persistent `datasets` (no truncation), the stored listing per directory, the rule-set fingerprint per run, "unchanged" computed bottom-up in post-order, taking over stored datasets, and the extractor's identity per dataset (D3). Verify: spec `extraction`, the scenarios of "Unchanged directories…" (no content read on the second crawl, measured with `/proc/self/io` or the benchmark's NFS counters; a change three levels down) and of "Extraction follows the identified extractor".
-- [ ] 1.4 `dc:description` on every record and `dc:subject` from extraction (D4). Verify: `test_records.py` per scenario of spec `records`; `oai_dc` still validates (`test_render.py`).
+- [x] 1.1 `size` on datasets from the walk's `stat`; the MIME type's comment available from the MIME database. Verify: `test_walk.py`, `test_mimedb.py` (a type's comment, a fallback without one).
+- [x] 1.2 Extractor interface (`Format.extract`, `extractor_version`, `Extracted`) and the extraction module: process pool, time limit from outside, failure as warning, report counts and time per format (D1, D2). Verify: tests with a stand-in format whose extractor returns, raises, kills its process and hangs (spec `extraction`, scenarios 1 to 3, 6).
+- [x] 1.3 Persistent `datasets` (no truncation), the stored listing per directory, the rule-set fingerprint per run, "unchanged" computed bottom-up in post-order, taking over stored datasets, and the extractor's identity per dataset (D3). Verify: spec `extraction`, the scenarios of "Unchanged directories…" (no content read on the second crawl, measured with `/proc/self/io` or the benchmark's NFS counters; a change three levels down) and of "Extraction follows the identified extractor".
+- [x] 1.4 `dc:description` on every record and `dc:subject` from extraction (D4). Verify: `test_records.py` per scenario of spec `records`; `oai_dc` still validates (`test_render.py`).
 
 ## 2. The collection `modama-formats-em`
 

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import posixpath
 import pwd
 from datetime import UTC, datetime
 from functools import cache
 from urllib.parse import quote_plus
 
 from .formats import Dataset
+from .mimedb import comment
 from .render import format_datestamp
 
 OAI_NAMESPACE = "er-c-data-mgmt.fz-juelich.de"
@@ -57,6 +59,44 @@ def user_name(uid: int) -> str:
         return str(uid)
 
 
+def size_text(size: int) -> str:
+    """Decimal units with one digit after the point: 1234 -> "1.2 kB"."""
+    if size < 1000:
+        return f"{size} B"
+    for unit in ("kB", "MB", "GB", "TB", "PB"):
+        size /= 1000
+        if size < 1000 or unit == "PB":
+            return f"{size:.1f} {unit}"
+    raise AssertionError("unreachable")
+
+
+def description(dataset: Dataset) -> str:
+    """One line: the extracted summary first, then type, files, size and folder (D4).
+
+    A dataset without members (a collapsed tree) has no file count or size:
+    the walk did not count its files.
+    """
+    extracted = dataset.extraction.extracted if dataset.extraction else None
+    folder = posixpath.dirname(dataset.anchor).strip("/")
+    basic = [comment(dataset.type)]
+    if dataset.members:
+        n = len(dataset.members)
+        basic.append(f"{n} file{'' if n == 1 else 's'}, {size_text(dataset.size)}")
+    basic.append(f"in {folder}/" if folder else "in /")
+    text = ", ".join(basic)
+    if extracted is not None and extracted.summary:
+        return ", ".join(extracted.summary) + "; " + text
+    return text
+
+
+def subjects(dataset: Dataset) -> list[str]:
+    """The format's name and the extractor's subjects, de-duplicated, for extracted datasets only (D4)."""
+    extracted = dataset.extraction.extracted if dataset.extraction else None
+    if extracted is None:
+        return []
+    return list(dict.fromkeys([dataset.format.rpartition("/")[2], *extracted.subjects]))
+
+
 def dc_metadata(dataset: Dataset) -> dict[str, list[str]]:
     """Dublin Core elements of a dataset, mapped approximately from the file system (R25, R32)."""
     relations = [browse_url(p) for p in dataset.parts]
@@ -65,12 +105,15 @@ def dc_metadata(dataset: Dataset) -> dict[str, list[str]]:
     metadata = {
         "title": [dataset.anchor],
         "creator": [user_name(dataset.uid)],
+        "description": [description(dataset)],
         "date": [format_datestamp(datetime.fromtimestamp(dataset.mtime, UTC))],
         "type": ["Dataset"],
         "format": [dataset.type],
         "identifier": [browse_url(dataset.anchor)],
         "publisher": [PUBLISHER],
     }
+    if terms := subjects(dataset):
+        metadata["subject"] = terms
     if relations:
         metadata["relation"] = relations
     return metadata

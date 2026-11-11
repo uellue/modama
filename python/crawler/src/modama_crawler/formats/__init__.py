@@ -9,6 +9,8 @@ MIME types and the subdirectories' datasets. See design/architecture.md A, B, D.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
@@ -31,6 +33,27 @@ class Entry:
 
 
 @dataclass(frozen=True)
+class Extracted:
+    """What an extractor found in a dataset's files (D2). Plain JSON values only: it is stored as JSONB."""
+
+    summary: list[str]  # ordered "key value" phrases, the start of the description
+    subjects: list[str]  # short terms: technique, instrument
+    values: dict  # stored with the dataset for later use, not rendered
+
+
+@dataclass(frozen=True)
+class Extraction:
+    """Which extractor ran on a dataset in which state of its files, and its outcome (D3)."""
+
+    extractor: str  # the format id
+    version: str  # the format's extractor_version
+    stamp: str  # the dataset's stamp when it ran
+    extracted: Extracted | None = None  # None: failed, or nothing to extract
+    error: str | None = None
+    seconds: float = 0.0
+
+
+@dataclass(frozen=True)
 class Dataset:
     anchor: str  # root-relative path; the directory itself for directory datasets
     members: tuple[str, ...] = ()  # files of the directory, root-relative
@@ -45,6 +68,23 @@ class Dataset:
     parent: str | None = None
     mtime: float = 0.0  # newest mtime of members and parts
     uid: int = 0  # owner of the anchor
+    size: int = 0  # total st_size of the members
+    stamp: str = (
+        ""  # digest of the members' names, sizes and times, and of the parts' stamps
+    )
+    directory: str = ""  # the directory whose recognition produced it
+    extraction: Extraction | None = (
+        None  # set after the walk, for formats with an extractor
+    )
+
+
+@dataclass(frozen=True)
+class Listing:
+    """A directory as the walk last saw it: a digest of its listing, and the warnings its recognition gave (D3)."""
+
+    digest: str
+    pre: tuple[tuple[str, str], ...] = ()  # warnings of the pre-order call
+    post: tuple[tuple[str, str], ...] = ()  # of MIME detection and the post-order call
 
 
 @dataclass
@@ -52,6 +92,8 @@ class Result:
     datasets: list[Dataset] = field(default_factory=list)
     warnings: list[tuple[str, str]] = field(default_factory=list)  # (path, text)
     skipped: list[tuple[str, str]] = field(default_factory=list)  # (path, reason)
+    unchanged: int = 0  # directories whose datasets were taken over from the last crawl
+    listings: dict[str, Listing] = field(default_factory=dict)  # every directory listed
 
     def all_warnings(self) -> list[tuple[str, str]]:
         """The walk's warnings and those carried by datasets, in path order."""
@@ -144,8 +186,23 @@ class Format:
     name: str = ""  # set by Collection: the class name, lowercased, unless given
     id: str = ""  # set by Collection: collection/name
 
+    extractor_version: str = "1"  # of extract(), apart from the recognition version
+
     def recognize(self, directory: Directory) -> Iterable[Dataset]:
         return ()
+
+    def extract(self, dataset: Dataset, root: str) -> Extracted | None:
+        """Metadata from the files of one of this format's datasets; a format without one doesn't override it (D2).
+
+        Runs in a worker process after the walk, with a time limit, without
+        database access. A member's path on disk is `root + member`. May raise:
+        the dataset then keeps a basic description and the crawl a warning.
+        """
+        return None
+
+    @property
+    def has_extractor(self) -> bool:
+        return type(self).extract is not Format.extract
 
 
 @dataclass
@@ -197,10 +254,21 @@ def _fill(ds: Dataset, fmt: Format, d: Directory, mtime: float, uid: int) -> Dat
     members = tuple(
         sorted(set(ds.members) | ({ds.anchor} if ds.anchor != d.rel else set()))
     )
+    files = {e.rel: e for e in d.entries}
+    children = {c.anchor: c for c in d.children}
     return replace(
         ds, members=members, type=fmt.type, format=fmt.id, version=fmt.version,
-        mtime=mtime, uid=uid,
+        mtime=mtime, uid=uid, size=sum(files[m].size for m in members if m in files),
+        stamp=stamp([files[m] for m in members if m in files],
+                    [children[p].stamp for p in ds.parts if p in children]),
+        directory=d.rel,
     )  # fmt: skip
+
+
+def stamp(members: Iterable[Entry], part_stamps: Iterable[str] = ()) -> str:
+    """A digest of the members' names, sizes and times and the parts' stamps: equal stamps, unchanged files (D3)."""
+    state = [[e.rel, e.size, e.mtime, e.ctime] for e in members]
+    return hashlib.sha256(json.dumps([state, list(part_stamps)]).encode()).hexdigest()
 
 
 def run_pre(
@@ -296,6 +364,9 @@ def run_post(
                     basis="single file",
                     mtime=e.mtime,
                     uid=e.uid,
+                    size=e.size,
+                    stamp=stamp([e]),
+                    directory=d.rel,
                 )
             )
     return out, adoptions

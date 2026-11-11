@@ -34,11 +34,16 @@ def test_a_finished_crawl(conn, env, tree):
 
 
 def test_an_unchanged_crawl_leaves_a_run(conn, env, tree):
-    for _ in range(2):
-        assert shell(f"{CRAWLER} crawl --root {tree}", env).returncode == 0
+    crawls = [shell(f"{CRAWLER} crawl --root {tree}", env) for _ in range(2)]
+    assert [c.returncode for c in crawls] == [0, 0]
     first, second = runs(conn)
     assert (first[0], first[7]) == ("finished", 3)
     assert (second[0], second[7]) == ("finished", 0)
+    # The rule set's fingerprint is the same in a new process: both directories are taken over
+    assert "0 directories unchanged" in crawls[0].stderr
+    assert "extraction: 0 run, 0 reused, 0 failed; 2 directories unchanged" in (
+        crawls[1].stderr
+    )
 
 
 def test_the_root_disappears(conn, env, tree, tmp_path):

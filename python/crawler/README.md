@@ -6,11 +6,14 @@ Status: alpha, on the `crawler` branch. The work goes in three steps: the OAI-PM
 
 ## How it works
 
-A crawl has three steps:
+A crawl has four steps:
 
-1. **Walk and recognise.** `walk()` goes through the tree once. In each directory the enabled *formats* look at the entries and claim the files they recognise. For example, the EMPAD format claims an XML header together with its raw file, and the Zarr format claims a whole Zarr store. Large uninteresting trees such as Python environments, `node_modules` or `.git` are *collapsed* into one dataset without being walked. Every file nobody claims becomes a single-file dataset of its MIME type. The output is a *recognition result*: a list of datasets with their members, format and the reason they were recognised. This step needs no database.
-2. **Store.** `store.py` writes the result to PostgreSQL. A record's datestamp only moves when its content changes, so harvesters can fetch increments.
-3. **Serve.** `server.py` answers OAI-PMH requests from the records table, in `oai_dc` (Dublin Core).
+1. **Walk and recognise.** `walk()` goes through the tree once. In each directory the enabled *formats* look at the entries and claim the files they recognise. For example, the EMPAD format claims an XML header together with its raw file, and the Zarr format claims a whole Zarr store. Large uninteresting trees such as Python environments, `node_modules` or `.git` are *collapsed* into one dataset without being walked. Every file nobody claims becomes a single-file dataset of its MIME type. The output is a *recognition result*: a list of datasets with their members, format and the reason they were recognised. This step needs no database. A crawl lists every directory, but a directory whose listing (names, types, sizes, owners, times), and those of all directories below it, are unchanged since the last crawl under the same rules keeps its stored datasets: none of its files is read again.
+2. **Extract.** `extraction.py` runs the extractor of each dataset's format, if it has one, in worker processes with a time limit per dataset. An extraction is reused while the extractor, its version and the dataset's files are the same; a failed one too, so a broken file is not retried every night. A failure leaves the dataset with a basic description and the crawl with a warning.
+3. **Store.** `store.py` writes the result to PostgreSQL. The datasets stay there from crawl to crawl, for the next crawl to take over. A record's datestamp only moves when its content changes, so harvesters can fetch increments.
+4. **Serve.** `server.py` answers OAI-PMH requests from the records table, in `oai_dc` (Dublin Core).
+
+Every record has a `dc:description` on one line: the extracted values first, if any, then the type's name from the MIME database, the number of files, their size and the folder, for example `Plain text document, 1 file, 1.2 kB, in notes/`. A record with extracted metadata also has a `dc:subject` for the format's name and for each term the extractor gives (technique, instrument).
 
 A record's identifier is the dataset's browse URL in the management interface, for example `https://er-c-data-mgmt.fz-juelich.de/browse/?path=/adhoc/livecalibration/generate.ipynb`. ELN entries link to the same URLs, so the quoting must match `python/mgmtinterface` byte for byte.
 
@@ -58,6 +61,8 @@ modama-crawler serve                    # OAI-PMH on port 7654
 ```
 
 With `MODAMA_CRAWLER_AIRFLOW_URL` set (and `MODAMA_CRAWLER_AIRFLOW_USER`, `MODAMA_CRAWLER_AIRFLOW_PASSWORD`, an Airflow account allowed to start DAG runs), every finished crawl starts the EOSC warehouse's harvest of its own endpoint (`OAI_BASE_URL`), after its records are committed; also an unchanged crawl, so that a harvest covers it and the search's freshness time moves on. If the harvest cannot be started, the crawl still counts as finished, and the command exits with status 3. On SIGTERM (`docker stop`) a crawl records its run as failed and exits with 143; the timer passes SIGTERM on to its running crawl. `/prototypes/search-stack/` runs both, the timer and the trigger.
+
+At its end a crawl logs its extraction counts, for example `extraction: 2 run, 0 reused, 1 failed; 12 directories unchanged; time per format: em/dm 3.2 s`. Extraction uses `MODAMA_CRAWLER_EXTRACT_WORKERS` processes, by default the number of CPUs up to 8; `records` extracts too, without reusing anything.
 
 Every crawl is recorded as a run in the database before it starts walking, so that a crawl shows up while it runs. While walking it logs `N directories, M files so far` on stderr and updates its run once a minute. `runs` prints one line per run: start, state, end (or the last update), counts and root; a failed run ends with its error. Only one crawl runs at a time: a second one exits with status 1 and `another crawl is running on this database`; a crashed crawler leaves no lock behind. While a crawl writes its records, which is the last step and takes seconds to minutes, `serve` answers with HTTP 503 and `Retry-After: 60`, so that a harvester comes back after the commit instead of missing the records. The states are `finished`, `failed`, `running`, and `stale` for a run without an end that has not been updated for two minutes (killed, or the machine went down). `runs --follow` exits with status 1 if the run it follows turns stale.
 

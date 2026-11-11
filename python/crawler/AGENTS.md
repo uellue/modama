@@ -61,7 +61,8 @@ The Bash hook `.claude/hooks/no-inline-edits.py` refuses in-place edits by shell
 ```
 src/modama_crawler/
 ├── cli.py          # crawl, runs, timer, serve, records; the only place that reads the environment
-├── walk.py         # post-order walk with pre-order collapse check -> Result
+├── walk.py         # post-order walk with pre-order collapse check -> Result; takes over unchanged directories
+├── extraction.py   # runs Format.extract in a process pool with a time limit; reuse by extractor identity and stamp
 ├── formats/        # Entry, Directory, Dataset, Result, Format, Collection; the runner (run_pre, run_post)
 │   ├── TEMPLATE.md # how to write a collection
 │   ├── core/       # vendored freedesktop.org.xml (GPL-2.0-or-later) + er-c.xml curation (ties that force content checks)
@@ -72,9 +73,9 @@ src/modama_crawler/
 ├── mimedb.py       # builds the per-deployment MIME database from the enabled collections only
 ├── selection.py    # entry-point discovery, ruff-style select/ignore, per-path ignores, crawl excludes
 ├── harvest.py      # starts the warehouse's harvest of this endpoint after a crawl (Airflow API)
-├── records.py      # OAI identifier, browse URL, Dublin Core mapping of a Dataset
+├── records.py      # OAI identifier, browse URL, Dublin Core mapping of a Dataset, description and subjects
 ├── render.py       # oai_dc XML, shared by the server and the records command
-├── store.py        # PostgreSQL schema (datasets, members, records, crawl_runs), storing a Result, recording runs, the crawl and store locks
+├── store.py        # PostgreSQL schema (datasets, members, directories, records, crawl_runs), storing a Result, the stored state for the next crawl, recording runs, the crawl and store locks
 ├── server.py       # OAI-PMH WSGI app (werkzeug), reads the records table only; 503 while a crawl writes records
 └── testing.py      # pytest plugin: fixtures, manifest, expected results, coverage rule
 ```

@@ -7,6 +7,8 @@ and crawl exclusions are gitignore patterns, matched by pathspec. See design/arc
 
 from __future__ import annotations
 
+import hashlib
+import json
 import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -131,6 +133,25 @@ def enabled_formats(collections: Iterable[Collection], config: Config) -> list[F
         for f in c.formats
         if enabled(f.id, config.select, config.ignore)
     ]
+
+
+def fingerprint(
+    formats: Iterable[Format], definitions: Iterable[Collection], config: Config
+) -> str:
+    """A digest of the rule set: enabled formats and their recognition versions, the MIME definitions, the selection.
+
+    Datasets recognised under another rule set are not taken over (D3). The
+    extractor versions are left out: a new one re-extracts, it does not
+    re-recognise.
+    """
+    h = hashlib.sha256()
+    h.update(json.dumps(sorted([f.id, f.version] for f in formats)).encode())
+    for collection in sorted(definitions, key=lambda c: c.name):
+        for xml in collection.mime_files:
+            h.update(f"{collection.name}/{Path(xml).name}\0".encode())
+            h.update(Path(xml).read_bytes())
+    h.update(json.dumps([config.per_path_ignores, config.exclude]).encode())
+    return h.hexdigest()
 
 
 def compile_patterns(patterns: Iterable[str]) -> GitIgnoreSpec:

@@ -93,6 +93,7 @@ def test_get_record(oai, records):
     assert dc == {
         "title": "/a.txt",
         "creator": pwd.getpwuid(os.getuid()).pw_name,
+        "description": "Plain text document, 1 file, 0 B, in /",
         "publisher": "ER-C",
         "date": "1970-01-01T00:00:00Z",
         "type": "Dataset",

@@ -64,6 +64,37 @@ class Pair(Format):
 Rules: claim only entries of `d` and whole child datasets (`parts=`); never
 open files yourself; keep `recognize` fast, it has a time limit per directory.
 
+## Extracting metadata
+
+A format may also read metadata from its datasets' files, after recognition:
+
+```python
+from modama_crawler.formats import Extracted
+
+
+class Pair(Format):
+    ...
+    # Raise it when the output changes: the datasets are extracted again
+    extractor_version = "1"
+
+    def extract(self, dataset, root):
+        header = root + dataset.anchor  # a member's path on disk: root + member
+        ...
+        return Extracted(
+            # "key value" phrases, the start of dc:description
+            summary=["scan 256 x 256", "exposure 1 ms"],
+            subjects=["4D-STEM"],  # short terms for dc:subject
+            values={"scan": [256, 256], "exposure_s": 0.001},  # stored, not rendered
+        )
+```
+
+`extract` runs in a worker process with a time limit, without database
+access; plain JSON values only. It may open the members itself, unbuffered
+(`open(path, "rb", buffering=0)`, see the README's pitfalls). If it raises,
+crashes or runs over the limit, the dataset keeps a basic description and the
+crawl reports a warning; the failure is kept until the files or the
+`extractor_version` change. Return `None` if there is nothing to extract.
+
 ## Fixtures
 
 Every file-specific rule you write needs at least one *representative*
