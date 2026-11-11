@@ -10,6 +10,10 @@ Electron microscopy formats for the modama crawler (`python/crawler/`), as the f
 
 Metadata extraction uses [RosettaSciIO](https://github.com/hyperspy/rosettasciio) (GPL-3.0-or-later), a dependency of this package only, for DM (its reader, lazily: the tags are parsed, the image data skipped) and Merlin (its header parsers). Merlin frames belong to the header whose name they start with, as LiberTEM groups them (`acq.hdr`: `acq*.mib`). The extraction tests print each fixture's description, subjects and the bytes read (`pytest -s src`).
 
+## Values and units: what the driver says
+
+An extractor shows what the file or its reader (the format driver, for example RosettaSciIO) says, without editorializing: no unit guessed from a value's size, no unit converted, no number from one tag joined with a unit from another. Where the driver gives no unit, the description says so ("unit unknown"). Consistent units and metadata blocks (with pint or similar) come later, in the drivers upstream where possible (@weber, 2026-11-11).
+
 ## Setup and tests
 
 ```bash
