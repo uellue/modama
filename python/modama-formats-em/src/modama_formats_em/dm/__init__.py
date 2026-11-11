@@ -1,22 +1,60 @@
 """Gatan Digital Micrograph files (DM3, DM4): single-file datasets, recognised by their header (dm.xml).
 
-Extraction goes through RosettaSciIO's reader, lazily: it parses the tags and
-skips the image data by seeking past it (D7; bytes read per file in the tests).
+Extraction goes through RosettaSciIO's reader: it parses the tags and skips the
+image data by seeking past it (D7; bytes read per file in the tests).
 """
 
+import os
 from collections.abc import Iterable
+from copy import deepcopy
 from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
 HERE = Path(__file__).parent
+# Python sizes a file's buffer from st_blksize, 1 MiB on NFS: every seek in the tag
+# tree then refills up to 1 MiB (staging run 3, F14: 1,168 kB per file). 64 KiB is
+# NFS's read size; smaller buffers read less but need more round trips.
+BUFFER = 64 * 1024
+
+
+def first_image(path: str) -> dict:
+    """What RosettaSciIO's `file_reader(path)[0]` gives, except the data, from our own handle.
+
+    The same steps as `rsciio.digitalmicrograph.file_reader` (0.15.0) on a file
+    opened with a small buffer and readahead off, without `get_data`, which
+    maps the image (and refuses RGBA images when lazy). Identical results on
+    RosettaSciIO's 98 DM test files that `file_reader` reads (F14).
+    """
+    from rsciio.digitalmicrograph._api import (  # imports dask: in the worker only
+        DigitalMicrographReader,
+        ImageObject,
+    )
+
+    with open(path, "rb", buffering=BUFFER) as f:
+        os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
+        dm = DigitalMicrographReader(f)
+        dm.parse_file()
+        image = ImageObject(dm.get_image_dictionaries()[0], f, order=None)
+        image.filename = path
+        dm.tags_dict["ImageList"] = {"TagGroup0": image.imdict.to_dict()}
+        metadata = image.get_metadata()
+        metadata["General"]["original_filename"] = os.path.basename(path)
+        return {
+            "axes": image.get_axes_dict(),
+            "metadata": deepcopy(metadata),
+            "original_metadata": deepcopy(dm.tags_dict),
+            "mapping": image.get_mapping(),
+        }
 
 
 class Dm(Format):
     """A DM file of the version its `type` names, as one dataset."""
 
     priority = 60
-    extractor_version = "2"  # 2: the reader's names and numbers, no units added
+    # 2: the reader's names and numbers, no units added; 3: our own handle (F14),
+    # so RGBA images, which file_reader refused when lazy, are extracted again
+    extractor_version = "3"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for e in d.of_type(self.type):
@@ -24,11 +62,7 @@ class Dm(Format):
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
         """The acquisition values the tags hold (spec formats/dm, "DM metadata is extracted from the tags")."""
-        from rsciio.digitalmicrograph import (
-            file_reader,  # imports dask: in the worker only
-        )
-
-        image = file_reader(root + dataset.anchor, lazy=True)[0]
+        image = first_image(root + dataset.anchor)
         tags = mapped(image["original_metadata"], image["mapping"])
         instrument = {
             k.split(".", 2)[2]: v

@@ -34,8 +34,9 @@ def test_a_representative_dm4_image(collection_tests, tmp_path):
         "SEM",
         "CL",
     ]
-    # The tags, not the whole file (D7)
-    assert image.bytes_read < image.dataset.size
+    # The tags, not the whole file (D7), in a small buffer: 143,372 bytes with
+    # RosettaSciIO's file_reader on a local disk, 1 MiB per refill on NFS (F14)
+    assert image.bytes_read < 100_000
 
 
 def test_a_representative_dm3_image(collection_tests, tmp_path):
@@ -45,3 +46,10 @@ def test_a_representative_dm3_image(collection_tests, tmp_path):
         "68×68, DigiScan, FEI Titan, 2016-08-08 16:26; "
     )
     assert image.subjects == ["Gatan Digital Micrograph (DM3)", "FEI Titan", "STEM"]
+
+
+def test_an_rgba_image(collection_tests, tmp_path):
+    # RosettaSciIO's file_reader refuses RGBA images when lazy; the tags are still read (F14)
+    (image,) = described(collection_tests, "rgba_image_dm4", tmp_path)
+    assert image.description.startswith("2×2; Gatan Digital Micrograph file, version 4")
+    assert image.subjects == ["Gatan Digital Micrograph (DM4)"]

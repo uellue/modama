@@ -1,5 +1,6 @@
-fixtures/stem_image_dm3/test_STEM_image.dm3 and
-fixtures/cl_image_dm4/test-MonarcCL_mono-image.dm4 are test files of
+fixtures/stem_image_dm3/test_STEM_image.dm3,
+fixtures/cl_image_dm4/test-MonarcCL_mono-image.dm4 and
+fixtures/rgba_image_dm4/test-8.dm4 are test files of
 RosettaSciIO (https://github.com/hyperspy/rosettasciio), copied unchanged from
 its tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/.
 

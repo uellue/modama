@@ -8,7 +8,7 @@ Electron microscopy formats for the modama crawler (`python/crawler/`), as the f
 | Gatan Digital Micrograph | DM3 and DM4 files by their header, whatever their name (`em/dm3`, `em/dm4`) | voltage, magnification, camera length, pixel size, dimensions, device, microscope, time; from the tags |
 | Merlin | the `.hdr` text header by its content with its `.mib` frame files, one dataset (`em/merlin`); `.mib` files without a header stay single files with a warning | frame count, frame size, counter depth, readout system, time; from the header and the first frame's header |
 
-Metadata extraction uses [RosettaSciIO](https://github.com/hyperspy/rosettasciio) (GPL-3.0-or-later), a dependency of this package only, for DM (its reader, lazily: the tags are parsed, the image data skipped) and Merlin (its header parsers). Merlin frames belong to the header whose name they start with, as LiberTEM groups them (`acq.hdr`: `acq*.mib`). The extraction tests print each fixture's description, subjects and the bytes read (`pytest -s src`).
+Metadata extraction uses [RosettaSciIO](https://github.com/hyperspy/rosettasciio) (GPL-3.0-or-later), a dependency of this package only, for DM (its reader classes on a file we open with a 64 KiB buffer and readahead off: the tags are parsed, the image data skipped; Python's default buffer on NFS is 1 MiB, refilled at every seek) and Merlin (its header parsers). Merlin frames belong to the header whose name they start with, as LiberTEM groups them (`acq.hdr`: `acq*.mib`). The extraction tests print each fixture's description, subjects and the bytes read (`pytest -s src`).
 
 ## Values and units: what the driver says
 
