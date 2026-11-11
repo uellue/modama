@@ -9,15 +9,19 @@ the lowest priority first. Ties resolve to the common ancestor (architecture C).
 
 import contextlib
 import fnmatch
+import logging
 import os
 import re
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import Executor
+from concurrent.futures.process import BrokenProcessPool
 from functools import cache
 from pathlib import Path
 
 from xdg import Mime
+
+log = logging.getLogger(__name__)
 
 WILDCARDS = re.compile(r"[*?\[]")
 
@@ -133,12 +137,25 @@ def match_in(pool: Executor) -> Callable[[bytes], Mime.MIMEtype | None]:
 
     pyxdg's matching is pure Python and holds the GIL for about 4 ms per file;
     the type found is looked up in this process's database, so the rest of
-    the detection is the same.
+    the detection is the same. If a process dies (the OOM killer), the pool
+    is broken: matching goes on in the calling thread, with the same result.
     """
+    broken = False
 
     def match(data: bytes) -> Mime.MIMEtype | None:
-        name = pool.submit(_match_name, data).result()
-        return None if name is None else Mime.lookup(name)
+        nonlocal broken
+        if not broken:
+            try:
+                name = pool.submit(_match_name, data).result()
+            except BrokenProcessPool:
+                if not broken:
+                    broken = True
+                    log.warning(
+                        "a matching process died; matching goes on without them"
+                    )
+            else:
+                return None if name is None else Mime.lookup(name)
+        return Mime.magic.match_data(data)
 
     return match
 

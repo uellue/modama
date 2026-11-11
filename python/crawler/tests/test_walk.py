@@ -3,6 +3,7 @@
 import importlib
 import logging
 import os
+import signal
 import threading
 import time
 from importlib.metadata import entry_points
@@ -401,6 +402,39 @@ def test_a_limit_on_reads_in_flight(tmp_path, monkeypatch):
     monkeypatch.setattr(walk_module.mime, "detect_with_tie", spy)
     walk(tmp_path, FORMATS, threads=4)
     assert most[0] == 4  # never more, and not one at a time
+
+
+def test_a_matching_process_that_dies(mime_database, tmp_path, monkeypatch, caplog):
+    # The OOM killer, say: the walk goes on and its result is the same
+    import modama_crawler.walk as walk_module
+
+    formats = [f for c in mime_database.values() for f in c.formats]
+    for i in range(20):
+        # no name a glob decides: matched
+        (tmp_path / f"p{i}").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (tmp_path / f"z{i}").write_bytes(b"\0")
+    real_match_in, killed = walk_module.mime.match_in, []
+
+    def match_in(pool):
+        match = real_match_in(pool)
+
+        def kill_one_then_match(data):
+            if pool._processes and not killed:
+                killed.append(next(iter(pool._processes)))
+                os.kill(killed[0], signal.SIGKILL)
+                deadline = time.monotonic() + 10
+                while not pool._broken and time.monotonic() < deadline:
+                    time.sleep(0.01)
+            return match(data)
+
+        return kill_one_then_match
+
+    monkeypatch.setattr(walk_module.mime, "match_in", match_in)
+    with caplog.at_level(logging.WARNING):
+        result = walk(tmp_path, formats, threads=4, processes=2)
+    assert killed
+    assert _whole(result) == _whole(walk(tmp_path, formats, threads=4))
+    assert "matching process died" in caplog.text
 
 
 def test_the_number_of_threads_is_a_setting(monkeypatch):
