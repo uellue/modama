@@ -206,12 +206,12 @@ class _Terminating(Format):
 
     type = "x/terminating"
     reacts_to = frozenset({DIRECTORY})
-    loop: list[asyncio.AbstractEventLoop] = []
+    loop: asyncio.AbstractEventLoop
 
     def recognize(self, d):
         if d.phase == "post" and d.rel == "/":
             # In a callback of the loop, where a busy walk mostly gets the signal (review finding 1)
-            self.loop[0].call_soon_threadsafe(os.kill, os.getpid(), signal.SIGTERM)
+            self.loop.call_soon_threadsafe(os.kill, os.getpid(), signal.SIGTERM)
         return ()
 
 
@@ -219,14 +219,15 @@ def test_a_crawl_stopped_by_sigterm_during_the_walk(conn, env, tree, monkeypatch
     import modama_crawler.walk as walk_module
 
     (tree / "unnamed").write_bytes(b"\0")  # no name a glob decides: matched
-    formats = Collection("t", [_Terminating()]).formats
+    terminating = _Terminating()
+    formats = Collection("t", [terminating]).formats
     monkeypatch.setattr(
         cli, "_configure", lambda args: (selection.Config(), formats, "r1")
     )
     real_walk = walk_module._walk
 
     async def walk_with_loop(*args):
-        _Terminating.loop[:] = [asyncio.get_running_loop()]
+        terminating.loop = asyncio.get_running_loop()
         return await real_walk(*args)
 
     monkeypatch.setattr(walk_module, "_walk", walk_with_loop)

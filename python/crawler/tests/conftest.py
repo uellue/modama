@@ -169,16 +169,17 @@ def shell(command_line: str, env: dict):
 def interrupted(script: str, *args: str) -> tuple[int, str]:
     """Run a Python script and, once it prints "ready", press Ctrl-C: SIGINT to its whole process group.
 
-    Returns the exit status and stderr. SIGINT is reset to its default in the
-    script, so that it is not ignored as it is in a shell's background job.
+    Returns the exit status and stderr. The script gets Python's SIGINT
+    handler first, so that SIGINT is not ignored as in a shell's background
+    job; the processes it starts get the default.
     """
+    handler = "import signal; signal.signal(signal.SIGINT, signal.default_int_handler)"
     process = subprocess.Popen(
-        [sys.executable, "-c", script, *args],
+        [sys.executable, "-c", f"{handler}\n{script}", *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
-        preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL),
     )
     try:
         assert process.stdout.readline() == "ready\n", process.stderr.read()
