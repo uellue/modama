@@ -80,7 +80,7 @@ A TOML file passed with `--config` chooses the formats and the exclusions:
 ```toml
 [formats]
 select = ["ALL"]
-ignore = ["empad"]                      # ids: "collection", "collection/format" or "ALL"
+ignore = ["em/empad"]                   # ids: "collection", "collection/format" or "ALL"
 
 [formats.per-path-ignores]
 "instruments/old/" = ["zarr"]          # gitignore syntax, as below
@@ -95,7 +95,7 @@ There are no schema migrations yet. After a schema change, drop and recreate the
 
 ## Adding a file format
 
-Formats are grouped into *collections* under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`, `empad`). Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one. The EMPAD collection is the most complete example of a multi-file format. Its fixture generator writes synthetic files, so no real data has to be committed.
+Formats are grouped into *collections*: the crawler's own under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`), others in packages of their own that register an entry point, such as `em` in `/python/modama-formats-em/` (EMPAD, Digital Micrograph, Merlin). Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one. The `em` collection is the most complete example of multi-file formats with metadata extraction.
 
 When choosing a MIME type, use an existing one if possible. Look at freedesktop.org, Debian's package list, or reader libraries such as LiberTEM and HyperSpy. Otherwise use an unofficial `application/x.…` type, never a misleading generic one.
 
@@ -110,7 +110,7 @@ The recognition result is the oracle throughout: what the fixture tests compare,
 
 ## Pitfalls
 
-- The checking order of shared-mime-info only sniffs file content when file names tie. A type with only magic rules is therefore never detected for a file whose name matches another type's glob. That is why EMPAD's `empad.xml` registers `*.xml` too: it forces the content check.
+- The checking order of shared-mime-info only sniffs file content when file names tie. A type with only magic rules is therefore never detected for a file whose name matches another type's glob. That is why EMPAD's `empad.xml` (in `modama-formats-em`) registers `*.xml` too: it forces the content check.
 - The MIME database is built from the enabled collections only. Nothing from the host's MIME database is used.
 - Symlinks, special files and unreadable files are skipped with an info line and get no record.
 - The crawler doesn't publish deletions yet (`deletedRecord=no`).

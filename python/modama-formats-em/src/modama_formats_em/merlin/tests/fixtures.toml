@@ -4,6 +4,20 @@ validity = "invalid-by-design: a text file named acq.hdr without a Merlin header
 licence = "MIT"
 source = "written by hand"
 
+[frame_series]
+purpose = "representative"
+validity = "parser-only: the vendor-written header and frame of single_frame, unchanged, as acq.hdr with 200 frame files acq_1.mib to acq_200.mib (the naming of libertem-test-data's many_mib); the header still says 1 frame"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.merlin.tests.generate:frame_series, from the files of single_frame"
+generator = "modama_formats_em.merlin.tests.generate:frame_series"
+
+[frames_without_header]
+purpose = "reproducer"
+validity = "invalid-by-design: two frame files of single_frame without their header, as when only the .mib files were copied"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.merlin.tests.generate:frames_without_header, from the files of single_frame"
+generator = "modama_formats_em.merlin.tests.generate:frames_without_header"
+
 [single_frame]
 purpose = "representative"
 validity = "vendor-written: a one-frame 256x256 acquisition, counter depth 6, written by the Merlin software 0.77 (header) of a Merlin Quad readout; read by rosettasciio 0.15.0 as shape (256, 256) uint8 on 2026-11-11"

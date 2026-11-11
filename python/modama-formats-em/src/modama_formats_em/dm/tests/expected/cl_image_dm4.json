@@ -2,9 +2,9 @@
   "datasets": [
     {
       "anchor": "/test-MonarcCL_mono-image.dm4",
-      "basis": "single file",
+      "basis": "Digital Micrograph header",
       "collapsed": false,
-      "format": "",
+      "format": "em/dm4",
       "members": [
         "/test-MonarcCL_mono-image.dm4"
       ],

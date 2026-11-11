@@ -2,9 +2,9 @@
   "datasets": [
     {
       "anchor": "/test_STEM_image.dm3",
-      "basis": "single file",
+      "basis": "Digital Micrograph header",
       "collapsed": false,
-      "format": "",
+      "format": "em/dm3",
       "members": [
         "/test_STEM_image.dm3"
       ],

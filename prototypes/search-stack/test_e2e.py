@@ -24,8 +24,8 @@ from modama_chain import chain
 from modama_chain.cli import stores_from_env
 from modama_crawler.formats import core
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
-from modama_crawler.formats.empad import cheat
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
+from modama_formats_em.empad import cheat
 
 DATA = Path("/data")
 E2E = Path("/e2e")  # this folder, mounted by docker-compose.override.yml

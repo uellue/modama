@@ -2,28 +2,16 @@
   "datasets": [
     {
       "anchor": "/Single_1_Frame_CounterDepth_6_Rows_256.hdr",
-      "basis": "single file",
+      "basis": "1 frame file(s) Single_1_Frame_CounterDepth_6_Rows_256*.mib",
       "collapsed": false,
-      "format": "",
+      "format": "em/merlin",
       "members": [
-        "/Single_1_Frame_CounterDepth_6_Rows_256.hdr"
-      ],
-      "parent": null,
-      "parts": [],
-      "type": "application/x.merlin-header",
-      "warnings": []
-    },
-    {
-      "anchor": "/Single_1_Frame_CounterDepth_6_Rows_256.mib",
-      "basis": "single file",
-      "collapsed": false,
-      "format": "",
-      "members": [
+        "/Single_1_Frame_CounterDepth_6_Rows_256.hdr",
         "/Single_1_Frame_CounterDepth_6_Rows_256.mib"
       ],
       "parent": null,
       "parts": [],
-      "type": "text/plain",
+      "type": "application/x.merlin-header",
       "warnings": []
     }
   ],

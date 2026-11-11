@@ -7,7 +7,6 @@ from conftest import DC, OAI
 from modama_crawler import selection
 from modama_crawler.formats import Dataset, Extracted, Extraction, Result
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
-from modama_crawler.formats.empad import cheat
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
 from modama_crawler.records import MAX_LOCAL_ID, browse_url, build, oai_identifier
 from modama_crawler.store import store
@@ -227,7 +226,6 @@ def harvest_identifiers(oai) -> list[str]:
 
 def test_recognised_tree_reaches_the_harvester(conn, oai, tmp_path):
     # The whole path once: real formats on a tree, stored, served, re-crawled
-    cheat.pair(tmp_path / "scan")
     zarr_fixtures.array(tmp_path / "store")
     collapse_fixtures.venv(tmp_path / "env")
     zarr_fixtures.corrupt(tmp_path / "broken")
@@ -240,18 +238,18 @@ def test_recognised_tree_reaches_the_harvester(conn, oai, tmp_path):
     assert set(harvest_identifiers(oai)) == expected
     record = oai(
         verb="GetRecord",
-        identifier=oai_identifier("/scan/SCA2_rings.xml"),
+        identifier=oai_identifier("/store/a.zarr"),
         metadataPrefix="oai_dc",
     )
-    assert record.find(f".//{DC}format").text == "application/x.empad+xml"
+    assert record.find(f".//{DC}format").text == "application/x-zarr"
     before = dict(conn.execute("SELECT identifier, datestamp FROM records"))
 
-    # The header disappears: its record goes, the raw file becomes a record of
-    # its own, everything else keeps its datestamp
-    (tmp_path / "scan" / "SCA2_rings.xml").unlink()
+    # The store's marker disappears: the store's record goes, the file left in
+    # it becomes a record of its own, everything else keeps its datestamp
+    (tmp_path / "broken" / "broken.zarr" / "zarr.json").unlink()
     store(conn, walk(tmp_path, formats))
     after = dict(conn.execute("SELECT identifier, datestamp FROM records"))
-    assert oai_identifier("/scan/SCA2_rings.xml") not in after
-    assert oai_identifier("/scan/series_x4.raw") in after
+    assert oai_identifier("/broken/broken.zarr") not in after
+    assert oai_identifier("/broken/broken.zarr/c/0/0") in after
     unchanged = set(before) & set(after)
     assert unchanged and all(before[i] == after[i] for i in unchanged)

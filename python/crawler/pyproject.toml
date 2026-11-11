@@ -10,7 +10,6 @@ keywords = ["OAI-PMH", "data repository", "metadata"]
 requires-python = ">=3.14"
 version = "0.0.1.dev0"
 dependencies = [
-    "defusedxml",
     "lxml",
     "pathspec",
     "psycopg[binary,pool]",
@@ -44,7 +43,6 @@ test = [
 core = "modama_crawler.formats.core:COLLECTION"
 collapse = "modama_crawler.formats.collapse:COLLECTION"
 zarr = "modama_crawler.formats.zarr:COLLECTION"
-empad = "modama_crawler.formats.empad:COLLECTION"
 
 [project.entry-points.pytest11]
 modama_crawler = "modama_crawler.testing"

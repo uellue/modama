@@ -28,7 +28,7 @@ Selecting or ignoring a collection by name SHALL also decide whether its MIME de
 - **THEN** files are classified with the core definitions only and no Python format runs
 
 #### Scenario: A collection switched off as a whole
-- **WHEN** `records --ignore empad PATH` is run on an EMPAD pair
+- **WHEN** `records --ignore em PATH` is run on an EMPAD pair (collection `em`, package `modama-formats-em`)
 - **THEN** the raw file is not classified as `application/x.empad-raw`
 
 ### Requirement: Unknown ids are rejected
@@ -53,8 +53,8 @@ When `select` and `ignore` overlap, the more specific id SHALL override the less
 The configuration SHALL accept a mapping from gitignore-style path patterns to lists of ids; for matching paths those formats SHALL NOT run, while the paths are still crawled and classified. A per-path entry SHALL NOT enable a format.
 
 #### Scenario: A reader kept away from a directory
-- **WHEN** `per-path-ignores` maps `/legacy/**` to `["empad"]`
-- **THEN** files under `/legacy` are classified by name and the EMPAD format never reads them
+- **WHEN** `per-path-ignores` maps `/legacy/**` to `["zarr/zarr"]`
+- **THEN** files under `/legacy` are classified by name and the Zarr format never reads them
 
 #### Scenario: Every format kept away
 - **WHEN** `per-path-ignores` maps `/scratch/**` to `["ALL"]`

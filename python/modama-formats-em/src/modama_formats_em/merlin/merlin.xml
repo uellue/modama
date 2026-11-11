@@ -15,4 +15,12 @@
       </match>
     </magic>
   </mime-type>
+  <!-- Frame files of a Merlin acquisition, one or many per header; each frame
+       starts with an "MQ1," header (RosettaSciIO 0.15.0, MIBProperties). No
+       core type has *.mib, so the name decides; the Merlin format groups the
+       files with their .hdr. -->
+  <mime-type type="application/x.merlin-mib">
+    <comment>Frames of a Merlin acquisition</comment>
+    <glob pattern="*.mib"/>
+  </mime-type>
 </mime-info>

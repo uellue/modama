@@ -5,12 +5,6 @@ from modama_crawler.mime import detect, detect_with_tie
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(32)
 BINARY = bytes(range(256))
-EMPAD_XML = """<root name="acquisition_1">
-    <timestamp timestamp="1706883519.18255" isoformat="2024-02-02T15:18:39.182550" />
-    <software_version>1.2.2 (2021-08-20)</software_version>
-    <raw_file filename="series_x1234.raw" />
-</root>
-"""
 SVG = '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>\n'
 
 
@@ -25,10 +19,9 @@ SVG = '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>\n'
         ("scan_0001", PNG, "image/png"),
         ("notes", b"just text\n", "text/plain"),
         ("frame_0001", BINARY, "application/octet-stream"),
-        # Conflicting globs (*.xml) resolved by magic
-        ("a.xml", EMPAD_XML, "application/x.empad+xml"),
+        # One glob, no tie: the glob decides, even for an SVG named .xml. A *.xml
+        # tie resolved by magic is tested with modama-formats-em's EMPAD header
         ("b.xml", '<?xml version="1.0"?>\n<data/>\n', "application/xml"),
-        # Magic says SVG, which neither candidate is: the common ancestor, application/xml, is a candidate
         ("c.xml", SVG, "application/xml"),
     ],
 )

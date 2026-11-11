@@ -2,13 +2,13 @@
 
 Electron microscopy formats for the modama crawler (`python/crawler/`), as the format collection `em`. Install it next to the crawler and the crawler finds it through the entry point group `modama.formats`; its format ids start with `em/`.
 
-| Format | Recognised as | Status |
+| Format | Recognised as | Extracted |
 |---|---|---|
-| EMPAD | the XML header with the raw file it names, one dataset (`em/empad`) | recognition |
-| Gatan Digital Micrograph | DM3 and DM4 files by their header, whatever their name (`application/x.dm3`, `application/x.dm4`) | recognition by content; no representative file yet |
-| Merlin | the acquisition's `.hdr` text header by its content (`application/x.merlin-header`) | header only; the frames follow; no representative file yet |
+| EMPAD | the XML header with the raw file it names, one dataset (`em/empad`) | scan size or frame count, frame size, exposure, time; from the header |
+| Gatan Digital Micrograph | DM3 and DM4 files by their header, whatever their name (`em/dm3`, `em/dm4`) | voltage, magnification, camera length, pixel size, dimensions, device, microscope, time; from the tags |
+| Merlin | the `.hdr` text header by its content with its `.mib` frame files, one dataset (`em/merlin`); `.mib` files without a header stay single files with a warning | frame count, frame size, counter depth, readout system, time; from the header and the first frame's header |
 
-Metadata extraction uses [RosettaSciIO](https://github.com/hyperspy/rosettasciio) (GPL-3.0-or-later), a dependency of this package only.
+Metadata extraction uses [RosettaSciIO](https://github.com/hyperspy/rosettasciio) (GPL-3.0-or-later), a dependency of this package only, for DM (its reader, lazily: the tags are parsed, the image data skipped) and Merlin (its header parsers). Merlin frames belong to the header whose name they start with, as LiberTEM groups them (`acq.hdr`: `acq*.mib`). The extraction tests print each fixture's description, subjects and the bytes read (`pytest -s src`).
 
 ## Setup and tests
 

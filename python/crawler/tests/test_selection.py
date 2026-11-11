@@ -87,7 +87,7 @@ exclude = ["/scratch/**"]
 
 def test_installed_collections_and_duplicates(monkeypatch):
     found = selection.discover()
-    assert set(found) >= {"core", "collapse", "zarr", "empad"}
+    assert set(found) >= {"core", "collapse", "zarr"}
     assert {f.id for f in found["collapse"].formats} >= {
         "collapse/venv",
         "collapse/git",
@@ -113,8 +113,8 @@ def test_collection_ids_cover_mime_definitions():
 
     assert names(Config()) == [c.name for c in collections]
     assert names(Config(select=["core"])) == ["core"]
-    assert "empad" not in names(Config(ignore=["empad"]))
-    assert "empad" in names(Config(ignore=["empad/empad"]))
+    assert "zarr" not in names(Config(ignore=["zarr"]))
+    assert "zarr" in names(Config(ignore=["zarr/zarr"]))
 
 
 def test_unknown_ids_are_rejected():

@@ -8,7 +8,7 @@ import sys
 import pytest
 from conftest import validate_oai
 from lxml import etree
-from modama_crawler.formats.empad import cheat
+from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
 from modama_crawler.records import oai_identifier
 
 OAI = "{http://www.openarchives.org/OAI/2.0/}"
@@ -47,9 +47,9 @@ def titles_in(xml: bytes) -> list[str]:
 
 
 @pytest.fixture
-def pair(tmp_path):
-    """An EMPAD pair under scan/; returns the tree."""
-    cheat.pair(tmp_path / "scan")
+def store(tmp_path):
+    """A Zarr store with a text file beside it under store/; returns the tree."""
+    zarr_fixtures.array(tmp_path / "store")
     return tmp_path
 
 
@@ -63,46 +63,44 @@ def test_default_invocation(tmp_path):
     assert doc.find(f"{OAI}request").get("verb") == "ListRecords"
 
 
-def test_verbose_diagnostics_travel_with_the_records(pair):
-    cheat.header_only(pair / "copying")
+def test_verbose_diagnostics_travel_with_the_records(store):
+    zarr_fixtures.corrupt(store / "broken")
     # Typed as the documentation shows it: the flag after the subcommand, through a pipe
-    run = shell(f"{sys.executable} -m modama_crawler records --verbose {pair} | cat")
+    run = shell(f"{sys.executable} -m modama_crawler records --verbose {store} | cat")
     assert run.returncode == 0, run.stderr
     validate_oai(run.stdout)
     text = run.stdout.decode()
     # The properties users rely on: a comment per recognised dataset naming the
     # path and the format, directly before its record; a WARNING: comment before
     # the record it concerns; the counts at the end. Not the exact prose.
-    note = text.index(
-        "<!-- /scan/SCA2_rings.xml: application/x.empad+xml by empad/empad"
-    )
-    assert note < text.index(oai_identifier("/scan/SCA2_rings.xml"))
-    warning = text.index("<!-- /copying/SCA2_rings.xml: WARNING: ")
-    assert warning < text.index(oai_identifier("/copying/SCA2_rings.xml"))
+    note = text.index("<!-- /store/a.zarr: application/x-zarr by zarr/zarr")
+    assert note < text.index(oai_identifier("/store/a.zarr"))
+    warning = text.index("<!-- /broken/broken.zarr: WARNING: ")
+    assert warning < text.index(oai_identifier("/broken/broken.zarr"))
     # A single file by its MIME type gets no comment of its own
-    assert "<!-- /copying/SCA2_rings.xml: application" not in text
-    assert "<!-- 2 records (1 single files by type), 1 warnings, 0 skipped -->" in text
+    assert "<!-- /store/notes.txt" not in text
+    assert "<!-- 3 records (1 single files by type), 1 warnings, 0 skipped -->" in text
     # Nothing to look for on standard error
     assert b"INFO" not in run.stderr and b"WARNING" not in run.stderr
     # Also accepted before the subcommand
-    before = records("--verbose", "records", str(pair))
+    before = records("--verbose", "records", str(store))
     assert before.returncode == 0 and before.stdout.count(b"<!--") == text.count("<!--")
 
 
-def test_options_in_any_order(pair):
-    config = pair / "config" / "modama.toml"
+def test_options_in_any_order(store):
+    config = store / "config" / "modama.toml"
     config.parent.mkdir()
     config.write_text(
-        "[formats]\nselect = ['core', 'empad']\n[crawl]\nexclude = ['/config/**']\n"
+        "[formats]\nselect = ['core', 'zarr']\n[crawl]\nexclude = ['/config/**']\n"
     )
-    run = records("records", "--config", str(config), str(pair), "--verbose")
+    run = records("records", "--config", str(config), str(store), "--verbose")
     assert run.returncode == 0, run.stderr
     run = records(
         "records",
         "--ignore",
-        "empad",
+        "zarr",
         "--verbose",
-        str(pair),
+        str(store),
         "--from",
         "2020-01-01",
         "--config",
@@ -110,34 +108,30 @@ def test_options_in_any_order(pair):
     )
     assert run.returncode == 0, run.stderr
     validate_oai(run.stdout)
-    assert formats_in(run.stdout) == ["application/octet-stream", "application/xml"]
+    assert formats_in(run.stdout) == ["application/json", "text/plain"]
     assert b"<!--" in run.stdout
 
 
-def test_per_path_ignores_from_the_config(pair):
-    config = pair / "config" / "modama.toml"
+def test_per_path_ignores_from_the_config(store):
+    config = store / "config" / "modama.toml"
     config.parent.mkdir()
     config.write_text(
-        '[formats.per-path-ignores]\n"/scan/**" = ["empad/empad"]\n'
+        '[formats.per-path-ignores]\n"/store/**" = ["zarr/zarr"]\n'
         "[crawl]\nexclude = ['/config/**']\n"
     )
-    run = records("records", "--config", str(config), str(pair))
+    run = records("records", "--config", str(config), str(store))
     assert run.returncode == 0, run.stderr
-    # Classified by name, but the EMPAD format never ran on /scan
-    assert formats_in(run.stdout) == [
-        "application/x.empad+xml",
-        "application/x.empad-raw",
-    ]
+    # Crawled and classified, but the Zarr format never ran on /store
+    assert formats_in(run.stdout) == ["application/json", "text/plain"]
 
 
-def test_ignore_overrides_selection(pair):
-    with_empad = records("records", str(pair)).stdout
-    without = records("records", "--ignore", "empad", str(pair)).stdout
-    assert formats_in(with_empad) == ["application/x.empad+xml"]
-    # The whole collection is off, its MIME definitions too: generic types remain
-    assert formats_in(without) == ["application/octet-stream", "application/xml"]
-    only_core = records("records", "--select", "core", str(pair)).stdout
-    assert formats_in(only_core) == ["application/octet-stream", "application/xml"]
+def test_ignore_overrides_selection(store):
+    with_zarr = records("records", str(store)).stdout
+    without = records("records", "--ignore", "zarr", str(store)).stdout
+    assert formats_in(with_zarr) == ["application/x-zarr", "text/plain"]
+    assert formats_in(without) == ["application/json", "text/plain"]
+    only_core = records("records", "--select", "core", str(store)).stdout
+    assert formats_in(only_core) == ["application/json", "text/plain"]
 
 
 def test_from_until_filter(tmp_path):
@@ -203,18 +197,18 @@ def test_unreadable_path_fails(tmp_path):
     assert run.stdout == b""
 
 
-def test_comma_separated_ids(pair):
-    venv = pair / "venv"
+def test_comma_separated_ids(store):
+    venv = store / "venv"
     venv.mkdir()
     (venv / "pyvenv.cfg").write_text("home = /usr\n")
     (venv / "x.py").write_text("x")
-    commas = records("records", "--ignore", "collapse,empad", str(pair)).stdout
+    commas = records("records", "--ignore", "collapse,zarr", str(store)).stdout
     repeated = records(
-        "records", "--ignore", "collapse", "--ignore", "empad", str(pair)
+        "records", "--ignore", "collapse", "--ignore", "zarr", str(store)
     ).stdout
     assert formats_in(commas) == formats_in(repeated)
     assert "text/x-python" in formats_in(commas)  # the venv was not collapsed
-    assert "application/x.empad+xml" not in formats_in(commas)
+    assert "application/x-zarr" not in formats_in(commas)
 
 
 def test_unknown_format_id_fails(tmp_path):

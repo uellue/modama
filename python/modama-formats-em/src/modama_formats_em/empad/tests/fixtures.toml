@@ -32,3 +32,10 @@ validity = "parser-only: a raw frame file without a header is not readable by an
 licence = "MIT"
 source = "modama_formats_em.empad.cheat:orphan_raw: a raw frame file without a header, next to an unrelated XML file"
 generator = "modama_formats_em.empad.cheat:orphan_raw"
+
+[scan_v1_2_2]
+purpose = "representative"
+validity = "vendor-written header: a 32x64 scan by the EMPAD software 1.2.2 (2021-08-20), read by RosettaSciIO's own tests; the raw file is a sparse file of the size the header implies, never read"
+licence = "header GPL-3.0-or-later (tests/rsciio/LICENSE), raw file MIT"
+source = "modama_formats_em.empad.tests.generate:scan_v1_2_2: RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/empad/EMPAD_v1.2.2_x32_y64_size0.8.xml, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/empad/EMPAD_v1.2.2_x32_y64_size0.8.xml, sha256 48bca38e4944dfe6be6f2e97acfb2f41f9e62375377e193e8c641532674a4c8a, unchanged"
+generator = "modama_formats_em.empad.tests.generate:scan_v1_2_2"

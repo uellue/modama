@@ -24,8 +24,8 @@ Without `--verbose`, standard output SHALL be the document alone; warnings and t
 With `--verbose`, diagnostics SHALL be embedded in the document as XML comments in path order, one comment per diagnostic, directly before the record it concerns: a recognition comment (format id and version, basis) per dataset a format produced, a `WARNING:` comment per warning, a `SKIPPED:` comment per skipped entry, and a closing comment with the counts. The document SHALL stay valid and standard error SHALL carry only errors.
 
 #### Scenario: Verbose run piped into a pager
-- **WHEN** `records --verbose PATH | less` is run on a directory with an EMPAD pair and a header whose raw file is missing
-- **THEN** the pager shows the pair's recognition comment directly before its record, the `WARNING:` comment directly before the lone header's record, a closing comment with the counts, and nothing on standard error
+- **WHEN** `records --verbose PATH | less` is run on a directory with a Zarr store and a store whose `zarr.json` cannot be parsed
+- **THEN** the pager shows the first store's recognition comment directly before its record, the `WARNING:` comment directly before the broken store's record, a closing comment with the counts, and nothing on standard error
 
 ### Requirement: Routine datasets are counted, not commented
 A single file that no format produced SHALL get no comment in the verbose document; the closing comment SHALL count them, so that a large tree is not drowned in routine lines.
@@ -46,8 +46,8 @@ A single file that no format produced SHALL get no comment in the verbose docume
 - **THEN** it has the same effect as `records --ignore collapse --ignore zarr PATH`
 
 #### Scenario: Trying a different selection
-- **WHEN** `records --ignore empad` is run on a directory with an EMPAD pair
-- **THEN** the XML and raw files appear as single-file datasets of generic types and no EMPAD dataset
+- **WHEN** `records --ignore zarr` is run on a directory with a Zarr store
+- **THEN** the store's files appear as single-file datasets of generic types and no Zarr dataset
 
 ### Requirement: Options are accepted where users put them
 All options of `records` (`--verbose`, `--from`, `--until`, `--select`, `--ignore`, `--config`) SHALL be accepted after the subcommand, in any order, as the examples in the documentation show them; `--verbose` and `--config` SHALL also be accepted before the subcommand.
@@ -57,7 +57,7 @@ All options of `records` (`--verbose`, `--from`, `--until`, `--select`, `--ignor
 - **THEN** it runs with per-dataset diagnostics in the document, the same as `--verbose records`
 
 #### Scenario: Options in any order
-- **WHEN** `records --ignore empad --verbose PATH --from 2020-01-01` is run
+- **WHEN** `records --ignore zarr --verbose PATH --from 2020-01-01` is run
 - **THEN** every option takes effect and the exit status is zero
 
 #### Scenario: Help lists every option

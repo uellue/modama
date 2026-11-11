@@ -71,6 +71,7 @@ services:
       context: ../../python/crawler
       dockerfile: ../../prototypes/search-stack/crawler.Dockerfile
       additional_contexts:
+        em: ../../python/modama-formats-em
         chain: ../../python/search-chain
     image: search-stack-crawler
     command: modama-crawler serve
