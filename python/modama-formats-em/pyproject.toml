@@ -11,6 +11,8 @@ version = "0.0.1.dev0"
 dependencies = [
     "defusedxml",
     "modama-crawler",
+    # Pinned exactly: merlin imports a private module (rsciio.quantumdetector._api:
+    # parse_hdr_file, MIBProperties), which may change in any release
     "rosettasciio==0.15.0",
 ]
 authors = [

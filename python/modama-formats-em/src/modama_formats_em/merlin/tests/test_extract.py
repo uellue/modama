@@ -3,8 +3,11 @@
 Run with -s to see each description, its subjects and the bytes the extractor read.
 """
 
+import pytest
 from modama_crawler.testing import recognise
+from modama_crawler.walk import walk
 
+from modama_formats_em.merlin import MAX_HEADER
 from modama_formats_em.testing import described
 
 
@@ -31,3 +34,14 @@ def test_a_representative_acquisition(collection_tests, tmp_path):
         "1 frame, 256×256 pixels, 6-bit, Merlin Quad, 2021-04-15 14:43; "
     )
     assert acq.subjects == ["merlin", "Merlin Quad"]
+
+
+def test_an_oversized_header_is_not_parsed(collection_tests, tmp_path):
+    # Not a scenario of its own: parse_hdr_file reads the whole file (review 2026-11-11, 5)
+    tree = collection_tests.materialise("single_frame", tmp_path)
+    (d,) = walk(tree, collection_tests.collection.formats).datasets
+    with open(str(tree) + d.anchor, "ab") as f:
+        f.write(b" " * MAX_HEADER)
+    (merlin,) = collection_tests.collection.formats
+    with pytest.raises(ValueError, match="header of"):
+        merlin.extract(d, str(tree))

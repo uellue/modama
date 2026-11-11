@@ -69,7 +69,8 @@ def ensure_tables(conn: psycopg.Connection) -> None:
             extractor_version TEXT,
             extracted JSONB,
             extract_error TEXT,
-            extract_seconds DOUBLE PRECISION
+            extract_seconds DOUBLE PRECISION,
+            extract_retry BOOLEAN
         )
         """
     )
@@ -90,7 +91,8 @@ def ensure_tables(conn: psycopg.Connection) -> None:
             path TEXT PRIMARY KEY,
             digest TEXT NOT NULL,
             pre_warnings JSONB NOT NULL,
-            post_warnings JSONB NOT NULL
+            post_warnings JSONB NOT NULL,
+            retry BOOLEAN NOT NULL
         )
         """
     )
@@ -240,6 +242,7 @@ _COLUMNS = (
     "anchor", "type", "format", "version", "basis", "warnings", "parent",
     "collapsed", "mtime", "uid", "parts", "size", "stamp", "directory",
     "extractor", "extractor_version", "extracted", "extract_error", "extract_seconds",
+    "extract_retry",
 )  # fmt: skip
 _COLUMN_LIST = ", ".join(_COLUMNS)
 _VALUES = ", ".join(f"EXCLUDED.{c}" for c in _COLUMNS[1:])
@@ -260,7 +263,7 @@ def _row(d: Dataset) -> tuple:
         d.stamp, d.directory,
         x and x.extractor, x and x.version,
         Jsonb(asdict(x.extracted)) if x and x.extracted else None,
-        x and x.error, x and x.seconds,
+        x and x.error, x and x.seconds, x and x.retry,
     )  # fmt: skip
 
 
@@ -270,9 +273,9 @@ class Stored:
     def __init__(self, conn: psycopg.Connection):
         self.conn = conn
         self._listings = {
-            path: Listing(digest, _pairs(pre), _pairs(post))
-            for path, digest, pre, post in conn.execute(
-                "SELECT path, digest, pre_warnings, post_warnings FROM directories"
+            path: Listing(digest, _pairs(pre), _pairs(post), retry)
+            for path, digest, pre, post, retry in conn.execute(
+                "SELECT path, digest, pre_warnings, post_warnings, retry FROM directories"
             )
         }
 
@@ -295,7 +298,8 @@ class Stored:
         """The stored extractions of the datasets at these anchors."""
         rows = self.conn.execute(
             """
-            SELECT anchor, extractor, extractor_version, stamp, extracted, extract_error, extract_seconds
+            SELECT anchor, extractor, extractor_version, stamp, extracted, extract_error,
+                extract_seconds, extract_retry
             FROM datasets WHERE anchor = ANY(%s) AND extractor IS NOT NULL
             """,
             (anchors,),
@@ -307,7 +311,9 @@ def _pairs(warnings: list) -> tuple[tuple[str, str], ...]:
     return tuple((path, text) for path, text in warnings)
 
 
-def _extraction(extractor, version, stamp, extracted, error, seconds) -> Extraction:
+def _extraction(
+    extractor, version, stamp, extracted, error, seconds, retry
+) -> Extraction:
     return Extraction(
         extractor,
         version,
@@ -315,6 +321,7 @@ def _extraction(extractor, version, stamp, extracted, error, seconds) -> Extract
         Extracted(**extracted) if extracted is not None else None,
         error,
         seconds,
+        retry,
     )
 
 
@@ -338,7 +345,7 @@ def _dataset(row: tuple) -> Dataset:
         directory=v["directory"],
         extraction=_extraction(
             v["extractor"], v["extractor_version"], v["stamp"], v["extracted"],
-            v["extract_error"], v["extract_seconds"],
+            v["extract_error"], v["extract_seconds"], v["extract_retry"],
         ) if v["extractor"] is not None else None,
     )  # fmt: skip
 
@@ -388,16 +395,16 @@ def store(
         )
         cur.executemany(
             """
-            INSERT INTO directories (path, digest, pre_warnings, post_warnings)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO directories (path, digest, pre_warnings, post_warnings, retry)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (path) DO UPDATE
             SET digest = EXCLUDED.digest, pre_warnings = EXCLUDED.pre_warnings,
-                post_warnings = EXCLUDED.post_warnings
-            WHERE (directories.digest, directories.pre_warnings, directories.post_warnings)
-                IS DISTINCT FROM (EXCLUDED.digest, EXCLUDED.pre_warnings, EXCLUDED.post_warnings)
+                post_warnings = EXCLUDED.post_warnings, retry = EXCLUDED.retry
+            WHERE (directories.digest, directories.pre_warnings, directories.post_warnings, directories.retry)
+                IS DISTINCT FROM (EXCLUDED.digest, EXCLUDED.pre_warnings, EXCLUDED.post_warnings, EXCLUDED.retry)
             """,
             [
-                (path, x.digest, Jsonb([list(w) for w in x.pre]), Jsonb([list(w) for w in x.post]))
+                (path, x.digest, Jsonb([list(w) for w in x.pre]), Jsonb([list(w) for w in x.post]), x.retry)
                 for path, x in result.listings.items()
             ],
         )  # fmt: skip

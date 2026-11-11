@@ -12,7 +12,7 @@ import json
 import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from importlib.metadata import entry_points
+from importlib.metadata import entry_points, packages_distributions, version
 from pathlib import Path
 
 from pathspec import GitIgnoreSpec
@@ -138,14 +138,26 @@ def enabled_formats(collections: Iterable[Collection], config: Config) -> list[F
 def fingerprint(
     formats: Iterable[Format], definitions: Iterable[Collection], config: Config
 ) -> str:
-    """A digest of the rule set: enabled formats and their recognition versions, the MIME definitions, the selection.
+    """A digest of the rule set: enabled formats and their recognition versions, the MIME definitions, the selection,
+    and the versions of the crawler and of the distributions that provide the formats.
 
     Datasets recognised under another rule set are not taken over (D3). The
     extractor versions are left out: a new one re-extracts, it does not
-    re-recognise.
+    re-recognise. The distribution versions cover a release that changes a
+    format's code without its version.
     """
+    formats = list(formats)
+    dists = packages_distributions()
+    packages = {"modama_crawler"} | {
+        type(f).__module__.partition(".")[0] for f in formats
+    }
     h = hashlib.sha256()
     h.update(json.dumps(sorted([f.id, f.version] for f in formats)).encode())
+    h.update(
+        json.dumps(
+            sorted({(d, version(d)) for p in packages for d in dists.get(p, [])})
+        ).encode()
+    )
     for collection in sorted(definitions, key=lambda c: c.name):
         for xml in collection.mime_files:
             h.update(f"{collection.name}/{Path(xml).name}\0".encode())

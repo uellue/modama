@@ -96,6 +96,18 @@ def test_collapsed_directory_is_not_entered(tmp_path, monkeypatch):
     assert not [p for p in classified + read if "/boring/" in p]
 
 
+def test_a_collapsed_dataset_is_stamped_with_its_listing(tmp_path):
+    # Not a scenario of its own: a constant stamp would let any extraction be reused (review 2026-11-11, 4)
+    stamps = []
+    for name, extra in (("one", []), ("two", ["more.bin"])):
+        (tmp_path / name / "boring").mkdir(parents=True)
+        for f in ["COLLAPSE", *extra]:
+            (tmp_path / name / "boring" / f).write_text("")
+        (d,) = [d for d in walk(tmp_path / name, FORMATS).datasets if d.collapsed]
+        stamps.append(d.stamp)
+    assert stamps[0] != stamps[1]
+
+
 def test_dataset_size_is_the_total_of_its_members(tmp_path):
     # From the walk's stat, for the description (D4); no file is opened for it
     (tmp_path / "s").mkdir()

@@ -5,6 +5,7 @@ The frames belong to a header by LiberTEM's naming rule (MIBDataSet): the
 Extraction reads the header and the first frame's header through RosettaSciIO.
 """
 
+import os
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,8 @@ from pathlib import Path
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
 HERE = Path(__file__).parent
+# parse_hdr_file reads the whole file; real headers are a few kB
+MAX_HEADER = 64 << 10
 HEADER = "application/x.merlin-header"
 FRAMES = "application/x.merlin-mib"
 
@@ -53,6 +56,9 @@ class Merlin(Format):
         """Frames, frame size, bit depth and time (spec formats/merlin, "Merlin metadata is extracted from the header")."""
         from rsciio.quantumdetector._api import MIBProperties, parse_hdr_file
 
+        size = os.stat(root + dataset.anchor).st_size
+        if size > MAX_HEADER:
+            raise ValueError(f"header of {size:,} bytes, over {MAX_HEADER:,}")
         hdr = parse_hdr_file(root + dataset.anchor)
         first = MIBProperties()
         first.parse_file(root + next(m for m in dataset.members if m != dataset.anchor))
