@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- A K2IS acquisition (Gatan K2 IS camera): one .gtg tag file and 8 sector
+       files, as LiberTEM reads them (libertem/io/dataset/k2is.py, master of
+       2026-10-15: "They consist of 8 .bin files and one .gtg file"). No MIME
+       type is registered or used in the wild. The acquisition's type has no
+       rules of its own: the K2IS format gives it to the dataset. -->
+  <mime-type type="application/x.k2is">
+    <comment>K2IS acquisition</comment>
+  </mime-type>
+  <!-- The .gtg file has the DM4 header and holds tags, no image (staging run 3,
+       finding F15: 33 .gtg files, 32 of them named <stem>_.gtg as K2IS captures
+       are). The name decides: a name match that is a subclass of the sniffed
+       type wins, so the DM4 format does not take it. A .gtg without its sector
+       files (a configuration file, for example) stays a file of this type. -->
+  <mime-type type="application/x.dm-gtg">
+    <comment>Gatan Digital Micrograph .gtg tag file</comment>
+    <sub-class-of type="application/x.dm4"/>
+    <glob pattern="*.gtg"/>
+  </mime-type>
+  <!-- A sector file is a sequence of blocks of 0x5758 bytes, each starting with
+       a 40-byte big-endian header (LiberTEM's DataBlock.header_dtype): sync
+       0xFFFF0055 at 0, then padding, version, flags, padding, the block count
+       at 16, width at 20 and height at 22; LiberTEM takes a block as valid with
+       width 256 and height 1860. No glob: *.bin is used by everybody. -->
+  <mime-type type="application/x.k2is-sector">
+    <comment>Sector file of a K2IS acquisition</comment>
+    <magic priority="60">
+      <match type="big32" offset="0" value="0xFFFF0055">
+        <match type="big16" offset="20" value="256">
+          <match type="big16" offset="22" value="1860"/>
+        </match>
+      </match>
+    </magic>
+  </mime-type>
+</mime-info>

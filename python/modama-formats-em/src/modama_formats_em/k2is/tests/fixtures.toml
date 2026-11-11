@@ -1,0 +1,27 @@
+[lone_tags]
+purpose = "representative"
+validity = "parser-only: the vendor-written DM4 file of the dm part's cl_image_dm4, unchanged, named IDES_DMS_Config.gtg as staging's one .gtg without sector files is (the name decides the type, the content is not read for it)"
+licence = "GPL-3.0-or-later (../../dm/tests/LICENSE.fixtures)"
+source = "modama_formats_em.k2is.tests.generate:lone_tags, from the file of the dm part's cl_image_dm4"
+generator = "modama_formats_em.k2is.tests.generate:lone_tags"
+
+[capture]
+purpose = "reproducer"
+validity = "synthetic until a real capture is agreed (task 3.1): a DM4 tag file Capture52_.gtg with SI Dimensions and Microscope Info tags, written as RosettaSciIO 0.15.0 parses DM4; 8 sector files of one block each, the header as LiberTEM's DataBlock reads it, zero data; names as libertem-test-data's Capture52"
+licence = "MIT"
+source = "modama_formats_em.k2is.tests.generate:capture"
+generator = "modama_formats_em.k2is.tests.generate:capture"
+
+[sectors_without_tags]
+purpose = "reproducer"
+validity = "synthetic: the 8 sector files of capture without their .gtg, as when only the .bin files were copied"
+licence = "MIT"
+source = "modama_formats_em.k2is.tests.generate:sectors_without_tags"
+generator = "modama_formats_em.k2is.tests.generate:sectors_without_tags"
+
+[other_bin]
+purpose = "reproducer"
+validity = "synthetic: a data.bin that is no K2IS sector, and one sector block named sector.dat"
+licence = "MIT"
+source = "modama_formats_em.k2is.tests.generate:other_bin"
+generator = "modama_formats_em.k2is.tests.generate:other_bin"

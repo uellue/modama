@@ -18,6 +18,22 @@ HERE = Path(__file__).parent
 BUFFER = 64 * 1024
 
 
+def parsed(path: str):
+    """RosettaSciIO's DM reader with the file's tag tree parsed, from our own handle.
+
+    A small buffer and readahead off (F14); the image data is never read.
+    """
+    from rsciio.digitalmicrograph._api import (  # imports dask: in the worker only
+        DigitalMicrographReader,
+    )
+
+    with open(path, "rb", buffering=BUFFER) as f:
+        os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
+        dm = DigitalMicrographReader(f)
+        dm.parse_file()
+    return dm
+
+
 def first_image(path: str) -> dict:
     """What RosettaSciIO's `file_reader(path)[0]` gives, except the data, from our own handle.
 
@@ -26,26 +42,20 @@ def first_image(path: str) -> dict:
     maps the image (and refuses RGBA images when lazy). Identical results on
     RosettaSciIO's 98 DM test files that `file_reader` reads (F14).
     """
-    from rsciio.digitalmicrograph._api import (  # imports dask: in the worker only
-        DigitalMicrographReader,
-        ImageObject,
-    )
+    from rsciio.digitalmicrograph._api import ImageObject
 
-    with open(path, "rb", buffering=BUFFER) as f:
-        os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
-        dm = DigitalMicrographReader(f)
-        dm.parse_file()
-        image = ImageObject(dm.get_image_dictionaries()[0], f, order=None)
-        image.filename = path
-        dm.tags_dict["ImageList"] = {"TagGroup0": image.imdict.to_dict()}
-        metadata = image.get_metadata()
-        metadata["General"]["original_filename"] = os.path.basename(path)
-        return {
-            "axes": image.get_axes_dict(),
-            "metadata": deepcopy(metadata),
-            "original_metadata": deepcopy(dm.tags_dict),
-            "mapping": image.get_mapping(),
-        }
+    dm = parsed(path)
+    image = ImageObject(dm.get_image_dictionaries()[0], dm.f, order=None)
+    image.filename = path
+    dm.tags_dict["ImageList"] = {"TagGroup0": image.imdict.to_dict()}
+    metadata = image.get_metadata()
+    metadata["General"]["original_filename"] = os.path.basename(path)
+    return {
+        "axes": image.get_axes_dict(),
+        "metadata": deepcopy(metadata),
+        "original_metadata": deepcopy(dm.tags_dict),
+        "mapping": image.get_mapping(),
+    }
 
 
 class Dm(Format):

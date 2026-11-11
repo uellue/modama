@@ -1,0 +1,37 @@
+{
+  "datasets": [
+    {
+      "anchor": "/data.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/data.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/octet-stream",
+      "warnings": []
+    },
+    {
+      "anchor": "/sector.dat",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/sector.dat"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": [
+    [
+      "/",
+      "1 K2IS sector file(s) without a .gtg file and its 8 sectors, for example sector.dat"
+    ]
+  ]
+}

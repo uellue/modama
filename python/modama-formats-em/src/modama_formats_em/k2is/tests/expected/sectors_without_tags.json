@@ -1,0 +1,115 @@
+{
+  "datasets": [
+    {
+      "anchor": "/Capture52_1.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_1.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/Capture52_2.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_2.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/Capture52_3.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_3.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/Capture52_4.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_4.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/Capture52_5.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_5.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/Capture52_6.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_6.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/Capture52_7.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_7.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/Capture52_8.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/Capture52_8.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": [
+    [
+      "/",
+      "8 K2IS sector file(s) without a .gtg file and its 8 sectors, for example Capture52_1.bin"
+    ]
+  ]
+}

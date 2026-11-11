@@ -22,6 +22,13 @@ def test_a_misnamed_file(collection_tests, tmp_path):
     assert d.type == "text/plain" and d.format == ""
 
 
+def test_a_dmw_file_with_the_dm4_header(collection_tests, tmp_path):
+    # The name decides over the DM4 header; the DM4 format does not take it (F15)
+    (d,) = recognise(collection_tests, "dmw_file", tmp_path).datasets
+    assert (d.type, d.format) == ("application/x.dm-dmw", "")
+    assert described(collection_tests, "dmw_file", tmp_path / "x") == []
+
+
 def test_a_representative_dm4_image(collection_tests, tmp_path):
     (image,) = described(collection_tests, "cl_image_dm4", tmp_path)
     assert image.description.startswith(

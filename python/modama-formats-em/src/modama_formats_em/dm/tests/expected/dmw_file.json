@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/conditions_00C.dmw",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/conditions_00C.dmw"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm-dmw",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
