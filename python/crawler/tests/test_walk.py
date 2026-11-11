@@ -100,6 +100,8 @@ def test_collapsed_directory_is_not_entered(tmp_path, monkeypatch):
     assert result.datasets[-1].collapsed and result.datasets[-1].members == ()
     # Nothing below a collapsed directory is reported, not even skipped entries
     assert result.skipped == [] and result.warnings == []
+    # ... nor listed
+    assert list(result.listings) == ["/", "/boring"]
     # ... nor classified or opened
     assert not [p for p in classified + read if "/boring/" in p]
 
@@ -362,6 +364,8 @@ def test_many_threads_with_the_last_crawls_state(conn, tmp_path, monkeypatch):
     os.chmod(root / "x" / "private", 0)
     try:
         result = walk(root, FORMATS, threads=16)
+        # The first crawl with one thread leaves the same result, so the same stored state
+        assert _whole(walk(root, FORMATS, threads=1)) == _whole(result)
         store(conn, result, {}, start_run(conn, str(root)), "r1")
         (root / "a" / "b" / "c" / "1.txt").write_text("changed, three levels down")
         stored = previous(conn, "r1")
