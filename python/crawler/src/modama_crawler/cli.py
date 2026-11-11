@@ -148,20 +148,16 @@ class Terminated(SystemExit):
     """
 
 
-# SIGTERM sets _sigterm; the crawl checks it at every directory of the walk
-# and between its phases. Outside the walk the handler also raises, so that
-# a blocking wait (the store's lock) ends at once. Not during the walk: its
-# main thread runs the loop's callbacks, where a raise from the handler is
-# dropped (in a weakref callback, __del__, the garbage collector) or leaves
-# a futures lock held, and the walk hangs (parallel-walk review, finding 1).
+# SIGTERM only sets _sigterm; the crawl checks it at every directory of the
+# walk, at least every second while it extracts or waits for the store lock,
+# and between its phases. A raise from the handler itself is dropped where
+# the main thread runs a weakref callback, __del__ or the garbage collector,
+# or leaves a lock held and the crawl hangs (parallel-walk review, finding 1).
 _sigterm = threading.Event()
-_sigterm_raises = True
 
 
 def _terminate(signum, frame):
     _sigterm.set()
-    if _sigterm_raises:
-        raise Terminated("terminated (SIGTERM)")
 
 
 def _check_terminated() -> None:
@@ -205,8 +201,6 @@ def crawl_tree(
         if progress is not None:
             progress(directories, files)
 
-    global _sigterm_raises
-    _sigterm_raises = False
     try:
         result = walk(
             root,
@@ -220,8 +214,6 @@ def crawl_tree(
         )
     except _Stopped:
         raise Terminated("terminated (SIGTERM)") from None
-    finally:
-        _sigterm_raises = True
     _check_terminated()
     report = extraction.extract(
         result,
@@ -230,10 +222,13 @@ def crawl_tree(
         stored=(stored or Stored(conn)).extractions,
         workers=_workers(),
         memory=_memory(),
+        check=_check_terminated,
     )
     conn.autocommit = autocommit
     _check_terminated()
-    changed = store(conn, result, format_names(formats), run_id, rules)
+    changed = store(
+        conn, result, format_names(formats), run_id, rules, check=_check_terminated
+    )
     return result, report, changed
 
 

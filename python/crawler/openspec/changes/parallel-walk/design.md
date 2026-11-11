@@ -48,7 +48,7 @@ About 30 NFSv4.1 session slots on the emulated server cap the crawl at about 1,4
 *Alternatives:* CPU time of the thread instead of wall time (still a discarded result, and a hang on NFS never counts); fewer format calls at once (less contention, the same dependence).
 - [pyxdg's type cache under threads] → all types are created when the database is loaded, so lookups during the walk only read the cache; the comparison test would show a type object created twice (identity checks in `mime._is_a`).
 - [Load on the production storage: 32 requests in flight] → one setting; the staging run measures the round trips under that load.
-- [SIGTERM and Ctrl-C during the walk] → the pool is shut down with its queued work cancelled; the crawl records the failed run, as now (`test_trigger.py`).
+- [SIGTERM and Ctrl-C during the walk] → the pool is shut down with its queued work cancelled; the crawl records the failed run, as now (`test_trigger.py`). The SIGTERM handler only sets a flag, never raises: a raise from it is dropped where the main thread runs a weakref callback, `__del__` or the garbage collector, or leaves a lock held (review finding 1). The crawl checks the flag at every directory of the walk, at least every second while it extracts (the extraction processes killed) or waits for the store lock (in turns of a 1 s `lock_timeout`), between its phases and before the store commits; each ends as a failed run with status 143.
 
 ## Open Questions
 

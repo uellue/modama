@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -31,6 +31,24 @@ def try_crawl_lock(conn: psycopg.Connection) -> bool:
     ).fetchall()
     conn.commit()
     return taken
+
+
+def _store_lock(conn: psycopg.Connection, check: Callable[[], None]) -> None:
+    """Take the store lock for the current transaction, calling check every second while it waits.
+
+    In turns of a second (lock_timeout), each in a savepoint that the timeout
+    rolls back; while a turn waits, PostgreSQL queues new requests behind it,
+    so the store is not starved by a stream of short ones.
+    """
+    while True:
+        try:
+            with conn.transaction():
+                conn.execute("SET LOCAL lock_timeout = '1s'")
+                conn.execute("SELECT pg_advisory_xact_lock(%s, %s)", STORE_LOCK)
+                conn.execute("SET LOCAL lock_timeout TO DEFAULT")
+            return
+        except psycopg.errors.LockNotAvailable:
+            check()
 
 
 def try_read_lock(conn: psycopg.Connection) -> bool:
@@ -384,10 +402,13 @@ def store(
     names: Mapping[str, str],
     run_id: int | None = None,
     rules: str | None = None,
+    check: Callable[[], None] = lambda: None,
 ) -> int:
     """Bring the stored datasets, directory listings and records up to date with the result.
 
     `names` are the formats' display names for the records (records.format_names).
+    `check` is called while the store lock is waited for and before the
+    commit; what it raises ends the store without a change (SIGTERM).
 
     Returns the number of records that changed. A record's datestamp moves only
     when its content changes, so an unchanged crawl leaves datestamps alone;
@@ -433,7 +454,7 @@ def store(
         )  # fmt: skip
         records = [build(d, names) for d in result.datasets]
         # waits for the requests in flight, which are single short queries
-        cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", STORE_LOCK)
+        _store_lock(conn, check)
         cur.execute(
             "DELETE FROM records WHERE identifier <> ALL(%s)",
             ([identifier for identifier, _ in records],),
@@ -457,5 +478,6 @@ def store(
             cur.execute(
                 "UPDATE crawl_runs SET rules = %s WHERE run_id = %s", (rules, run_id)
             )
+    check()  # the caller closes the connection: the transaction is rolled back
     conn.commit()
     return changed

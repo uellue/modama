@@ -29,6 +29,7 @@ from dataclasses import dataclass, field, replace
 from .formats import Dataset, Extracted, Extraction, Format, Result
 
 TIME_LIMIT = 60.0  # seconds per dataset
+CHECK_INTERVAL = 1.0  # seconds between calls of extract's check (SIGTERM)
 MAX_WORKERS = 8  # NFS latency, not the CPU, sets the pace (D1)
 # Address space per worker (RLIMIT_AS). A worker with RosettaSciIO and numpy
 # imported maps about 0.4 GiB on 8 CPUs, more with more CPUs (thread
@@ -85,6 +86,7 @@ def extract(
     workers: int | None = None,
     time_limit: float = TIME_LIMIT,
     memory: int | None = MEMORY,
+    check: Callable[[], None] | None = None,
 ) -> Report:
     """Set the extraction of every dataset of the result whose format has an extractor; returns the report.
 
@@ -92,6 +94,8 @@ def extract(
     datasets that were recognised again; datasets taken over from it carry
     theirs already. A failure, new or reused, becomes a warning of the result.
     `memory` is each worker's address space in bytes, None for no limit.
+    `check` is called at least every second while extractors run; what it
+    raises ends the extraction, the workers killed (SIGTERM).
     """
     by_id = {f.id: f for f in formats if f.has_extractor}
     report = Report(unchanged=result.unchanged)
@@ -123,6 +127,7 @@ def extract(
         workers or default_workers(),
         time_limit,
         memory,
+        check,
     )
     for i, (extracted, error, seconds, retry) in zip(tasks, outcomes, strict=True):
         d = result.datasets[i]
@@ -202,6 +207,7 @@ def _run(
     workers: int,
     time_limit: float,
     memory: int | None = MEMORY,
+    check: Callable[[], None] | None = None,
 ) -> list[Outcome]:
     """Run the tasks in a pool of spawned processes; the time limit is enforced from outside.
 
@@ -248,9 +254,11 @@ def _run(
             deadline = min(start for _, start in running.values()) + time_limit
             done, _ = wait(
                 running,
-                timeout=max(0.0, deadline - time.monotonic()),
+                timeout=min(CHECK_INTERVAL, max(0.0, deadline - time.monotonic())),
                 return_when=FIRST_COMPLETED,
             )
+            if check is not None:
+                check()  # raising: the finally below kills the workers
             broken = False
             for future in done:
                 i, start = running.pop(future)

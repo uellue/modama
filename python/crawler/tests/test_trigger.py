@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import psycopg
 import pytest
+import standin
 from conftest import CRAWLER, shell
 from modama_crawler import cli, selection
 from modama_crawler.cli import next_run, overdue
@@ -232,11 +233,94 @@ class _Terminating(Format):
         return ()
 
 
-@pytest.mark.parametrize(
+KILLS = pytest.mark.parametrize(
     "kill",
     [lambda: os.kill(os.getpid(), signal.SIGTERM), _kill_in_weakref_callback],
     ids=["in a callback", "in a weakref callback"],
 )
+
+
+def _crawl(tree, formats, monkeypatch) -> tuple[int, float]:
+    """Crawl in this process with the given formats; the exit status and the seconds it took."""
+    monkeypatch.setattr(
+        cli, "_configure", lambda args: (selection.Config(), formats, "r1")
+    )
+    handler = signal.getsignal(signal.SIGTERM)
+    start = time.monotonic()
+    try:
+        status = cli.main(["crawl", "--root", str(tree)])
+    finally:
+        signal.signal(signal.SIGTERM, handler)
+    return status, time.monotonic() - start
+
+
+def _failed_without_records(conn) -> bool:
+    conn.commit()
+    return conn.execute("SELECT outcome, error FROM crawl_runs").fetchall() == [
+        ("failed", "terminated (SIGTERM)")
+    ] and conn.execute("SELECT count(*) FROM records").fetchone() == (0,)
+
+
+@KILLS
+def test_a_crawl_stopped_by_sigterm_during_extraction(
+    conn, env, tree, tmp_path, monkeypatch, kill
+):
+    from modama_crawler import extraction
+
+    (tree / "slow.stand").write_text("hang")
+    formats = standin.collection(tmp_path / "calls").formats
+    # A time limit the test can wait for: a crawl that misses the signal ends with it
+    real_run, real_wait, killed = extraction._run, extraction.wait, []
+    monkeypatch.setattr(
+        extraction,
+        "_run",
+        lambda tasks, workers, time_limit, *rest: real_run(tasks, workers, 10.0, *rest),
+    )
+
+    def wait(*args, **kwargs):
+        if not killed:
+            killed.append(True)
+            kill()
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(extraction, "wait", wait)
+    status, seconds = _crawl(tree, formats, monkeypatch)
+    assert killed and status == 143
+    assert seconds < 5  # not after the time limit
+    assert _failed_without_records(conn)
+    assert multiprocessing.active_children() == []
+
+
+@KILLS
+def test_a_crawl_stopped_by_sigterm_at_the_store_lock(
+    conn, env, tree, monkeypatch, kill
+):
+    # A request in flight holds the store lock shared; it ends after 10 s, so
+    # that a crawl that misses the signal finishes rather than hangs
+    request = psycopg.connect(
+        make_conninfo(conn.info.dsn, password=conn.info.password or "")
+    )
+    request.execute("SELECT pg_advisory_xact_lock_shared(%s, %s)", STORE_LOCK)
+    threading.Timer(10, request.close).start()
+    real_execute, killed = psycopg.Cursor.execute, []
+
+    def execute(self, query, *args, **kwargs):
+        if "pg_advisory_xact_lock(" in str(query) and not killed:
+            killed.append(True)
+            kill()
+        return real_execute(self, query, *args, **kwargs)
+
+    monkeypatch.setattr(psycopg.Cursor, "execute", execute)
+    try:
+        status, seconds = _crawl(tree, [], monkeypatch)
+    finally:
+        request.close()
+    assert killed and status == 143
+    assert seconds < 5  # not after the request
+    assert _failed_without_records(conn)
+
+
+@KILLS
 def test_a_crawl_stopped_by_sigterm_during_the_walk(
     conn, env, tree, monkeypatch, capfd, kill
 ):
