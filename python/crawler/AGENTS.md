@@ -61,7 +61,7 @@ The Bash hook `.claude/hooks/no-inline-edits.py` refuses in-place edits by shell
 ```
 src/modama_crawler/
 ├── cli.py          # crawl, runs, timer, serve, records; the only place that reads the environment
-├── walk.py         # post-order walk with pre-order collapse check -> Result; takes over unchanged directories
+├── walk.py         # post-order walk with pre-order collapse check -> Result; takes over unchanged directories; asyncio tasks, I/O in a thread pool
 ├── extraction.py   # runs Format.extract in a process pool with a time limit; reuse by extractor identity and stamp
 ├── formats/        # Entry, Directory, Dataset, Result, Format, Collection; the runner (run_pre, run_post)
 │   ├── TEMPLATE.md # how to write a collection
