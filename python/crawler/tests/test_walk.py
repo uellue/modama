@@ -10,6 +10,7 @@ from importlib.metadata import entry_points
 from pathlib import Path
 
 import pytest
+from conftest import interrupted
 from modama_crawler import cli
 from modama_crawler.formats import DIRECTORY, Collection, Dataset, Format
 from modama_crawler.store import previous, start_run, store
@@ -435,6 +436,42 @@ def test_a_matching_process_that_dies(mime_database, tmp_path, monkeypatch, capl
     assert killed
     assert _whole(result) == _whole(walk(tmp_path, formats, threads=4))
     assert "matching process died" in caplog.text
+
+
+INTERRUPTED_WALK = """
+import sys, time
+from pathlib import Path
+from modama_crawler import mimedb, selection
+from modama_crawler.formats import DIRECTORY, Collection, Format
+from modama_crawler.walk import walk
+
+class Waiting(Format):
+    type = "x/waiting"
+    reacts_to = frozenset({DIRECTORY})
+
+    def recognize(self, d):
+        if d.phase == "post" and d.rel == "/":  # the file is matched by now
+            print("ready", flush=True)
+            time.sleep(2)
+        return ()
+
+mimedb.build(selection.discover().values(), Path(sys.argv[2]))
+try:
+    walk(sys.argv[1], Collection("t", [Waiting()]).formats, processes=2)
+except KeyboardInterrupt:
+    sys.exit(130)
+"""
+
+
+def test_ctrl_c_during_the_walk_is_quiet(tmp_path):
+    # Graceful exit on Ctrl-C: no traceback from the matching processes either
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "unnamed").write_bytes(b"\0")  # no name a glob decides
+    (tmp_path / "mime").mkdir()
+    status, stderr = interrupted(
+        INTERRUPTED_WALK, str(tmp_path / "data"), str(tmp_path / "mime")
+    )
+    assert (status, stderr) == (130, "")
 
 
 def test_the_number_of_threads_is_a_setting(monkeypatch):

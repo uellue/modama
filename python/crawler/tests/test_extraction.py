@@ -5,6 +5,7 @@ import sys
 
 import pytest
 import standin
+from conftest import interrupted
 from modama_crawler import extraction, mime, selection
 from modama_crawler import walk as walk_module
 from modama_crawler.cli import crawl_tree
@@ -51,6 +52,48 @@ def test_an_extractor_raises_on_a_broken_file(tmp_path):
     ((path, text),) = result.all_warnings()
     assert path == "/broken.stand" and "truncated file" in text
     assert report.failed == 1
+
+
+INTERRUPTED_EXTRACTION = """
+import sys, threading, time
+from pathlib import Path
+from modama_crawler import extraction, mimedb, selection
+from modama_crawler.walk import walk
+
+root, calls, tests, mime = sys.argv[1:]
+sys.path.insert(0, tests)
+import standin
+
+def ready():
+    while len(standin.calls(calls)) < 2:  # one extractor done, one hanging
+        time.sleep(0.05)
+    print("ready", flush=True)
+
+mimedb.build(selection.discover().values(), Path(mime))
+formats = standin.collection(calls).formats
+threading.Thread(target=ready, daemon=True).start()
+try:
+    extraction.extract(walk(root, formats), formats, root, workers=2)
+except KeyboardInterrupt:
+    sys.exit(130)
+"""
+
+
+def test_ctrl_c_during_extraction_is_quiet(tmp_path):
+    # Graceful exit on Ctrl-C: no traceback from the extracting processes either
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok alpha")
+    (root / "b.stand").write_text("hang")
+    (tmp_path / "mime").mkdir()
+    status, stderr = interrupted(
+        INTERRUPTED_EXTRACTION,
+        str(root),
+        str(tmp_path / "calls"),
+        os.path.dirname(__file__),
+        str(tmp_path / "mime"),
+    )
+    assert (status, stderr) == (130, "")
 
 
 def test_an_extractor_kills_its_process(tmp_path):

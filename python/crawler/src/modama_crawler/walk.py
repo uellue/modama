@@ -15,6 +15,7 @@ import json
 import logging
 import multiprocessing
 import os
+import signal
 import stat
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -118,7 +119,14 @@ def walk(
     above 0, MIME magic matching runs in that many worker processes
     (parallel-walk D5).
     """
-    pool = ThreadPoolExecutor(threads, thread_name_prefix="walk")
+    # Ctrl-C is the main thread's; blocked here, it is also blocked in the
+    # matching processes these threads start, from their first instruction
+    pool = ThreadPoolExecutor(
+        threads,
+        thread_name_prefix="walk",
+        initializer=signal.pthread_sigmask,
+        initargs=(signal.SIG_BLOCK, {signal.SIGINT}),
+    )
     matchers = (
         ProcessPoolExecutor(
             processes,

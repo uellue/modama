@@ -18,6 +18,7 @@ import multiprocessing
 import os
 import re
 import resource
+import signal
 import time
 from collections import deque
 from collections.abc import Callable, Iterable
@@ -186,7 +187,8 @@ def _work(fmt: Format, dataset: Dataset, root: str) -> Extracted | None:
 
 
 def _limit_memory(memory: int | None) -> None:
-    """The pool's worker initializer."""
+    """The pool's worker initializer. Ctrl-C is the parent's to handle: it kills the workers."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     if memory is not None:
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
 
