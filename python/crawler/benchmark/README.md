@@ -36,8 +36,13 @@ writes only into a new or empty directory, and never overwrites or deletes.
 
 ```bash
 python3 shape.py LISTING.tsv.gz 0.05 1 > SHAPE.tsv.gz    # 5 % of the directories, seed 1
-sudo python3 generate.py SHAPE.tsv.gz /srv/modama-bench/tree
+sudo python3 generate.py shapes/shape-0.05-seed1.tsv.gz /srv/modama-bench/tree
 ```
+
+`shapes/shape-0.05-seed1.tsv.gz` is the reference tree: 5 % of the directories of the
+listing of 2026-10-15, seed 1, checked by @weber for publication (2026-11-11). The same
+tree is on the real storage at `/storage/er-c-data/adhoc/datamanagement/testdata/` on
+the development server (@weber manages it).
 
 Files are zeros, so the content checks see no real headers: a format reader that parses
 a header (EMPAD XML, Zarr metadata) only warns. The I/O per file is that of the real
@@ -97,7 +102,10 @@ measured with `measure.sh`; first cold (nothing had read the tree), then warm:
 - The data path agrees exactly: READs, bytes, opens, directory reads.
 - Metadata operations differ: on the real storage the client looked up almost every
   entry (21,769 LOOKUPs for 25,382 entries), in the VM about one in four. Not explained
-  yet; the kernels or the NFS servers may differ.
+  yet. Not the timing: with a 0.2 ms delay each way (0.47 ms round trip, as on the real
+  storage) the VM's counts stay the same, and its wall time is 82 s. The client kernels
+  are the same version (6.12.115, Debian); the storage server runs a Red Hat 9.6 kernel
+  (5.14.0-570), the VM's NFS server 6.12. The server is the likely cause.
 - The test tree's READs took 0.47 ms on the real storage, against 16 to 43 ms for real
   data in the field test: sparse files are holes, so the server reads no disk. Times on
   the test tree therefore say nothing about production; a time is projected from the

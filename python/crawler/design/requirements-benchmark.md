@@ -48,6 +48,9 @@ Markers per item: [answered] said or confirmed by the principal; [record] taken 
 ### 2.5 Availability and reliability
 - [answered] The emulation is good enough when the counters per file (NFS READs, bytes received per open, re-reads) of the same test tree agree within 10 % between the emulation and the actual storage (77). Wall times are recorded on both, not compared: the actual storage varies.
 - [assumed] A wrong result shows up as a disagreement in that comparison; it is repeated after a change of the setup or the storage, and when production's counters (`nfs-stats.sh`) change noticeably.
+- [answered] First comparison (2026-11-11, `../benchmark/README.md`): READs, bytes, opens and directory reads agree exactly; LOOKUP (×3.3), GETATTR (−50 %) and DELEGRETURN (+62 %) do not, probably because of the storage server's NFS server (Red Hat 9.6, kernel 5.14). Accepted for the data path; the metadata counters stay marked "differs, reason unknown" until explained (96).
+- [answered] The reference tree's shape is public (`../benchmark/shapes/`), checked by @weber (93).
+- [deferred] Real bytes at the start of each test file instead of holes, so that the server reads disk as with real data (97): "we only do these things when necessary. That may come soon when we start extracting metadata!" (@weber). Until then, times are projected from the counters and production's round trips.
 
 ### 2.6 Performance
 - [answered] Turnaround (69): one run under 5 minutes in the VM, so that every change can be tried.
@@ -85,4 +88,5 @@ Decides: @weber. Builds: Claude with @weber. Owns the shared system it acts on: 
 - 73 Vocabulary: common terms from the performance literature (cold and hot cache, working set) for now; glossary entries for `/CONTEXT.md` proposed once the prior art shows which are established. @weber, after the research.
 - Production monitoring (79): a requirements document of its own later, sharing the test tree on the storage. @weber.
 - Own repository for the benchmark (81): the maintainers decide.
-- 67 (field test): let run 2 finish, or stop and restart with the F12 fix. For @weber.
+- Real bytes in the test files (97): deferred to the extraction of metadata. @weber.
+- Why the storage server's NFS causes three times the LOOKUPs (96): reproduce with a Red Hat 9 NFS server, for example a second VM. @weber decides when.
