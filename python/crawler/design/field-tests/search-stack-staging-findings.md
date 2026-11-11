@@ -46,7 +46,48 @@ The crawler's container grew from 270 MiB to 1.9 GiB, see F13. Disk unchanged (8
 `df -i` of the mount: 2,286,248 inodes used (the server's file system, so at most
 that many files and directories in the tree): the crawl is about a third through.
 
+### Run 3, 2026-11-11/12: the whole tree, parallel walk and EM extraction
+
+Commit 3251cad (`crawler`: parallel walk with its review fixes, EM formats and
+extraction, `os.access` per file). Fresh state (`./downstaging.sh --reset`), crawl started
+by the timer at once at 17:49:07 UTC. Recording in `.claude/field-tests/run-2/`
+(`monitor.log`, `nfs.log`, `indexing-probe.log`, py-spy records `crawl-*.txt`; the folder
+is named for the second recording session, the run is the third). Results: to be added.
+
+Interim, 18:20 UTC:
+- **Walk:** listing done at 18:06, 17 minutes in: 51,306 directories, 1,511,890 files
+  (run 2: 38,596 directories and 1.0 million files in 11 hours, unfinished). Up to
+  3,000 files/s listed; content sniffing 550 to 900 files/s at 8 to 20 kB received per
+  file opened (prediction: at most 40 kB). The heartbeat counts files listed, not done
+  (`BACKLOG.md`). Round trips 1 to 10 ms, against 16 to 43 ms in run 2: caches likely
+  warm from the last two nights. 45 files not readable and 19 directories not listable in
+  the recorded log, in a few folders.
+- **Extraction, from 18:06:** about 72 files/s (4,200 to 4,450 opens per minute), 1,168 kB
+  received per file opened, 16 requests in flight, crawl container at 1 to 5 cores and
+  3.2 GiB. py-spy (`crawl-gil-60s.txt`): the main process holds the GIL in 36 of 3,000
+  samples, so it is not the limit. py-spy with `--subprocesses` (`crawl-sub-60s.txt`):
+  90 % of the workers' samples in RosettaSciIO's DM reader, over half on the first 4-byte
+  read of a file (`parse_header`, `_api.py:76`), 14 % on the first byte after a seek:
+  waits for NFS, not parsing (6 ms CPU per file on the DM4 fixture). See F14.
+
 ## Findings
+
+**F14 (crawler, formats): extraction read about 1 MiB per DM file.** Run 3: 1,168 kB
+received per file opened during extraction, the same every minute; RosettaSciIO's DM
+reader needs the tags (96 to 143 kB on the fixtures). First read as the NFS readahead;
+reproduced in the VM on the benchmark's NFS mount (20 ms round trip, a DM4 fixture padded
+to 16 MB): 1,154 kB and 176 ms per file with `file_reader`, and readahead off changed
+nothing. The cause is Python's file buffer: `open()` sizes it from `st_blksize`, 1 MiB on
+NFS, and the reader seeks through the tag tree, so every seek refills up to 1 MiB.
+Levers (@weber, 2026-11-11: (a) first, in the VM): (a) read less: RosettaSciIO's reader
+classes (`DigitalMicrographReader`, `ImageObject`, the steps of `file_reader` without
+`get_data`) on a handle we open with a 64 KiB buffer and readahead off: 132 kB and 93 ms
+per file; 8 KiB reads 36 kB but takes 129 ms (more round trips). Identical metadata, axes,
+tags and mapping on RosettaSciIO's 98 DM test files that `file_reader` reads; its 12 RGBA
+files, which `file_reader(lazy=True)` refuses, are now read too. Branch `dm-handle`
+(4f0a6ec), for review. (b) more requests in flight: more extraction processes than CPUs,
+since they mostly wait (`MODAMA_CRAWLER_EXTRACT_WORKERS`, 8 by default; decision 59).
+Both measured on the next crawl, not tonight (a restart would lose the extraction done).
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
 `libertem-test-data/many_mib` holds 19,601 `.mib` frames, each its own dataset: 90 % of
