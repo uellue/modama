@@ -251,8 +251,12 @@ services:
       retries: 3
     networks: [search]
 
+  # upstream's 0.10.2 with patches/search-api/ applied (search-api.Dockerfile)
   search-api:
-    image: ghcr.io/eosc-data-commons/data-commons-search:0.10.2
+    build:
+      context: patches/search-api
+      dockerfile: ../../search-api.Dockerfile
+    image: search-stack-search-api:0.10.2-patched
     restart: unless-stopped
     env_file:
       # its own role, owner of appdb only, not the warehouse's admin

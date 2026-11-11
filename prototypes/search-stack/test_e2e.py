@@ -308,6 +308,22 @@ def test_search_finds_the_file(tree):
     assert wanted in urls, (wanted, urls)
 
 
+# The search API's hybrid score is the weighted mean of its two legs, each normalized
+# to 0..1 (min_max): kNN 0.6, keyword 0.4 (upstream's hybrid_weights), times 0.1 for a
+# record without a description (description_penalty), as all of ours are. The kNN leg
+# alone gives at most 0.6 * 0.1; only a keyword match lifts a hit above that.
+KNN_ONLY_MAX = 0.6 * 0.1
+
+
+def test_the_keyword_leg_finds_a_word_of_the_title(tree):
+    # "ferritin" is in this one record's title only (the record has no description
+    # or subjects); without patches/search-api/ the keyword leg matches nothing
+    wanted = next(url for _, url in tree.values() if url.endswith(DISTINCT_FILE))
+    hits = http(f"{SEARCH}/search?q=ferritin&resource=datasets")["hits"]
+    scores = {h["_source"]["url"]: h["_score"] for h in hits}
+    assert scores[wanted] > KNN_ONLY_MAX * 1.01, scores
+
+
 def test_incremental_harvest_brings_only_the_new_file(tree):
     # datestamps have seconds granularity; the new record must be newer than the first harvest
     time.sleep(2)
