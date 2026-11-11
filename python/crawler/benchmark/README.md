@@ -74,3 +74,33 @@ files, 664 GB apparent size on 14 MB of disk, generated in under a second. The c
 received (164 kB per file opened), 21,746 ACCESS, 6,620 LOOKUP, 2,681 READDIR; no page
 read again after eviction at 256 MB. Production's readahead is 128 kB as well (`read_ahead_kb`
 of the mount on the development server, 2026-11-11).
+
+## The emulation against the real storage (2026-11-11)
+
+The same tree (seed 1, 5 %), generated on the storage server's XFS and crawled from the
+development server through the production mount, by the staging crawler (same code),
+measured with `measure.sh`; first cold (nothing had read the tree), then warm:
+
+| NFS operation | VM, cold | real storage, cold | real storage, warm |
+|---|---|---|---|
+| READ | 32,456 | 32,456 | 0 |
+| MB received by READ | 2,011.8 | 2,011.8 | 0 |
+| OPEN_NOATTR, CLOSE | 12,277 each | 12,277 each | 12,277 each |
+| READDIR | 2,682 | 2,681 | 2,681 |
+| ACCESS | 21,746 | 24,087 (+11 %) | 21,748 |
+| GETATTR | 5,346 | 2,681 (−50 %) | 8,796 |
+| LOOKUP | 6,620 | 21,769 (×3.3) | 3,374 |
+| DELEGRETURN | 7,278 | 11,817 (+62 %) | 7,738 |
+| READ round trip | 0.07 ms | 0.47 ms | |
+| wall time | 54 s | 79 s | 74 s |
+
+- The data path agrees exactly: READs, bytes, opens, directory reads.
+- Metadata operations differ: on the real storage the client looked up almost every
+  entry (21,769 LOOKUPs for 25,382 entries), in the VM about one in four. Not explained
+  yet; the kernels or the NFS servers may differ.
+- The test tree's READs took 0.47 ms on the real storage, against 16 to 43 ms for real
+  data in the field test: sparse files are holes, so the server reads no disk. Times on
+  the test tree therefore say nothing about production; a time is projected from the
+  counters and production's round trips instead.
+- Warm, the development server's page cache served every READ; opens still go to the
+  server.
