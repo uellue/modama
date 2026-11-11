@@ -21,3 +21,8 @@ curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
 sudo apt-get install -y --no-install-recommends nodejs npm
 npm install -g --prefix ~/.local @fission-ai/openspec@1.16.0
 echo 'export OPENSPEC_TELEMETRY=0' >> ~/.profile
+
+# Rust for modama-rs and the crawl I/O playground (modama-rs/crawl-io-playground/):
+# rustup into ~/.cargo, pinned to the toolchain in use, and a C linker
+sudo apt-get install -y --no-install-recommends gcc libc6-dev
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.99.1
