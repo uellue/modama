@@ -27,3 +27,4 @@ Cleaned means: no session ids, no names of people, no private projects, nothing 
 - 2026-11-11 | positive | collaboration | The agent's leans were very often good; "yes to all" means that | effect: none
 - 2026-11-11 | positive | hooks | A hook against shell edits is important so that /rewind works | effect: ledger 7
 - 2026-11-11 | positive | messages | Message length is a good balance between readable and not chopped to pieces | effect: none
+- 2026-11-11 | positive | collaboration | Showing the data (the measured field mapping) instead of guessing was appreciated | effect: none
