@@ -197,7 +197,7 @@ def test_unreadable_path_fails(tmp_path):
     assert run.stdout == b""
 
 
-@pytest.mark.parametrize("value", ["0", "many", "-1"])
+@pytest.mark.parametrize("value", ["0", "many", "-1", "²"])
 def test_walk_threads_not_a_number_fails(tmp_path, value):
     run = subprocess.run(
         [sys.executable, "-m", "modama_crawler", "records", str(tmp_path)],

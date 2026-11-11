@@ -212,10 +212,14 @@ def _threads() -> int:
     value = os.environ.get("MODAMA_CRAWLER_WALK_THREADS")
     if value is None:
         return DEFAULT_THREADS
-    if not value.isdigit() or int(value) < 1:
+    try:
+        threads = int(value)
+    except ValueError:
+        threads = 0
+    if threads < 1:
         log.error("MODAMA_CRAWLER_WALK_THREADS must be a positive integer: %r", value)
         raise SystemExit(2)
-    return int(value)
+    return threads
 
 
 def cmd_crawl(args) -> int:
