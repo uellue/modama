@@ -140,8 +140,13 @@ class _Heartbeat(threading.Thread):
         self.join()
 
 
-class Terminated(Exception):
-    """SIGTERM, as an exception, so that the crawl records its run as failed (docker stop)."""
+class Terminated(SystemExit):
+    """SIGTERM, as an exception, so that the crawl records its run as failed (docker stop).
+
+    A SystemExit, as KeyboardInterrupt is a BaseException: asyncio logs and
+    drops an Exception raised in one of its callbacks, where the signal
+    handler mostly runs during the walk (parallel-walk review, finding 1).
+    """
 
 
 def _terminate(signum, frame):

@@ -1,6 +1,9 @@
 """The harvest trigger after a crawl, and the daily timer (decision log 2026-11-04, 2026-11-05)."""
 
+import asyncio
 import json
+import multiprocessing
+import os
 import signal
 import subprocess
 import sys
@@ -11,7 +14,9 @@ from datetime import UTC, datetime, timedelta
 import psycopg
 import pytest
 from conftest import CRAWLER, shell
+from modama_crawler import cli, selection
 from modama_crawler.cli import next_run, overdue
+from modama_crawler.formats import DIRECTORY, Collection, Format
 from modama_crawler.store import CRAWL_LOCK, STORE_LOCK
 from psycopg.conninfo import make_conninfo
 from werkzeug.serving import make_server
@@ -194,3 +199,49 @@ def test_a_crawl_stopped_by_sigterm_records_its_run_as_failed(conn, env, tree):
         ("failed", "terminated (SIGTERM)")
     ], stderr
     assert conn.execute("SELECT count(*) FROM records").fetchone() == (0,)
+
+
+class _Terminating(Format):
+    """Has the walk's loop send SIGTERM from the walk's last format call, the root's post-order one."""
+
+    type = "x/terminating"
+    reacts_to = frozenset({DIRECTORY})
+    loop: list[asyncio.AbstractEventLoop] = []
+
+    def recognize(self, d):
+        if d.phase == "post" and d.rel == "/":
+            # In a callback of the loop, where a busy walk mostly gets the signal (review finding 1)
+            self.loop[0].call_soon_threadsafe(os.kill, os.getpid(), signal.SIGTERM)
+        return ()
+
+
+def test_a_crawl_stopped_by_sigterm_during_the_walk(conn, env, tree, monkeypatch):
+    import modama_crawler.walk as walk_module
+
+    (tree / "unnamed").write_bytes(b"\0")  # no name a glob decides: matched
+    formats = Collection("t", [_Terminating()]).formats
+    monkeypatch.setattr(
+        cli, "_configure", lambda args: (selection.Config(), formats, "r1")
+    )
+    real_walk = walk_module._walk
+
+    async def walk_with_loop(*args):
+        _Terminating.loop[:] = [asyncio.get_running_loop()]
+        return await real_walk(*args)
+
+    monkeypatch.setattr(walk_module, "_walk", walk_with_loop)
+    monkeypatch.setenv("MODAMA_CRAWLER_EXTRACT_WORKERS", "2")
+    handler = signal.getsignal(signal.SIGTERM)
+    try:
+        status = cli.main(["crawl", "--root", str(tree)])
+    finally:
+        signal.signal(signal.SIGTERM, handler)
+    assert status == 143
+    conn.commit()
+    assert conn.execute("SELECT outcome, error FROM crawl_runs").fetchall() == [
+        ("failed", "terminated (SIGTERM)")
+    ]
+    assert conn.execute("SELECT count(*) FROM records").fetchone() == (0,)
+    # The pools are shut down: no walk threads, no matching processes
+    assert not [t for t in threading.enumerate() if t.name.startswith("walk")]
+    assert multiprocessing.active_children() == []
