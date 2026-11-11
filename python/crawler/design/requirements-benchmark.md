@@ -25,7 +25,7 @@ Markers per item: [answered] said or confirmed by the principal; [record] taken 
 
 ### 2.1 Use scenarios
 - [answered] Scope (68): first the crawler alone: the walk, the format check, the format readers. Harvest and indexing later, in a benchmark of their own.
-- [answered] Agnostic to the crawler's language (@weber): the benchmark runs the crawler as a program and measures from outside, so that a rewrite (for example in Rust) is measured the same way. I read this as: no measurement through the crawler's own code or imports; to be confirmed (75).
+- [answered] Agnostic to the crawler's language (@weber): the benchmark runs the crawler as a program and measures from outside, so that a rewrite (for example in Rust) is measured the same way. No measurement through the crawler's own code or imports (75, confirmed): the crawler is started from a command line with the tree's path, and everything is measured from outside (the mount's counters, the cgroup, `perf`).
 - [answered] Emulated: a test tree served with the production file system's characteristics (2.4), on a machine without access to production; reads mostly cold, with a cache much smaller than the tree (@weber: reading a file again soon after, while it is hot, must show up as cheap, and later, once evicted, as expensive).
 - [answered] Real (@weber): the same test tree also on the actual storage (there is space to spare), and the same benchmark run against it there, to see what is actually going on and to check that the emulation behaves like the real thing. The tree on the storage also serves a planned test suite that monitors production.
 - [answered] Profiled (@weber): any run can be done with a full system profile (`perf`), so that what happens in the kernel, NFS client and the crawler shows up together.
@@ -46,7 +46,8 @@ Markers per item: [answered] said or confirmed by the principal; [record] taken 
 - [record] The tree's shape: `survey.md` (file sizes, extensions, directories with tens of thousands of files, collapsible trees).
 
 ### 2.5 Availability and reliability
-Not asked yet.
+- [answered] The emulation is good enough when the counters per file (NFS READs, bytes received per open, re-reads) of the same test tree agree within 10 % between the emulation and the actual storage (77). Wall times are recorded on both, not compared: the actual storage varies.
+- [assumed] A wrong result shows up as a disagreement in that comparison; it is repeated after a change of the setup or the storage, and when production's counters (`nfs-stats.sh`) change noticeably.
 
 ### 2.6 Performance
 - [answered] Turnaround (69): one run under 5 minutes in the VM, so that every change can be tried.
@@ -59,12 +60,29 @@ Not asked yet.
   - Debian packages: `nfs-kernel-server` and `nfs-common` 2.8.3 (server, `mount.nfs`, `nfsiostat`), `iproute2` 6.15 (`tc`), `linux-perf` 6.12.116, `bpftrace` 0.23.2, `bpfcc-tools` 0.31.0 (`cachestat-bpfcc`), `strace` 6.13, `hyperfine` 1.19.0, `vmtouch` 1.3.1, `util-linux-extra` 2.41.5 (`fincore`), `fio` 3.39, `sysstat` 12.7.5. To go into `.devvm/provision.sh` once the setup works.
   - `perf`: `kernel.perf_event_paranoid` is 3 on Debian, so `sudo`; `perf stat -G <cgroup>` counts for one container only; `perf trace -s` summarises system calls per thread; tracepoints `sunrpc:*`, `nfs:*`, `filemap:*` (143 present before NFS v4 was loaded), `nfs4:*` once `nfsv4` is loaded. Python 3.14 shows its own functions in `perf` with `-X perf` (checked: `sys.is_stack_trampoline_active()` is true).
 
-### 2.8 to 2.12
-Not asked yet.
+### 2.8 Portability and distribution
+- [answered] In `python/crawler/benchmark/` for now (81); a repository of its own is being considered, to be decided by the maintainers.
+- [assumed] Linux only (NFS client and server, cgroup v2, `perf`); any machine where one is root, set up from the list in 2.7.
+
+### 2.9 Jurisdictions
+- [assumed] Nothing applies: the test tree is generated, without real data or personal data; the tools are free software (licences in `prior-art-benchmark.md`).
+
+### 2.10 Lifetime and decommissioning
+- [assumed] As long as the crawler is developed. The test tree on the storage is @weber's to manage and remove (76).
+
+### 2.11 Safety and risks
+- [answered] In the VM the agent may be root; on the development server @weber runs every command (78).
+- [record] The emulation runs inside the devvm only: an NFS server there, exporting only the generated tree, on the VM's loopback; no export reachable from outside the VM.
+- [assumed] Risk: a loopback NFS mount under memory pressure can deadlock (`prior-art-benchmark.md`, LWN 2014); the memory limit applies to the crawler's cgroup only, not to the server.
+
+### 2.12 Applicable standards
+- Not asked: none known for a benchmark of this kind.
 
 ## Release
 Decides: @weber. Builds: Claude with @weber. Owns the shared system it acts on: the emulation, none; the test tree on the actual storage: @weber (76: Claude prepares the tree, @weber copies it to the storage, says where, and manages it, like the LiberTEM test tree).
 
 ## Open questions
 - 73 Vocabulary: common terms from the performance literature (cold and hot cache, working set) for now; glossary entries for `/CONTEXT.md` proposed once the prior art shows which are established. @weber, after the research.
+- Production monitoring (79): a requirements document of its own later, sharing the test tree on the storage. @weber.
+- Own repository for the benchmark (81): the maintainers decide.
 - 67 (field test): let run 2 finish, or stop and restart with the F12 fix. For @weber.
