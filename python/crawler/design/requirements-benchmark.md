@@ -72,7 +72,7 @@ Markers per item: [answered] said or confirmed by the principal; [record] taken 
 
 ### 2.11 Safety and risks
 - [answered] In the VM the agent may be root; on the development server @weber runs every command (78).
-- [record] The emulation runs inside the devvm only: an NFS server there, exporting only the generated tree, on the VM's loopback; no export reachable from outside the VM.
+- [assumed] The emulation runs inside the devvm only: an NFS server there, exporting only the generated tree, on the VM's loopback; no export reachable from outside the VM.
 - [assumed] Risk: a loopback NFS mount under memory pressure can deadlock (`prior-art-benchmark.md`, LWN 2014); the memory limit applies to the crawler's cgroup only, not to the server.
 
 ### 2.12 Applicable standards
