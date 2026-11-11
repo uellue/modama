@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -9,6 +10,7 @@ import psycopg
 from psycopg.rows import class_row
 from psycopg.types.json import Jsonb
 
+from .extraction import Report
 from .formats import Dataset, Extracted, Extraction, Listing, Result
 from .records import build
 
@@ -123,6 +125,10 @@ def ensure_tables(conn: psycopg.Connection) -> None:
             datasets INTEGER,
             warnings INTEGER,
             records_changed INTEGER,
+            extractions_run INTEGER,
+            extractions_reused INTEGER,
+            extractions_failed INTEGER,
+            directories_unchanged INTEGER,
             error TEXT,
             rules TEXT
         )
@@ -167,14 +173,21 @@ def end_run(
     datasets: int | None = None,
     warnings: int | None = None,
     records_changed: int | None = None,
+    extraction: Report | None = None,
     error: str | None = None,
 ) -> None:
     now = datetime.now(UTC)
+    counts = (
+        (extraction.run, extraction.reused, extraction.failed, extraction.unchanged)
+        if extraction
+        else (None, None, None, None)
+    )
     conn.execute(
         """
         UPDATE crawl_runs SET finished_at = %s, updated_at = %s, outcome = %s,
             directories = %s, files = %s, datasets = %s, warnings = %s,
-            records_changed = %s, error = %s
+            records_changed = %s, extractions_run = %s, extractions_reused = %s,
+            extractions_failed = %s, directories_unchanged = %s, error = %s
         WHERE run_id = %s
         """,
         (
@@ -186,6 +199,7 @@ def end_run(
             datasets,
             warnings,
             records_changed,
+            *counts,
             error,
             run_id,
         ),
@@ -206,12 +220,18 @@ class Run:
     datasets: int | None
     warnings: int | None
     records_changed: int | None
+    extractions_run: int | None
+    extractions_reused: int | None
+    extractions_failed: int | None
+    directories_unchanged: int | None
     error: str | None
     age: timedelta  # since the last update, by the database's clock, so that readers on other hosts agree
 
 
 _RUN_SELECT = """SELECT run_id, root, started_at, updated_at, finished_at, outcome,
-    directories, files, datasets, warnings, records_changed, error, now() - updated_at AS age
+    directories, files, datasets, warnings, records_changed, extractions_run,
+    extractions_reused, extractions_failed, directories_unchanged, error,
+    now() - updated_at AS age
     FROM crawl_runs"""
 
 
@@ -354,10 +374,13 @@ def previous(conn: psycopg.Connection, rules: str) -> Stored | None:
 def store(
     conn: psycopg.Connection,
     result: Result,
+    names: Mapping[str, str],
     run_id: int | None = None,
     rules: str | None = None,
 ) -> int:
     """Bring the stored datasets, directory listings and records up to date with the result.
+
+    `names` are the formats' display names for the records (records.format_names).
 
     Returns the number of records that changed. A record's datestamp moves only
     when its content changes, so an unchanged crawl leaves datestamps alone;
@@ -401,7 +424,7 @@ def store(
                 for path, x in result.listings.items()
             ],
         )  # fmt: skip
-        records = [build(d) for d in result.datasets]
+        records = [build(d, names) for d in result.datasets]
         # waits for the requests in flight, which are single short queries
         cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", STORE_LOCK)
         cur.execute(

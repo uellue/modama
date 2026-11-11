@@ -22,7 +22,7 @@ from werkzeug.serving import run_simple
 
 from . import extraction, harvest, mimedb, render, selection
 from .formats import Format, Result
-from .records import build
+from .records import build, format_names
 from .server import OAIError, OAIServer, parse_range
 from .store import (
     Run,
@@ -180,7 +180,7 @@ def crawl_tree(
         stored=(stored or Stored(conn)).extractions,
         workers=_workers(),
     )
-    changed = store(conn, result, run_id, rules)
+    changed = store(conn, result, format_names(formats), run_id, rules)
     return result, report, changed
 
 
@@ -250,6 +250,7 @@ def cmd_crawl(args) -> int:
             datasets=len(result.datasets),
             warnings=warnings,
             records_changed=changed,
+            extraction=report,
         )
     log.info("%s", report)
     log.info(
@@ -360,7 +361,11 @@ def _run_line(run: Run) -> str:
         when = _when(run.finished_at)
         counts = f"{run.directories} directories, {run.files} files"
         if state == "finished":
-            counts += f", {run.datasets} datasets, {run.warnings} warnings, {run.records_changed} records changed"
+            counts += (
+                f", {run.datasets} datasets, {run.warnings} warnings, {run.records_changed} records changed; "
+                f"extraction: {run.extractions_run} run, {run.extractions_reused} reused, "
+                f"{run.extractions_failed} failed; {run.directories_unchanged} directories unchanged"
+            )
     line = f"{_when(run.started_at)}  {state:<8}  {when}  {counts}  {run.root}"
     return f"{line}  {run.error}" if state == "failed" else line
 
@@ -446,6 +451,7 @@ def cmd_records(args) -> int:
         (path, NOTE, f"{path}: SKIPPED: {reason}") for path, reason in result.skipped
     ] + [(path, NOTE, f"{path}: WARNING: {text}") for path, text in warnings]
     count = plain = 0
+    names = format_names(formats)
     for d in result.datasets:
         # Seconds, as the record shows it, so the filter agrees with the output
         datestamp = datetime.fromtimestamp(int(d.mtime), UTC)
@@ -453,7 +459,7 @@ def cmd_records(args) -> int:
             until is not None and datestamp > until
         ):
             continue
-        identifier, metadata = build(d)
+        identifier, metadata = build(d, names)
         if d.format:
             note = f"{d.anchor}: {d.type} by {d.format} {d.version}, basis: {d.basis}"
         else:  # a single file by its MIME type: routine, counted, not commented

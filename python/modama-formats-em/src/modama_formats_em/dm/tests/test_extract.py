@@ -27,7 +27,7 @@ def test_a_representative_dm4_image(collection_tests, tmp_path):
     assert image.description.startswith(
         "3 kV, 2,500×, 18.3 µm/pixel, 2×2, DigiScan, Zeiss SEM COM, 2021-05-14 11:41; "
     )
-    assert image.subjects == ["dm4", "Zeiss SEM COM", "SEM", "CL"]
+    assert image.subjects == ["Gatan Digital Micrograph", "Zeiss SEM COM", "SEM", "CL"]
     # The tags, not the whole file (D7)
     assert image.bytes_read < image.dataset.size
 
@@ -38,4 +38,4 @@ def test_a_representative_dm3_image(collection_tests, tmp_path):
         "200 kV, 225,000×, camera length 135 mm, 0.249 nm/pixel, 68×68, DigiScan, "
         "FEI Titan, 2016-08-08 16:26; "
     )
-    assert image.subjects == ["dm3", "FEI Titan", "STEM"]
+    assert image.subjects == ["Gatan Digital Micrograph", "FEI Titan", "STEM"]

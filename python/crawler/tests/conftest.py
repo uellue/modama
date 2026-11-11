@@ -57,7 +57,7 @@ def add_record(conn):
             basis="single file",
             uid=os.getuid(),
         )
-        identifier, metadata = build(dataset)
+        identifier, metadata = build(dataset, {})
         conn.execute(
             "INSERT INTO records (identifier, datestamp, metadata) VALUES (%s, %s, %s)",
             (identifier, datestamp, Jsonb(metadata)),

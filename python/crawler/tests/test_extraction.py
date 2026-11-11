@@ -21,7 +21,7 @@ def extract(root, calls, **kwargs):
 
 
 def description(dataset) -> str:
-    (text,) = build(dataset)[1]["description"]
+    (text,) = build(dataset, {})[1]["description"]
     return text
 
 
@@ -144,6 +144,15 @@ def deep(tmp_path):
     (root / "a" / "b" / "c" / "sibling.stand").write_text("ok sibling")
     (root / "a" / "b" / "c" / "notes.txt").write_text("hello")
     return root
+
+
+def test_a_stored_record_names_its_format_for_people(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    crawl(conn, root, tmp_path / "calls")
+    ((_, metadata),) = records(conn).values()
+    assert metadata["subject"] == ["Stand-in format", "stand technique"]
 
 
 def test_a_second_crawl_of_an_unchanged_tree(conn, deep, tmp_path, opened):

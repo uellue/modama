@@ -37,6 +37,7 @@ from modama_crawler.formats import DIRECTORY, Collection, Dataset, Directory, Fo
 
 class Pair(Format):
     type = "application/x.example"  # the MIME string of the datasets it produces
+    display_name = "Example Pair"  # in dc:subject; default: the type's <comment>
     priority = 60  # 0..100, the XDG scale; higher runs first
     reacts_to = frozenset(
         {"application/x.example-header"}

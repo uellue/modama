@@ -5,11 +5,12 @@ from __future__ import annotations
 import hashlib
 import posixpath
 import pwd
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from functools import cache
 from urllib.parse import quote_plus
 
-from .formats import Dataset
+from .formats import Dataset, Format
 from .mimedb import comment
 from .render import format_datestamp
 
@@ -89,15 +90,29 @@ def description(dataset: Dataset) -> str:
     return text
 
 
-def subjects(dataset: Dataset) -> list[str]:
-    """The format's name and the extractor's subjects, de-duplicated, for extracted datasets only (D4)."""
+def format_names(formats: Iterable[Format]) -> dict[str, str]:
+    """Display name by format id: the format's own, else its MIME type's comment, else its id."""
+    names = {}
+    for f in formats:
+        name = f.display_name or comment(f.type)
+        names[f.id] = name if name != f.type else f.id
+    return names
+
+
+def subjects(dataset: Dataset, names: Mapping[str, str]) -> list[str]:
+    """The format's display name and the extractor's subjects, de-duplicated, for extracted datasets only (D4).
+
+    `names` is format_names() of the enabled formats; a format missing from it
+    is named by its id.
+    """
     extracted = dataset.extraction.extracted if dataset.extraction else None
     if extracted is None:
         return []
-    return list(dict.fromkeys([dataset.format.rpartition("/")[2], *extracted.subjects]))
+    name = names.get(dataset.format, dataset.format)
+    return list(dict.fromkeys([name, *extracted.subjects]))
 
 
-def dc_metadata(dataset: Dataset) -> dict[str, list[str]]:
+def dc_metadata(dataset: Dataset, names: Mapping[str, str]) -> dict[str, list[str]]:
     """Dublin Core elements of a dataset, mapped approximately from the file system (R25, R32)."""
     relations = [browse_url(p) for p in dataset.parts]
     if dataset.parent:
@@ -112,13 +127,15 @@ def dc_metadata(dataset: Dataset) -> dict[str, list[str]]:
         "identifier": [browse_url(dataset.anchor)],
         "publisher": [PUBLISHER],
     }
-    if terms := subjects(dataset):
+    if terms := subjects(dataset, names):
         metadata["subject"] = terms
     if relations:
         metadata["relation"] = relations
     return metadata
 
 
-def build(dataset: Dataset) -> tuple[str, dict[str, list[str]]]:
-    """(identifier, Dublin Core metadata) of a dataset."""
-    return oai_identifier(dataset.anchor), dc_metadata(dataset)
+def build(
+    dataset: Dataset, names: Mapping[str, str]
+) -> tuple[str, dict[str, list[str]]]:
+    """(identifier, Dublin Core metadata) of a dataset; `names` as for subjects()."""
+    return oai_identifier(dataset.anchor), dc_metadata(dataset, names)

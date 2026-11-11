@@ -47,8 +47,12 @@ Each dataset SHALL record which extractor and which extractor version produced i
 - **THEN** the second crawl does not run the extractor on it and still reports it as failed
 
 ### Requirement: The crawl reports extraction
-The crawl's report SHALL state the number of extractions run, reused from the last crawl and failed, the number of directories taken over unchanged, and the time spent extracting per format.
+The crawl's report SHALL state the number of extractions run, reused from the last crawl and failed, the number of directories taken over unchanged, and the time spent extracting per format. A finished crawl SHALL store these counts, without the times, with its run, and `modama-crawler runs` SHALL show them on the run's line (@weber, 2026-11-11).
 
 #### Scenario: Report after a crawl
 - **WHEN** a crawl extracts two files and one extraction fails
 - **THEN** the report shows 2 run, 0 reused and 1 failed, with the time per format
+
+#### Scenario: The counts stay with the run
+- **WHEN** a tree is crawled a second time without changes and `modama-crawler runs` is run
+- **THEN** the second run's line shows `extraction: 0 run, 0 reused, 0 failed; 2 directories unchanged` for a tree of two directories without extractable files

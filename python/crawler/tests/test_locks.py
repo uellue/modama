@@ -90,7 +90,7 @@ def test_the_datestamp_is_taken_after_requests_in_flight(conn):
     )
     with other_connection(conn) as request:
         request.execute("SELECT pg_try_advisory_xact_lock_shared(%s, %s)", STORE_LOCK)
-        writer = threading.Thread(target=store, args=(conn, Result([dataset])))
+        writer = threading.Thread(target=store, args=(conn, Result([dataset]), {}))
         writer.start()
         time.sleep(1.5)
         released = datetime.now(UTC).replace(microsecond=0)

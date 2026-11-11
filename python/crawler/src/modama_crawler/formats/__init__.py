@@ -185,6 +185,7 @@ class Format:
     version: str = "1"
     name: str = ""  # set by Collection: the class name, lowercased, unless given
     id: str = ""  # set by Collection: collection/name
+    display_name: str = ""  # for dc:subject; default: MIME type's comment, else id
 
     extractor_version: str = "1"  # of extract(), apart from the recognition version
 
