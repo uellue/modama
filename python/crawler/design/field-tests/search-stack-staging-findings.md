@@ -52,7 +52,20 @@ Commit 3251cad (`crawler`: parallel walk with its review fixes, EM formats and
 extraction, `os.access` per file). Fresh state (`./downstaging.sh --reset`), crawl started
 by the timer at once at 17:49:07 UTC. Recording in `.claude/field-tests/run-2/`
 (`monitor.log`, `nfs.log`, `indexing-probe.log`, py-spy records `crawl-*.txt`; the folder
-is named for the second recording session, the run is the third). Results: to be added.
+is named for the second recording session, the run is the third).
+
+Result, crawl: finished at 19:06:02 UTC, 1 h 17 min: 51,306 directories, 1,511,890 files,
+1,451,848 datasets, 3,191 warnings, 1,451,848 records changed. Walk about 17 minutes;
+extraction from about 18:06 to 18:58 (177,166 run, 2,871 failed; time per format: DM4
+18,294 s, DM3 5,377 s, Merlin 88 s, EMPAD 10 s, summed over 8 processes); storing until
+19:06. The prediction of `parallel-walk` holds: at least 150 files/s over the first hour
+(the walk listed and sniffed 1.5 million files in about 17 minutes) and at most 40 kB per
+file opened (8 to 20 kB), with the caveat of warm caches (round trips 1 to 10 ms). The
+crawler's memory peaked at about 3.2 GiB. Extraction failures by cause, from the crawl's
+log: 2,036 `.dmw` and 33 `.gtg` files recognised as DM4 without an image (F15), 604
+RGBA images (F14, fixed on `dm-handle`), 104 Merlin headers (97 not UTF-8, 5 dates with
+AM/PM), 94 other DM errors (for example `DM3TagIDError`, unsupported tag types). Harvest
+started at 19:06:10.
 
 Interim, 18:20 UTC:
 - **Walk:** listing done at 18:06, 17 minutes in: 51,306 directories, 1,511,890 files
@@ -88,6 +101,18 @@ files, which `file_reader(lazy=True)` refuses, are now read too. Branch `dm-hand
 (4f0a6ec), for review. (b) more requests in flight: more extraction processes than CPUs,
 since they mostly wait (`MODAMA_CRAWLER_EXTRACT_WORKERS`, 8 by default; decision 59).
 Both measured on the next crawl, not tonight (a restart would lose the extraction done).
+Merlin's extractor has the same buffer per acquisition (RosettaSciIO's
+`MIBProperties.parse_file` opens the first frame file to read 384 bytes); it accepts bytes,
+but for a Quad detector it then opens `self.path`, which is `None` for bytes
+(`quantumdetector/_api.py:164`, 0.15.0): an upstream bug, not worked around.
+
+**F15 (crawler, formats): DM workspaces and tag files are recognised as DM4 images.** Run 3:
+2,036 `.dmw` (Gatan workspace) and 33 `.gtg` files have the DM4 header, so the crawler
+types them `application/x.dm4`, names them "Gatan Digital Micrograph (DM4)", and their
+extraction fails with `TypeError("'NoneType' object is not iterable")` (no image in them):
+72 % of run 3's extraction failures. Recognition by content, whatever the name, is what
+spec `formats/dm` asks for; whether workspaces and tag files get types of their own (and
+which metadata their tags give) is open (@weber).
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
 `libertem-test-data/many_mib` holds 19,601 `.mib` frames, each its own dataset: 90 % of
