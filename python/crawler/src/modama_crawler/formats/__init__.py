@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
+
+log = logging.getLogger(__name__)
 
 DIRECTORY = "directory"  # in reacts_to: run on every directory, pre- and post-order
 
@@ -225,9 +228,10 @@ class Collection:
             f.id = f"{self.name}/{f.name}"
 
 
-# Per format call. The time limit is checked after the call (hang isolation is
-# deferred to worker subprocesses, architecture G); the byte budget is enforced.
-TIME_LIMIT = 5.0
+# Per format call. The byte budget is enforced; a call slower than SLOW is
+# logged and keeps its result, since the time depends on the load (stopping a
+# call that hangs is deferred to worker subprocesses, architecture G).
+SLOW = 5.0
 BYTE_BUDGET = 1 << 20
 
 
@@ -235,9 +239,7 @@ def ordered(formats: Iterable[Format]) -> list[Format]:
     return sorted(formats, key=lambda f: (-f.priority, f.id))
 
 
-def _call(
-    fmt: Format, d: Directory, time_limit: float, byte_budget: int
-) -> list[Dataset]:
+def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Dataset]:
     d._budget = byte_budget
     start = time.monotonic()
     try:
@@ -250,13 +252,10 @@ def _call(
         d.retry = d.retry or isinstance(e, OSError)
         return []
     elapsed = time.monotonic() - start
-    if elapsed > time_limit:
-        d.retry = True
-        d.warn(
-            d.rel,
-            f"{fmt.id} took {elapsed:.1f} s, over the limit of {time_limit} s; result discarded",
+    if elapsed > slow:
+        log.warning(
+            "%s: %s took %.1f s (slow: over %g s)", d.rel, fmt.id, elapsed, slow
         )
-        return []
     return datasets
 
 
@@ -282,13 +281,13 @@ def stamp(members: Iterable[Entry], part_stamps: Iterable[str] = ()) -> str:
 
 
 def run_pre(
-    d: Directory, formats: Iterable[Format], time_limit: float, byte_budget: int
+    d: Directory, formats: Iterable[Format], slow: float, byte_budget: int
 ) -> Dataset | None:
     """The pre-order call: the first collapsed dataset for the directory itself wins."""
     for fmt in ordered(formats):
         if DIRECTORY not in fmt.reacts_to:
             continue
-        for ds in _call(fmt, d, time_limit, byte_budget):
+        for ds in _call(fmt, d, slow, byte_budget):
             if ds.collapsed and ds.anchor == d.rel:
                 return _fill(ds, fmt, d, d.mtime, d.uid)
             d.warn(
@@ -299,7 +298,7 @@ def run_pre(
 
 
 def run_post(
-    d: Directory, formats: Iterable[Format], time_limit: float, byte_budget: int
+    d: Directory, formats: Iterable[Format], slow: float, byte_budget: int
 ) -> tuple[list[Dataset], dict[str, str]]:
     """The post-order call. Returns the directory's datasets and the adoptions (child anchor -> parent anchor)."""
     present = {e.mime for e in d.entries if e.mime}
@@ -311,7 +310,7 @@ def run_post(
     for fmt in ordered(formats):
         if DIRECTORY not in fmt.reacts_to and not (fmt.reacts_to & present):
             continue
-        for ds in _call(fmt, d, time_limit, byte_budget):
+        for ds in _call(fmt, d, slow, byte_budget):
             members = set(ds.members) | ({ds.anchor} if ds.anchor in files else set())
             parts = set(ds.parts) | ({ds.anchor} if ds.anchor in children else set())
             if (

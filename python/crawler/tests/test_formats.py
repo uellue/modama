@@ -206,9 +206,9 @@ def test_format_over_budget_is_skipped(tmp_path):
     assert any("skipped: reading 100 bytes" in text for _, text in d.warnings)
 
 
-def test_slow_format_result_is_discarded():
-    # The limit is checked after the call (hang isolation is deferred to
-    # worker subprocesses): a slow format's result is dropped with a warning
+def test_a_slow_formats_result_is_kept(caplog):
+    # The time depends on the load, the result must not (spec recognition,
+    # "A slow format's result is kept"): logged, not in the result
     class Slow(Format):
         type = "x/slow"
         reacts_to = frozenset({"text/plain"})
@@ -218,11 +218,11 @@ def test_slow_format_result_is_discarded():
             yield Dataset(anchor="/a.txt")
 
     d = directory([entry("a.txt")])
-    datasets, _ = run_post(d, collect(Slow()), time_limit=0.01, byte_budget=1)
-    assert datasets[0].format == ""
-    assert any(
-        "over the limit of 0.01 s; result discarded" in text for _, text in d.warnings
-    )
+    datasets, _ = run_post(d, collect(Slow()), slow=0.01, byte_budget=1)
+    assert datasets[0].format == "t/slow"
+    assert d.warnings == [] and not d.retry
+    assert "x/slow" in caplog.text or "t/slow" in caplog.text
+    assert "slow: over 0.01 s" in caplog.text
 
 
 def test_second_directory_anchor_is_rejected():

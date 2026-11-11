@@ -12,6 +12,7 @@
 - [x] 2.4 `posix_fadvise(POSIX_FADV_RANDOM)` on the sniffing open (D6). Verify: `test_mime.py` still passes; the benchmark's bytes per sniffed file (task 3.1).
 - [x] 2.5 Magic matching in worker processes (D5). Verify: a test that a walk with processes gives the same result as one without on the fixture trees.
 - [x] 2.6 The setting `MODAMA_CRAWLER_WALK_THREADS` for `crawl` and `records`, and `MODAMA_CRAWLER_EXTRACT_WORKERS` for the matching processes; README and backlog updated. Verify: spec scenarios "A limit on reads in flight" and "Not a number" as tests in `test_cli.py`/`test_walk.py`; `uvx ruff check`, `uvx ruff format --check`.
+- [x] 2.7 A slow format call keeps its result and is logged (D8, review finding 2). Verify: `test_a_slow_formats_result_is_kept` (spec `recognition`, "A slow format's result is kept"); the fixture-tree comparison with every call counted as slow (spec `crawl`, "Every format call slow"); the reviewer's `timelimit.py`: 40 of 40 datasets with 1, 4 and 32 threads.
 
 ## 3. After
 

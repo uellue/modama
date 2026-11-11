@@ -340,6 +340,9 @@ def test_one_thread_against_many_on_the_fixture_trees(
     monkeypatch.setattr(walk_module.mime, "match_in", match_in)
     assert _whole(walk(tmp_path, formats, threads=16, processes=2)) == _whole(one)
     assert matched
+    # Every format call counted as slow: the same result (spec crawl, "Every format call slow")
+    monkeypatch.setattr(walk_module, "SLOW", -1.0)
+    assert _whole(walk(tmp_path, formats, threads=16)) == _whole(one)
 
 
 def test_many_threads_with_the_last_crawls_state(conn, tmp_path, monkeypatch):

@@ -2,6 +2,13 @@
 
 ## ADDED Requirements
 
+### Requirement: The same data gives the same result or a failure
+A crawl of the same data with the same rules SHALL give the same result, or fail; how long a step took (the load, the number of threads) SHALL NOT change what is recognised.
+
+#### Scenario: Every format call slow
+- **WHEN** a tree is crawled once with every format call counted as slow and once without
+- **THEN** both results are identical, with the same datasets and warnings
+
 ### Requirement: The result does not depend on the number of threads
 The crawl SHALL produce the same recognition result whatever number of threads it walks with: the same datasets with the same members, parts and parents, the same warnings and skipped entries, in the same order, and the same directories taken over from the last crawl.
 

@@ -7,7 +7,6 @@ import pytest
 import standin
 from conftest import interrupted
 from modama_crawler import extraction, mime, selection
-from modama_crawler import walk as walk_module
 from modama_crawler.cli import crawl_tree
 from modama_crawler.records import build
 from modama_crawler.store import start_run
@@ -341,19 +340,15 @@ def _unreadable(path, **kw):
     raise PermissionError(13, "Permission denied", path)
 
 
-@pytest.mark.parametrize("cause", ["cannot read", "time limit"])
 def test_a_directory_whose_recognition_met_the_environment_is_recognised_again(
-    conn, tmp_path, monkeypatch, cause
+    conn, tmp_path, monkeypatch
 ):
     root = tmp_path / "data"
     root.mkdir()
     (root / "x.stand").write_text("ok x")
     calls = tmp_path / "calls"
     with monkeypatch.context() as m:
-        if cause == "cannot read":
-            m.setattr(mime, "detect_with_tie", _unreadable)
-        else:
-            m.setattr(walk_module, "TIME_LIMIT", -1.0)
+        m.setattr(mime, "detect_with_tie", _unreadable)
         first, _ = crawl(conn, root, calls)
     assert first.all_warnings() and first.listings["/"].retry
     second, _ = crawl(conn, root, calls)

@@ -28,7 +28,7 @@ from pathspec import GitIgnoreSpec
 from . import mime
 from .formats import (
     BYTE_BUDGET,
-    TIME_LIMIT,
+    SLOW,
     Dataset,
     Directory,
     Entry,
@@ -271,7 +271,7 @@ async def _walk(
             collapsed = next((d for d in stored if d.collapsed), None)
         else:
             pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
-            collapsed = await io(run_pre, pre, active, TIME_LIMIT, BYTE_BUDGET)
+            collapsed = await io(run_pre, pre, active, SLOW, BYTE_BUDGET)
             if collapsed is not None:
                 # Nothing below is read: the stamp is the listing's (the D3 limit for collapsed trees)
                 collapsed = replace(collapsed, stamp=digest)
@@ -348,7 +348,7 @@ async def _walk(
             typed.append(e)
         children = [d for d in subtree if d.parent is None]
         post = Directory(rel, dirpath, typed, children, "post", st.st_uid, st.st_mtime)
-        datasets, adoptions = await io(run_post, post, active, TIME_LIMIT, BYTE_BUDGET)
+        datasets, adoptions = await io(run_post, post, active, SLOW, BYTE_BUDGET)
         return datasets, adoptions, warnings + post.warnings, retry or post.retry
 
     result.datasets = sorted((await visit(root, "/"))[0], key=lambda d: d.anchor)
