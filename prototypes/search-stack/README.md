@@ -22,6 +22,12 @@ It is our own composition of the upstream images (EOSC metadata-warehouse `v1.10
 ./runtest.sh           # quick checks, one PASS/FAIL line each
 ./downtest.sh --reset  # stop and delete all state; ./uptest.sh then starts fresh
 ./uptest.sh && ./runtest.sh e2e   # the end-to-end test, on a fresh stack, about 6 minutes
+# The e2e test includes a chat question, which needs a language model key: a secrets folder
+# outside git whose keys.env has the key and the model (Blablador: BLABLADOR_API_KEY,
+# DEFAULT_LLM_MODEL=blablador/alias-large, FALLBACK_LLM_MODEL=blablador/alias-fast).
+# Without a key the chat test fails; E2E_CHAT=0 ./runtest.sh e2e skips it with a warning.
+export MODAMA_SECRETS_DIR=~/.config/modama/e2e-secrets
+./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e
 ./downtest.sh          # stop, keeping the state
 ```
 

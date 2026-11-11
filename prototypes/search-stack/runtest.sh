@@ -12,7 +12,31 @@ cd "$(dirname "$0")"
 dc() { docker compose "$@"; }
 
 if [ "${1:-}" = e2e ]; then
-    exec docker compose exec -T crawler pytest -v -p no:cacheprovider /e2e/test_e2e.py "${@:2}"
+    # The chat test runs by default and needs a key in keys.env for the provider of the chat
+    # model (the search API's default model is cesnet/agentic); without one it fails.
+    # E2E_CHAT=0 skips it, with a warning.
+    secrets="${MODAMA_SECRETS_DIR:-$(sed -n 's/^MODAMA_SECRETS_DIR=//p' .env)}"
+    model=$(sed -n 's/^DEFAULT_LLM_MODEL=//p' "$secrets/keys.env")
+    model="${model:-cesnet/agentic}"
+    case "${model%%/*}" in
+        blablador) var=BLABLADOR_API_KEY ;;
+        cesnet | einfracz) var=CESNET_API_KEY ;;
+        fedllm) var=FEDLLM_API_KEY ;;
+        mistralai) var=MISTRAL_API_KEY ;;
+        openrouter) var=OPENROUTER_API_KEY ;;
+        *) var=OPENAI_API_KEY ;;
+    esac
+    key=$(sed -n "s/^$var=//p" "$secrets/keys.env")
+    if [ "${E2E_CHAT:-}" = 0 ]; then
+        chat=0
+        echo "WARNING: E2E_CHAT=0: the chat test is skipped" >&2
+    elif [ -n "$key" ] && [ "$key" != dummy ]; then
+        chat=1
+    else
+        chat="missing:$var in $secrets/keys.env for the chat model $model"
+    fi
+    unset key
+    exec docker compose exec -T -e E2E_CHAT="$chat" crawler pytest -v -p no:cacheprovider /e2e/test_e2e.py "${@:2}"
 fi
 
 SERVICES="crawler crawl-timer crawler-db postgres opensearch transform broker search-api

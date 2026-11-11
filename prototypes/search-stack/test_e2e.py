@@ -324,6 +324,48 @@ def test_the_keyword_leg_finds_a_word_of_the_title(tree):
     assert scores[wanted] > KNN_ONLY_MAX * 1.01, scores
 
 
+def test_chat_answers_with_a_search(tree):
+    # The chat agent searches with its tool and answers; one short question, so that a
+    # run costs a few requests to the language model service in keys.env. runtest.sh sets
+    # E2E_CHAT: 1 run, 0 skipped on request, "missing:…" no key, which fails (README).
+    chat = os.environ.get("E2E_CHAT", "")
+    if chat == "0":
+        pytest.skip("WARNING: chat not tested, E2E_CHAT=0")
+    if chat != "1":
+        pytest.fail(
+            f"no language model key: {chat.removeprefix('missing:') or 'E2E_CHAT unset'}"
+        )
+    wanted = next(url for _, url in tree.values() if url.endswith(DISTINCT_FILE))
+    question = {
+        "items": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "text", "text": "Find datasets about ferritin."}],
+            }
+        ]
+    }
+    request = urllib.request.Request(
+        f"{SEARCH}/chat",
+        data=json.dumps(question).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    events = []
+    with urllib.request.urlopen(request, timeout=300) as response:
+        for line in response:
+            if line.startswith(b"data:"):
+                events.append(json.loads(line[5:]))
+    types = [e.get("type") for e in events]
+    assert "RUN_ERROR" not in types, [e for e in events if e.get("type") == "RUN_ERROR"]
+    assert types[0] == "RUN_STARTED" and types[-1] == "RUN_FINISHED", types
+    assert any(t.startswith("TOOL_CALL") for t in types), types
+    assert wanted in json.dumps(events), "the search tool's result lacks the record"
+    answer = "".join(
+        e.get("delta", "") for e in events if e.get("type") == "TEXT_MESSAGE_CHUNK"
+    )
+    assert answer.strip(), types
+
+
 def test_incremental_harvest_brings_only_the_new_file(tree):
     # datestamps have seconds granularity; the new record must be newer than the first harvest
     time.sleep(2)
