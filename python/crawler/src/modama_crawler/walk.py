@@ -19,7 +19,6 @@ import stat
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import replace
-from functools import cache
 from pathlib import Path
 from typing import Protocol
 
@@ -65,33 +64,15 @@ def _names(dirpath: str) -> list[str]:
         return sorted(e.name for e in it)
 
 
-@cache
-def _identity() -> tuple[int, frozenset[int]]:
-    """The user and groups os.access checks against (the real ones)."""
-    return os.getuid(), frozenset([os.getgid(), *os.getgroups()])
-
-
-def _readable(st: os.stat_result, path: str) -> bool:
-    """Whether the crawler can read the file (R35), without a round trip where the mode bits allow it (parallel-walk D4).
-
-    Where the bits deny, the kernel decides: root, capabilities and ACLs may
-    grant more.
-    """
-    uid, gids = _identity()
-    if st.st_uid == uid:
-        bit = stat.S_IRUSR
-    elif st.st_gid in gids:
-        bit = stat.S_IRGRP
-    else:
-        bit = stat.S_IROTH
-    return bool(st.st_mode & bit) or os.access(path, os.R_OK)
-
-
 def _stat(path: str) -> tuple[os.stat_result, bool] | OSError:
-    """The entry's lstat and, for a regular file, whether it is readable; an error is returned, not raised."""
+    """The entry's lstat and, for a regular file, whether it is readable (R35); an error is returned, not raised.
+
+    Readability is asked of the file system, never inferred from the mode
+    bits: the storage enforces rules no client sees (parallel-walk D4).
+    """
     try:
         st = os.lstat(path)
-        return st, stat.S_ISREG(st.st_mode) and _readable(st, path)
+        return st, stat.S_ISREG(st.st_mode) and os.access(path, os.R_OK)
     except OSError as e:
         return e
 

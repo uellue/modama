@@ -140,3 +140,7 @@ Every round trip took 20.2 ms in both. The output of `records --verbose` without
 delay is byte for byte the same before, after, and after with one thread and one process
 (apart from `responseDate`): 18,719 records, 39 warnings. The mean number of requests in
 flight after: 54,346 × 20.2 ms / 40.5 s ≈ 27, near the server's 30 session slots.
+
+With `os.access` back for every file (D4 as decided on 2026-11-11: the file system decides
+readability, not the mode bits), on the integration branch: 54.5 s, 405 files/s, ACCESS
+21,746, GETATTR 8,938, the other counts the same; 40.2 s on the same branch before.

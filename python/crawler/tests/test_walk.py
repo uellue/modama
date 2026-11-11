@@ -271,17 +271,22 @@ def test_unreadable_root_is_an_error(tmp_path):
         tmp_path.chmod(0o700)
 
 
-def test_a_readable_file_costs_no_access_call(tmp_path, monkeypatch):
-    # The mode bits grant it; os.access would be one more NFS round trip (parallel-walk D4)
-    (tmp_path / "open.txt").write_text("o")
-    (tmp_path / "open.txt").chmod(0o644)
-    real_access, calls = os.access, []
+def test_the_file_system_decides_readability_not_the_mode_bits(tmp_path, monkeypatch):
+    # The mode bits grant it, the storage denies it (an immutable flag, an ACL): skipped (parallel-walk D4)
+    for name in ("open.txt", "denied.txt"):
+        (tmp_path / name).write_text(name)
+        (tmp_path / name).chmod(0o644)
+    real_access = os.access
     monkeypatch.setattr(
-        os, "access", lambda *a, **kw: (calls.append(a), real_access(*a, **kw))[1]
+        os,
+        "access",
+        lambda p, *a, **kw: (
+            not str(p).endswith("denied.txt") and real_access(p, *a, **kw)
+        ),
     )
     result = walk(tmp_path, FORMATS)
     assert [d.anchor for d in result.datasets] == ["/open.txt"]
-    assert calls == []
+    assert result.skipped == [("/denied.txt", "not readable")]
 
 
 def _whole(result) -> tuple:

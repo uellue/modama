@@ -11,6 +11,13 @@ docs, API descriptions), read `CONTEXT.md` and use its terms; don't use the
 words it lists under _Avoid_. If a term is missing or doesn't fit, raise it
 instead of inventing one.
 
+## Access: the file system is the truth
+
+Never infer who may see or change what from what a client sees (mode bits,
+`stat`, a listing): ask the file system (`os.access`, the open itself). The
+storage enforces rules that clients do not see, on purpose (for example the
+immutable flag, which NFS does not even carry).
+
 ## What this is
 
 "modama" is the ER-C data management system: a set of Docker services (Nextcloud, WebDAV, SMB ingest, permissions, management interface, backup) plus clients. Most user-facing docs live in `README.md` and the mdBook guide in `docs/guide/src/`. The repo uses git submodules (`git submodule init && git submodule update`); submodule dirs (`deploy/wsgidav`, `deploy/tsm-client`, `deploy/gateway/acme.sh`, `python/PyInotify`, `prototypes/EOSC-Data-Commons/*`) are third-party/forked code, so don't edit them as part of normal changes.

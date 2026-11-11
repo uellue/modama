@@ -10,7 +10,7 @@ On NFS the walk waits for one round trip after another: run 2 of the staging fie
 - The result is the same whatever the number of threads: the same datasets, records, warnings and skipped entries, in the same order as the walk with one thread, which does what today's walk does. The stored state of commit 3eff7e2 (unchanged directories taken over without opening files, computed bottom-up) is kept as it is.
 - **New setting `MODAMA_CRAWLER_WALK_THREADS`**, default 32; 1 walks one step at a time.
 - MIME magic matching (pyxdg, pure Python, about 4.2 ms CPU per sniffed file, holding the GIL) runs in worker processes, as many as `MODAMA_CRAWLER_EXTRACT_WORKERS` gives (default: the CPUs, up to 8); that setting then counts the crawler's worker processes for both, matching during the walk and extraction after it.
-- Readability (R35) without one `ACCESS` round trip per file: where the file's mode bits grant read access to the crawler's user or group, the file counts as readable; otherwise the kernel is asked (`os.access`), as now.
+- Readability (R35) is still asked of the file system per file (`os.access`), now in the thread pool; never inferred from the mode bits (design D4).
 - A sniffed file is opened with `posix_fadvise(POSIX_FADV_RANDOM)`, so that the client does not read ahead (196 kB to 20.5 kB per sniffed file in the study).
 
 Behaviour towards the user: a harvester and a searcher see no change (same records). An operator sees a faster crawl, a new setting, `MODAMA_CRAWLER_EXTRACT_WORKERS` also used during the walk, more threads and processes in the crawler's container, and different NFS load: many requests in flight instead of one.
@@ -32,6 +32,6 @@ Caveats from the study: the test tree's files are zeros (no real headers: format
 
 ## Impact
 
-- `walk.py` (the walk as asyncio tasks over a thread pool; readability by mode bits), `mime.py` (fadvise; magic matching through a given function, worker-process matcher), `cli.py` (the setting, the processes), tests (`test_walk.py`: one thread against many on the fixture trees, the setting).
+- `walk.py` (the walk as asyncio tasks over a thread pool; `os.access` in the thread pool), `mime.py` (fadvise; magic matching through a given function, worker-process matcher), `cli.py` (the setting, the processes), tests (`test_walk.py`: one thread against many on the fixture trees, the setting).
 - `README.md` (settings), `BACKLOG.md`, the benchmark's README (results).
 - No new dependency; standard library only (`asyncio`, `concurrent.futures`).
