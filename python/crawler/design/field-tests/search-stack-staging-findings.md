@@ -43,6 +43,8 @@ and 711,973 files; harvest and indexing not started, so the search still shows r
 Files per hour vary from about 20,000 to 110,000 (large directories, F6; files a glob
 names need no read). About 306 GB received over NFS since 19:00 (30 to 45 GB per hour).
 The crawler's container grew from 270 MiB to 1.9 GiB, see F13. Disk unchanged (84 %).
+`df -i` of the mount: 2,286,248 inodes used (the server's file system, so at most
+that many files and directories in the tree): the crawl is about a third through.
 
 ## Findings
 
