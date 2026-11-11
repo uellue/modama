@@ -2,7 +2,7 @@
 
 ## 1. Before
 
-- [ ] 1.1 Benchmark the current walk (`records`) on the reference tree with `BENCH_DELAY=10ms`: files/s, NFS operations and bytes per file, CPU, peak memory, `uptime`. Verify: the numbers in `benchmark/README.md`, with the load average.
+- [x] 1.1 Benchmark the current walk (`records`) on the reference tree with `BENCH_DELAY=10ms`: files/s, NFS operations and bytes per file, CPU, peak memory, `uptime`. Verify: the numbers in `benchmark/README.md`, with the load average. 17.3 files/s (the study's 11 was another run).
 
 ## 2. The parallel walk
 
@@ -15,6 +15,6 @@
 
 ## 3. After
 
-- [ ] 3.1 Benchmark the parallel walk as in 1.1, same tree and delay; then the delay removed (`nfs-up.sh` without `BENCH_DELAY`). Verify: before and after in `benchmark/README.md`; files/s at least 300 (the study's 438 less the crawler's own work per directory), bytes received per sniffed file at most 40 kB, peak memory at most 1.5 times the serial walk's.
+- [x] 3.1 Benchmark the parallel walk as in 1.1, same tree and delay; then the delay removed (`nfs-up.sh` without `BENCH_DELAY`). Verify: before and after in `benchmark/README.md`; files/s at least 300 (the study's 438 less the crawler's own work per directory), bytes received per sniffed file at most 40 kB, peak memory at most 1.5 times the serial walk's. Met: 546 files/s, 18 kB per file opened, the largest process 219 MB against 210 MB (the cgroup's peak counts page cache: 596 MB against 1,074 MB); `records` output identical.
 - [ ] 3.2 Review by an agent that did not write the code, given the code, this change and `design/requirements.md`. Verify: findings verified and listed in this change's `review.md`.
 - [ ] 3.3 Staging on the real tree, @weber at the host: the prediction in `proposal.md`. Verify: the findings file, the next run, with S, RTT and k from the run's counters.
