@@ -51,6 +51,9 @@ class Extraction:
     extracted: Extracted | None = None  # None: failed, or nothing to extract
     error: str | None = None
     seconds: float = 0.0
+    # The failure came from the environment (time limit, dead process, OS or
+    # import error), not from the files: not reused, the next crawl runs again
+    retry: bool = False
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,9 @@ class Listing:
     digest: str
     pre: tuple[tuple[str, str], ...] = ()  # warnings of the pre-order call
     post: tuple[tuple[str, str], ...] = ()  # of MIME detection and the post-order call
+    # Recognition met the environment (a read error, the time limit): the
+    # directory is not taken over, the next crawl recognises it again
+    retry: bool = False
 
 
 @dataclass
@@ -151,6 +157,7 @@ class Directory:
         self.warnings: list[tuple[str, str]] = []
         self._by_name = {e.name: e for e in entries}
         self._budget = 0
+        self.retry = False  # a format met a read error or the time limit
 
     @property
     def name(self) -> str:
@@ -240,9 +247,11 @@ def _call(
         return []
     except Exception as e:  # noqa: BLE001  a failing format must not stop the crawl
         d.warn(d.rel, f"{fmt.id} failed: {e!r}")
+        d.retry = d.retry or isinstance(e, OSError)
         return []
     elapsed = time.monotonic() - start
     if elapsed > time_limit:
+        d.retry = True
         d.warn(
             d.rel,
             f"{fmt.id} took {elapsed:.1f} s, over the limit of {time_limit} s; result discarded",

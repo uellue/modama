@@ -164,6 +164,12 @@ def crawl_tree(
     if it ran under the same rule set, and its extractions are reused where
     the extractor and the files are the same (D3).
     """
+    # The walk and extraction read the stored state for hours: one query at a
+    # time, not one transaction left idle all along. Restored on success only:
+    # after a failure the caller closes the connection.
+    autocommit = conn.autocommit
+    conn.commit()
+    conn.autocommit = True
     stored = previous(conn, rules)
     result = walk(
         root,
@@ -179,7 +185,9 @@ def crawl_tree(
         root,
         stored=(stored or Stored(conn)).extractions,
         workers=_workers(),
+        memory=_memory(),
     )
+    conn.autocommit = autocommit
     changed = store(conn, result, format_names(formats), run_id, rules)
     return result, report, changed
 
@@ -188,6 +196,12 @@ def _workers() -> int | None:
     """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1)."""
     value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
     return int(value) if value else None
+
+
+def _memory() -> int:
+    """MODAMA_CRAWLER_EXTRACT_MEMORY, in MiB, as bytes; or the default."""
+    value = os.environ.get("MODAMA_CRAWLER_EXTRACT_MEMORY")
+    return int(value) << 20 if value else extraction.MEMORY
 
 
 def cmd_crawl(args) -> int:
@@ -442,7 +456,11 @@ def cmd_records(args) -> int:
         log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
         return 2
     report = extraction.extract(
-        result, formats, os.path.abspath(args.path), workers=_workers()
+        result,
+        formats,
+        os.path.abspath(args.path),
+        workers=_workers(),
+        memory=_memory(),
     )
     warnings = result.all_warnings()
     # Everything in path order: one note per skipped entry and per warning, a note and a record per dataset

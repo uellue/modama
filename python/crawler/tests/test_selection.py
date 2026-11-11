@@ -126,3 +126,16 @@ def test_unknown_ids_are_rejected():
         selection.enabled_formats(
             collections, Config(per_path_ignores={"/x/**": ["collapse/vnev"]})
         )
+
+
+@pytest.mark.parametrize("dist", ["modama-crawler", "modama-formats-em"])
+def test_the_fingerprint_covers_the_distribution_versions(monkeypatch, dist):
+    # Not a scenario of its own: a release can change a format's code without its version (review 2026-11-11, 6)
+    collections = list(selection.discover().values())
+    if dist == "modama-formats-em" and "em" not in {c.name for c in collections}:
+        pytest.skip("modama-formats-em is not installed")
+    formats = selection.enabled_formats(collections, Config())
+    before = selection.fingerprint(formats, collections, Config())
+    real = selection.version
+    monkeypatch.setattr(selection, "version", lambda d: "999" if d == dist else real(d))
+    assert selection.fingerprint(formats, collections, Config()) != before

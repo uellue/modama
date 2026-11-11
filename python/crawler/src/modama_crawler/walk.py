@@ -31,6 +31,10 @@ from .selection import compile_patterns, compile_per_path, path_excluded, path_i
 
 log = logging.getLogger(__name__)
 
+UNLISTABLE = (
+    "cannot list"  # the stored digest of a directory the crawler could not list
+)
+
 
 def _kind(mode: int) -> str:
     if stat.S_ISREG(mode):
@@ -150,7 +154,11 @@ def walk(
                 raise  # the root itself: the caller asked for it, so it is an error
             result.skipped.append((rel, f"cannot list directory: {e.strerror}"))
             log.info("%s: skipped, cannot list directory: %s", rel, e.strerror)
-            return [], False
+            # Unchanged if it could not be listed last time either; its entry
+            # in the parent's listing is compared by the parent
+            before = previous.listing(rel) if previous is not None else None
+            result.listings[rel] = Listing(UNLISTABLE)
+            return [], before is not None and before.digest == UNLISTABLE
         if progress is not None:
             seen[0] += 1
             seen[1] += sum(e.kind == "file" for e in entries)
@@ -158,9 +166,10 @@ def walk(
         st = os.lstat(dirpath)
         digest = _digest(st, entries)
         before = previous.listing(rel) if previous is not None else None
-        same = before is not None and before.digest == digest
+        same = before is not None and before.digest == digest and not before.retry
         stored = previous.datasets(rel) if same else []
         active = formats_for(rel)
+        pre_retry = False
         if same:
             # The pre-order call sees this listing only: its answer is the stored one
             pre_warnings = list(before.pre)
@@ -168,11 +177,15 @@ def walk(
         else:
             pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
             collapsed = run_pre(pre, active, TIME_LIMIT, BYTE_BUDGET)
+            if collapsed is not None:
+                # Nothing below is read: the stamp is the listing's (the D3 limit for collapsed trees)
+                collapsed = replace(collapsed, stamp=digest)
             pre_warnings = pre.warnings
+            pre_retry = pre.retry
         result.warnings.extend(pre_warnings)
         if collapsed is not None:
             log.debug("%s collapsed by %s", rel, collapsed.format)
-            result.listings[rel] = Listing(digest, tuple(pre_warnings))
+            result.listings[rel] = Listing(digest, tuple(pre_warnings), retry=pre_retry)
             result.unchanged += same
             return [replace(collapsed, parent=None)], same
         for path, reason in notes.skipped:
@@ -190,14 +203,15 @@ def walk(
             datasets = [replace(d, parent=None) for d in stored]
             adoptions = {p: d.anchor for d in datasets for p in d.parts}
             post_warnings = list(before.post)
+            post_retry = False
             result.unchanged += 1
         else:
-            datasets, adoptions, post_warnings = recognise(
+            datasets, adoptions, post_warnings, post_retry = recognise(
                 dirpath, rel, st, entries, subtree, active
             )
         result.warnings.extend(post_warnings)
         result.listings[rel] = Listing(
-            digest, tuple(pre_warnings), tuple(post_warnings)
+            digest, tuple(pre_warnings), tuple(post_warnings), pre_retry or post_retry
         )
         subtree = [
             replace(d, parent=adoptions[d.anchor]) if d.anchor in adoptions else d
@@ -207,14 +221,16 @@ def walk(
         return subtree + datasets, unchanged
 
     def recognise(dirpath, rel, st, entries, subtree, active):
-        """MIME detection and the post-order call; returns datasets, adoptions and warnings."""
+        """MIME detection and the post-order call; returns datasets, adoptions, warnings and whether to retry."""
         warnings = []
         typed = []
+        retry = False
         for e in entries:
             if e.kind == "file":
                 try:
                     detected, tie = mime.detect_with_tie(e.path)
                 except OSError as err:
+                    retry = True
                     warnings.append((e.rel, f"cannot read: {err.strerror}"))
                     detected, tie = "application/octet-stream", None
                 if tie:
@@ -229,7 +245,7 @@ def walk(
         children = [d for d in subtree if d.parent is None]
         post = Directory(rel, dirpath, typed, children, "post", st.st_uid, st.st_mtime)
         datasets, adoptions = run_post(post, active, TIME_LIMIT, BYTE_BUDGET)
-        return datasets, adoptions, warnings + post.warnings
+        return datasets, adoptions, warnings + post.warnings, retry or post.retry
 
     result.datasets = sorted(visit(root, "/")[0], key=lambda d: d.anchor)
     result.warnings.sort()
