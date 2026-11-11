@@ -17,7 +17,16 @@ x-staging-crawler: &staging-crawler
   group_add:
     - ${STAGING_GROUP:?see staging.env in the runbook}
   volumes:
-    - ${STAGING_DATA:?see staging.env in the runbook}:/data:ro
+    # Never create the data path (a typo or an unmounted NFS share fails instead of
+    # creating a directory on /storage), and read-only for nested mounts too;
+    # review 2026-11-11, findings R1 and R3 (python/crawler/design/field-tests/)
+    - type: bind
+      source: ${STAGING_DATA:?see staging.env in the runbook}
+      target: /data
+      read_only: true
+      bind:
+        create_host_path: false
+        recursive: readonly
     - ./stagingconf:/stagingconf:ro
 
 services:

@@ -171,3 +171,32 @@ tree has millions of files.
 complex and the slow step was found by sampling `docker stats`. Proposed: OpenTelemetry,
 with a collector service in the compose file; Airflow can emit metrics and traces
 itself. Not decided.
+
+## Review of the staging changes, 2026-11-11
+
+By an agent that did not write them (f2171b6..1bc2bc5: the staging override and scripts,
+the batch size, F12), given the code, the runbook and the requirements; verified with
+`docker compose … config` before acting.
+
+**R1 (stack): Docker could create the data path on `/storage`.** The short mount syntax
+`${STAGING_DATA}:/data:ro` resolves to `create_host_path: true`: a typo in `STAGING_DATA`
+would make dockerd create a directory under `/storage` (which the runbook forbids), and an
+unmounted share would give the crawl an empty tree. Fixed: long syntax without
+`create_host_path` (false), so a missing path fails.
+
+**R2 (stack): containers reachable from the LAN despite `127.0.0.1`.** On Docker Engine
+before 28.0, hosts on the same subnet could route to container IPs on the bridge
+(OpenSearch without security, Airflow with the test password). Not verified (the
+reviewer's recollection); the host runs 29.9.3 (@weber, 2026-11-11), so likely moot.
+Check again for `deploy/`.
+
+**R3 (stack): `:ro` not recursive for nested mounts** on older Docker or kernels, and the
+crawler runs with @weber's uid and groups. Fixed with R1: `recursive: readonly`, which
+fails loudly where it can't be honoured.
+
+**R4–R8 (minor), for the move to `deploy/`:** shell variables override `--env-file
+staging.env` (R4); `monitor.sh` resolves a relative log path after `cd` and doesn't check
+for `staging.env` (R5); unbuffered `read(n)` may return fewer than n bytes on soft NFS,
+FUSE or CIFS (R6, F12); readahead may dominate F12's remaining reads, `posix_fadvise`
+would turn it off per file (R7); the staging timer repeats `--at 19:00` and the base
+file's "one at a time" comment no longer holds for staging (R8).
