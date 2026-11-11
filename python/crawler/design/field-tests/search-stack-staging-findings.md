@@ -38,6 +38,12 @@ Interim, 20:23 UTC (1 h 23 min in): crawl running, 20,432 directories and 74,525
 about 1,000 files/min (16/s, run 1: 100/s); load 2 to 8, the crawler at about 5 % CPU:
 waiting for NFS, see F12. Harvest and indexing not started yet.
 
+Interim, 2026-11-11 05:25 UTC (10 h 25 min in): crawl still running, 32,768 directories
+and 711,973 files; harvest and indexing not started, so the search still shows run 1.
+Files per hour vary from about 20,000 to 110,000 (large directories, F6; files a glob
+names need no read). About 306 GB received over NFS since 19:00 (30 to 45 GB per hour).
+The crawler's container grew from 270 MiB to 1.9 GiB, see F13. Disk unchanged (84 %).
+
 ## Findings
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
@@ -142,8 +148,18 @@ crawl `adhoc/libertem` again (cached on the server by now: compare with `nfs-sta
 and the bytes received per open, not with run 1's time), then the next full crawl. Caveat: the counters are the host's, for everyone using the mount;
 that the opens match the crawled files (73,080 of 74,525) points to the crawler. At 16
 files/s the whole tree takes hours to crawl: the crawl, not the indexing, sets the pace
-on cold NFS data. Expected after a fix: the bytes received per open near the bytes the
+on cold NFS data. Confirmed overnight: about 1.1 MB received per open from 21:00 to
+22:00 UTC (691,289 READs, 39,527 opens) and from 04:00 to 05:00 (17.0 GB, 15,896 opens),
+the 1 MiB buffer per file; READ round trips rose from 16 ms to 43 ms during the night.
+Expected after a fix: the bytes received per open near the bytes the
 crawler asks for.
+
+**F13 (crawler): the crawl's memory grows with the files crawled.** Run 2: `crawl-timer`
+at 270 MiB at 20:00 UTC, 1 GiB at midnight, 1.9 GiB at 05:25, roughly 2.5 kB per file.
+Not checked: whether it is the crawl process (something kept per file or directory for
+the whole run) or page cache that `docker stats` counts to the container. Check: the
+process's RSS (`ps` in the container) against `docker stats`; on the server, a full
+tree has millions of files.
 
 **F8 (stack, method): no tracing across the chain** (@weber, 2026-11-10). The stack is
 complex and the slow step was found by sampling `docker stats`. Proposed: OpenTelemetry,
