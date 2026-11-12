@@ -5,29 +5,20 @@ change `subtree-crawl`, D5). Not yet reviewed by a person. No code was changed.
 
 ## For people
 
-- **Recommendation:** Alembic, as EOSC Data Commons' metadata warehouse does (since its
-  v1.8.0, 2026-10-01): migrations as plain SQL in `op.execute`, no SQLAlchemy models,
-  as upstream's `env.py` does (`target_metadata = None`). They live in the crawler package
-  (`src/modama_crawler/migrations/`).
-- **Who runs them:** a new command, for example `modama-crawler migrate`, run by a one-shot
-  service `crawler-migrate` that `crawler` and `crawl-timer` wait for. That is how upstream's
-  stack runs `airflow db migrate` (`airflow-init`) and how our `warehouse-init` runs the
-  warehouse's Alembic. The command holds an advisory lock, so two runs never migrate at once.
-  The other commands no longer create tables: they refuse a database that is behind the code.
-- **Staging keeps its database:** revision 0001 is today's `ensure_tables`, the exact code
-  that made staging's database (commit 3251cad), written with `IF NOT EXISTS`. Revision 0002
-  is `ADD COLUMN IF NOT EXISTS scope`. Before the first upgrade, migrate a copy of the
-  staging database first.
-- **Tests:** every test database is built by the migrations. One test loads the previous
-  release's schema, migrates it and compares the result with a fresh database. The suite can
-  also run on such a migrated database.
-- **Why:** it is upstream's tool, actively maintained (1.20.1, 2026-10-22, MIT), and it
-  provides `stamp`, offline SQL and downgrades. Without migrations, every schema change costs
-  staging a night of crawling, harvesting and indexing.
-- **Cost:** new dependencies `alembic`, `SQLAlchemy` and `Mako` (all MIT) in a package that
-  uses psycopg only. The work is roughly a day (my estimate, not measured). The
-  dependency-free alternative is numbered SQL files plus a version table and a lock, about 50
-  lines. EOSC's toolmeta-harvester builds that in-house.
+- **Recommendation:** Alembic, as upstream's metadata warehouse uses it since v1.8.0: plain
+  SQL in `op.execute`, no models, in `src/modama_crawler/migrations/`.
+- **Who runs them:** a command, for example `modama-crawler migrate`, under an advisory lock,
+  in a one-shot service that `crawler` and `crawl-timer` wait for (like `airflow-init` and our
+  `warehouse-init`). The other commands refuse a database that is behind the code.
+- **Staging keeps its database:** 0001 is today's `ensure_tables` (`IF NOT EXISTS`), which
+  made staging (3251cad). 0002 adds `scope`. Migrate a copy of staging first.
+- **Tests:** all test databases are built by the migrations. One test migrates the previous
+  release's schema and compares it with a fresh one.
+- **Why:** upstream's tool, maintained (1.20.1, 2026-10-22, MIT). Recreating the database
+  costs staging a night.
+- **Cost:** three new dependencies (`alembic`, `SQLAlchemy`, `Mako`, all MIT), about a day
+  of work (my estimate). The alternative without dependencies: SQL files plus a version
+  table, about 50 lines.
 - **Decisions needed:** the questions at the end.
 
 ## Details
