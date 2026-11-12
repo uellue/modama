@@ -249,7 +249,9 @@ environment` shows `{consumer_timeout,172800000}`; after the next harvest and in
 throughout, and the worker's log has no `PreconditionFailed`. Since decision 125 the
 broker's host name is fixed (`hostname: broker`): checked in the VM, two recreations keep
 the node `rabbit@broker` and add no node folder, so queued messages survive from then on
-(the first start with the fixed name is a new node once more).
+(the first start with the fixed name is a new node once more). The 48 hours stay (decision
+126, @weber): "let's go with recommended defaults until we can pin it to specific
+scenarios that happen in practice".
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
 `libertem-test-data/many_mib` holds 19,601 `.mib` frames, each its own dataset: 90 % of
