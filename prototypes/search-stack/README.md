@@ -33,7 +33,7 @@ export MODAMA_SECRETS_DIR=~/.config/modama/e2e-secrets
 ./downtest.sh          # stop, keeping the state
 ```
 
-`docker-compose.override.yml` (loaded automatically, as in `deploy/`) makes it a test deployment: ports on 127.0.0.1 (crawler 7654, Airflow 8081, search API 8000, matchmaker 3000, OpenSearch 9200), a volume `testdata` as the data tree, and for the end-to-end test this folder mounted into the crawler at `/e2e` and the crawler's Airflow account in the crawler too.
+`docker-compose.override.yml` (loaded automatically, as in `deploy/`) makes it a test deployment: ports on 127.0.0.1 (crawler 7654, browser 7655, Airflow 8081, search API 8000, matchmaker 3000, OpenSearch 9200), a volume `testdata` as the data tree, and for the end-to-end test this folder mounted into the crawler at `/e2e` and the crawler's Airflow account in the crawler too.
 
 The end-to-end test (`test_e2e.py`, run by `./runtest.sh e2e` inside the crawler container) builds a tree from the crawler's fixture generators, crawls it, waits for the harvest the crawl started, and traces every record through all stages with `modama-chain`. It searches through the search API and through matchmaker's server (its page, the chat page's code without the login gate, the search route its page calls, and the chat question, without login; no browser runs). Then an incremental harvest, and faults the trace must find: a datestamp set back (`BEFORE-HARVEST-WINDOW`), a deleted index document (`SYNCED-WITHOUT-DOCUMENT`), a renamed file (`STALE`), a stopped warehouse database, and a failed harvest, which may block the endpoint (metadata-warehouse#158), so start the next run with `./downtest.sh --reset`.
 
@@ -85,6 +85,8 @@ docker compose exec crawl-timer modama-crawler crawl   # crawl now; starts the h
 ```
 
 (In the test deployment the crawler has the Airflow account too, so `modama-crawler crawl` in its shell starts the harvest as well.)
+
+**The browser** (`modama-chain browse`, service `browse`; `python/search-chain/README.md`, "browse"): http://localhost:7655/?path=/ (staging: http://localhost:17655, the runbook's "Browse"), the data tree and, for a file, what each stage makes of it, stored and computed now by the checkout's code. The checkout's `python/crawler/src`, `python/modama-formats-em/src` and `python/search-chain/src` are mounted read-only over the image's, and upstream's harvester and warehouse files from `../EOSC-Data-Commons/`, so an edit to a format, an extractor, `records.py` or `render.py` shows on the next reload of the page, without a build or a crawl; after an edit to `python/search-chain/`, `docker compose restart browse`. The service is read-only (a `tmpfs` on `/tmp`) and writes only snapshots ("Save for Claude"), here into the volume `browse-snapshots`, on staging into the checkout's `.claude/field-tests/browse/`. Its image is the stage `browse` of `crawler.Dockerfile` (the crawler's, with the extra `browse`), tagged `search-stack-browse`. Starting it alone (`docker compose up -d --no-deps browse`) recreates nothing else; on staging it is in the compose profile `browse`, so `./upstaging.sh` leaves it out and it starts only by name (the runbook's "Browse").
 
 The search's web frontend, matchmaker, is on http://localhost:3000 (staging: http://localhost:13000), Airflow's UI on http://127.0.0.1:8081 (`airflow`/`airflow`, `testconf/secrets/airflow-admin.env`). From a laptop, with the stack in a devvm VM behind a host (the VM's address: `hostname -I` inside the VM):
 

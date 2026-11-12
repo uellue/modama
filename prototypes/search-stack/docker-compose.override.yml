@@ -23,6 +23,14 @@ services:
     volumes:
       - testdata:/data:ro
 
+  # snapshots into a volume here; staging writes them into the checkout's .claude/field-tests/
+  browse:
+    volumes:
+      - testdata:/data:ro
+      - browse-snapshots:/field-tests/browse
+    ports:
+      - "127.0.0.1:7655:7655"
+
   # deploy/'s test directory (alice 10001, bob 10002, carol 10003, mallory 10004), without
   # a certificate, so plain LDAP; testconf/secrets/sssd.conf points sssd at it. Reset by
   # ./downtest.sh --reset.
@@ -63,3 +71,4 @@ services:
 volumes:
   testdata:
   ldapdata:
+  browse-snapshots:
