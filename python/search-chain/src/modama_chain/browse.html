@@ -25,6 +25,7 @@ body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #1f2328; backgrou
 #head code { background: #f6f8fa; padding: 2px 4px; border-radius: 4px; word-break: break-all; }
 button { font: inherit; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: #f6f8fa; cursor: pointer; }
 .muted { color: var(--muted); }
+textarea.message { display: block; width: 100%; max-width: 60em; margin: 4px 0; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; resize: vertical; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
 .cell { border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
 .cell h2 { font-size: 13px; margin: 0; padding: 4px 8px; background: #f6f8fa; border-bottom: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
@@ -200,11 +201,14 @@ function views(path) {
   const host = S.hostRoot.replace(/\/$/, "") + path.replace(/\/$/, "");
   const file = !path.endsWith("/");  // a folder lists and shows its stored views, no live ones (D3)
   const saved = el("span", {class: "muted"});
+  const message = el("textarea", {class: "message", rows: "2", placeholder: "A message for Claude (optional), saved at the top of the snapshot"});
   const save = el("button", {onclick: () => {
     save.disabled = true; saved.textContent = "saving…";
-    api(path, "snapshot", {method: "POST", headers: {"X-Modama-Browse": "1"}}).then(r => {
+    api(path, "snapshot", {method: "POST", headers: {"X-Modama-Browse": "1", "Content-Type": "application/json"},
+                           body: JSON.stringify({message: message.value})}).then(r => {
       const b = el("button", {onclick: () => copy(r.name, b)}, "copy");
       saved.replaceChildren(el("code", {}, r.name), " ", b);
+      message.value = "";
     }).catch(e => saved.textContent = e.message).finally(() => save.disabled = false);
   }}, "Save for Claude");
   const hostCopy = el("button", {onclick: () => copy(host, hostCopy)}, "copy");
@@ -212,7 +216,7 @@ function views(path) {
   $("head").replaceChildren(el("h1", {}, path),
     el("div", {class: "bar"}, "Path on the server:", el("code", {}, host), hostCopy),
     el("div", {class: "bar"}, info),
-    ...(S.snapshots && file ? [el("div", {class: "bar"}, save, saved)] : []));
+    ...(S.snapshots && file ? [message, el("div", {class: "bar"}, save, saved)] : []));
   const cells = {};
   const grid = el("div", {class: "grid"}, el("strong", {}, "Stored (what the chain holds now)"), el("strong", {}, "Live (the checkout's code, now)"));
   for (const [key] of ORDER) for (const side of ["stored", "live"]) {

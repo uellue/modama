@@ -395,6 +395,7 @@ def test_save_for_claude(tree, tmp_path, monkeypatch):
         "/api/snapshot",
         query_string={"path": "/scan/SCA2_rings.xml"},
         headers={**LOCAL, SNAPSHOT_HEADER: "1"},
+        json={"message": "The date is wrong.\nShould be the acquisition time."},
     )
     assert response.status_code == 200, response.get_data(as_text=True)
     (written,) = folder.iterdir()
@@ -405,6 +406,10 @@ def test_save_for_claude(tree, tmp_path, monkeypatch):
     text = written.read_text()
     assert "Path on the server: `/storage/er-c-data/scan/SCA2_rings.xml`" in text
     assert "Extractor: em/empad, extractor version" in text
+    assert (
+        "## Message\n\n> The date is wrong.\n> Should be the acquisition time.\n"
+        in text
+    )
     for title in (
         "Dataset",
         "OAI-PMH record",
@@ -413,6 +418,19 @@ def test_save_for_claude(tree, tmp_path, monkeypatch):
     ):
         assert f"### {title}" in text
     assert "hunter2" not in text and "password" not in text
+
+
+def test_a_snapshot_without_a_message_has_no_message_section(tree, tmp_path):
+    folder = tmp_path / "browse"
+    folder.mkdir()
+    response = client(tree, folder).post(
+        "/api/snapshot",
+        query_string={"path": "/scan/SCA2_rings.xml"},
+        headers={**LOCAL, SNAPSHOT_HEADER: "1"},
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    (written,) = folder.iterdir()
+    assert "## Message" not in written.read_text()
 
 
 def test_fences_are_longer_than_the_content_s():
