@@ -1,0 +1,30 @@
+{
+  "datasets": [
+    {
+      "anchor": "/.svn",
+      "basis": "directory is named .svn",
+      "collapsed": true,
+      "format": "collapse/svn",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.svn",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

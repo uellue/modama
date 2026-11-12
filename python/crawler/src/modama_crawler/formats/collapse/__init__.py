@@ -67,6 +67,13 @@ class Git(NamedDirectory):
     directory_name = ".git"
 
 
+class Svn(NamedDirectory):
+    # The October 2026 listing: 9 working copies, 421 pristine `*.svn-base` files
+    type = "application/x.svn"
+    display_name = "Subversion working copy"
+    directory_name = ".svn"
+
+
 class Pycache(NamedDirectory):
     type = "application/x.python-cache"
     display_name = "Python bytecode cache"
@@ -80,5 +87,6 @@ class IpynbCheckpoints(NamedDirectory):
 
 
 COLLECTION = Collection(
-    "collapse", [Venv(), Conda(), NodeModules(), Git(), Pycache(), IpynbCheckpoints()]
+    "collapse",
+    [Venv(), Conda(), NodeModules(), Git(), Svn(), Pycache(), IpynbCheckpoints()],
 )

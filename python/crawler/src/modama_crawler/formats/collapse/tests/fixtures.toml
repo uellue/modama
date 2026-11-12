@@ -12,6 +12,13 @@ licence = "MIT"
 source = "git init at test time, next to a text file"
 generator = "modama_crawler.formats.collapse.tests.generate:git"
 
+[svn]
+purpose = "representative"
+validity = "parser-only: name-based rule; the layout of a Subversion 1.7+ .svn (entries, format, wc.db, pristine/xx/*.svn-base, tmp) is mimicked from the October 2026 listing"
+licence = "MIT"
+source = "a mimicked .svn directory, next to a text file"
+generator = "modama_crawler.formats.collapse.tests.generate:svn"
+
 [caches]
 purpose = "representative"
 validity = "parser-only: name-based rules; only __pycache__ is CPython-written, the .ipynb_checkpoints, node_modules and conda-meta layouts are mimicked"

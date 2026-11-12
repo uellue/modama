@@ -68,7 +68,7 @@ src/modama_crawler/
 │   ├── TEMPLATE.md # how to write a collection
 │   ├── values.py   # textual(value): whether a value can be shown as text, the check every collection shares
 │   ├── core/       # vendored freedesktop.org.xml (GPL-2.0-or-later) + er-c.xml curation (ties that force content checks)
-│   ├── collapse/   # environments, .git, __pycache__, .ipynb_checkpoints, node_modules: collapsed pre-order
+│   ├── collapse/   # environments, .git, .svn, __pycache__, .ipynb_checkpoints, node_modules: collapsed pre-order
 │   └── zarr/       # Zarr v2 and v3 stores, collapsed pre-order; nested stores belong to the outer one
 ├── mime.py         # MIME type of one file per the shared-mime-info checking order; ties -> common ancestor
 ├── mimedb.py       # builds the per-deployment MIME database from the enabled collections only
