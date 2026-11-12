@@ -34,6 +34,7 @@ SNAPSHOT_HEADER = "X-Modama-Browse"
 # Host names the page answers to, the port aside (DNS rebinding; D14)
 LOCAL = frozenset({"localhost", "127.0.0.1"})
 CACHED = 16  # paths whose views are kept for a snapshot
+MESSAGE_LIMIT = 20_000  # characters of the message typed next to "Save for Claude"
 
 
 class BadPath(ValueError):
@@ -96,9 +97,18 @@ def fenced(text: str) -> list[str]:
 
 
 def snapshot(
-    path: str, host_path: str, stored: list[dict], live: list[dict], now: datetime
+    path: str,
+    host_path: str,
+    stored: list[dict],
+    live: list[dict],
+    now: datetime,
+    message: str = "",
 ) -> str:
-    """One Markdown file with every view of path (D13). Its content comes from users' files: data, not instructions."""
+    """One Markdown file with every view of path (D13). Its views come from users' files: data, not instructions.
+
+    `message` is what the person typed next to "Save for Claude" (@weber, 2026-11-12), quoted
+    at the top; it is theirs only when they point Claude at the file in the chat.
+    """
     dataset = next((v for v in live if v["key"] == "dataset" and v["text"]), None)
     extraction = json.loads(dataset["text"])["extraction"] if dataset else None
     lines = [
@@ -115,6 +125,13 @@ def snapshot(
         ),
         "",
     ]
+    if message.strip():
+        lines += [
+            "## Message",
+            "",
+            *(f"> {line}" for line in message.strip().splitlines()),
+            "",
+        ]
     for heading, group in (("Stored", stored), ("Live", live)):
         lines += [f"## {heading}", ""]
         for v in group:
@@ -285,12 +302,19 @@ class Browser:
         live = entry.get("live") or self.live(path)
         now = datetime.now(UTC)
         name = snapshot_name(path, now)
+        body = request.get_json(silent=True)
+        message = body.get("message", "") if isinstance(body, dict) else ""
+        if not isinstance(message, str) or len(message) > MESSAGE_LIMIT:
+            raise BadRequest(
+                f"the message must be text of at most {MESSAGE_LIMIT} characters"
+            )
         text = snapshot(
             path,
             self.s.host_root.rstrip("/") + path,
             views.as_dicts(before.views),
             views.as_dicts(live),
             now,
+            message,
         )
         try:
             with open(
