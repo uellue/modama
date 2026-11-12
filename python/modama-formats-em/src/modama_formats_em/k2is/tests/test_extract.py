@@ -30,6 +30,48 @@ def test_sector_files_without_their_tag_file(collection_tests, tmp_path):
     assert where == "/" and "8 K2IS sector file(s) without a .gtg file" in text
 
 
+def test_a_tag_file_with_7_or_9_sector_files(collection_tests, tmp_path):
+    result = recognise(collection_tests, "wrong_count", tmp_path)
+    assert {d.format for d in result.datasets} == {""}
+    assert len(result.datasets) == 2 + 7 + 9
+    # Said at the .gtg, with what is wrong; no warning that the .gtg is missing
+    assert sorted(result.warnings) == [
+        (
+            "/Capture7_.gtg",
+            "Capture7_.gtg: 7 sector files Capture7_*.bin, a K2IS acquisition has 8",
+        ),
+        (
+            "/Capture9_.gtg",
+            "Capture9_.gtg: 9 sector files Capture9_*.bin, a K2IS acquisition has 8",
+        ),
+    ]
+
+
+def test_an_incomplete_capture_next_to_a_complete_one(collection_tests, tmp_path):
+    result = recognise(collection_tests, "nested_incomplete", tmp_path)
+    (capture,) = [d for d in result.datasets if d.format == "em/k2is"]
+    assert capture.members == (
+        "/scan_.gtg",
+        *(f"/scan_{n}.bin" for n in range(1, 9)),
+    )
+    assert len(result.datasets) == 1 + 1 + 7
+    assert result.warnings == [
+        (
+            "/scan_2_.gtg",
+            "scan_2_.gtg: 7 sector files scan_2_*.bin, a K2IS acquisition has 8",
+        )
+    ]
+
+
+def test_extensions_in_upper_case(collection_tests, tmp_path):
+    result = recognise(collection_tests, "upper_case", tmp_path)
+    assert sorted((d.anchor, len(d.members)) for d in result.datasets) == [
+        ("/UPPER_.GTG", 9),
+        ("/mixed_.gtg", 9),
+    ]
+    assert result.warnings == []
+
+
 def test_a_tag_file_without_sectors(collection_tests, tmp_path):
     result = recognise(collection_tests, "lone_tags", tmp_path)
     (d,) = result.datasets

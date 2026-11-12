@@ -109,7 +109,7 @@
   "warnings": [
     [
       "/",
-      "8 K2IS sector file(s) without a .gtg file and its 8 sectors, for example Capture52_1.bin"
+      "8 K2IS sector file(s) without a .gtg file of their stem, for example Capture52_1.bin"
     ]
   ]
 }

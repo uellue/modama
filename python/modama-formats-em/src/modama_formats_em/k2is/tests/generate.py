@@ -12,6 +12,14 @@ DM4 = (
     Path(__file__).parents[2]
     / "dm/tests/fixtures/cl_image_dm4/test-MonarcCL_mono-image.dm4"
 )
+GTG = Path(__file__).parent / "fixtures/capture52/Capture52_.gtg"
+
+
+def capture(target: Path, stem: str, sectors: int, gtg=".gtg", bin=".bin") -> None:
+    """Capture52's tag file under the name stem + gtg, with that many sector blocks stem<n> + bin."""
+    shutil.copy(GTG, target / f"{stem}{gtg}")
+    for n in range(1, sectors + 1):
+        sector(target / f"{stem}{n}{bin}")
 
 
 def lone_tags(target: Path) -> None:
@@ -33,6 +41,27 @@ def sectors_without_tags(target: Path) -> None:
     target.mkdir(parents=True)
     for n in range(1, 9):
         sector(target / f"Capture52_{n}.bin")
+
+
+def wrong_count(target: Path) -> None:
+    """A tag file with 7 sector files, and one with 9."""
+    target.mkdir(parents=True)
+    capture(target, "Capture7_", 7)
+    capture(target, "Capture9_", 9)
+
+
+def nested_incomplete(target: Path) -> None:
+    """A complete capture scan_ next to an incomplete scan_2_, whose sector names start with scan_ too."""
+    target.mkdir(parents=True)
+    capture(target, "scan_", 8)
+    capture(target, "scan_2_", 7)
+
+
+def upper_case(target: Path) -> None:
+    """Captures whose extensions are in upper case: .GTG with .BIN, and .gtg with .BIN."""
+    target.mkdir(parents=True)
+    capture(target, "UPPER_", 8, gtg=".GTG", bin=".BIN")
+    capture(target, "mixed_", 8, bin=".BIN")
 
 
 def other_bin(target: Path) -> None:

@@ -31,31 +31,39 @@ class K2is(Format):
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         sectors = d.of_type(SECTOR)
-        claimed = set()
-        # The longest stem first, so that X_1.gtg keeps its sectors from X_.gtg
+        taken = set()
+        # The longest stem first: a sector file belongs to the longest stem it
+        # starts with, whether that stem has 8 or not, so that an incomplete
+        # scan_2_.gtg does not take sectors from a complete scan_.gtg (D3)
         for tags in sorted(d.of_type(TAGS), key=lambda e: -len(e.name)):
             stem = tags.name[: -len(".gtg")]
             mine = [
                 s.rel
                 for s in sectors
-                if s.rel not in claimed
+                if s.rel not in taken
                 and s.name.startswith(stem)
-                and s.name.endswith(".bin")
+                # In any case, as the .gtg glob (D3)
+                and s.name.lower().endswith(".bin")
             ]
-            if len(mine) != SECTORS:
-                continue
-            claimed.update(mine)
-            yield Dataset(
-                anchor=tags.rel,
-                members=(tags.rel, *mine),
-                basis=f"{SECTORS} sector files {stem}*.bin",
-            )
-        orphans = sorted(s.name for s in sectors if s.rel not in claimed)
+            taken.update(mine)
+            if len(mine) == SECTORS:
+                yield Dataset(
+                    anchor=tags.rel,
+                    members=(tags.rel, *mine),
+                    basis=f"{SECTORS} sector files {stem}*.bin",
+                )
+            elif mine:
+                d.warn(
+                    tags.rel,
+                    f"{tags.name}: {len(mine)} sector files {stem}*.bin, "
+                    f"a K2IS acquisition has {SECTORS}",
+                )
+        orphans = sorted(s.name for s in sectors if s.rel not in taken)
         if orphans:
             d.warn(
                 d.rel,
-                f"{len(orphans)} K2IS sector file(s) without a .gtg file and its "
-                f"{SECTORS} sectors, for example {orphans[0]}",
+                f"{len(orphans)} K2IS sector file(s) without a .gtg file of their "
+                f"stem, for example {orphans[0]}",
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
