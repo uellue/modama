@@ -1,4 +1,4 @@
-"""NanoMegas ASTAR block files (.blo): single-file datasets, recognised by their header (blockfile.xml).
+"""NanoMegas block files (.blo): single-file datasets, recognised by their header (blockfile.xml).
 
 Extraction goes through RosettaSciIO's blockfile reader, lazily: it reads the
 header and the note after it, and maps the diffraction patterns without

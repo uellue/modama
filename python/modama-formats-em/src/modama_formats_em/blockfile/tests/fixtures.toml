@@ -1,6 +1,6 @@
 [scan]
 purpose = "representative"
-validity = "parser-only: a 3x2 scan of 5x5 pixel diffraction patterns, header ID IMGBLO, MAGIC 258, 200000 V, camera length 2000 (10 x mm), scan rotation 2500 (100 x degrees), acquired 2015-12-01 15:43 (serial date), an ASTAR note ('Precession angle', 'Precession Frequency', 'Camera gamma : on'); read by rosettasciio 0.15.0 on 2026-11-12. RosettaSciIO does not document how it was made; its Data_offset_2 (4108) is what RosettaSciIO's writer computes for a 3x2 scan, so it is probably a real acquisition's header written out by HyperSpy with cropped data"
+validity = "parser-only: a 3x2 scan of 5x5 pixel diffraction patterns, header ID IMGBLO, MAGIC 258, 200000 V, camera length 2000 (10 x mm), scan rotation 2500 (100 x degrees), acquired 2015-12-01 15:43 (serial date), a note ('Precession angle', 'Precession Frequency', 'Camera gamma : on'); read by rosettasciio 0.15.0 on 2026-11-12. RosettaSciIO does not document how it was made; its Data_offset_2 (4108) is what RosettaSciIO's writer computes for a 3x2 scan, so it is probably a real acquisition's header written out by HyperSpy with cropped data"
 licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/blockfile/test2.blo, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/blockfile/test2.blo, sha256 96099a906d02e16938a70402d64d8a5365717455fb8f5a4ccfd6e8c0c676fa20, unchanged"
 

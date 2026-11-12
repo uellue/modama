@@ -2,14 +2,14 @@
 
 ## Purpose
 
-NanoMegas ASTAR block files (`.blo`): one file holds a whole scan of diffraction patterns (4D-STEM, precession electron diffraction), recognised by its header and described by the acquisition values in it (staging 2026-11-12: `Stingray16bit_7_11.blo` was `application/octet-stream`, without a description; the survey counted 129 `.blo` files, 0.26 TB).
+NanoMegas block files (`.blo`): one file holds a whole scan of diffraction patterns (4D-STEM, precession electron diffraction), recognised by its header and described by the acquisition values in it (staging 2026-11-12: `Stingray16bit_7_11.blo` was `application/octet-stream`, without a description; the survey counted 129 `.blo` files, 0.26 TB).
 
 ## ADDED Requirements
 
 ### Requirement: Block files are recognised by content
 A file that starts with `IMGBLO` SHALL be a single-file dataset of the block file type, whatever its name; a file named `.blo` without it SHALL NOT get that type.
 
-#### Scenario: A block file from ASTAR
+#### Scenario: A block file from an instrument
 - **WHEN** a representative block file is crawled
 - **THEN** it is one dataset of the block file type, of the format `em/blockfile`
 

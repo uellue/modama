@@ -28,7 +28,7 @@ def extracted(collection_tests, tree):
     return blockfile.extract(d, str(tree))
 
 
-def test_a_block_file_from_astar(collection_tests, tmp_path):
+def test_a_block_file_from_an_instrument(collection_tests, tmp_path):
     (d,) = recognise(collection_tests, "scan", tmp_path).datasets
     assert (d.type, d.format, d.members, d.basis) == (
         "application/x.blockfile",
@@ -48,7 +48,7 @@ def test_a_text_file_named_like_a_block_file(collection_tests, tmp_path):
 def test_a_representative_block_file(collection_tests, tmp_path):
     (scan,) = described(collection_tests, "scan", tmp_path)
     assert scan.description.startswith(SCAN + "; ")
-    assert scan.subjects == ["NanoMegas ASTAR block file", "4D-STEM"]
+    assert scan.subjects == ["NanoMegas block file", "4D-STEM"]
     values = scan.dataset.extraction.extracted.values
     assert list(values)[:2] == ["original_metadata", "mapped_metadata"]
     original = values["original_metadata"]

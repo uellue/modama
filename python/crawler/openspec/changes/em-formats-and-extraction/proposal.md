@@ -22,7 +22,7 @@ Out of scope: Velox EMD, TIA, TENSOR and Dr. Probe exports, the generic series r
 - `extraction`: running extractors after recognition: the work queue, time limit and failure isolation, skipping unchanged directories and re-extracting on a new extractor, how results become `dc:description` and `dc:subject`.
 - `formats/dm`: DM3/DM4 recognition and extraction.
 - `formats/merlin`: Merlin `.hdr` plus `.mib` frames as one dataset, and extraction.
-- `formats/blockfile`: NanoMegas ASTAR block files (`.blo`) by their header, and extraction (added 2026-11-12, decision 227: a searcher finds a block file by its scan and beam values instead of an `application/octet-stream` record without a description).
+- `formats/blockfile`: NanoMegas block files (`.blo`) by their header, and extraction (added 2026-11-12, decision 227: a searcher finds a block file by its scan and beam values instead of an `application/octet-stream` record without a description).
 
 ### Modified Capabilities
 - `records`: every record carries a `dc:description`; extracted metadata goes into description and subject.
