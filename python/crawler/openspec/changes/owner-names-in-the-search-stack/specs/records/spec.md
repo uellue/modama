@@ -11,20 +11,24 @@ A record's `oai_dc` SHALL carry the anchor path as title, the owner as creator, 
 - **WHEN** a file's owner has an empty GECOS field, or `,,,`, and the login name `dev`
 - **THEN** its record has `dc:creator` `dev`
 
+#### Scenario: A full name with a comma
+- **WHEN** a file's owner has the GECOS field `Weber, Dieter`
+- **THEN** its record has `dc:creator` `Weber` (the GECOS convention; the loss is accepted, design D10)
+
 #### Scenario: An owner without a name
 - **WHEN** a file owned by uid 4242, which the user database does not know, is a dataset
 - **THEN** its record has `dc:creator` `4242`
 
 #### Scenario: An owner from the directory, in the search stack
 - **WHEN** in the search stack's test deployment a file is owned by uid 10001, which only the test directory knows (as `alice`, `cn: Alice Anderson`, primary group `iff`), and is crawled
-- **THEN** its record has `dc:creator` `Alice Anderson` and a `dc:description` that ends in `, group iff`, and the warehouse's record and the index's `creators` have `Alice Anderson`
+- **THEN** its record has `dc:creator` `Alice Anderson` and a `dc:description` that ends in `, owner's group iff`, and the warehouse's record and the index's `creators` have `Alice Anderson`
 
 ### Requirement: Every record carries a description
-Every record SHALL carry one `dc:description`, a readable summary on one line. For a dataset with extracted metadata it SHALL start with the extracted values; otherwise it SHALL state the type's human-readable name, the number of files and their total size, and the folder the dataset is in. After the folder it SHALL name the owner's primary group, `group <name>`, when the user database knows the owner's uid and the name of that user's primary group; otherwise nothing (decision 202).
+Every record SHALL carry one `dc:description`, a readable summary on one line. For a dataset with extracted metadata it SHALL start with the extracted values; otherwise it SHALL state the type's human-readable name, the number of files and their total size, and the folder the dataset is in. After the folder it SHALL name the owner's primary group, `owner's group <name>`, when the user database knows the owner's uid and the name of that user's primary group; otherwise nothing (decision 202).
 
 #### Scenario: A file without an extractor
 - **WHEN** a plain text file of 1,234 bytes in `notes/` is a dataset, owned by a user whose primary group is `erc-1`
-- **THEN** its record's `dc:description` is `Plain text document, 1 file, 1.2 kB, in notes/, group erc-1`
+- **THEN** its record's `dc:description` is `Plain text document, 1 file, 1.2 kB, in notes/, owner's group erc-1`
 
 #### Scenario: A file with extracted metadata
 - **WHEN** a dataset's extractor yields an acceleration voltage of 300 kV and a magnification of 50,000
