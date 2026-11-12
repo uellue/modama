@@ -1,0 +1,24 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testWORD_truncated.docx",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/docx",
+      "members": [
+        "/testWORD_truncated.docx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testWORD_truncated.docx": {
+      "error": "BadZipFile"
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

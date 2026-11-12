@@ -15,13 +15,21 @@ dependencies = [
     "tifffile==2026.11.8",
     # image: PNG, JPEG, BMP, GIF, WEBP headers and EXIF (13.0.0 of 2026-10-16, MIT-CMU)
     "pillow==13.0.0",
-    # image: SVG, XML from anyone (0.7.1, PSF-2.0)
+    # image and structured: SVG, XML from anyone (0.7.1, PSF-2.0); office: XML
+    # parts of OOXML and ODF packages and XMP
     "defusedxml==0.7.1",
+    # office: legacy Word, PowerPoint, Excel property sets (OleMetadata's names)
+    "olefile==0.47",
+    # office: workbook sheets and their dimensions, read-only mode (reads shared
+    # strings; not called when a part of cell data is over 16 MiB)
+    "openpyxl==3.1.5",
+    # office: PDF Info and XMP; the extra brings cryptography (unpinned) for AES-encrypted files
+    "pypdf[crypto]==7.0.1",
+    # structured, text: YAML with the safe loader (yamldoc.py); current release on PyPI 2026-11-12, cp314 manylinux wheel with libyaml
+    "PyYAML==6.0.3",
     # text: pinned exactly, as the fixtures' recorded results (expected/) and the
     # docutils-written fixtures depend on the readers' versions.
-    # Markdown front matter
-    "PyYAML==6.0.3",
-    # text: Markdown, with its front matter plugin
+    # Markdown, with its front matter plugin
     "markdown-it-py==4.3.0",
     "mdit-py-plugins==0.7.0",
     # text: reStructuredText

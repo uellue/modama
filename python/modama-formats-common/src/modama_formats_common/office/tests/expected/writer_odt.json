@@ -1,0 +1,64 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testODFwithOOo3.odt",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/odt",
+      "members": [
+        "/testODFwithOOo3.odt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.oasis.opendocument.text",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testODFwithOOo3.odt": {
+      "subjects": [],
+      "summary": [
+        "Apache Tika",
+        "Bart Hanssens",
+        "2009-10-05T19:04:01",
+        "OpenOffice.org/3.1$Unix OpenOffice.org_project/310m19$Build-9420",
+        "page-count 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": false
+        },
+        "original_metadata": {
+          "creation-date": "2009-10-05T19:04:01",
+          "creator": "Bart Hanssens",
+          "date": "2009-10-05T21:22:38",
+          "description": "A rather complex document",
+          "document-statistic.@character-count": "351",
+          "document-statistic.@image-count": "0",
+          "document-statistic.@object-count": "2",
+          "document-statistic.@page-count": "2",
+          "document-statistic.@paragraph-count": "13",
+          "document-statistic.@table-count": "0",
+          "document-statistic.@word-count": "54",
+          "editing-cycles": "2",
+          "editing-duration": "PT02H03M24S",
+          "generator": "OpenOffice.org/3.1$Unix OpenOffice.org_project/310m19$Build-9420",
+          "initial-creator": "Bart Hanssens",
+          "keyword": [
+            "Apache",
+            "Lucene",
+            "Tika"
+          ],
+          "subject": "Test document",
+          "title": "Apache Tika",
+          "user-defined.Editor": "Bart Hanssens",
+          "user-defined.Info 2": "",
+          "user-defined.Info 3": "",
+          "user-defined.Info 4": ""
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

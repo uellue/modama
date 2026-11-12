@@ -1,0 +1,40 @@
+{
+  "datasets": [
+    {
+      "anchor": "/aes.pdf",
+      "basis": "PDF header",
+      "collapsed": false,
+      "format": "common/pdf",
+      "members": [
+        "/aes.pdf"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/pdf",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/aes.pdf": {
+      "subjects": [],
+      "summary": [
+        "Encrypted with AES-256",
+        "pypdf",
+        "pages 1"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": true,
+          "header": "%PDF-1.3",
+          "pages": 1
+        },
+        "original_metadata": {
+          "Info.Producer": "pypdf",
+          "Info.Title": "Encrypted with AES-256"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

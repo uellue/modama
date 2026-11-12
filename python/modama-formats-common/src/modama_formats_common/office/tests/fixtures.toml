@@ -1,0 +1,161 @@
+# Fixtures of the office part (spec formats/office). The wild files are Apache
+# Tika's test documents at commit a40d54f6a6d9cf8ce485f10bb07011cd32ef5925,
+# copied unchanged; TIKA below stands for
+# https://raw.githubusercontent.com/apache/tika/a40d54f6a6d9cf8ce485f10bb07011cd32ef5925/tika-parsers/tika-parsers-standard/tika-parsers-standard-modules
+# Licence: LICENSE.fixtures beside this file.
+
+[word_docx]
+purpose = "representative"
+validity = "vendor-written: Microsoft Office Word 14 (app.xml AppVersion 14.0000), core, extended and custom properties (five custom ones: a text, two dates, a number, a boolean)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_custom_props.docx, sha256 6ccf04f70122b1c32b3623c739b2b8a4d2d7795968b8e2939e665319bf482787, unchanged"
+
+[word_docm]
+purpose = "representative"
+validity = "vendor-written: Microsoft Office Word 16, macro-enabled (word/vbaProject.bin), empty title, subject, keywords and company"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_macros.docm, sha256 8c30f81956e2f8c9e243bab09038fadb1cce36b593540484e5edcbcc1b56c1d3, unchanged"
+
+[truncated_docx]
+purpose = "reproducer"
+validity = "invalid-by-design: a .docx cut off after 763 bytes: a ZIP's first local header, no central directory (Python's zipfile: 'File is not a zip file')"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_truncated.docx, sha256 8bb91125cc08ec4a5a771e86ff20cfd0646998b2c1da4361e0241036816a471f, unchanged"
+
+[protected_docx]
+purpose = "reproducer"
+validity = "vendor-written: a .docx encrypted with a password by Word, which writes it as an OLE2 file (EncryptedPackage); not a ZIP"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_protected_passtika.docx, sha256 09b941cabd222172dfd0b213a6a3fd404348b930ca285fa951bad14afb0fdf5c, unchanged"
+
+[powerpoint_pptx]
+purpose = "representative"
+validity = "vendor-written: Microsoft Office PowerPoint 15 (AppVersion 15.0000), one slide with a comment, a thumbnail"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testPPT_comment.pptx, sha256 d06691124f53492224bf366f7cf086edbd33d79eccdbfbfdbe56c5c6b9b14954, unchanged"
+
+[excel_xlsx]
+purpose = "representative"
+validity = "vendor-written: Microsoft Excel 12 (AppVersion 12.0000), three sheets with <dimension>"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testEXCEL.xlsx, sha256 960ba8f1cfa5838b563c369d281babe4ac0219100e00cecc93147fad22c549c3, unchanged"
+
+[excel_xlsm]
+purpose = "representative"
+validity = "vendor-written: Microsoft Excel 16 (AppVersion 16.0300), macro-enabled (xl/vbaProject.bin), three sheets"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testEXCEL_macro.xlsm, sha256 4a82d32be9bbe6cbc0e232727668f2344edb249c8c0bcd8d3f3e1e16ffddd859, unchanged"
+
+[text_docx]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.docx (spec formats/office, a text file named like an office document)"
+licence = "MIT"
+source = "modama_formats_common.office.tests.generate:text_docx"
+generator = "modama_formats_common.office.tests.generate:text_docx"
+
+[empty_pptx]
+purpose = "reproducer"
+validity = "invalid-by-design: an empty file named empty.pptx, as one .docx and one .pptx of 0 bytes in the October listing"
+licence = "MIT"
+source = "modama_formats_common.office.tests.generate:empty_pptx"
+generator = "modama_formats_common.office.tests.generate:empty_pptx"
+
+[writer_odt]
+purpose = "representative"
+validity = "vendor-written: OpenOffice.org 3.1 (meta:generator), ODF 1.1, keywords, user-defined fields (one with a value, three empty), document statistics"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-miscoffice-module/src/test/resources/test-documents/testODFwithOOo3.odt, sha256 b6cd74b570a98fcb6d838dd85ab869604e0711812d9533d5ecde0000b24ba7ef, unchanged"
+
+[calc_ods]
+purpose = "representative"
+validity = "vendor-written: OpenOffice.org 3.3 (meta:generator), ODF 1.2, statistics of a spreadsheet (table, cell and object counts)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-miscoffice-module/src/test/resources/test-documents/testFooter.ods, sha256 4a145b8d935ca91506a7f8a65c3df4e8ff655261337cedbeb4ae2494ec8fe3c3, unchanged"
+
+[impress_odp]
+purpose = "representative"
+validity = "vendor-written: OpenOffice.org 3.3 (meta:generator), ODF 1.2, no title"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-miscoffice-module/src/test/resources/test-documents/testMasterFooter.odp, sha256 c786aecfc72a2ff55ede5a21c4dfda14af298cebf1e788da685262da7025c833, unchanged"
+
+[encrypted_odt]
+purpose = "representative"
+validity = "vendor-written: an .odt saved with a password by LibreOffice (loext namespace in the manifest), meta.xml encrypted with AES-256-CBC (manifest encryption data)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-miscoffice-module/src/test/resources/test-documents/testODTEncrypted.odt, sha256 93bc474db83b18ac77226265f12d82f94bc0c39a83f37d71e7dad0d8f57030b0, unchanged"
+
+[text_odt]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file of 24 bytes named testODTnotaZipFile.odt"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-miscoffice-module/src/test/resources/test-documents/testODTnotaZipFile.odt, sha256 4b7cbd32a251475097b417f66ee3d3777c666586d59004d0f5be9feeb0e98876, unchanged"
+
+[pdf_info]
+purpose = "representative"
+validity = "vendor-written: Mac OS X 10.4.10 Quartz PDFContext from Firefox (Info Producer, Creator), PDF 1.3, an Info dictionary, no XMP"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-pdf-module/src/test/resources/test-documents/testPDF.pdf, sha256 8035bc3f748d8b97b8a9978bd812197bf40cf2b294a7e9b30e39d7167ddc720e, unchanged"
+
+[pdf_custom]
+purpose = "representative"
+validity = "vendor-written: Apache FOP (Info Producer), PDF 1.4, custom Info entries (a text, an array), XMP with a custom schema (language alternatives, bags, structures, a bag of structures)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-pdf-module/src/test/resources/test-documents/testPDF-custommetadata.pdf, sha256 c6f5d857a87d8b8f2265265a1fb650df57b6fdad4d3b58cafefe6f42aaba4391, unchanged"
+
+[pdf_user_password]
+purpose = "representative"
+validity = "PDF 1.4 encrypted with RC4, 40 bits (Encrypt V 1, R 3), a user password needed; producer unknown (no Info dictionary)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-pdf-module/src/test/resources/test-documents/testPDF_no_extract_no_accessibility_owner_user.pdf, sha256 acb6e5aca960bddb99bb7f1814a636da97d7ceb1d6fe31a576ad65bd8e829ac8, unchanged"
+
+[pdf_owner_password]
+purpose = "representative"
+validity = "PDF 1.4 encrypted with RC4, 40 bits (Encrypt V 1, R 3), an empty user password and an owner password; producer unknown (no Info dictionary)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-pdf-module/src/test/resources/test-documents/testPDF_no_extract_yes_accessibility_owner_empty.pdf, sha256 e9f0fe1a748f14686cea284361fcac09b54ae3bf98811765b46fca13708586b3, unchanged"
+
+[pdf_aes]
+purpose = "representative"
+validity = "written at test time by pypdf (the pinned version): one blank page, an Info title, AES-256 with an empty user password and an owner password, as Office's and LibreOffice's PDF export offer"
+licence = "MIT"
+source = "modama_formats_common.office.tests.generate:pdf_aes"
+generator = "modama_formats_common.office.tests.generate:pdf_aes"
+
+[text_pdf]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.pdf"
+licence = "MIT"
+source = "modama_formats_common.office.tests.generate:text_pdf"
+generator = "modama_formats_common.office.tests.generate:text_pdf"
+
+[word_doc]
+purpose = "representative"
+validity = "vendor-written: Microsoft Office Word (SummaryInformation creating application), Word 97 format, code page 1252, both property sets"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_custom_props.doc, sha256 0954ac51bbf4a478e322c29a81b2d735c513f3faca0cf7641c753d9e622bec29, unchanged"
+
+[powerpoint_ppt]
+purpose = "representative"
+validity = "vendor-written: Microsoft PowerPoint (creating application), code page 10000 (Mac Roman), a thumbnail (a PICT picture)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testPPT.ppt, sha256 499ccd0de7c0778afa4f6ed08793afd2406b62547373a619a5a78658ae65c4b7, unchanged"
+
+[excel_xls]
+purpose = "representative"
+validity = "vendor-written: Microsoft Excel (creating application), code page 1252, empty author, user-defined properties (not read)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testEXCEL_custom_props.xls, sha256 fff0cbf96e178190c6d749d4894cc62b6d6feadc2d85f9758b3b936ff24ef4a0, unchanged"
+
+[rtf_doc]
+purpose = "reproducer"
+validity = "invalid-by-design: an RTF file named letter.doc, as Word saves Rich Text under a .doc name on request"
+licence = "MIT"
+source = "modama_formats_common.office.tests.generate:rtf_doc"
+generator = "modama_formats_common.office.tests.generate:rtf_doc"
+
+[lock_files]
+purpose = "representative"
+validity = "composed, not written by Office or LibreOffice: two owner files of 162 bytes (as the October listing's ~$ files of .docx and .pdf measure) laid out as Apache Tika's magic for application/x-ms-owner describes them, with the user name modama; a LibreOffice lock file of five comma-separated fields ending in ';' (user name, system user, host, time, configuration URL), its layout from memory of LibreOffice's lock file code, not checked against a real one. Recognition is by name only: their content is not read"
+licence = "MIT"
+source = "modama_formats_common.office.tests.generate:lock_files"
+generator = "modama_formats_common.office.tests.generate:lock_files"

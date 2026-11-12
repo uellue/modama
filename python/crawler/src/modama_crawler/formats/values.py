@@ -39,3 +39,40 @@ def textual(value) -> bool:
     if (dtype := getattr(value, "dtype", None)) is not None:
         return dtype.kind in "biuf" and getattr(value, "size", 1) <= MAX_ITEMS
     return True
+
+
+# Credentials, best effort (change common-structured, review of 2026-11-12):
+# configuration files hold passwords and tokens, and a record is seen by more
+# people than the file. Erring on the side of leaving out: max_tokens and
+# authentication_type go too; author does not
+SECRET = (
+    r"passw(or)?d|pwd|passphrase|secret|token|api[-_]?key|private[-_]?key"
+    r"|credential|authorization|auth(?!or)"
+)
+SECRET_NAME = re.compile(SECRET, re.IGNORECASE)
+SECRET_VALUE = re.compile(
+    # such a name, then = or : and a value (POSTGRES_PASSWORD=x, "token": x)
+    rf"(?:{SECRET})[\w-]*[\"']?\s*[=:]\s*\S"
+    # a command line's option (--requirepass x, --password=x)
+    rf"|(?:^|\s)--?[\w-]*(?:{SECRET}|pass)[\w-]*[\s=]+\S"
+    # a URL with a user's password (postgres://admin:x@db/x)
+    r"|://[^/@\s]+:[^/@\s]*@"
+    # an HTTP authorization's value (Basic …, Bearer …): a token of 8 or more
+    # characters with a digit, +, / or = (not "Basic settings")
+    r"|\b(?:Basic|Bearer)\s+(?=[\w+/=.-]*[\d+/=])[\w+/=.-]{8,}",
+    re.IGNORECASE,
+)
+
+
+def credential(name: str, value) -> bool:
+    """Whether a value may be a credential, by its name (a dotted path) or its text, best effort.
+
+    True when the name has a word of SECRET, or a text (or a text in a list)
+    has such a word followed by `=` or `:` and a value, a command line option
+    with such a word or `pass` and a value, a URL with a password, or an
+    HTTP authorization's value. The formats leave such values out.
+    """
+    if SECRET_NAME.search(name):
+        return True
+    texts = value if isinstance(value, list | tuple) else [value]
+    return any(isinstance(t, str) and SECRET_VALUE.search(t) for t in texts)

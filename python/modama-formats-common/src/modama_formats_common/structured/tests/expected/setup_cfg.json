@@ -1,0 +1,62 @@
+{
+  "datasets": [
+    {
+      "anchor": "/empty.cfg",
+      "basis": "single file, [section] first",
+      "collapsed": false,
+      "format": "common/cfg",
+      "members": [
+        "/empty.cfg"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-config",
+      "warnings": []
+    },
+    {
+      "anchor": "/setup.cfg",
+      "basis": "single file, [section] first",
+      "collapsed": false,
+      "format": "common/cfg",
+      "members": [
+        "/setup.cfg"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-config",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/empty.cfg": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "utf-8"
+        },
+        "original_metadata": {}
+      }
+    },
+    "/setup.cfg": {
+      "subjects": [],
+      "summary": [
+        "example",
+        "0.1.0",
+        "numpy scipy"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "utf-8"
+        },
+        "original_metadata": {
+          "metadata.name": "example",
+          "metadata.version": "0.1.0",
+          "options.install_requires": "\nnumpy\nscipy"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -1,0 +1,44 @@
+{
+  "datasets": [
+    {
+      "anchor": "/setup.ini",
+      "basis": "single file, [section] first",
+      "collapsed": false,
+      "format": "common/ini",
+      "members": [
+        "/setup.ini"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-ini",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/setup.ini": {
+      "subjects": [],
+      "summary": [
+        "ER-C",
+        "Wavelength_nm 532",
+        "%(not interpolated)s",
+        "X Y Z",
+        "-1.5 1.5"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "utf-8"
+        },
+        "original_metadata": {
+          "DEFAULT.Operator": "ER-C",
+          "Laser.Comment": "%(not interpolated)s",
+          "Laser.Wavelength_nm": "532",
+          "Spare": {},
+          "Stage.Axes": "X Y Z",
+          "Stage.Limits": "-1.5\n1.5"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

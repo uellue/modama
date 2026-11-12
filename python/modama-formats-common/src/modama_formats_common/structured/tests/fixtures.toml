@@ -1,0 +1,67 @@
+[conda_index]
+purpose = "representative"
+validity = "written by json.dump as conda-build writes info/index.json (indent 2, keys sorted); the values those of a numpy package, the build string made up"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:conda_index"
+generator = "modama_formats_common.structured.tests.generate:conda_index"
+
+[json_schema]
+purpose = "representative"
+validity = "written by json.dump: a JSON schema whose first key is $schema, which the core's magic types application/schema+json"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:json_schema"
+generator = "modama_formats_common.structured.tests.generate:json_schema"
+
+[json_lines]
+purpose = "representative"
+validity = "written by json.dumps, one object per line, in a file named .json"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:json_lines"
+generator = "modama_formats_common.structured.tests.generate:json_lines"
+
+[not_of_their_name]
+purpose = "reproducer"
+validity = "invalid-by-design: an HTML page and an empty file named .json, text named .xml, key = value lines without a section named .cfg (as Python's turtle.cfg) and .ini"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:not_of_their_name"
+generator = "modama_formats_common.structured.tests.generate:not_of_their_name"
+
+[yaml_config]
+purpose = "representative"
+validity = "written by PyYAML 6.0.3's safe_dump and safe_dump_all"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:yaml_config"
+generator = "modama_formats_common.structured.tests.generate:yaml_config"
+
+[toml_example]
+purpose = "representative"
+validity = "the example of the TOML specification's README at tag 1.0.0, read by tomllib"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "the toml block of https://github.com/toml-lang/toml/blob/1.0.0/README.md, unchanged, as example.toml, sha256 6f6a3e6fbd49dc206a48bedd1e32d98306658cfaf5dd0e1ca9e0c125a027583f"
+
+[csv_tables]
+purpose = "representative"
+validity = "written by csv.writer: semicolon-separated in Latin-1 with a header, comma-separated numbers without one"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:csv_tables"
+generator = "modama_formats_common.structured.tests.generate:csv_tables"
+
+[qe_pbtio3]
+purpose = "representative"
+validity = "second-reader: a Quantum ESPRESSO XML document (qes namespace, no XML declaration) that qeschema's tests read"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "qeschema at commit 199486482c3f4d76476a482226eda0aba39aa57c, tests/resources/pw/PbTiO3_scf.xml, https://raw.githubusercontent.com/QEF/qeschema/199486482c3f4d76476a482226eda0aba39aa57c/tests/resources/pw/PbTiO3_scf.xml, sha256 e84c015f647a693f222bbf31c1f07aa3c45c6fcd66042ac3cb926d558c037f25, unchanged"
+
+[ini_setup]
+purpose = "representative"
+validity = "written by configparser (interpolation off, case kept): a DEFAULT section, a value over two lines, an empty section"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:ini_setup"
+generator = "modama_formats_common.structured.tests.generate:ini_setup"
+
+[setup_cfg]
+purpose = "representative"
+validity = "written by configparser as setuptools' setup.cfg, and an empty .cfg as three setup.cfg in the tree"
+licence = "MIT"
+source = "modama_formats_common.structured.tests.generate:setup_cfg"
+generator = "modama_formats_common.structured.tests.generate:setup_cfg"

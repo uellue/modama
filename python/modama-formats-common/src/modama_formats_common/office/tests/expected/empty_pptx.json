@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/empty.pptx",
+      "basis": "single file; common/pptx: not application/vnd.openxmlformats-officedocument.presentationml.presentation, no ZIP header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/empty.pptx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

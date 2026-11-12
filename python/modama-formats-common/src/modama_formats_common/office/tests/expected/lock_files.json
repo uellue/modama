@@ -1,0 +1,45 @@
+{
+  "datasets": [
+    {
+      "anchor": "/.~lock.report.odt#",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/.~lock.report.odt#"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.libreoffice-lock",
+      "warnings": []
+    },
+    {
+      "anchor": "/~$report.docx",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/~$report.docx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-ms-owner",
+      "warnings": []
+    },
+    {
+      "anchor": "/~$slides.pdf",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/~$slides.pdf"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-ms-owner",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

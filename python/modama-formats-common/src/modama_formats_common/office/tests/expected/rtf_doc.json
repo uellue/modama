@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/letter.doc",
+      "basis": "single file; common/doc: not application/msword, no OLE2 header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/letter.doc"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/rtf",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
