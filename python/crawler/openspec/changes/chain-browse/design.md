@@ -104,10 +104,14 @@ What "read-only" rests on (R3): `crawler-db` trusts any connection as `postgres`
 
 `xmltodict` 1.0.4 and `jsonschema` 4.26.0 (both the current release on PyPI, checked 2026-11-12), pinned exactly, with jsonschema's dependencies pinned as the warehouse's `uv.lock` (v1.10.0) has them (`attrs`, `jsonschema-specifications`, `referencing`, `rpds-py`), in an extra `browse` of `modama-chain`, installed only in the browse image. MIT each. No `git` (R4).
 
+### D16. Out of sync (@weber, 2026-11-12: "Most importantly, detect when we are out of sync!")
+
+The search API hit (D9) and the matchmaker entry (D10) each declare, next to their code in `upstream.py`, what they follow: upstream's version (the image version in `search-api.Dockerfile`, the commit in `matchmaker.Dockerfile`'s `ADD`) and a SHA-256 over the `*.patch` files of `patches/search-api/` and `patches/matchmaker/`, in name order, contents only. One module, `sync.py`, reads the actual values from those files and compares; the values are nowhere else (the page's "From:" line is formatted from the declaration). Three places use that one comparison: the page (a red line on the view, and in the snapshot; a file that cannot be read is a warning too), `tests/test_sync.py` (fails, never skips, with the declaration to put in after the review), and the e2e test's content comparisons, unchanged. In the container only those files are mounted, read-only, under `/upstream/search-stack/`, not the stack's folder (`staging.env`); single-file mounts keep the content they had at the start, so a change shows after `restart browse`. Not declared: D7's call and D8's loop, which run upstream's own files from the submodules and are compared by the e2e test.
+
 ## Risks
 
 - **Version skew:** the live views run the checkout's code, the stored ones what the deployed images ran. That is the point (stored vs live), but a staging checkout ahead of the images shows differences that a re-crawl would bring.
-- **Emulations drift** from upstream (D7 call, D8 loop, D9, D10). Mitigation: file and line references in the code and the page; the e2e test compares D7, D8 and D9 with what the stack stored; D10 is checked by eye against matchmaker.
+- **Emulations drift** from upstream (D7 call, D8 loop, D9, D10). Mitigation: file and line references in the code and the page; D9 and D10 declare what they follow and are marked when the stack builds something else (D16); the e2e test compares D7, D8 and D9 with what the stack stored; D10 is checked by eye against matchmaker.
 - **Large folders:** the live views of a file in a folder of 67,600 files may take a minute or more on NFS (D3); measured by @weber on staging.
 - **Code from the checkout on staging** (D4; accepted by @weber, item 216).
 

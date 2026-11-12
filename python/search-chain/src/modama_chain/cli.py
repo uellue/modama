@@ -121,6 +121,7 @@ def cmd_browse(args) -> int:
                 upstream / "metadata-crawlers" / "harvester",
                 upstream / "metadata-warehouse",
             ),
+            stack=upstream / "search-stack",
             config=args.config,
             host_root=env("MODAMA_BROWSE_HOST_ROOT", str(stores.root)),
             snapshots=Path(snapshots) if snapshots else None,

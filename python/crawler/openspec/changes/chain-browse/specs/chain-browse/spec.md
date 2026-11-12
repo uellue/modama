@@ -31,7 +31,7 @@ The browser SHALL refuse, with HTTP 400 and without reading anything, a path tha
 - **THEN** the answer is 400
 
 ### Requirement: A file's views show the stages, each labelled by its source
-For a file, the browser SHALL show the stored dataset holding it and its record as the OAI-PMH server serves it, and the live dataset and record computed by the crawler's code from the checkout, then the DataCite record by the harvester's XSLT, the warehouse's index document, the search API's hit and matchmaker's expanded cited-dataset entry, live and, when indexed, as stored. Each view SHALL be labelled "stored", "actual code" or "emulated", an emulated one with the file and lines it follows (design D6 to D10).
+For a file, the browser SHALL show the stored dataset holding it and its record as the OAI-PMH server serves it, and the live dataset and record computed by the crawler's code from the checkout, then the DataCite record by the harvester's XSLT, the warehouse's index document, the search API's hit and matchmaker's expanded cited-dataset entry, live and, when indexed, as stored. Each view SHALL be labelled "stored", "actual code" or "emulated", an emulated one with the file and lines it follows (design D6 to D10). An emulation of a service SHALL declare the upstream version and the hash of our patches it follows; where that differs from what the search stack builds, the view and its snapshot SHALL say so, and a unit test SHALL fail (D16).
 
 #### Scenario: A file found everywhere
 - **WHEN** a file of the e2e tree has been crawled, harvested and indexed, and its views are requested
@@ -44,6 +44,10 @@ For a file, the browser SHALL show the stored dataset holding it and its record 
 #### Scenario: A file the crawler has not seen
 - **WHEN** a file was written after the last crawl
 - **THEN** the stored views say it has no dataset, and the live views show its record
+
+#### Scenario: An emulation out of sync
+- **WHEN** `matchmaker.Dockerfile` of the search stack names another commit than the matchmaker entry's declaration
+- **THEN** the matchmaker entry's view and the snapshot carry "out of sync: emulates matchmaker <declared commit> + patches <hash>, the stack builds <commit> + patches <hash>; review the emulation", the other views carry none, and `test_sync.py` fails with the declaration to put in after the review
 
 ### Requirement: The live views run the checkout's current code
 The live views SHALL be computed in a new process for each request, with an environment holding no database, HTTP or Airflow setting, so that an edit to a format, an extractor, `records.py` or `render.py` in the mounted checkout shows on the next request, without a rebuild, a restart or a crawl (design D4).

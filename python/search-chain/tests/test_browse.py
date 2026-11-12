@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from modama_chain import live, upstream, views
+from modama_chain import live, sync, upstream, views
 from modama_chain.browse import (
     SNAPSHOT_HEADER,
     BadPath,
@@ -28,6 +28,7 @@ from modama_chain.browse import (
 )
 from modama_chain.chain import Stores
 from modama_formats_em.empad import cheat
+from test_sync import out_of_sync_commit, stack_copy
 from werkzeug.test import Client
 
 REPO = Path(__file__).resolve().parents[3]
@@ -35,6 +36,7 @@ EOSC = REPO / "prototypes" / "EOSC-Data-Commons"
 UPSTREAM = upstream.Upstream(
     EOSC / "metadata-crawlers" / "harvester", EOSC / "metadata-warehouse"
 )
+STACK = REPO / "prototypes" / "search-stack"
 NOWHERE = "host=/nonexistent dbname=x connect_timeout=1"
 OAI = "http://crawler:7654/oai"
 LOCAL = {"Host": "localhost:17655"}  # as through the SSH tunnel
@@ -64,11 +66,12 @@ def stores(root: Path) -> Stores:
     )
 
 
-def client(root: Path, snapshots: Path | None = None) -> Client:
+def client(root: Path, snapshots: Path | None = None, stack: Path = STACK) -> Client:
     app = Browser(
         Settings(
             stores=stores(root),
             upstream=UPSTREAM,
+            stack=stack,
             config=None,
             host_root="/storage/er-c-data",
             snapshots=snapshots,
@@ -418,6 +421,41 @@ def test_save_for_claude(tree, tmp_path, monkeypatch):
     ):
         assert f"### {title}" in text
     assert "hunter2" not in text and "password" not in text
+
+
+def test_an_emulation_out_of_sync_is_marked_on_the_page_and_in_the_snapshot(
+    tree, tmp_path, monkeypatch
+):
+    folder = tmp_path / "browse"
+    folder.mkdir()
+    stack = stack_copy(tmp_path / "stack")
+    # declared as the copy builds it, so that this test does not depend on test_sync's check
+    monkeypatch.setattr(
+        upstream,
+        "FOLLOWS",
+        {
+            "hit": sync.built(stack, "search-api"),
+            "entry": sync.built(stack, "matchmaker"),
+        },
+    )
+    live_request = {
+        "query_string": {"path": "/scan/SCA2_rings.xml"},
+        "headers": {**LOCAL, SNAPSHOT_HEADER: "1"},
+    }
+    in_sync = client(tree, stack=stack).get("/api/live", **live_request).json["views"]
+    assert [v["out_of_sync"] for v in in_sync] == [""] * 6
+    _, warning = out_of_sync_commit(stack)
+    browser = client(tree, folder, stack)
+    marked = browser.get("/api/live", **live_request).json["views"]
+    assert {v["key"]: v["out_of_sync"] for v in marked if v["out_of_sync"]} == {
+        "entry": warning
+    }
+    assert browser.post("/api/snapshot", **live_request).status_code == 200
+    (written,) = folder.iterdir()
+    text = written.read_text()
+    assert text.count("**out of sync") == 1
+    assert f"### {views.ENTRY_TITLE} (emulated)\n\nFrom: " in text
+    assert f"**{warning}**" in text.split(f"### {views.ENTRY_TITLE} (emulated)")[1]
 
 
 def test_a_snapshot_without_a_message_has_no_message_section(tree, tmp_path):

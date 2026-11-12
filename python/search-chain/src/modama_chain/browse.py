@@ -140,6 +140,8 @@ def snapshot(
                 f"From: {v['origin']}",
                 "",
             ]
+            if v["out_of_sync"]:
+                lines += [f"**{v['out_of_sync']}**", ""]
             if v["note"]:
                 lines += ["Note:", *fenced(v["note"])]
             if v["entry"]:
@@ -153,6 +155,7 @@ def snapshot(
 class Settings:
     stores: chain.Stores
     upstream: upstream.Upstream
+    stack: Path  # the search stack's Dockerfiles and patches, for the emulations' check (sync.py)
     config: Path | None  # the crawl's TOML
     host_root: str  # the data tree's path on the server (D11)
     snapshots: Path | None  # the snapshot folder, shown by its name ("browse/…")
@@ -259,13 +262,17 @@ class Browser:
     def stored(self, path: str) -> views.Stored:
         entry = self._cached(path)
         entry["stored"] = views.stored_views(self.s.stores, path)
+        views.check_sync(entry["stored"].views, self.s.stack)
         return entry["stored"]
 
     def live(self, path: str) -> list[views.View]:
         entry = self._cached(path)
         before = entry.get("stored") or self.stored(path)
-        entry["live"] = views.live_views(
-            self.s.stores, self.s.upstream, path, self.s.config, before
+        entry["live"] = views.check_sync(
+            views.live_views(
+                self.s.stores, self.s.upstream, path, self.s.config, before
+            ),
+            self.s.stack,
         )
         return entry["live"]
 
