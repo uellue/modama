@@ -106,7 +106,7 @@ Values SHALL be kept as the file writes them. YAML (one loader for the package, 
 - **THEN** `original_metadata` has `a` `NaN` and `b` `1e999`, or `a` `.inf` and `b` `.NaN`
 
 ### Requirement: Every element and attribute of an XML document is kept
-The XML extractor SHALL keep every attribute and text of the document in `original_metadata` by the rules of `formats/empad`, "Every element and attribute is kept" (paths below the root element, `@name` for attributes, `[n]` from 1 for repeated siblings only, `#text` and `#tail`, `#2` for a path met twice, the same skip list), with names as the file writes them: an element or attribute in a namespace with the prefix the file declares for it (`qes:espresso`, `@xsi:schemaLocation`), one in the default namespace without one. A namespace declaration is kept as an attribute of the element that declares it, `@xmlns` or `@xmlns:<prefix>`. `mapped_metadata` has the root element's name as written (`root`) and its namespace (`namespace`), if any. Comments, processing instructions and the document type declaration are skipped; a document that declares entities is refused by defusedxml, and its extraction fails.
+The XML extractor SHALL keep every attribute and text of the document in `original_metadata` by the rules of `formats/empad`, "Every element and attribute is kept" (paths below the root element, `@name` for attributes, `[n]` from 1 for repeated siblings only, `#text` and `#tail`, `#2` for a path met twice, a text with a line break without its leading and trailing whitespace, the same skip list), with names as the file writes them: an element or attribute in a namespace with the prefix the file declares for it (`qes:espresso`, `@xsi:schemaLocation`), one in the default namespace without one. A namespace declaration is kept as an attribute of the element that declares it, `@xmlns` or `@xmlns:<prefix>`. `mapped_metadata` has the root element's name as written (`root`) and its namespace (`namespace`), if any. Comments, processing instructions and the document type declaration are skipped; a document that declares entities is refused by defusedxml, and its extraction fails.
 
 #### Scenario: A namespaced document
 - **WHEN** `qe_pbtio3/PbTiO3_scf.xml` is extracted
@@ -115,6 +115,10 @@ The XML extractor SHALL keep every attribute and text of the document in `origin
 #### Scenario: A default namespace and a prefixed attribute
 - **WHEN** a document is `<MicroscopeImage xmlns="urn:a" xmlns:i="urn:i"><x i:type="b">1</x></MicroscopeImage>`
 - **THEN** `original_metadata` is `@xmlns` `urn:a`, `@xmlns:i` `urn:i`, `x.@i:type` `b` and `x` `1`
+
+#### Scenario: Pretty-printing is not content
+- **WHEN** `qe_pbtio3/PbTiO3_scf.xml`, which Quantum ESPRESSO writes pretty-printed (`<use_all_frac>\n        false\n      </use_all_frac>`), is extracted, or a document is `<r><a> a </a><b>\n  1   2\n</b></r>`
+- **THEN** `original_metadata` has `input.symmetry_flags.use_all_frac` `false` (not `"\n        false\n      "`), or `a` ` a ` as written and `b` `1   2`, inner whitespace as written (@weber, 2026-11-12, 243b)
 
 #### Scenario: An XML element nobody has seen before
 - **WHEN** a document has `<made_up_group made_up_attribute="a"><made_up_value>42 zz</made_up_value><made_up_empty/></made_up_group>` below its root

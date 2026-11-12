@@ -19,6 +19,10 @@ BUFFER = 64 * 1024
 # slide list grows by about 40 bytes a slide. The size is the one the ZIP's
 # directory gives, which the ZIP reader holds the member to.
 MAX_PART = 16 * 1024 * 1024
+# The summary line of a document whose metadata can't be read because it is
+# encrypted: the one word of ours there besides "(unit unknown)" (@weber,
+# 2026-11-12, 242b: the warehouse has no other channel to tell the user)
+ENCRYPTED = "(encrypted)"
 
 
 class OverBudget(RuntimeError):

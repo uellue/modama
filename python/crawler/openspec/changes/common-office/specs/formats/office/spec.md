@@ -88,7 +88,7 @@ For an `.odt`, `.odp` or `.ods` dataset, the extractor SHALL read `meta.xml` and
 
 #### Scenario: An encrypted document
 - **WHEN** an `.odt` saved with a password is extracted (`encrypted_odt`)
-- **THEN** the extraction succeeds with `mapped_metadata` `encrypted` `true` and an empty `original_metadata`
+- **THEN** the extraction succeeds with `mapped_metadata` `encrypted` `true`, an empty `original_metadata` and the summary line `(encrypted)`
 
 #### Scenario: An attribute nobody has seen
 - **WHEN** `meta.xml` holds an element nobody has seen, `<foo:setting foo:level="7">high</foo:setting>`
@@ -107,11 +107,11 @@ For a PDF dataset, the extractor SHALL read with pypdf the document information 
 
 #### Scenario: An encrypted PDF that opens without a password
 - **WHEN** a PDF encrypted with RC4 and an empty user password (`pdf_owner_password`), and one encrypted with AES-256 and an empty user password, written by pypdf (`pdf_aes`), are extracted
-- **THEN** both are read: `encrypted` `true`, their page count and, for `pdf_aes`, `Info.Title` `Encrypted with AES-256`
+- **THEN** both are read: `encrypted` `true`, their page count and, for `pdf_aes`, `Info.Title` `Encrypted with AES-256`; their summary lines are the usual ones (`pages 1`; `Encrypted with AES-256` first), without `(encrypted)`
 
 #### Scenario: An encrypted PDF that needs a password
 - **WHEN** a PDF needs a user password (`pdf_user_password`)
-- **THEN** the extraction succeeds with `mapped_metadata` `{"header": "%PDF-1.4", "encrypted": true}`, an empty `original_metadata` and an empty summary line
+- **THEN** the extraction succeeds with `mapped_metadata` `{"header": "%PDF-1.4", "encrypted": true}`, an empty `original_metadata` and the summary line `(encrypted)`
 
 #### Scenario: Only the metadata is read
 - **WHEN** a PDF of 5 MB, nearly all of it one attached file, is extracted
@@ -164,7 +164,7 @@ The values of each family SHALL keep every entry but one skip list, defined once
 - **THEN** it is left out of the values, the other entries stay
 
 ### Requirement: The summary line of an office document
-The summary line SHALL hold, from a chosen list per family (the only positive list), the entries present and not empty, in the list's order, as the file holds them: a text as it is, a count after its name, not when it is 0. Office Open XML: `core.title`, `core.creator`, `core.created`, `app.Application`, `app.Pages`, `app.Slides`; OpenDocument: `title`, `initial-creator`, `creation-date`, `generator`, `document-statistic.@page-count` (as `page-count`); PDF: `Info.Title`, `Info.Author`, `Info.CreationDate`, `Info.Creator`, `Info.Producer`, the page count (`pages`); OLE2: `title`, `author`, `create_time`, `creating_application`, `num_pages`, `slides`.
+The summary line SHALL hold, from a chosen list per family (the only positive list), the entries present and not empty, in the list's order, as the file holds them: a text as it is, a count after its name, not when it is 0. Office Open XML: `core.title`, `core.creator`, `core.created`, `app.Application`, `app.Pages`, `app.Slides`; OpenDocument: `title`, `initial-creator`, `creation-date`, `generator`, `document-statistic.@page-count` (as `page-count`); PDF: `Info.Title`, `Info.Author`, `Info.CreationDate`, `Info.Creator`, `Info.Producer`, the page count (`pages`); OLE2: `title`, `author`, `create_time`, `creating_application`, `num_pages`, `slides`. A document whose metadata can't be read because it is encrypted (an OpenDocument file whose `meta.xml` is encrypted, a PDF that needs a password) SHALL have the summary line `(encrypted)`: the second exception to "no words of ours", beside "(unit unknown)" (@weber, 2026-11-12, 242b: "here we can make an exception to the rule and write sth like [encrypted PDF] ... Let's be pragmatic for now"; the warehouse has no other channel to tell the user). An encrypted PDF that opens with the empty password is read and has its usual summary line.
 
 #### Scenario: A count of 0
 - **WHEN** a document's extended properties say `<Pages>0</Pages>`

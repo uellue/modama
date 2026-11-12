@@ -121,6 +121,12 @@ def given(text: str | None) -> str | None:
     return text if text is not None and text.strip() else None
 
 
+def unindented(text: str) -> str:
+    """An XML text as kept: without its leading and trailing whitespace where it
+    has a line break (pretty-printing is not content, decision 243b), else as written."""
+    return text.strip() if "\n" in text else text
+
+
 def entries(root, where: str) -> dict[str, str]:
     """Every attribute and text of an XML tree, as found: dotted path below the root
     element -> text (spec formats/empad, "Every element and attribute is kept").
@@ -131,7 +137,10 @@ def entries(root, where: str) -> dict[str, str]:
     attributes keeps its text, empty or not (decision 161). Text that is not
     whitespace is kept where XML allows it besides: the root's as `#text`, an
     element's beside its children under its path, the text after an element (its
-    tail) as `<path>#tail`. A path met twice (a tag name with a dot) keeps both,
+    tail) as `<path>#tail`. A text or tail with a line break is kept without its
+    leading and trailing whitespace: pretty-printing is not content (decision
+    243b); inner whitespace, and text without a line break, stay as written.
+    A path met twice (a tag name with a dot) keeps both,
     the second as `<path>#2`, with a warning naming where. The skip list:
     whitespace around elements, the empty text of an element whose attributes or
     children carry its content (`<raw_file filename="…"/>`: `raw_file.@filename`,
@@ -156,7 +165,7 @@ def entries(root, where: str) -> dict[str, str]:
         children = list(element)
         text = element.text or ""
         if text.strip() or (path and not (children or element.attrib)):
-            add(path[:-1] or "#text", text)
+            add(path[:-1] or "#text", unindented(text))
         counts = Counter(child.tag for child in children)
         seen = Counter()
         for child in children:
@@ -167,7 +176,7 @@ def entries(root, where: str) -> dict[str, str]:
                 inner = f"{path}{child.tag}"
             visit(child, f"{inner}.")
             if child.tail and child.tail.strip():
-                add(f"{inner}#tail", child.tail)
+                add(f"{inner}#tail", unindented(child.tail))
 
     visit(root, "")
     return found

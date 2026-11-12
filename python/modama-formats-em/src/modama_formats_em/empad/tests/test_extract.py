@@ -98,6 +98,21 @@ def test_text_of_the_root_and_after_an_element(collection_tests, tmp_path):
     assert tail.values["original_metadata"]["made_up#tail"] == " made-up tail "
 
 
+def test_pretty_printing_is_not_content(collection_tests, tmp_path):
+    made_up = (
+        b"<made_up_flag>\n        false\n      </made_up_flag>"
+        b"<made_up_pair>\n  1   2\n</made_up_pair>"
+        b"<made_up_spaces> a </made_up_spaces>"
+        b"<made_up_tail>3</made_up_tail>\n  made-up tail\n</root>"
+    )
+    extracted = edited(collection_tests, "pair", tmp_path, b"</root>", made_up)
+    original = extracted.values["original_metadata"]
+    assert original["made_up_flag"] == "false"
+    assert original["made_up_pair"] == "1   2"
+    assert original["made_up_spaces"] == " a "
+    assert original["made_up_tail#tail"] == "made-up tail"
+
+
 def test_a_path_met_twice_keeps_both(collection_tests, tmp_path, caplog):
     # A tag name with a dot gives the path of an element and its child
     made_up = b"<a><b>1</b></a><a.b>2</a.b></root>"

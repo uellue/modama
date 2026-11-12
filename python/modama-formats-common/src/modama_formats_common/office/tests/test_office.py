@@ -290,6 +290,8 @@ def test_an_encrypted_document(collection_tests, tmp_path):
     odt = described(collection_tests, "encrypted_odt", tmp_path)
     assert odt.mapped == {"encrypted": True}
     assert odt.original == {}
+    assert odt.extracted.summary == ["(encrypted)"]
+    assert odt.description.startswith("(encrypted); ")
 
 
 def test_an_attribute_nobody_has_seen(collection_tests, tmp_path):
@@ -342,13 +344,17 @@ def test_an_encrypted_pdf_that_opens_without_a_password(collection_tests, tmp_pa
     assert rc4.mapped["encrypted"] and aes.mapped["encrypted"]
     assert rc4.mapped["pages"] == aes.mapped["pages"] == 1
     assert aes.original["Info.Title"] == "Encrypted with AES-256"
+    assert rc4.extracted.summary == ["pages 1"]
+    assert aes.extracted.summary[0] == "Encrypted with AES-256"
+    assert "(encrypted)" not in aes.extracted.summary
 
 
 def test_an_encrypted_pdf_that_needs_a_password(collection_tests, tmp_path):
     pdf = described(collection_tests, "pdf_user_password", tmp_path)
     assert pdf.mapped == {"header": "%PDF-1.4", "encrypted": True}
     assert pdf.original == {}
-    assert pdf.extracted.summary == []
+    assert pdf.extracted.summary == ["(encrypted)"]
+    assert pdf.description.startswith("(encrypted); ")
 
 
 def large_pdf(path: Path) -> bytes:

@@ -1,13 +1,13 @@
 [nexus_examples]
 purpose = "representative"
 validity = "vendor-written: example.h5 by the EPICS areaDetector NeXus file writer (root attribute creator 'write_nexus_file()', h5py 3.6.0, 2022-03-07), with a 1024 x 1024 uint8 image; simple_example_basic.nexus.hdf5 by the NeXus manual's h5py example simple_example_basic_write.py (NeXus_version 4.3.0, 2022-06-15); read by h5py 3.16.0 on 2026-11-12"
-licence = "LGPL-3.0 (LICENSE.fixtures beside this file)"
+licence = "LGPL-3.0, as the repository's README states, accepted by @weber, 2026-11-12 (LICENSE.fixtures beside this file)"
 source = "nexusformat/definitions on main, 2026-11-12: manual/source/examples/epics/example.h5 (sha256 6bc811bc43aa4fe1b87157b4487514af8bb54f44399caee2bdb8f69e932297e3) and manual/source/examples/python/simple_example_basic/simple_example_basic.nexus.hdf5 (sha256 d9e4ed7589b6c0eb7626b8dda30b098d7120adee1598c0ba0bdf743dc4a11540), https://raw.githubusercontent.com/nexusformat/definitions/main/…, unchanged"
 
 [nexus_named]
 purpose = "representative"
 validity = "vendor-written: the NeXus example simple_example_basic.nexus.hdf5 of nexus_examples, unchanged, under the extension .nxs that NeXus files have in the wild (1,231 in the October listing)"
-licence = "LGPL-3.0 (LICENSE.fixtures beside this file)"
+licence = "LGPL-3.0, as the repository's README states, accepted by @weber, 2026-11-12 (LICENSE.fixtures beside this file)"
 source = "modama_formats_common.pydata.tests.generate:nexus_named, from the file of nexus_examples"
 generator = "modama_formats_common.pydata.tests.generate:nexus_named"
 

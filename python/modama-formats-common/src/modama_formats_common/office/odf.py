@@ -3,7 +3,7 @@
 Only `meta.xml` and the manifest are read. odfpy is not used: its `load()`
 reads every part of the package, the pictures too (BACKLOG, "Sync with
 upstream"). An encrypted document's meta.xml (encryption data in the
-manifest) is not read.
+manifest) is not read; its summary line says `(encrypted)`.
 
 Skip list (spec formats/office, "What is left out"): the value type of a
 user-defined field (`meta:value-type`); values not suitable for text
@@ -15,7 +15,7 @@ from zipfile import ZipFile
 
 from modama_crawler.formats import Extracted
 
-from .common import headline, kept, local, opened, part, text
+from .common import ENCRYPTED, headline, kept, local, opened, part, text
 
 META = "meta.xml"
 MANIFEST = "META-INF/manifest.xml"
@@ -73,7 +73,7 @@ def extract(path: str) -> Extracted:
             for meta in part(z, META):  # office:document-meta holds office:meta
                 original.update(kept(gathered(entries(meta))))
     return Extracted(
-        summary=headline(original, HEADLINE),
+        summary=[ENCRYPTED] if locked else headline(original, HEADLINE),
         subjects=[],
         values={
             "original_metadata": original,

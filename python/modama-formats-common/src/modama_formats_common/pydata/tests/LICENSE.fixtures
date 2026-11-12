@@ -7,7 +7,8 @@ fixtures/nexus_examples/simple_example_basic.nexus.hdf5 are example files of
 the NeXus manual, from https://github.com/nexusformat/definitions
 (manual/source/examples/). Copyright the NeXus International Advisory
 Committee and contributors. The repository's README states its licence as
-the GNU Lesser General Public License, version 3; the text is in
+the GNU Lesser General Public License, version 3 (accepted by @weber,
+2026-11-12); the text is in
 licences/LGPL.nexusformat, copied from the repository's LGPL.txt, and the GNU
 General Public License it builds on in licences/COPYING.rosettasciio.
 
