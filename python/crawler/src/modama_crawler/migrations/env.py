@@ -40,12 +40,18 @@ def offline() -> None:
 def _wait_for_crawl_lock(conninfo: str) -> psycopg.Connection:
     """The crawl lock, on a connection of its own, waiting for it if a crawl or another migration holds it."""
     lock = psycopg.connect(conninfo, autocommit=True)
-    ((taken,),) = lock.execute(
-        "SELECT pg_try_advisory_lock(%s, %s)", CRAWL_LOCK
-    ).fetchall()
-    if not taken:
-        log.info("waiting for the crawl lock (a crawl or another migration holds it)")
-        lock.execute("SELECT pg_advisory_lock(%s, %s)", CRAWL_LOCK)
+    try:
+        ((taken,),) = lock.execute(
+            "SELECT pg_try_advisory_lock(%s, %s)", CRAWL_LOCK
+        ).fetchall()
+        if not taken:
+            log.info(
+                "waiting for the crawl lock (a crawl or another migration holds it)"
+            )
+            lock.execute("SELECT pg_advisory_lock(%s, %s)", CRAWL_LOCK)
+    except BaseException:  # Ctrl-C while waiting: nothing has changed
+        lock.close()
+        raise
     return lock
 
 
