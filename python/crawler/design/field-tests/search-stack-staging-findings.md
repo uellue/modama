@@ -400,7 +400,7 @@ every link in full (the export has them). Cause: matchmaker's own Markdown subse
 links with `\[(.+?)]\((.+?)\)` (`src/components/MessageMarkdown.tsx:92`), a lazy match up to
 the first `)`; CommonMark allows balanced brackets in a link. The citation list uses the same
 pattern (`src/lib/datasetCitations.ts:56`), so those links also got no number and are missing
-from "Datasets cited" (7 of the 15 links in the answer, all without brackets). Many of our
+from "Datasets cited" (7 of the 14 inline links in the answer are cited, all without brackets; the 7 with brackets are not). Many of our
 paths have brackets (`SI data (20)`, `(3) Spectrum of … (low-loss).dm4`). Not yet checked:
 whether any link was invented rather than cut.
 
