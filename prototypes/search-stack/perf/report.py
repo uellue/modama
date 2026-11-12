@@ -63,12 +63,19 @@ if t_end:
 
 # ------------------------------------------------------------------ batches (Airflow's task instances)
 tasks = defaultdict(list)
-for dag, task, _map, state, queued, start, end in rows("tasks.txt"):
+outcomes = defaultdict(lambda: defaultdict(int))  # task -> (state, try) -> count
+for dag, task, _map, state, queued, start, end, *tried in rows("tasks.txt"):
+    if dag == "warehouse_transform_index":
+        outcomes[task][(state, tried[0] if tried else "?")] += 1
     if dag == "warehouse_transform_index" and start and end:
         tasks[task].append((float(queued or start), float(start), float(end), state))
 for task in ("run_transform_batch", "run_filemeta_batch"):
     ts = sorted(tasks.get(task, []), key=lambda t: t[1])
-    print(f"{task}: task durations (s) {stats([e - s for _, s, e, _ in ts])}")
+    tries = ", ".join(
+        f"{n} {s} at try {t}" for (s, t), n in sorted(outcomes[task].items())
+    )
+    print(f"{task}: {tries or 'none'}")
+    print(f"  task durations (s) {stats([e - s for _, s, e, _ in ts])}")
     print(f"  queued -> started (s) {stats([s - q for q, s, _, _ in ts])}")
     if ts and task == "run_transform_batch" and t_end and concurrency:
         busy = sum(e - s for _, s, e, _ in ts)

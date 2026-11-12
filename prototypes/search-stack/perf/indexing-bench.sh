@@ -12,6 +12,9 @@
 # PROCESSES sets TRANSFORM_PROCESSES; empty, the worker computes its CPU budget. PERF_THREADS
 # sets EMBEDDING_THREADS likewise. PERF_TODAY=1 runs the worker as before the budget
 # (perf/docker-compose.today.yml; PROCESSES and PERF_THREADS are then ignored).
+# PERF_QUEUED_TIMEOUT sets the scheduler's task_queued_timeout (s); PERF_TRANSFORM_POOL sets the
+# pool `transform` after the start, over the worker's P (a large one: batches queue in the broker,
+# as without the pool; change cpu-budget, task 3.5).
 #
 # DELETES ALL STATE of the test deployment (./downtest.sh --reset) first; never point it at
 # staging. Leaves the stack up with the bench's settings and without crawl-timer (so its
@@ -51,6 +54,10 @@ say "reset and start the stack (CELERY_BATCH_SIZE=$batch, concurrency $conc), wi
 dc exec -T airflow-worker-transform sh -c 'for p in /proc/[0-9]*; do tr "\0" " " < $p/cmdline; echo; done' \
     | grep -m1 -e '--concurrency' > "$out/worker-command.txt" || true
 dc logs airflow-worker-transform 2>&1 | grep -m1 'CPU budget:' > "$out/budget.txt" || true
+if [ -n "${PERF_TRANSFORM_POOL:-}" ]; then
+    dc exec -T airflow-scheduler airflow pools set transform "$PERF_TRANSFORM_POOL" "perf: PERF_TRANSFORM_POOL" > /dev/null
+fi
+dc exec -T airflow-scheduler airflow pools list > "$out/pools.txt" 2>&1 || true
 
 say "load the embedding model once, into the empty cache volume (as staging's, which keeps it)"
 prewarm=$(dc exec -T airflow-worker-transform /opt/airflow/transform-venv/bin/python -c '
@@ -119,7 +126,7 @@ dc cp airflow-worker-transform:/tmp/perf-probe "$out/probe" > /dev/null
 sql "select dag_id, extract(epoch from start_date), extract(epoch from end_date), state from dag_run
      where start_date >= to_timestamp($t0) order by start_date" > "$out/dagruns.txt"
 sql "select ti.dag_id, ti.task_id, ti.map_index, ti.state, extract(epoch from ti.queued_dttm),
-     extract(epoch from ti.start_date), extract(epoch from ti.end_date)
+     extract(epoch from ti.start_date), extract(epoch from ti.end_date), ti.try_number
      from task_instance ti join dag_run dr on dr.dag_id = ti.dag_id and dr.run_id = ti.run_id
      where dr.start_date >= to_timestamp($t0) order by ti.start_date" > "$out/tasks.txt"
 curl -s 'http://127.0.0.1:9200/test_datacite/_count' > "$out/count.json"
@@ -132,6 +139,8 @@ batch=$batch
 conc=$conc
 threads=${PERF_THREADS:-}
 today=${PERF_TODAY:-}
+queued_timeout=${PERF_QUEUED_TIMEOUT:-600}
+transform_pool=${PERF_TRANSFORM_POOL:-}
 t0=$t0
 crawl_end=$crawl_end
 load=${load// /,}
