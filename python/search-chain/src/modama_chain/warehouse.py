@@ -133,24 +133,46 @@ def get_json(url: str, store: str, data=None, headers=None, missing_ok=False):
         raise Unreachable(f"{store} at {url}: {getattr(e, 'reason', e)}") from e
 
 
-def has_document(opensearch: str, index: str, url: str) -> bool:
-    """Whether the index holds a document for the record URL, which upstream uses as _id."""
+def document(opensearch: str, index: str, url: str) -> dict | None:
+    """The index's document (`_source`) for the record URL, which upstream uses as _id; None if there is none."""
     doc = get_json(
         f"{opensearch}/{index}/_doc/{urllib.parse.quote(url, safe='')}",
         "OpenSearch",
         missing_ok=True,
     )
-    return bool(doc and doc.get("found"))
+    return doc["_source"] if doc and doc.get("found") else None
 
 
-def search(search_api: str, query: str) -> list[str]:
-    """The URLs of the search API's hits for query, in rank order."""
+def has_document(opensearch: str, index: str, url: str) -> bool:
+    """Whether the index holds a document for the record URL."""
+    return document(opensearch, index, url) is not None
+
+
+def search_hits(search_api: str, query: str) -> list[dict]:
+    """The search API's hits for query, in rank order, as `/search` returns them."""
     result = get_json(
         f"{search_api}/search?"
         + urllib.parse.urlencode({"q": query, "resource": "datasets"}),
         "search API",
     )
-    return [hit["_source"]["url"] for hit in result["hits"]]
+    return result["hits"]
+
+
+def search(search_api: str, query: str) -> list[str]:
+    """The URLs of the search API's hits for query, in rank order."""
+    return [hit["_source"]["url"] for hit in search_hits(search_api, query)]
+
+
+def repository_code(conn: psycopg.Connection, harvest_url: str) -> str | None:
+    """The code of the repository of the endpoint with this harvest URL: the index documents' `_repo`."""
+    row = conn.execute(
+        """
+        SELECT r.code FROM endpoints e JOIN repositories r ON r.id = e.repository_id
+        WHERE e.harvest_url = %s
+        """,
+        (harvest_url,),
+    ).fetchone()
+    return row[0] if row else None
 
 
 def index_runs(airflow: str, user: str, password: str) -> list[IndexRun]:
