@@ -144,7 +144,20 @@ start = end) after 600 to 720 s queued, which matches Airflow's `task_queued_tim
 4.5 batches per 10 minutes the rest takes about 19 hours (extrapolated). Why the default
 queue's tasks are not taken from 01:10, and whether that holds back the scheduling of
 the transform batches, is open: needs the scheduler's and the default worker's logs
-from 01:00 to 01:30. Reproduced in the VM's test deployment (8 CPUs,
+from 01:00 to 01:30. Those logs (`airflow-0100.log`): the scheduler sees "16/16 running
+and queued tasks" 468 times (the DAG's limit of 16 active tasks) and so does not start
+the scheduled transform batches ("Not executing ... since the number of tasks running
+or queued", 235 times); file-metadata batches are "stuck in queued; will try to
+requeue" and, after the requeue attempts, marked failed; the default worker
+(`--queues default`, concurrency 4) logs nothing in those 30 minutes. So file-metadata
+batches that no worker takes hold the DAG's slots, and the transform batches wait for
+them. Why the default worker takes nothing from about 01:00 is not shown yet. A
+hypothesis, not checked: the harvest DAG's task that waits for the indexing run
+(`TriggerDagRunOperator`, `wait_for_completion`, on the default queue since 00:20) keeps
+its message unacknowledged for hours, and RabbitMQ 3 (`rabbitmq:3-management-alpine`)
+closes a channel whose delivery is not acknowledged within its `consumer_timeout`
+(30 minutes by default), after which the worker may no longer consume. The broker's
+log and its queue list would show it. Reproduced in the VM's test deployment (8 CPUs,
 16,000 synthetic records, `prototypes/search-stack/perf/`, untracked; raw data in the
 session's scratchpad `indexing-perf/`):
 - **Harvest:** 68 records/s, serial: one task, one record per `POST /harvest_event`
