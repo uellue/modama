@@ -8,16 +8,6 @@
 
 - [ ] no keepalive: without pings, a vanished peer stays listed until a send fails or TCP gives up
 
-## Agent: local network token proxy
-
-- [ ] tasks for vanished interface addresses never end: `token_publisher_loop`
-      (`modama-agent/src/lib/local_net_token_proxy.rs`) starts an `advertisement_loop` per private
-      address but never stops one when its address goes away (the comment says the tasks end by
-      themselves; they retry socket creation every 5 s forever). Seen on Windows after sleep and
-      network changes: 127 "error creating multicast socket … 10049" lines overnight for two
-      vanished addresses. Abort the tasks (advertisement and token server) of addresses that are
-      no longer listed.
-
 ## GUI
 
 - [ ] upgrade the egui stack to 0.36 once compatible releases of both

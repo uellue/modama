@@ -1,0 +1,20 @@
+{
+  "datasets": [
+    {
+      "anchor": "/acq.hdr",
+      "basis": "1 frame file(s) acq*.mib",
+      "collapsed": false,
+      "format": "em/merlin",
+      "members": [
+        "/acq.hdr",
+        "/acq.mib"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.merlin-header",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
