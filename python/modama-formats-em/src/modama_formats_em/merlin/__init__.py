@@ -20,6 +20,10 @@ HEADER = "application/x.merlin-header"
 FRAMES = "application/x.merlin-mib"
 # "(day, mnth, yr, hr, min, s)" or "(yr, mnth, day, hr, min, s)" follows; the value is day/month/year in both
 DATE = "Time and Date Stamp"
+# Header keys of the summary line
+COUNT = "Frames in Acquisition (Number)"
+DEPTH = "Counter Depth (number)"
+READOUT = "Readout System"
 
 
 def read_header(path: str) -> dict[str, str]:
@@ -78,16 +82,17 @@ class Merlin(Format):
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """Frames, frame size, bit depth and time (spec formats/merlin, "Merlin metadata is extracted from the header")."""
+        """Every header entry as found, then frames, frame size, bit depth and time
+        (spec formats/merlin, "Merlin metadata is extracted from the header")."""
         from rsciio.quantumdetector._api import MIBProperties
 
         hdr = read_header(root + dataset.anchor)
         first = MIBProperties()
         first.parse_file(root + next(m for m in dataset.members if m != dataset.anchor))
-        frames = int(hdr["Frames in Acquisition (Number)"])
+        frames = int(hdr[COUNT])
         height, width = first.merlin_size
-        depth = int(hdr["Counter Depth (number)"])
-        readout = hdr.get("Readout System", "").strip()
+        depth = int(hdr[DEPTH])
+        readout = hdr.get(READOUT, "").strip()
         # The key by its start (spec formats/merlin, "The date key names its
         # fields in another order"); a value in another form fails, naming it
         date = next((k for k in hdr if k.startswith(DATE)), None)
@@ -98,20 +103,31 @@ class Merlin(Format):
             acquired = datetime.strptime(stamp, "%d/%m/%Y %H:%M:%S")
         except ValueError as e:
             raise ValueError(f"{date}: {stamp!r} is not dd/mm/yyyy hh:mm:ss ({e})")
+        # The summary line: the chosen entries' values as the header writes them,
+        # a number after its key, a text as it is; the frame size, from the frame
+        # file, after its name in mapped_metadata (decision 230)
         summary = [
-            f"{frames:,} frame{'' if frames == 1 else 's'}",
-            f"{width}×{height} pixels",
-            f"{depth}-bit",
+            f"{COUNT} {hdr[COUNT]}",
+            f"frame {width}×{height}",
+            f"{DEPTH} {hdr[DEPTH]}",
         ]
         if readout:
-            summary.append(readout)
-        summary.append(acquired.strftime("%Y-%m-%d %H:%M"))
+            summary.append(hdr[READOUT])
+        summary.append(hdr[date])
         values = {
-            "frames": frames,
-            "frame": [width, height],
-            "counter_depth": depth,
-            "readout": readout,
-            "acquired": acquired.isoformat(),
+            # Every entry, its key and its value as the file writes them; the skip
+            # list is empty (spec formats/merlin, "Every header entry is kept").
+            # TODO: the shared check of modama_formats_em for content not suitable
+            # for text display (too large, binary; TEMPLATE.md, "Extracting
+            # metadata"), one call per value here, once it is merged (DM change)
+            "original_metadata": hdr,
+            "mapped_metadata": {
+                "frames": frames,
+                "frame": [width, height],
+                "counter_depth": depth,
+                "readout": readout,
+                "acquired": acquired.isoformat(),
+            },
         }
         return Extracted(
             summary=summary, subjects=[readout] if readout else [], values=values

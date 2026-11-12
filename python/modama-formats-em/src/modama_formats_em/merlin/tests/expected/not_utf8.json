@@ -21,21 +21,52 @@
         "Merlin Quad"
       ],
       "summary": [
-        "1 frame",
-        "256\u00d7256 pixels",
-        "6-bit",
+        "Frames in Acquisition (Number) 1",
+        "frame 256\u00d7256",
+        "Counter Depth (number) 6",
         "Merlin Quad",
-        "2019-02-22 10:27"
+        "22/02/2019 10:27:28"
       ],
       "values": {
-        "acquired": "2019-02-22T10:27:28",
-        "counter_depth": 6,
-        "frame": [
-          256,
-          256
-        ],
-        "frames": 1,
-        "readout": "Merlin Quad"
+        "mapped_metadata": {
+          "acquired": "2019-02-22T10:27:28",
+          "counter_depth": 6,
+          "frame": [
+            256,
+            256
+          ],
+          "frames": 1,
+          "readout": "Merlin Quad"
+        },
+        "original_metadata": {
+          "Acquisition Type (Normal, Th_scan, Config)": "Normal",
+          "Active Counters": "Counter 0",
+          "Assembly Size (NX1, 2X2)": "   1x1",
+          "Chip ID": "W529_F5,-,-,-",
+          "Chip Mode  (SPM, CSM, CM, CSCM)": "SPM",
+          "Chip Type (Medipix 3.0, Medipix 3.1, Medipix 3RX)": "Medipix 3RX",
+          "Counter Depth (number)": "6",
+          "DAC File": "None",
+          "DACs": "000",
+          "Dead Time File": "None",
+          "Flat Field File": "None",
+          "Frames in Acquisition (Number)": "1",
+          "Frames per Trigger (Number)": "1",
+          "Gain": "SLGM",
+          "Gap Fill Mode": "None",
+          "Humidity (%)": "Board Humidity 10.000000 ",
+          "Medipix Clock (MHz)": "120MHz",
+          "Readout System": "Merlin Quad",
+          "Sensor Bias (V, \u00b5A)": "120 V",
+          "Sensor Polarity (Positive, Negative)": "Positive",
+          "Software Version": "0.67.0.1",
+          "Temperature (C)": "Board Temp 40.000000 Deg C",
+          "Thresholds (keV)": "0.000000E+0",
+          "Time and Date Stamp (yr, mnth, day, hr, min, s)": "22/02/2019 10:27:28",
+          "Trigger Start (Positive, Negative, Internal)": "Internal",
+          "Trigger Stop (Positive, Negative, Internal)": "Internal",
+          "bpc File": "None"
+        }
       }
     }
   },

@@ -21,21 +21,52 @@
         "Merlin Quad"
       ],
       "summary": [
-        "1 frame",
-        "256\u00d7256 pixels",
-        "6-bit",
+        "Frames in Acquisition (Number) 1",
+        "frame 256\u00d7256",
+        "Counter Depth (number) 6",
         "Merlin Quad",
-        "2021-04-15 14:43"
+        "15/04/2021 14:43:23"
       ],
       "values": {
-        "acquired": "2021-04-15T14:43:23",
-        "counter_depth": 6,
-        "frame": [
-          256,
-          256
-        ],
-        "frames": 1,
-        "readout": "Merlin Quad"
+        "mapped_metadata": {
+          "acquired": "2021-04-15T14:43:23",
+          "counter_depth": 6,
+          "frame": [
+            256,
+            256
+          ],
+          "frames": 1,
+          "readout": "Merlin Quad"
+        },
+        "original_metadata": {
+          "Acquisition Type (Normal, Th_scan, Config)": "Normal",
+          "Active Counters": "Counter 0",
+          "Assembly Size (NX1, 2X2)": "   1x1",
+          "Chip ID": "W556_B4, - , - , - ",
+          "Chip Mode  (SPM, CSM, CM, CSCM)": "SPM",
+          "Chip Type (Medipix 3.0, Medipix 3.1, Medipix 3RX)": "Medipix 3RX",
+          "Counter Depth (number)": "6",
+          "DAC File": "c:\\Merlin_Quad_Config\\default\\Default_SPM.dacs,c:\\Merlin_Quad_Config\\default\\Default_SPM.dacs,c:\\Merlin_Quad_Config\\default\\Default_SPM.dacs,c:\\Merlin_Quad_Config\\default\\Default_SPM.dacs",
+          "DACs": "011,511,000,000,000,000,000,000,175,010,200,125,100,100,093,100,099,030,128,004,255,140,128,191,179,511,511; ; ; ",
+          "Dead Time File": "Dummy (C:\\<NUL>\\)",
+          "Flat Field File": "None",
+          "Frames in Acquisition (Number)": "1",
+          "Frames per Trigger (Number)": "1",
+          "Gain": "SLGM",
+          "Gap Fill Mode": "None",
+          "Humidity (%)": "Board Humidity 14.690918 ",
+          "Medipix Clock (MHz)": "180MHz",
+          "Readout System": "Merlin Quad",
+          "Sensor Bias (V)": "120 V",
+          "Sensor Polarity (Positive, Negative)": "Positive",
+          "Software Version": "0.77",
+          "Temperature (C)": "Board Temp 43.616199 Deg C",
+          "Thresholds (keV)": "2.000000E+0,5.110000E+2,0.000000E+0,0.000000E+0,0.000000E+0,0.000000E+0,0.000000E+0,0.000000E+0",
+          "Time and Date Stamp (day, mnth, yr, hr, min, s)": "15/04/2021 14:43:23",
+          "Trigger Start (Positive, Negative, Internal)": "Internal",
+          "Trigger Stop (Positive, Negative, Internal)": "Internal",
+          "bpc File": "c:\\Merlin_Quad_Config\\default\\Default_SPM.bpc,c:\\Merlin_Quad_Config\\default\\Default_SPM.bpc,c:\\Merlin_Quad_Config\\default\\Default_SPM.bpc,c:\\Merlin_Quad_Config\\default\\Default_SPM.bpc"
+        }
       }
     }
   },

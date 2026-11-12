@@ -1,6 +1,7 @@
 """EMPAD acquisitions: an XML header and the raw frame file it names, as one dataset anchored at the header."""
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -46,43 +47,84 @@ class Empad(Format):
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """Scan size or frame count, frame size, exposure and time from the header (spec formats/empad)."""
+        """Every element and attribute of the header as found, then scan size or frame
+        count, frame size, exposure and time (spec formats/empad)."""
         with open(root + dataset.anchor, "rb", buffering=0) as f:
             header = ET.fromstring(f.read(HEADER_LIMIT))
-        summary, subjects, values = [], [], {}
+        # The summary line: chosen values as the header writes them, after the
+        # element's or attribute's name, or after their name in mapped_metadata
+        # where computed (decision 230)
+        summary, subjects, mapped = [], [], {}
         # The navigation shape in RosettaSciIO 0.15.0's order: a series' count, the
         # scan's pix_x and pix_y, else the raw file's scan_x<n>_y<n> name
         raw = PurePosixPath(header.find("raw_file").attrib["filename"]).name
         series = header.findtext("scan_parameters/series_count")
+        pix = header.findtext("pix_x"), header.findtext("pix_y")
         scan = re.fullmatch(r"scan_x(\d+)_y(\d+)\.raw", raw)
         if series is not None:
-            values["frames"] = int(series)
-            summary.append(f"series of {int(series)} frames")
-        elif header.findtext("pix_x") is not None:
-            values["scan"] = [
-                int(header.findtext("pix_x")),
-                int(header.findtext("pix_y")),
-            ]
+            mapped["frames"] = int(series)
+            summary.append(f"series_count {series}")
+        elif pix[0] is not None:
+            mapped["scan"] = [int(pix[0]), int(pix[1])]
+            summary += [f"pix_x {pix[0]}", f"pix_y {pix[1]}"]
         elif scan is not None:
-            values["scan"] = [int(scan[1]), int(scan[2])]
-        if "scan" in values:
-            summary.append("scan of {}×{} positions".format(*values["scan"]))
+            mapped["scan"] = [int(scan[1]), int(scan[2])]
+            summary.append("scan {}×{}".format(*mapped["scan"]))
+        if "scan" in mapped:
             subjects.append("4D-STEM")
-        values["frame"] = list(FRAME)
-        summary.append("{}×{} pixel frames".format(*FRAME))
+        # Not in the header: the detector's, as RosettaSciIO reads it; so not in
+        # the summary line, which says what the file says
+        mapped["frame"] = list(FRAME)
         # TODO: the unit of exposure_time (1 in the headers seen, backgrounds named
         # img_exp_1); until a source says, the number goes out without one. Term:
         # "exposure time" as in ../../../GLOSSARY.md; the same for Merlin and DM.
         exposure = header.findtext("exposure_time")
         if exposure is not None:
-            values["exposure_time"] = float(exposure)
-            summary.append(f"exposure time {float(exposure):g} (unit unknown)")
+            mapped["exposure_time"] = float(exposure)
+            summary.append(f"exposure_time {exposure} (unit unknown)")
         stamp = header.find("timestamp")
         if stamp is not None and "isoformat" in stamp.attrib:
             acquired = datetime.fromisoformat(stamp.attrib["isoformat"])
-            values["acquired"] = acquired.isoformat()
-            summary.append(acquired.strftime("%Y-%m-%d %H:%M"))
+            mapped["acquired"] = acquired.isoformat()
+            summary.append(stamp.attrib["isoformat"])
+        values = {"original_metadata": entries(header), "mapped_metadata": mapped}
         return Extracted(summary=summary, subjects=subjects, values=values)
+
+
+def entries(root) -> dict[str, str]:
+    """Every attribute and text of an XML tree below its root element, as found: dotted
+    path -> text (spec formats/empad, "Every element and attribute is kept").
+
+    As in XPath, an attribute is `@name` (`timestamp.@isoformat`) and an element
+    that has siblings of its name is numbered from 1 (`scan_parameters[2].scan_size`).
+    An element without children and attributes keeps its text, empty or not
+    (decision 161); the skip list: whitespace around child elements, and the empty
+    text of an element whose attributes carry its content (`<raw_file
+    filename="…"/>`: `raw_file.@filename`, no `raw_file`).
+    """
+    found = {}
+
+    # TODO: the shared check of modama_formats_em for content not suitable for text
+    # display (too large, binary; TEMPLATE.md, "Extracting metadata"), one call per
+    # value before it goes into found, once it is merged (DM change)
+    def visit(element, path: str) -> None:
+        for name, value in element.attrib.items():
+            found[f"{path}@{name}"] = value
+        children = list(element)
+        text = element.text or ""
+        if path and (text.strip() or not (children or element.attrib)):
+            found[path[:-1]] = text
+        counts = Counter(child.tag for child in children)
+        seen = Counter()
+        for child in children:
+            seen[child.tag] += 1
+            if counts[child.tag] > 1:
+                visit(child, f"{path}{child.tag}[{seen[child.tag]}].")
+            else:
+                visit(child, f"{path}{child.tag}.")
+
+    visit(root, "")
+    return found
 
 
 # This part of the collection, for its tests; the package's COLLECTION joins the parts.
