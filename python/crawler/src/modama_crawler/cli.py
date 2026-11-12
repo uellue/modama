@@ -1,4 +1,4 @@
-"""Command line: crawl, runs, timer, serve, records, cpu-budget. Configuration from environment variables and an optional TOML file."""
+"""Command line: crawl, runs, timer, serve, records, cpu-budget, migrate. Configuration from environment variables and an optional TOML file."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
-from . import cpus, extraction, harvest, mimedb, render, selection
+from . import cpus, extraction, harvest, mimedb, render, schema, selection
 from .formats import Format, Result
 from .records import build, format_names
 from .server import OAIError, OAIServer, parse_range
@@ -28,7 +28,6 @@ from .store import (
     Run,
     Stored,
     end_run,
-    ensure_tables,
     get_run,
     last_finished,
     previous,
@@ -318,7 +317,7 @@ def cmd_crawl(args) -> int:
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
         # held until this connection ends, also if the crawler crashes
         if not try_crawl_lock(conn):
             latest = recent_runs(conn, 1)
@@ -454,7 +453,7 @@ def cmd_timer(args) -> int:
 
     signal.signal(signal.SIGTERM, stop)
     with psycopg.connect(conninfo_from_env()) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
         run_now = overdue(last_finished(conn), datetime.now(UTC))
     while True:
         if not run_now:
@@ -506,7 +505,7 @@ def _run_line(run: Run) -> str:
 def cmd_runs(args) -> int:
     """The recent crawl runs, newest first; with --follow, the running one until it ends."""
     with psycopg.connect(conninfo_from_env(), autocommit=True) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
         runs = recent_runs(conn, RUNS_SHOWN)
         if not runs:
             print("no crawl has run")
@@ -536,7 +535,7 @@ def cmd_runs(args) -> int:
 def cmd_serve(args) -> int:
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
     with ConnectionPool(conninfo, open=True) as pool:
         server = OAIServer(
             pool,
@@ -545,6 +544,13 @@ def cmd_serve(args) -> int:
         )
         run_simple(os.environ.get("OAI_BIND", "localhost"), 7654, server, threaded=True)
     return 0
+
+
+def cmd_migrate(args) -> int:
+    """Bring the database's schema to this code's (database-schema spec)."""
+    from . import migrate  # the only command that imports Alembic (D4)
+
+    return migrate.upgrade(conninfo_from_env())
 
 
 def cmd_records(args) -> int:
@@ -693,6 +699,11 @@ def main(argv: list[str] | None = None) -> int:
         help="serve the OAI-PMH endpoint on port 7654 (address from OAI_BIND, default localhost)",
     )
     serve.set_defaults(func=cmd_serve)
+    migrate = sub.add_parser(
+        "migrate",
+        help="bring the database's schema to this crawler's, then exit; the other database commands need it",
+    )
+    migrate.set_defaults(func=cmd_migrate)
     records = sub.add_parser(
         "records", help="print the ListRecords response for a path; no database needed"
     )
