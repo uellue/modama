@@ -1,0 +1,41 @@
+# Spec Delta
+
+## MODIFIED Requirements
+
+### Requirement: A finished crawl starts the harvest of its endpoint
+When `MODAMA_CRAWLER_AIRFLOW_URL` is set, `modama-crawler crawl` SHALL, after its records are committed and its run is finished, start the warehouse's harvest DAG for the endpoint `OAI_BASE_URL` with the account in `MODAMA_CRAWLER_AIRFLOW_USER` and `MODAMA_CRAWLER_AIRFLOW_PASSWORD`, also when no record changed and also after a subtree crawl, and SHALL log the started run.
+
+#### Scenario: A crawl starts the harvest
+- **WHEN** a crawl of a test tree finishes with an Airflow URL set
+- **THEN** Airflow gets a token request and a DAG run of `warehouse_harvest_and_index` with the conf `harvest_urls` = [`OAI_BASE_URL`], and stderr says `harvest of <url> started: <run>`
+
+#### Scenario: An unchanged crawl starts a harvest too
+- **WHEN** the same tree is crawled twice with an Airflow URL set
+- **THEN** two harvests are started
+
+#### Scenario: A subtree crawl starts the harvest
+- **WHEN** `crawl --path adhoc/libertem/libertem-test-data` finishes with an Airflow URL set
+- **THEN** a DAG run of `warehouse_harvest_and_index` with the same conf is started, and stderr says `harvest of <url> started: <run>`
+
+#### Scenario: No Airflow URL
+- **WHEN** a crawl finishes without `MODAMA_CRAWLER_AIRFLOW_URL`
+- **THEN** no harvest is started and the crawl exits with status 0
+
+### Requirement: The timer crawls every day
+`modama-crawler timer --at HH:MM` SHALL run `crawl` as a process of its own every day at that time (UTC) until it is stopped, logging the next time and each crawl's exit status; a time that is not `HH:MM` SHALL end it with status 2 and an error line. When it starts and the last finished crawl of the whole tree ended more than a day ago, or there is none, it SHALL crawl at once; subtree crawls SHALL NOT count for this.
+
+#### Scenario: The next crawl
+- **WHEN** the timer is set to 02:00 and it is 01:00, 02:00 or 23:30
+- **THEN** the next crawl is today at 02:00, tomorrow at 02:00 and tomorrow at 02:00
+
+#### Scenario: A time that is not HH:MM
+- **WHEN** `modama-crawler timer --at 2am` is run
+- **THEN** it exits with status 2 and `--at takes HH:MM`
+
+#### Scenario: An overdue timer crawls at once
+- **WHEN** the timer starts with no finished crawl, and its time of day is hours away
+- **THEN** it crawls at once, then waits for the time of day
+
+#### Scenario: A subtree crawl does not make the timer wait
+- **WHEN** the last crawl of the whole tree finished two days ago, a subtree crawl finished an hour ago, and the timer starts
+- **THEN** it crawls the whole tree at once
