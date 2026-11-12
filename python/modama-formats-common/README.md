@@ -4,6 +4,12 @@ Common file formats for the modama crawler (`python/crawler/`), as the format co
 
 | Format | Recognised as | Extracted |
 |---|---|---|
+| `common/json`, `common/jsonschema` | `application/json` (`*.json`, a JSON value first), `application/schema+json`; JSON Lines in a `.json` too | every value under its dotted path; several documents numbered |
+| `common/yaml` | `application/yaml` (`*.yaml`, `*.yml`) | every value under its dotted path; a stream's documents numbered |
+| `common/toml` | `application/toml` (`*.toml`) | every value under its dotted path |
+| `common/csv` | `text/csv` (`*.csv`) | the dialect, the header's names, columns and rows; no data row |
+| `common/xml` | `application/xml` (`*.xml`, `<` first), not its subtypes | every attribute and text, names with the file's prefixes |
+| `common/ini`, `common/cfg` | `text/x-ini` (`*.ini`), `text/x-config` (`*.cfg`), a `[section]` first | every `section.key` |
 
 None yet: each area (`image`, `pydata`, `office`, `text`, `structured`) is a subpackage added by its own change, with one import and one entry in `PARTS` in `src/modama_formats_common/__init__.py`, and its rows here.
 

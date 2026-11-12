@@ -1,0 +1,66 @@
+{
+  "datasets": [
+    {
+      "anchor": "/example.toml",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/toml",
+      "members": [
+        "/example.toml"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/toml",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/example.toml": {
+      "subjects": [],
+      "summary": [
+        "TOML Example",
+        "Tom Preston-Werner",
+        "1979-05-27T07:32:00-08:00",
+        "192.168.1.1",
+        "connection_max 5000",
+        "enabled true",
+        "10.0.0.1",
+        "eqdc10"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "clients.data[1]": [
+            "gamma",
+            "delta"
+          ],
+          "clients.data[2]": [
+            1,
+            2
+          ],
+          "clients.hosts": [
+            "alpha",
+            "omega"
+          ],
+          "database.connection_max": 5000,
+          "database.enabled": true,
+          "database.ports": [
+            8001,
+            8001,
+            8002
+          ],
+          "database.server": "192.168.1.1",
+          "owner.dob": "1979-05-27T07:32:00-08:00",
+          "owner.name": "Tom Preston-Werner",
+          "servers.alpha.dc": "eqdc10",
+          "servers.alpha.ip": "10.0.0.1",
+          "servers.beta.dc": "eqdc10",
+          "servers.beta.ip": "10.0.0.2",
+          "title": "TOML Example"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

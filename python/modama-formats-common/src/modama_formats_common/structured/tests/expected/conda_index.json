@@ -1,0 +1,56 @@
+{
+  "datasets": [
+    {
+      "anchor": "/index.json",
+      "basis": "single file, a JSON value first",
+      "collapsed": false,
+      "format": "common/json",
+      "members": [
+        "/index.json"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/json",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/index.json": {
+      "subjects": [],
+      "summary": [
+        "x86_64",
+        "py312h0d1d6f8_0",
+        "build_number 0",
+        "BSD-3-Clause",
+        "numpy",
+        "linux",
+        "linux-64",
+        "timestamp 1707225498123"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "documents": 1
+        },
+        "original_metadata": {
+          "arch": "x86_64",
+          "build": "py312h0d1d6f8_0",
+          "build_number": 0,
+          "depends": [
+            "libblas >=3.9.0,<4.0a0",
+            "libgcc-ng >=12",
+            "python >=3.12,<3.13.0a0",
+            "python_abi 3.12.* *_cp312"
+          ],
+          "license": "BSD-3-Clause",
+          "name": "numpy",
+          "platform": "linux",
+          "subdir": "linux-64",
+          "timestamp": 1707225498123,
+          "version": "1.26.4"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

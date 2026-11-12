@@ -1,0 +1,80 @@
+{
+  "datasets": [
+    {
+      "anchor": "/empty.json",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/empty.json"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/json",
+      "warnings": []
+    },
+    {
+      "anchor": "/keys.ini",
+      "basis": "single file; common/ini: not text/x-ini, no [section] first",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/keys.ini"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.xml",
+      "basis": "single file; common/xml: not application/xml, no < first",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.xml"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/page.json",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/page.json"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/json",
+      "warnings": []
+    },
+    {
+      "anchor": "/turtle.cfg",
+      "basis": "single file; common/cfg: not text/x-config, no [section] first",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/turtle.cfg"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": [
+    [
+      "/empty.json",
+      "common/json: empty.json is not application/json (no JSON value first), but that type does not come from its name alone; type kept"
+    ],
+    [
+      "/page.json",
+      "common/json: page.json is not application/json (no JSON value first), but that type does not come from its name alone; type kept"
+    ]
+  ]
+}

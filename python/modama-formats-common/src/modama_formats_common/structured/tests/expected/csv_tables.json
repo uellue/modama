@@ -1,0 +1,70 @@
+{
+  "datasets": [
+    {
+      "anchor": "/numbers.csv",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/csv",
+      "members": [
+        "/numbers.csv"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/csv",
+      "warnings": []
+    },
+    {
+      "anchor": "/temperature.csv",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/csv",
+      "members": [
+        "/temperature.csv"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/csv",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/numbers.csv": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {
+          "columns": 4,
+          "delimiter": ",",
+          "encoding": "utf-8",
+          "header": false,
+          "rows": 50
+        },
+        "original_metadata": {}
+      }
+    },
+    "/temperature.csv": {
+      "subjects": [],
+      "summary": [
+        "Zeit",
+        "Temperatur (\u00b0C)",
+        "Strom (A)"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "columns": 3,
+          "delimiter": ";",
+          "encoding": "latin-1",
+          "header": true,
+          "rows": 20
+        },
+        "original_metadata": {
+          "column[1]": "Zeit",
+          "column[2]": "Temperatur (\u00b0C)",
+          "column[3]": "Strom (A)"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

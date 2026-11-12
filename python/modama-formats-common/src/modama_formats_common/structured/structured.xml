@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- The vendored shared-mime-info has no type for INI files or .cfg files;
+       these are Apache Tika's (tika-mimetypes.xml, main, 2026-11-12), with
+       only the globs of this area's files: Tika's text/x-config also has
+       *.conf, *.config and *.xconf, which are not taken. Neither has a
+       signature: the formats common/ini and common/cfg check that the first
+       line that is not blank or a comment is a [section] header, and a file
+       without one gets the type it has without these globs
+       (spec formats/structured, "A name that lies falls back to the
+       content's type"). The tree's .cfg files are INI files and others
+       (pycparser's _c_ast.cfg, Python's turtle.cfg). -->
+  <mime-type type="text/x-ini">
+    <comment>INI file</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.ini"/>
+  </mime-type>
+  <mime-type type="text/x-config">
+    <comment>Configuration file</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.cfg"/>
+  </mime-type>
+</mime-info>

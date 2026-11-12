@@ -11,6 +11,10 @@ version = "0.0.1.dev0"
 dependencies = [
     # Each part adds the libraries it reads its formats with
     "modama-crawler",
+    # structured: XML of untrusted origin; current release on PyPI 2026-11-12, pure Python
+    "defusedxml==0.7.1",
+    # structured: YAML with the safe loader; current release on PyPI 2026-11-12, cp314 manylinux wheel with libyaml
+    "PyYAML==6.0.3",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},

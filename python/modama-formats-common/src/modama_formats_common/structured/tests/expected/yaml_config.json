@@ -1,0 +1,93 @@
+{
+  "datasets": [
+    {
+      "anchor": "/config.yaml",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/yaml",
+      "members": [
+        "/config.yaml"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/yaml",
+      "warnings": []
+    },
+    {
+      "anchor": "/stream.yml",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/yaml",
+      "members": [
+        "/stream.yml"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/yaml",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/config.yaml": {
+      "subjects": [],
+      "summary": [
+        "in-situ heating",
+        "2026-11-12 21:04:05.500000+01:00",
+        "K2 IS",
+        "exposure_s 0.0025",
+        "temperature_C 300",
+        "hold_min 10",
+        "temperature_C 500",
+        "hold_min 5"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "documents": 1
+        },
+        "original_metadata": {
+          "detector.binning": [
+            2,
+            2
+          ],
+          "detector.exposure_s": 0.0025,
+          "detector.model": "K2 IS",
+          "name": "in-situ heating",
+          "notes": "",
+          "spare": null,
+          "started": "2026-11-12 21:04:05.500000+01:00",
+          "steps[1].hold_min": 10,
+          "steps[1].temperature_C": 300,
+          "steps[2].hold_min": 5,
+          "steps[2].temperature_C": 500
+        }
+      }
+    },
+    "/stream.yml": {
+      "subjects": [],
+      "summary": [
+        "run",
+        "id 1",
+        "id 2",
+        "end"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "documents": 3
+        },
+        "original_metadata": {
+          "[1].id": 1,
+          "[1].kind": "run",
+          "[2].id": 2,
+          "[2].kind": "run",
+          "[2].tags": [
+            "dark",
+            "gain"
+          ],
+          "[3].kind": "end"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
