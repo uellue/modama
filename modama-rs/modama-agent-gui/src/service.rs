@@ -341,7 +341,14 @@ impl AgentService for HttpAgentService {
             self.runtime
                 .block_on(self.client().list_sessions_in_project(project)),
         )?;
-        Ok(response.sessions)
+        Ok(newest_first(
+            response.sessions,
+            response
+                .session_summaries
+                .into_iter()
+                .flatten()
+                .map(|summary| (summary.name, summary.modified_at)),
+        ))
     }
 
     fn create_session(
@@ -403,6 +410,8 @@ struct StubState {
     foreground: ForegroundSession,
     /// Folders the GUI asked to show in the file manager, oldest first
     opened_folders: Vec<String>,
+    /// The ingest shares the GUI asked to stop, oldest first
+    stopped_shares: Vec<String>,
 }
 
 pub struct StubAgentService {
@@ -435,6 +444,14 @@ impl StubAgentService {
         match self.state.lock() {
             Ok(state) => state.opened_folders.clone(),
             Err(poisoned) => poisoned.into_inner().opened_folders.clone(),
+        }
+    }
+
+    /// The ingest shares the GUI asked to stop, by share ID, oldest first
+    pub fn stopped_shares(&self) -> Vec<String> {
+        match self.state.lock() {
+            Ok(state) => state.stopped_shares.clone(),
+            Err(poisoned) => poisoned.into_inner().stopped_shares.clone(),
         }
     }
 
@@ -515,7 +532,7 @@ impl AgentService for StubAgentService {
         _project: &str,
     ) -> Result<Vec<String>, ServiceError> {
         self.delay();
-        Ok(["16", "18", "20", "26"]
+        Ok(["26", "20", "18", "16"]
             .into_iter()
             .map(|day| format!("2026-06-{day}-holo-stacks"))
             .collect())
@@ -578,13 +595,39 @@ impl AgentService for StubAgentService {
         if state.foreground.share_id() == Some(&session.share_id) {
             state.foreground = ForegroundSession::None;
         }
+        state.stopped_shares.push(session.share_id.clone());
         Ok(())
     }
+}
+
+/// The session names, the last modified first. Sessions without a modification time (all of
+/// them, from an agent that doesn't send any) keep their order, after the others.
+fn newest_first(
+    names: Vec<String>,
+    modified_at: impl IntoIterator<Item = (String, i64)>,
+) -> Vec<String> {
+    let modified_at: std::collections::HashMap<String, i64> = modified_at.into_iter().collect();
+    let mut names = names;
+    names.sort_by_key(|name| std::cmp::Reverse(modified_at.get(name).copied()));
+    names
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sessions_are_listed_last_modified_first() {
+        let names = ["a", "b", "c", "d"].map(String::from).to_vec();
+        let modified_at = [("a", 10), ("b", 30), ("c", 20)].map(|(n, t)| (n.to_owned(), t));
+        assert_eq!(newest_first(names, modified_at), ["b", "c", "a", "d"]);
+    }
+
+    #[test]
+    fn sessions_keep_their_order_without_modification_times() {
+        let names = ["b", "a", "c"].map(String::from).to_vec();
+        assert_eq!(newest_first(names, []), ["b", "a", "c"]);
+    }
 
     fn credentials(username: &str) -> Credentials {
         Credentials {

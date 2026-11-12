@@ -6,7 +6,9 @@ own files are used where they can run here, the harvester's XSLT and the
 warehouse's transformation functions, loaded from the pinned submodules (a
 read-only mount in the stack); the rest is emulated with the file and lines
 it follows, in each function's docstring and in `SOURCES`, which the page
-shows.
+shows. Each emulation of a service declares the version and patches it
+follows (`HIT`, `ENTRY`), which `sync.py` compares with what the search stack
+builds.
 """
 
 from __future__ import annotations
@@ -20,40 +22,9 @@ from types import ModuleType
 
 from lxml import etree
 
-OAI_NS = "http://www.openarchives.org/OAI/2.0/"
+from .sync import Follows
 
-# Shown on the page next to each view: what runs, and where it comes from
-SOURCES = {
-    "datacite": (
-        "actual code",
-        (
-            "upstream's dc_to_datacite.xsl (metadata-crawlers 9c120f5, the Airflow image's"
-            " HARVESTER_REF); the call emulated from harvester/harvester_oaipmh.py:21-35, 77-86"
-        ),
-    ),
-    "document": (
-        "actual code",
-        (
-            "the warehouse's handle_xml, normalize_datacite_json and config/schema.json"
-            " (metadata-warehouse v1.10.0); the loop body of transform/transform_core.py:149-188"
-            " and the fields of utils/embedding_utils.py:70-76 emulated; no `emb`"
-        ),
-    ),
-    "hit": (
-        "emulated",
-        (
-            "SearchHit of data-commons-search 0.10.2 (the image's"
-            " src/data_commons_search/models.py:131-251), as /search serialises it; no score"
-        ),
-    ),
-    "entry": (
-        "emulated",
-        (
-            "matchmaker 0.14.0 (e7138c8, patches 0001-0003): src/components/CitedDatasets.tsx:69-115,"
-            " SearchResultItem.tsx:27-152, src/lib/utils.ts:65-89, 188-210, repoProvenance.ts:160-171"
-        ),
-    ),
-}
+OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 
 
 class Upstream:
@@ -137,6 +108,13 @@ class Upstream:
         }
 
 
+# What search_hit follows: the search API's image version and our patches/search-api/ (sync.py)
+HIT = Follows(
+    "search-api",
+    "0.10.2",
+    "907335c419cb60905a59874cef4fe2693f52faa11abcf3c7de0dd09ca5abce04",
+)
+
 # SearchHitSrc and its nested models (models.py:131-179): field -> default, by alias, as FastAPI dumps them
 _CREATOR = {"creatorName": None}  # extra fields kept (model_config extra="allow")
 _SUBJECT = {
@@ -215,6 +193,13 @@ def search_hit(doc_id: str, source: dict, score: float | None = None) -> dict:
 
 
 # matchmaker's cited dataset entry, expanded: the values it shows (D10)
+
+# What cited_entry follows: matchmaker's commit and our patches/matchmaker/ (sync.py)
+ENTRY = Follows(
+    "matchmaker",
+    "e7138c898926ebb79e45dd7d20cbf838dcf5dbe5",
+    "d4ef3bf6203bf7469bf9c23b877eabced0ff443fd9f08269facbf1da8d41f6f9",
+)
 
 DESCRIPTION_LIMIT = 300  # SearchResultItem.tsx:67
 AUTHORS_SHOWN = 3  # :74
@@ -299,3 +284,40 @@ def cited_entry(hit: dict, number: int = 1) -> dict:
         "subjects": subjects[:SUBJECTS_SHOWN],
         "subjects_more": max(0, len(subjects) - SUBJECTS_SHOWN),
     }
+
+
+# The emulations of a service, by view key, with what they follow (sync.py checks them)
+FOLLOWS = {"hit": HIT, "entry": ENTRY}
+
+# Shown on the page next to each view: what runs, and where it comes from
+SOURCES = {
+    "datacite": (
+        "actual code",
+        (
+            "upstream's dc_to_datacite.xsl (metadata-crawlers 9c120f5, the Airflow image's"
+            " HARVESTER_REF); the call emulated from harvester/harvester_oaipmh.py:21-35, 77-86"
+        ),
+    ),
+    "document": (
+        "actual code",
+        (
+            "the warehouse's handle_xml, normalize_datacite_json and config/schema.json"
+            " (metadata-warehouse v1.10.0); the loop body of transform/transform_core.py:149-188"
+            " and the fields of utils/embedding_utils.py:70-76 emulated; no `emb`"
+        ),
+    ),
+    "hit": (
+        "emulated",
+        (
+            f"SearchHit of {HIT.short()} (the image's"
+            " src/data_commons_search/models.py:131-251), as /search serialises it; no score"
+        ),
+    ),
+    "entry": (
+        "emulated",
+        (
+            f"{ENTRY.short()}: src/components/CitedDatasets.tsx:69-115,"
+            " SearchResultItem.tsx:27-152, src/lib/utils.ts:65-89, 188-210, repoProvenance.ts:160-171"
+        ),
+    ),
+}

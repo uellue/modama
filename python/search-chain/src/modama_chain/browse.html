@@ -33,6 +33,7 @@ textarea.message { display: block; width: 100%; max-width: 60em; margin: 4px 0; 
 .tag.stored { background: var(--stored); } .tag.actual { background: var(--actual); } .tag.emulated { background: var(--emulated); }
 .origin { font-size: 11px; color: var(--muted); padding: 2px 8px; }
 .note { font-size: 12px; padding: 2px 8px; color: #9a6700; white-space: pre-wrap; }
+.sync { font-size: 13px; font-weight: 600; padding: 4px 8px; color: #82071e; background: #ffebe9; border-bottom: 1px solid #ff8182; }
 pre { margin: 0; padding: 6px 8px; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; }
 .empty { padding: 6px 8px; color: var(--muted); }
 /* matchmaker's cited dataset row, expanded (CitedDatasets.tsx:69-115, SearchResultItem.tsx:51-152) */
@@ -54,14 +55,14 @@ pre { margin: 0; padding: 6px 8px; font: 12px/1.35 ui-monospace, monospace; whit
 <body>
 <div id="left">
   <div id="crumbs"></div>
-  <input id="filter" placeholder="filter (/)" autocomplete="off" spellcheck="false">
+  <input id="filter" placeholder="filter" autocomplete="off" spellcheck="false">
   <div id="count"></div>
-  <div id="list" tabindex="0"><div id="spacer"></div></div>
+  <div id="list"><div id="spacer"></div></div>
 </div>
 <div id="right">
   <div id="head"></div>
   <div id="views"></div>
-  <p class="muted">Click a folder to open it, a file to see its views; the path above goes up. Keys: ↑ ↓ move, Enter or → open a folder, ← or Backspace up, / filter, Esc leave the filter.</p>
+  <p class="muted">Click a folder to open it, a file to see its views; the path above goes up.</p>
 </div>
 <script>
 "use strict";
@@ -164,28 +165,6 @@ function select(i) {
   timer = setTimeout(() => views(selectedPath()), 300);
 }
 
-function up() {
-  if (dir === "/") return;
-  const parent = dir.slice(0, dir.slice(0, -1).lastIndexOf("/") + 1);
-  const name = dir.slice(parent.length, -1);
-  history.pushState(null, "", `?path=${encodeURIComponent(parent + name)}`);
-  openDir(parent, name, false);
-}
-
-document.addEventListener("keydown", e => {
-  if (e.target === $("filter")) {
-    if (e.key === "Escape" || e.key === "Enter" || e.key === "ArrowDown") { $("list").focus(); if (e.key !== "Escape") select(0); e.preventDefault(); }
-    return;
-  }
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const page = Math.floor($("list").clientHeight / ROW);
-  const keys = {ArrowDown: () => select(sel + 1), ArrowUp: () => select(Math.max(0, sel - 1)), PageDown: () => select(Math.min(shown.length - 1, sel + page)),
-    PageUp: () => select(Math.max(0, sel - page)), Home: () => select(0), End: () => select(shown.length - 1),
-    ArrowLeft: up, Backspace: up, "/": () => $("filter").focus(),
-    ArrowRight: () => sel >= 0 && isFolder(shown[sel]) && openDir(dir + shown[sel][0] + "/", null, true)};
-  keys.Enter = keys.ArrowRight;
-  if (keys[e.key]) { keys[e.key](); e.preventDefault(); }
-});
 $("filter").addEventListener("input", () => filter(null));
 $("list").addEventListener("scroll", draw);
 window.addEventListener("resize", draw);
@@ -241,7 +220,9 @@ function views(path) {
 
 function cell(v) {
   const cls = {"stored": "stored", "actual code": "actual", "emulated": "emulated"}[v.source];
-  const out = [el("h2", {}, v.title, el("span", {class: `tag ${cls}`}, v.source)), el("div", {class: "origin"}, v.origin)];
+  const out = [el("h2", {}, v.title, el("span", {class: `tag ${cls}`}, v.source))];
+  if (v.out_of_sync) out.push(el("div", {class: "sync"}, "⚠ " + v.out_of_sync));
+  out.push(el("div", {class: "origin"}, v.origin));
   if (v.note) out.push(el("div", {class: "note"}, v.note));
   if (v.entry) out.push(entry(v.entry));
   else if (v.text) out.push(el("pre", {}, v.text));

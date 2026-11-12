@@ -16,6 +16,23 @@ Start integration test files (`tests/*.rs`, including the visual tests) with
 `#![cfg(test)]`: otherwise clippy doesn't count their helper functions as test
 code, and `allow-unwrap-in-tests` doesn't apply to them.
 
+## Integration tests
+
+Run `just integration-tests` (see "Run the integration tests" in DEV.md) after
+changing how the components talk to each other: smbdrop's HTTP API or event
+channel, the agent's local API, or the agent's use of the management API. They
+are not part of CI, so nothing else catches it when they break. Run them in the
+background; the first start compiles the workspace in the containers.
+
+The GUI's end-to-end tests (`modama-agent-gui/tests/e2e_*.rs`) run there too.
+Add one only for what the unit and visual tests can't catch: a flow across the
+GUI, the agent, the session helper and the services. One test per flow, with
+few, telling checks; texts and layout belong in the visual tests.
+
+A failure can come from the tests being out of date rather than from the change:
+check what the test expects against the current behavior, and fix the test if
+it is outdated. Say which tests you changed and why.
+
 ## Visual tests for GUI development
 
 Run visual tests via `just`; otherwise, required workaround(s) for issues
@@ -42,6 +59,9 @@ difference looks like any other.
 When reviewing differences, look at the snapshots with the largest pixel
 difference first (the test output reports each one's size); don't conclude
 from a sample.
+
+CI's images of a pull request's failing visual tests are on the branch
+`ci-snapshot-review`, under `pr-<number>/`.
 
 ## Shape of UI changes
 

@@ -459,7 +459,7 @@ ssh -N -L 17655:127.0.0.1:17655 <you>@<server>
 ```
 
 Then http://localhost:17655/?path=/adhoc/ (any folder or file of the tree after `?path=`).
-↑/↓ move, Enter or → opens a folder, ← goes up, `/` filters. A file's live views show how
+By mouse: a click opens a folder or shows a file, the path above goes up. A file's live views show how
 long they took: please note the time once for a file in one of the largest folders (67,600
 files, `.claude/survey/series-candidates.tsv`); the VM cannot show what sniffing costs over
 NFS. An edit to a format, an extractor, `records.py` or `render.py` in the checkout shows on

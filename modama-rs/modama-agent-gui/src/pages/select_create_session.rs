@@ -19,6 +19,7 @@ use crate::{
     async_state::AsyncState,
     components::{
         buttons::{ButtonVariant, loading_button, primary_button, secondary_button},
+        dialogs::{ChoiceDialogAction, DialogChoice, choice_dialog},
         display_error,
         flow_navigation::{FlowStage, flow_navigation},
         forms::labeled_text_input,
@@ -34,8 +35,13 @@ use crate::{
 pub enum CreateSessionError {
     #[error("Please enter a session name.")]
     EmptyName,
-    #[error("Session name cannot contain a \"/\".")]
-    ContainsSlash,
+    #[error(
+        "Session names can only contain letters A-Z, digits, spaces, \".\", \"_\" and \"-\", \
+         not \"{0}\"."
+    )]
+    InvalidCharacter(char),
+    #[error("Session names can be up to {MAX_SESSION_NAME_LENGTH} characters long.")]
+    TooLong,
     #[error("{0}")]
     Server(String),
     #[error("Session was created, but the ingest share could not be started: {0}")]
@@ -76,7 +82,13 @@ pub struct PageSelectCreateSession {
     /// Operation identity paired with the public async task fields in test fixtures.
     pub start_operation_id: Option<OperationId>,
     started_action: Option<Box<Action>>,
+    /// The existing session the user asked to create, while the page asks whether to ingest
+    /// into it
+    existing_session_confirmation: Option<String>,
+    focus_existing_cancel: bool,
 }
+
+const EXISTING_SESSION_DIALOG_ID: &str = "existing-session-confirmation";
 
 impl PageSelectCreateSession {
     pub fn new(project: String) -> Self {
@@ -112,6 +124,8 @@ impl PageSelectCreateSession {
             signed_in,
             start_operation_id: None,
             started_action: None,
+            existing_session_confirmation: None,
+            focus_existing_cancel: false,
         }
     }
 
@@ -144,11 +158,16 @@ impl PageSelectCreateSession {
             SessionPageMode::SelectExisting => self.show_session_selection(ui),
             SessionPageMode::CreateNew => self.show_create_form(ui),
         }
+        self.show_existing_session_confirmation(ui);
 
         self.take_started_action()
     }
 
     fn handle_keyboard_shortcuts(&mut self, ui: &mut egui::Ui) {
+        if self.existing_session_confirmation.is_some() {
+            // the dialog handles its keys
+            return;
+        }
         let command_n =
             ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::N));
         if self.mode == SessionPageMode::SelectExisting
@@ -406,10 +425,55 @@ impl PageSelectCreateSession {
     }
 
     fn start_new_session(&mut self, ctx: egui::Context) {
-        if self.create_session_task.is_pending() {
+        if self.create_session_task.is_pending() || self.existing_session_confirmation.is_some() {
+            return;
+        }
+        let name = self.new_session_input.trim();
+        if self
+            .available_sessions
+            .iter()
+            .any(|session| session == name)
+        {
+            self.existing_session_confirmation = Some(name.to_owned());
+            self.focus_existing_cancel = true;
             return;
         }
         self.spawn_create_session_task(self.new_session_input.clone(), ctx);
+    }
+
+    fn show_existing_session_confirmation(&mut self, ui: &mut egui::Ui) {
+        let Some(session) = self.existing_session_confirmation.clone() else {
+            return;
+        };
+        let message = format!(
+            "The session {session} exists already in project {}. Start the ingest into it?",
+            self.project
+        );
+        let action = choice_dialog(
+            ui.ctx(),
+            ui.visuals(),
+            EXISTING_SESSION_DIALOG_ID,
+            "Session exists already",
+            &message,
+            &[DialogChoice {
+                label: "Use existing session",
+                variant: ButtonVariant::Primary,
+                value: (),
+            }],
+            self.focus_existing_cancel,
+        );
+        self.focus_existing_cancel = false;
+        match action {
+            ChoiceDialogAction::None => {}
+            ChoiceDialogAction::Cancel => {
+                self.existing_session_confirmation = None;
+                self.focus_target = SessionFocusTarget::SessionName;
+            }
+            ChoiceDialogAction::Choose(()) => {
+                self.existing_session_confirmation = None;
+                self.spawn_create_session_task(session, ui.ctx().clone());
+            }
+        }
     }
 
     pub fn poll(&mut self) -> Action {
@@ -579,7 +643,7 @@ impl PageSelectCreateSession {
             move || {
                 service
                     .create_session(&signed_in, &project, &session)
-                    .map_err(|error| CreateSessionError::Server(error.to_string()))?;
+                    .map_err(|error| CreateSessionError::Server(refusal_message(error)))?;
                 service
                     .start_ingest(&signed_in, &project, &session)
                     .map_err(|error| CreateSessionError::Start(error.to_string()))
@@ -847,12 +911,30 @@ fn centered_loading(ui: &mut egui::Ui, height: f32) {
     content_ui.label(RichText::new(loading_text).font(styles::typography::body::font_id()));
 }
 
+/// What to show for a failed request: a refusal (4xx) in the server's words, without the
+/// status code; anything else as the error says it
+fn refusal_message(error: ServiceError) -> String {
+    match error {
+        ServiceError::Server { status, message } if (400..500).contains(&status) => message,
+        error => error.to_string(),
+    }
+}
+
+/// The management API's limit for a session name (`CreateSessionRequest.name`)
+const MAX_SESSION_NAME_LENGTH: usize = 255;
+
+/// The management API's rule for session names (`CreateSessionRequest.name` in its OpenAPI
+/// document: `^[A-Za-z0-9 ._-]+$`, up to 255 characters), checked before sending, so the user
+/// gets a sentence instead of the API's refusal
 fn validate_session_name(input: &str) -> Result<String, CreateSessionError> {
     let trimmed = input.trim();
+    let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-');
     if trimmed.is_empty() {
         Err(CreateSessionError::EmptyName)
-    } else if trimmed.contains('/') {
-        Err(CreateSessionError::ContainsSlash)
+    } else if let Some(invalid) = trimmed.chars().find(|c| !allowed(*c)) {
+        Err(CreateSessionError::InvalidCharacter(invalid))
+    } else if trimmed.chars().count() > MAX_SESSION_NAME_LENGTH {
+        Err(CreateSessionError::TooLong)
     } else {
         Ok(trimmed.to_owned())
     }
@@ -922,7 +1004,49 @@ mod tests {
         );
         assert_eq!(
             validate_session_name("2026-07-30/run"),
-            Err(CreateSessionError::ContainsSlash)
+            Err(CreateSessionError::InvalidCharacter('/'))
+        );
+        assert_eq!(
+            validate_session_name("2026-11-10-second run Müller"),
+            Err(CreateSessionError::InvalidCharacter('ü'))
+        );
+        assert_eq!(
+            validate_session_name("2026-11-10 run_2.b-c"),
+            Ok("2026-11-10 run_2.b-c".to_owned())
+        );
+        assert_eq!(
+            validate_session_name(&"a".repeat(MAX_SESSION_NAME_LENGTH)),
+            Ok("a".repeat(MAX_SESSION_NAME_LENGTH))
+        );
+        assert_eq!(
+            validate_session_name(&"a".repeat(MAX_SESSION_NAME_LENGTH + 1)),
+            Err(CreateSessionError::TooLong)
+        );
+    }
+
+    #[test]
+    fn a_refusal_is_shown_in_the_servers_words() {
+        let refused = ServiceError::Server {
+            status: 422,
+            message: "name: String should match pattern".to_owned(),
+        };
+        assert_eq!(
+            refusal_message(refused),
+            "name: String should match pattern"
+        );
+        let failed = ServiceError::Server {
+            status: 502,
+            message: "unreachable".to_owned(),
+        };
+        assert_eq!(refusal_message(failed), "server error (502): unreachable");
+    }
+
+    #[test]
+    fn invalid_characters_are_named_in_the_message() {
+        assert_eq!(
+            CreateSessionError::InvalidCharacter('ü').to_string(),
+            "Session names can only contain letters A-Z, digits, spaces, \".\", \"_\" and \"-\", \
+             not \"ü\"."
         );
     }
 

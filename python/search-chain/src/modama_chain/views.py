@@ -13,7 +13,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from . import chain, crawler, live, upstream, warehouse
+from . import chain, crawler, live, sync, upstream, warehouse
 from .warehouse import Unreachable
 
 STORED, ACTUAL, EMULATED = "stored", "actual code", "emulated"
@@ -29,6 +29,7 @@ class View:
     text: str = ""  # the content: XML or JSON
     note: str = ""  # what to know about it: missing, differs, an error
     entry: dict | None = field(default=None)  # the matchmaker entry's values
+    out_of_sync: str = ""  # an emulation's warning from sync.py, empty when in sync
 
 
 def pretty_json(value) -> str:
@@ -239,6 +240,14 @@ def live_views(
     hit.text = pretty_json(the_hit)
     entry.entry = upstream.cited_entry(the_hit)
     return views
+
+
+def check_sync(found: list[View], stack: Path) -> list[View]:
+    """Marks each emulation of a service whose declaration differs from what the search stack in `stack` builds."""
+    for v in found:
+        if v.source == EMULATED and v.key in upstream.FOLLOWS:
+            v.out_of_sync = sync.out_of_sync(stack, upstream.FOLLOWS[v.key])
+    return found
 
 
 def as_dicts(views: list[View]) -> list[dict]:

@@ -197,6 +197,13 @@ services:
       - ../EOSC-Data-Commons/metadata-crawlers/harvester:/upstream/metadata-crawlers/harvester:ro
       - ../EOSC-Data-Commons/metadata-warehouse/src:/upstream/metadata-warehouse/src:ro
       - ../EOSC-Data-Commons/metadata-warehouse/config:/upstream/metadata-warehouse/config:ro
+      # what this stack builds of the search API and matchmaker, against which the page
+      # checks its emulations (search-chain's sync.py); these files only, not this folder
+      # (staging.env). Single files keep their content until `restart browse`.
+      - ./search-api.Dockerfile:/upstream/search-stack/search-api.Dockerfile:ro
+      - ./matchmaker.Dockerfile:/upstream/search-stack/matchmaker.Dockerfile:ro
+      - ./patches/search-api:/upstream/search-stack/patches/search-api:ro
+      - ./patches/matchmaker:/upstream/search-stack/patches/matchmaker:ro
     depends_on:
       crawler-db:
         condition: service_healthy
