@@ -23,7 +23,7 @@ Common file formats for the modama crawler (`python/crawler/`), as the format co
 | YAML (`structured`) | `application/yaml` (`*.yaml`, `*.yml`; `common/yaml`) | every value under its dotted path, keys and values as written; a stream's documents numbered |
 | TOML (`structured`) | `application/toml` (`*.toml`; `common/toml`) | every value under its dotted path |
 | CSV (`structured`) | `text/csv` (`*.csv`; `common/csv`) | the dialect, the header's names, columns and rows; no data row |
-| XML (`structured`) | `application/xml` (`*.xml`, `<` first; `common/xml`), not its subtypes | every attribute and text, names with the file's prefixes |
+| XML (`structured`) | `application/xml` (`*.xml`, `<` first; `common/xml`), not its subtypes | every attribute and text, names with the file's prefixes; a text with a line break without its leading and trailing whitespace (pretty-printing) |
 | INI, `.cfg` (`structured`) | `text/x-ini` (`*.ini`), `text/x-config` (`*.cfg`), a `[section]` first (`common/ini`, `common/cfg`) | every `section.key` |
 | NumPy `.npy` (`pydata`) | `application/x-npy`, by its magic (`common/npy`) | the header (`numpy.lib.format`): `descr`, `fortran_order`, `shape`, version |
 | NumPy `.npz` (`pydata`) | `application/x.npz`, by name, checked for a ZIP (`common/npz`) | each array's header, by NumPy's key |

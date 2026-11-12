@@ -251,6 +251,18 @@ def test_a_default_namespace_and_a_prefixed_attribute(collection_tests, tmp_path
     assert d.mapped == {"root": "MicroscopeImage", "namespace": "urn:a"}
 
 
+def test_pretty_printing_is_not_content(collection_tests, tmp_path):
+    qe = described(collection_tests, "qe_pbtio3", tmp_path / "a")["/PbTiO3_scf.xml"]
+    assert qe.original["input.symmetry_flags.use_all_frac"] == "false"
+    d = one(
+        collection_tests,
+        tmp_path / "b",
+        "spaces.xml",
+        "<r><a> a </a><b>\n  1   2\n</b></r>",
+    )
+    assert d.original == {"a": " a ", "b": "1   2"}
+
+
 def test_an_xml_element_nobody_has_seen_before(collection_tests, tmp_path):
     d = one(
         collection_tests,

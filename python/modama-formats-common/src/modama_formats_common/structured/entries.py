@@ -72,6 +72,12 @@ def of_documents(documents: list) -> Iterator[tuple[str, object]]:
         yield from of_data(document, f"[{i}]")
 
 
+def unindented(text: str) -> str:
+    """An XML text as kept: without its leading and trailing whitespace where it
+    has a line break (pretty-printing is not content, decision 243b), else as written."""
+    return text.strip() if "\n" in text else text
+
+
 def of_xml(root) -> Iterator[tuple[str, str]]:
     """(path, text) of every attribute and text of an XML tree below its root, in document order.
 
@@ -80,7 +86,8 @@ def of_xml(root) -> Iterator[tuple[str, str]]:
     for siblings of one name only, an element without children and attributes
     with its text (empty too), other text that is not whitespace as `#text`
     (the root's) or beside the children, the text after an element as
-    `#tail`. Names as the tree holds them (structured.parse_xml qualifies them).
+    `#tail`; a text with a line break without its leading and trailing
+    whitespace. Names as the tree holds them (structured.parse_xml qualifies them).
     """
 
     def visit(element, path: str) -> Iterator[tuple[str, str]]:
@@ -89,7 +96,7 @@ def of_xml(root) -> Iterator[tuple[str, str]]:
         children = list(element)
         text = element.text or ""
         if text.strip() or (path and not (children or element.attrib)):
-            yield path[:-1] or "#text", text
+            yield path[:-1] or "#text", unindented(text)
         counts = Counter(child.tag for child in children)
         seen = Counter()
         for child in children:
@@ -100,7 +107,7 @@ def of_xml(root) -> Iterator[tuple[str, str]]:
                 inner = f"{path}{child.tag}"
             yield from visit(child, f"{inner}.")
             if child.tail and child.tail.strip():
-                yield f"{inner}#tail", child.tail
+                yield f"{inner}#tail", unindented(child.tail)
 
     yield from visit(root, "")
 
