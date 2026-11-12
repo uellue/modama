@@ -25,6 +25,10 @@
       ],
       "values": {
         "mapped_metadata": {
+          "dpi": [
+            299.9994,
+            299.9994
+          ],
           "height": 48,
           "mode": "L",
           "width": 64
@@ -34,11 +38,7 @@
           "Comment": "",
           "Description": "Written for the crawler's tests",
           "Software": "Pillow",
-          "Title": "A test pattern",
-          "dpi": [
-            299.9994,
-            299.9994
-          ]
+          "Title": "A test pattern"
         }
       }
     }

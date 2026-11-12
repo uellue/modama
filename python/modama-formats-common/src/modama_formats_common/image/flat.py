@@ -49,18 +49,18 @@ def plain(value):
 
 def entries(
     items: Iterable[tuple[str, object]],
-    skipped: Callable[[str], bool] = lambda name: False,
+    skipped: Callable[[str, object], bool] = lambda name, value: False,
     prefix: str = "",
 ) -> Iterator[tuple[str, object]]:
     """(dotted name, value) of each item and of everything in its dicts, as found,
-    but the names skipped() names and values not suitable for text (values.textual).
+    but those skipped(name, value) names and values not suitable for text (values.textual).
 
     A dict's entries go under `<name>.<key>`; a list that holds dicts under
     `<name>[<index>]`. An empty value is kept (decision 161).
     """
     for key, value in items:
         name = f"{prefix}{key}"
-        if skipped(name):
+        if skipped(name, value):
             continue
         if isinstance(value, dict):
             yield from entries(value.items(), skipped, f"{name}.")

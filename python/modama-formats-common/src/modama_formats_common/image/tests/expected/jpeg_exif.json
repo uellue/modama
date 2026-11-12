@@ -27,16 +27,16 @@
       ],
       "values": {
         "mapped_metadata": {
+          "dpi": [
+            72,
+            72
+          ],
           "height": 48,
           "mode": "RGB",
           "width": 64
         },
         "original_metadata": {
           "comment": "made for a test",
-          "dpi": [
-            72,
-            72
-          ],
           "exif.50943": "new value",
           "exif.DateTime": "2026:11:12 18:00:00",
           "exif.Exif.DateTimeOriginal": "2026:11:12 17:59:58",

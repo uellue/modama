@@ -17,5 +17,5 @@
 
 - [x] 3.1 README table rows; BACKLOG: Pillow's `getexif` under "Sync with upstream", what is left under the deferred items. Verify: by reading.
 - [x] 3.2 Checks as CI runs them: `uvx ruff format --check --diff` and `uvx ruff check` from the repository root (only the known errors in `prototypes/*.ipynb`); `pytest src` in `python/modama-formats-common`; the crawler suite.
-- [ ] 3.3 Independent review (main starts it), findings applied.
+- [x] 3.3 Independent review (main, 2026-11-12), findings applied (proposal, "From the review", 12 to 16). Verify: `test_an_svg_file_with_one_large_element`, `test_a_broken_small_svg_file`, `test_what_an_svg_files_values_leave_out`, `test_a_header_of_more_than_pillows_pixel_limit`, `test_an_oversize_compressed_text_chunk`, `test_imagejs_info_line_by_line`, `test_imagejs_info_with_lines_of_another_form`, `test_exif_fields_of_type_undefined_as_text`, `test_the_text_chunks_of_a_png_file` (dpi in `mapped_metadata`), `test_the_fei_metadata_of_an_sem_image` (`first_page_shape`); recorded results re-recorded and reviewed.
 - [ ] 3.4 Real files: `modama-chain browse` on staging's images (@weber), the summary lines and values of FEI/Thermo, Zeiss, ImageJ and DM-exported TIFFs, the EPU fractions' read sizes.

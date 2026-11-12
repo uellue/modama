@@ -26,7 +26,7 @@ generator = "modama_formats_common.image.tests.generate:tifffile_tiff"
 [camera_jpeg]
 purpose = "representative"
 validity = "vendor-written: a 480x360 JPEG from a Canon PowerShot S40 (2003), with EXIF (IFD0, Exif IFD with MakerNote and UserComment, Interop IFD, IFD1 with a thumbnail) and JFIF; read by Pillow 13.0.0 on 2026-11-12"
-licence = "MIT-CMU, Pillow's licence (LICENSE.fixtures beside this file); the Pillow repository names no separate licence for its test images"
+licence = "MIT-CMU (HPND), Pillow's licence (LICENSE.fixtures beside this file). The Pillow repository names no separate licence for its test images; Debian reviewed their copyright (Debian bug 952899, Pillow issue https://github.com/python-pillow/Pillow/issues/4591) and its pillow 13.0.0-1 debian/copyright puts them under `Files: *`, License HPND, excluding only Tests/icc, Tests/images/a.fli and the McIDAS images, not flower.jpg (checked 2026-11-12 on sources.debian.org)"
 source = "Pillow test data at tag 13.0.0, Tests/images/flower.jpg, sha256 8a9d04b92d0de5836c59ede8ae421235488e4031e893e07b1fe7e4b78f6a9901, unchanged"
 
 [jpeg_exif]

@@ -33,7 +33,7 @@
         "mapped_metadata": {
           "axes": "YX",
           "dtype": "uint8",
-          "shape": [
+          "first_page_shape": [
             384,
             512
           ]

@@ -5,6 +5,7 @@ Run with -s to see the bytes each extraction of a large file read.
 
 import time
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
 
 import numpy as np
 import pytest
@@ -128,7 +129,7 @@ def test_the_fei_metadata_of_an_sem_image(collection_tests, tmp_path):
     assert found["Compression"] == "NONE"
     assert found["XResolution"] == [64, 1]
     assert values["mapped_metadata"] == {
-        "shape": [471, 512],
+        "first_page_shape": [471, 512],
         "dtype": "uint8",
         "axes": "YX",
     }
@@ -145,6 +146,27 @@ def test_an_image_saved_by_imagej(collection_tests, tmp_path):
     assert found["imagej_metadata.ImageJ"] == "1.51a"
     assert found["imagej_metadata.unit"] == "micron"
     assert not [n for n in found if n.startswith(("ImageDescription", "IJMetadata"))]
+
+
+def test_imagejs_info_line_by_line(collection_tests, tmp_path):
+    # The fixture's Info: a DM file's 274 tags as `root.X = value` lines
+    values = extracted(collection_tests, "imagej", tmp_path).values
+    found = values["original_metadata"]
+    assert found["imagej_metadata.Info.root.ApplicationBounds"] == "{0,0,701,1276}"
+    assert len([n for n in found if n.startswith("imagej_metadata.Info.")]) == 274
+    assert "imagej_metadata.Info" not in found
+    assert "imagej_info_lines_left_out" not in values["mapped_metadata"]
+
+
+def test_imagejs_info_with_lines_of_another_form(tmp_path):
+    path = tmp_path / "info.tif"
+    text = "Exposure = 0.5\nfree text\n[a section]\nGain = 2"
+    tifffile.imwrite(path, generate.pattern(8, 8), imagej=True, metadata={"Info": text})
+    values = of_file(path).values
+    found = values["original_metadata"]
+    assert found["imagej_metadata.Info.Exposure"] == "0.5"
+    assert found["imagej_metadata.Info.Gain"] == "2"
+    assert values["mapped_metadata"]["imagej_info_lines_left_out"] == 2
 
 
 def test_a_tag_nobody_has_seen_before(collection_tests, tmp_path):
@@ -194,17 +216,79 @@ def test_the_exif_of_a_camera_jpeg(collection_tests, tmp_path):
     assert found["exif.Exif.ExposureTime"] == 0.002
     assert found["exif.Interop.InteropIndex"] == "R98"
     assert found["jfif_version"] == [1, 1]
-    assert values["mapped_metadata"] == {"width": 480, "height": 360, "mode": "RGB"}
+    assert found["jfif_density"] == [72, 72]
+    assert values["mapped_metadata"] == {
+        "width": 480,
+        "height": 360,
+        "mode": "RGB",
+        "dpi": [72, 72],
+    }
+
+
+def test_exif_fields_of_type_undefined_as_text(collection_tests, tmp_path):
+    found = original(collection_tests, "camera_jpeg", tmp_path)
+    assert found["exif.Exif.ExifVersion"] == "0220"
+    assert found["exif.Exif.FlashPixVersion"] == "0100"
+    # b"\x01\x02\x03\x00": control characters as text, left out
+    assert "exif.Exif.ComponentsConfiguration" not in found
 
 
 def test_the_text_chunks_of_a_png_file(collection_tests, tmp_path):
-    found = original(collection_tests, "png_text", tmp_path)
+    values = extracted(collection_tests, "png_text", tmp_path).values
+    found = values["original_metadata"]
     assert found["Title"] == "A test pattern"
     assert found["Software"] == "Pillow"
     assert found["Comment"] == ""
     assert found["Description"] == "Written for the crawler's tests"  # zTXt
     assert found["Author"] == "Jülich"  # iTXt
-    assert "dpi" in found
+    # Pillow's conversion of pHYs (pixels per metre), not an entry of the file
+    assert "dpi" not in found
+    assert values["mapped_metadata"]["dpi"] == [299.9994, 299.9994]
+
+
+def png(path: Path, ihdr: tuple[int, int] | None = None, **chunks) -> Path:
+    """A small PNG written by Pillow, its IHDR's size changed to ihdr (CRC fixed): a header as a large image has it."""
+    import struct
+    import zlib
+
+    from PIL import PngImagePlugin
+
+    info = PngImagePlugin.PngInfo()
+    for key, (text, zip_) in chunks.items():
+        info.add_text(key, text, zip=zip_)
+    Image.fromarray(generate.pattern(8, 8)).save(path, pnginfo=info)
+    if ihdr is not None:
+        data = bytearray(path.read_bytes())
+        header = struct.pack(">II", *ihdr) + bytes(data[24:29])
+        data[16:29] = header
+        data[29:33] = struct.pack(">I", zlib.crc32(b"IHDR" + header))
+        path.write_bytes(bytes(data))
+    return path
+
+
+def test_a_header_of_more_than_pillows_pixel_limit(tmp_path):
+    # 400 Mpixel: Pillow's decompression-bomb check would refuse the open
+    path = png(tmp_path / "montage.png", ihdr=(20_000, 20_000), Title=("t", False))
+    values = of_file(path).values
+    assert values["mapped_metadata"]["width"] == 20_000
+    assert values["original_metadata"]["Title"] == "t"
+    assert Image.MAX_IMAGE_PIXELS is not None  # Pillow's setting restored
+
+
+def test_an_oversize_compressed_text_chunk(tmp_path):
+    path = png(
+        tmp_path / "text.png",
+        Title=("kept", False),
+        Big=("x" * (2 << 20), True),  # 2 MiB as text, a few kB compressed
+        Comment=("", False),
+    )
+    result = of_file(path)
+    found = result.values["original_metadata"]
+    assert found["Title"] == "kept"
+    assert "Big" not in found and "Comment" not in found
+    (warning,) = result.values["reader_warnings"]
+    assert "MAX_TEXT_CHUNK" in warning
+    assert result.summary[-1] == f"reader warning: {warning}"
 
 
 def test_an_exif_tag_nobody_has_seen_before(collection_tests, tmp_path):
@@ -253,10 +337,14 @@ def test_an_svg_file_written_by_matplotlib(collection_tests, tmp_path):
 SVG = """<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+     xmlns:lab="https://example.org/lab"
      width="210mm" height="297mm" viewBox="0 0 210 297" version="1.1"
      inkscape:version="1.2 (dc2aedaf03, 2022-05-15)" data-new="never seen">
   <title>A test drawing</title>
   <desc>Made for the crawler's tests</desc>
+  <sodipodi:namedview id="namedview1" inkscape:zoom="0.5"/>
+  <lab:sample>S-17</lab:sample>
   {padding}
   <rect width="10" height="10"><title>not the document's</title></rect>
 </svg>
@@ -273,6 +361,17 @@ def test_an_svg_files_title_description_and_an_attribute_nobody_has_seen(tmp_pat
     assert found["@inkscape:version"] == "1.2 (dc2aedaf03, 2022-05-15)"
     assert found["@data-new"] == "never seen"
     assert result.summary == ["A test drawing", "width 210mm", "height 297mm"]
+
+
+def test_what_an_svg_files_values_leave_out(tmp_path):
+    path = tmp_path / "drawing.svg"
+    path.write_text(SVG.format(padding=""))
+    found = of_file(path).values["original_metadata"]
+    # An element of another namespace at the root is kept; Inkscape's
+    # settings and the drawing are not
+    assert found["lab:sample"] == "S-17"
+    assert not [n for n in found if n.startswith(("sodipodi:", "rect"))]
+    assert "not the document's" not in found.values()
 
 
 # The summary line of an image file
@@ -354,6 +453,25 @@ def test_a_large_svg_file(tmp_path):
     assert size > 4_000_000
     assert read < 1_100_000
     assert result.values["original_metadata"]["@width"] == "210mm"
+
+
+def test_an_svg_file_with_one_large_element(tmp_path):
+    # Matplotlib embeds a raster as a data URI in one <image> element
+    path = tmp_path / "embedded.svg"
+    uri = "data:image/png;base64," + "A" * 8_000_000
+    path.write_text(SVG.format(padding=f'<image href="{uri}"/>'))
+    result, read = read_by(path)
+    print(f"{path.name}: {read} bytes read of {path.stat().st_size}")
+    assert read < 1_100_000
+    assert result.values["original_metadata"]["title"] == "A test drawing"
+
+
+def test_a_broken_small_svg_file(tmp_path):
+    # Read to its end: a parse error is the file's, and the extraction fails
+    path = tmp_path / "broken.svg"
+    path.write_text('<svg xmlns="http://www.w3.org/2000/svg"><title>t</title>')
+    with pytest.raises(ParseError):
+        of_file(path)
 
 
 def test_a_large_webp_file(tmp_path):

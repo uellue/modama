@@ -28,7 +28,7 @@
         "mapped_metadata": {
           "axes": "YX",
           "dtype": "uint16",
-          "shape": [
+          "first_page_shape": [
             48,
             64
           ]

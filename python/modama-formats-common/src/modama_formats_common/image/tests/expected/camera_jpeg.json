@@ -26,15 +26,15 @@
       ],
       "values": {
         "mapped_metadata": {
+          "dpi": [
+            72,
+            72
+          ],
           "height": 360,
           "mode": "RGB",
           "width": 480
         },
         "original_metadata": {
-          "dpi": [
-            72,
-            72
-          ],
           "exif.DateTime": "2003:12:14 12:01:44",
           "exif.Exif.ApertureValue": 4.65625,
           "exif.Exif.ColorSpace": 1,
@@ -45,11 +45,13 @@
           "exif.Exif.DigitalZoomRatio": 1.0,
           "exif.Exif.ExifImageHeight": 1704,
           "exif.Exif.ExifImageWidth": 2272,
+          "exif.Exif.ExifVersion": "0220",
           "exif.Exif.ExposureBiasValue": 0.0,
           "exif.Exif.ExposureMode": 0,
           "exif.Exif.ExposureTime": 0.002,
           "exif.Exif.FNumber": 4.9,
           "exif.Exif.Flash": 24,
+          "exif.Exif.FlashPixVersion": "0100",
           "exif.Exif.FocalLength": 21.3125,
           "exif.Exif.FocalPlaneResolutionUnit": 2,
           "exif.Exif.FocalPlaneXResolution": 8114.285714285715,
@@ -60,6 +62,7 @@
           "exif.Exif.SensingMethod": 2,
           "exif.Exif.ShutterSpeedValue": 8.96875,
           "exif.Exif.WhiteBalance": 0,
+          "exif.Interop.2": "0100",
           "exif.Interop.InteropIndex": "R98",
           "exif.Interop.RelatedImageLength": 1704,
           "exif.Interop.RelatedImageWidth": 2272,
