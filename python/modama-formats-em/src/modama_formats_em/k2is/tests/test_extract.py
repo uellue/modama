@@ -9,7 +9,7 @@ from modama_formats_em.testing import described
 
 
 def test_a_capture_with_its_8_sectors(collection_tests, tmp_path):
-    result = recognise(collection_tests, "capture", tmp_path)
+    result = recognise(collection_tests, "capture52", tmp_path)
     (d,) = result.datasets
     assert (d.type, d.format, d.anchor) == (
         "application/x.k2is",
@@ -51,11 +51,15 @@ def test_another_bin_file(collection_tests, tmp_path):
 
 
 def test_a_representative_capture(collection_tests, tmp_path):
-    (capture,) = described(collection_tests, "capture", tmp_path)
+    (capture,) = described(collection_tests, "capture52", tmp_path)
     assert capture.description.startswith(
-        "SI Dimensions.Size X 64, SI Dimensions.Size Y 32, Microscope Info.Voltage 300000; "
-        "K2IS acquisition, 9 files"
+        "SI Dimensions.Size X 35, SI Dimensions.Size Y 34, Microscope Info.Cs(mm) 0, "
     )
-    assert capture.subjects == ["Gatan K2 IS"]
-    # The .gtg's tags; the sector files only by their sizes, not read
-    assert capture.bytes_read < 2_000
+    assert (
+        "Microscope Info.Formatted Voltage 300kV, " in capture.description
+        and "Microscope Info.Stage Position" not in capture.description
+    )
+    assert capture.description.endswith("; K2IS acquisition, 9 files, 27.3 kB, in /")
+    assert capture.subjects == ["Gatan K2 IS", "FEI Tecnai Remote"]
+    # The .gtg read whole (26,931 bytes, tags only); the fixture's sectors are 40-byte headers
+    assert capture.bytes_read < 28_000

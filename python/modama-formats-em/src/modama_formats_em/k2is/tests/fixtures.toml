@@ -5,16 +5,15 @@ licence = "GPL-3.0-or-later (../../dm/tests/LICENSE.fixtures)"
 source = "modama_formats_em.k2is.tests.generate:lone_tags, from the file of the dm part's cl_image_dm4"
 generator = "modama_formats_em.k2is.tests.generate:lone_tags"
 
-[capture]
-purpose = "reproducer"
-validity = "synthetic until a real capture is agreed (task 3.1): a DM4 tag file Capture52_.gtg with SI Dimensions and Microscope Info tags, written as RosettaSciIO 0.15.0 parses DM4; 8 sector files of one block each, the header as LiberTEM's DataBlock reads it, zero data; names as libertem-test-data's Capture52"
-licence = "MIT"
-source = "modama_formats_em.k2is.tests.generate:capture"
-generator = "modama_formats_em.k2is.tests.generate:capture"
+[capture52]
+purpose = "representative"
+validity = "vendor-written, metadata only: the tag file Capture52_.gtg as Gatan Microscopy Suite 3.22.1461.0 wrote it (a 35x34 scan, K2-IS-0001 on an FEI Tecnai, 2018-03-29, 359 tags, no image), unchanged; of each sector file Capture52_1.bin to _8.bin only its first 40 bytes, the first block's header (sync word, width 256, height 1860), unchanged; the pixel data is not included (decision 73)"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "libertem-test-data/Capture52 on the ER-C staging data, cut by .claude/field-tests/k2is-fixture.sh on 2026-11-12; Capture52_.gtg sha256 fcbabe3546a70fc0941d4a3ee0a1403b5af9bd9d7ef2b3518de7e02806bef5ff"
 
 [sectors_without_tags]
 purpose = "reproducer"
-validity = "synthetic: the 8 sector files of capture without their .gtg, as when only the .bin files were copied"
+validity = "synthetic: 8 sector files named as capture52's, one block each with LiberTEM's DataBlock header and zero data, without their .gtg, as when only the .bin files were copied"
 licence = "MIT"
 source = "modama_formats_em.k2is.tests.generate:sectors_without_tags"
 generator = "modama_formats_em.k2is.tests.generate:sectors_without_tags"
