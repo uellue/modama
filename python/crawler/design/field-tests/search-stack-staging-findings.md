@@ -83,6 +83,28 @@ Interim, 18:20 UTC:
   read of a file (`parse_header`, `_api.py:76`), 14 % on the first byte after a seek:
   waits for NFS, not parsing (6 ms CPU per file on the DM4 fixture). See F14.
 
+### Run 4, 2026-11-12/13: two upgrades in place, then the nightly crawl
+
+No reset: the state of run 3 was upgraded in place, as a rehearsal for production (@weber: no
+dump or dry run; a failure becomes a test case and a fresh staging). Recording in
+`.claude/field-tests/run-3/` (the folder is named for the recording session), steps in
+`.claude/field-tests/upgrade-2026-11-12.md` and `upgrade-2026-11-12b.md`.
+
+- **Upgrade 1, 13:48 UTC** (1004189: CPU budget, schema migrations, content check, owner
+  names): `crawler-migrate` adopted the tables as `0001_baseline`; "same schema" against a
+  freshly migrated database; records unchanged (1,451,848, newest datestamp 2026-11-11
+  19:04:20); sssd healthy, the crawler names @weber's uid "Dieter Weber"; transform worker
+  16 × 1, search API 48 × 1.
+- **Upgrade 2, 16:02 UTC** (0784cea: extractor identity, the Merlin header fix, the browser):
+  `schema migrated from 0001_baseline to 0002_extractor_identity`; "same schema"; records
+  unchanged; `upstaging.sh`'s note: the next crawl extracts again em/dm4 156,779, em/dm3
+  19,457, em/merlin 700, em/empad 230 datasets, with the crawl command carrying staging's
+  `--config`; not started, the 19:00 timer does it.
+- **Expected tonight:** every extraction once more (about 177,000, about 50 minutes on 8
+  processes), the stored failures tried again (the Merlin fix: 97 headers), owners' full names
+  in nearly every record, so a full harvest and warehouse indexing, the first with the CPU
+  budget.
+
 ## Findings
 
 **F14 (crawler, formats): extraction read about 1 MiB per DM file.** Run 3: 1,168 kB
