@@ -19,19 +19,41 @@
     "/SCA2_rings.xml": {
       "subjects": [],
       "summary": [
-        "series of 4 frames",
-        "128\u00d7128 pixel frames",
-        "exposure time 1 (unit unknown)",
-        "2022-05-02 17:28"
+        "series_count 4",
+        "exposure_time 1.0 (unit unknown)",
+        "2022-05-02T17:28:39.775119"
       ],
       "values": {
-        "acquired": "2022-05-02T17:28:39.775119",
-        "exposure_time": 1.0,
-        "frame": [
-          128,
-          128
-        ],
-        "frames": 4
+        "mapped_metadata": {
+          "acquired": "2022-05-02T17:28:39.775119",
+          "exposure_time": 1.0,
+          "frame": [
+            128,
+            128
+          ],
+          "frames": 4
+        },
+        "original_metadata": {
+          "@name": "SCA2_rings",
+          "background_image.@absolute_filename": " /home/empad/backgrounds/img_exp_1_frm_0_cnt_1000_0002",
+          "background_image.@timestamp": "1651504157.950859",
+          "camserver_parameters.camserver_acquisition_pending": "False",
+          "camserver_parameters.camserver_connected": "True",
+          "camserver_parameters.camserver_inserted": "True",
+          "camserver_parameters.camserver_poweron": "True",
+          "camserver_parameters.camserver_scan_enabled": "True",
+          "camserver_parameters.camserver_scan_focus": "False",
+          "count": "4",
+          "exposure_time": "1.0",
+          "post_exposure_time": "0",
+          "raw_file.@filename": "series_x4.raw",
+          "reconstructions.@Sentinel": "Test  ",
+          "scan_parameters.series_count": "4",
+          "software_version": "0.7.12  (2019-10-01)",
+          "timestamp.@isoformat": "2022-05-02T17:28:39.775119",
+          "timestamp.@timestamp": "1651505319.775119",
+          "type": "series"
+        }
       }
     }
   },

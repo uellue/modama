@@ -6,6 +6,7 @@ Extraction reads the header itself (`read_header`) and the first frame's
 header through RosettaSciIO.
 """
 
+import logging
 import os
 from collections.abc import Iterable
 from datetime import datetime
@@ -13,6 +14,9 @@ from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
+from ..values import textual
+
+log = logging.getLogger(__name__)
 HERE = Path(__file__).parent
 # The header is read whole; real headers are a few kB
 MAX_HEADER = 64 << 10
@@ -20,6 +24,10 @@ HEADER = "application/x.merlin-header"
 FRAMES = "application/x.merlin-mib"
 # "(day, mnth, yr, hr, min, s)" or "(yr, mnth, day, hr, min, s)" follows; the value is day/month/year in both
 DATE = "Time and Date Stamp"
+# Header keys of the summary line
+COUNT = "Frames in Acquisition (Number)"
+DEPTH = "Counter Depth (number)"
+READOUT = "Readout System"
 
 
 def read_header(path: str) -> dict[str, str]:
@@ -30,6 +38,7 @@ def read_header(path: str) -> dict[str, str]:
     header that is not UTF-8"). Latin-1 decodes every byte, and µ stays µ;
     cp1252 would fail on the bytes it leaves undefined (0x81, 0x8D, 0x8F,
     0x90, 0x9D). Keys lose a trailing ":"; some have none ("Sensor Bias (V, µA)").
+    A blank line is skipped; a line without a tab is a key with an empty value.
     """
     size = os.stat(path).st_size
     if size > MAX_HEADER:
@@ -37,10 +46,10 @@ def read_header(path: str) -> dict[str, str]:
     header = {}
     with open(path, encoding="latin-1") as f:
         for line in f:
-            if line.startswith(("HDR", "End\t")):
+            if line.startswith(("HDR", "End\t")) or not line.strip():
                 continue
-            key, value = line.split("\t", 1)
-            header[key.rstrip(":")] = value.rstrip("\n")
+            key, _, value = line.partition("\t")
+            header[key.rstrip("\n").rstrip(":")] = value.rstrip("\n")
     return header
 
 
@@ -78,40 +87,56 @@ class Merlin(Format):
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """Frames, frame size, bit depth and time (spec formats/merlin, "Merlin metadata is extracted from the header")."""
+        """Every header entry as found, then frames, frame size, bit depth and time
+        (spec formats/merlin, "Merlin metadata is extracted from the header")."""
         from rsciio.quantumdetector._api import MIBProperties
 
         hdr = read_header(root + dataset.anchor)
         first = MIBProperties()
         first.parse_file(root + next(m for m in dataset.members if m != dataset.anchor))
-        frames = int(hdr["Frames in Acquisition (Number)"])
+        frames = int(hdr[COUNT])
         height, width = first.merlin_size
-        depth = int(hdr["Counter Depth (number)"])
-        readout = hdr.get("Readout System", "").strip()
-        # The key by its start (spec formats/merlin, "The date key names its
-        # fields in another order"); a value in another form fails, naming it
-        date = next((k for k in hdr if k.startswith(DATE)), None)
-        if date is None:
-            raise KeyError(DATE)
-        stamp = hdr[date].strip()
-        try:
-            acquired = datetime.strptime(stamp, "%d/%m/%Y %H:%M:%S")
-        except ValueError as e:
-            raise ValueError(f"{date}: {stamp!r} is not dd/mm/yyyy hh:mm:ss ({e})")
-        summary = [
-            f"{frames:,} frame{'' if frames == 1 else 's'}",
-            f"{width}×{height} pixels",
-            f"{depth}-bit",
-        ]
-        if readout:
-            summary.append(readout)
-        summary.append(acquired.strftime("%Y-%m-%d %H:%M"))
-        values = {
+        depth = int(hdr[DEPTH])
+        readout = hdr.get(READOUT, "").strip()
+        mapped = {
             "frames": frames,
             "frame": [width, height],
             "counter_depth": depth,
             "readout": readout,
-            "acquired": acquired.isoformat(),
+        }
+        # The summary line: the chosen entries' values as the header writes them,
+        # a number after its key, a text as it is; the frame size, from the frame
+        # file's header (X, Y), whose reader names no axis, after its name in
+        # mapped_metadata (decision 230)
+        summary = [
+            f"{COUNT} {hdr[COUNT]}",
+            f"frame {width}, {height}",
+            f"{DEPTH} {hdr[DEPTH]}",
+        ]
+        if readout:
+            summary.append(hdr[READOUT])
+        # The key by its start (spec formats/merlin, "The date key names its
+        # fields in another order"); a value in another form is shown as written,
+        # with a warning, and not read (spec formats/merlin, "A date in another form")
+        date = next((k for k in hdr if k.startswith(DATE)), None)
+        if date is not None:
+            summary.append(hdr[date])
+            try:
+                acquired = datetime.strptime(hdr[date].strip(), "%d/%m/%Y %H:%M:%S")
+                mapped["acquired"] = acquired.isoformat()
+            except ValueError:
+                log.warning(
+                    "%s: %s %r is not dd/mm/yyyy hh:mm:ss; no acquisition time",
+                    dataset.anchor,
+                    date,
+                    hdr[date],
+                )
+        values = {
+            # Every entry, its key and its value as the file writes them, but a
+            # value not suitable for text (spec formats/merlin, "Every header
+            # entry is kept")
+            "original_metadata": {k: v for k, v in hdr.items() if textual(v)},
+            "mapped_metadata": mapped,
         }
         return Extracted(
             summary=summary, subjects=[readout] if readout else [], values=values
