@@ -12,14 +12,59 @@ from pathlib import Path
 
 ROOT = Path("/data/perf-seed")
 FOLDERS = 50
-SAMPLES = "ferritin gold-nanoparticle graphene MoS2 perovskite SrTiO3 zeolite apoferritin lamella catalyst".split()
-METHODS = (
-    "haadf stem tem eels edx 4dstem diffraction tomography holography cryo".split()
-)
-WORDS = (
-    "beam dose sample tilt focus aberration detector camera frame series drift lattice defect interface grain "
-    "vacuum specimen holder voltage current spectrum map region particle thickness calibration alignment"
-).split()
+SAMPLES = [
+    "ferritin",
+    "gold-nanoparticle",
+    "graphene",
+    "MoS2",
+    "perovskite",
+    "SrTiO3",
+    "zeolite",
+    "apoferritin",
+    "lamella",
+    "catalyst",
+]
+METHODS = [
+    "haadf",
+    "stem",
+    "tem",
+    "eels",
+    "edx",
+    "4dstem",
+    "diffraction",
+    "tomography",
+    "holography",
+    "cryo",
+]
+WORDS = [
+    "beam",
+    "dose",
+    "sample",
+    "tilt",
+    "focus",
+    "aberration",
+    "detector",
+    "camera",
+    "frame",
+    "series",
+    "drift",
+    "lattice",
+    "defect",
+    "interface",
+    "grain",
+    "vacuum",
+    "specimen",
+    "holder",
+    "voltage",
+    "current",
+    "spectrum",
+    "map",
+    "region",
+    "particle",
+    "thickness",
+    "calibration",
+    "alignment",
+]
 
 n = int(sys.argv[1])
 rng = random.Random(20261111)

@@ -24,7 +24,21 @@ TEXTS = 2000
 def texts(seed: int) -> list[str]:
     """Like the records of perf/seed.py: the path as title, the crawler's description."""
     rng = random.Random(seed)
-    words = "beam dose sample tilt focus detector camera frame series drift lattice defect grain".split()
+    words = [
+        "beam",
+        "dose",
+        "sample",
+        "tilt",
+        "focus",
+        "detector",
+        "camera",
+        "frame",
+        "series",
+        "drift",
+        "lattice",
+        "defect",
+        "grain",
+    ]
     out = []
     for i in range(TEXTS):
         folder = f"perf-seed/{rng.choice(['ferritin', 'graphene', 'zeolite', 'SrTiO3'])}-{rng.randrange(50):02d}"

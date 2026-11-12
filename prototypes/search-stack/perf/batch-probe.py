@@ -150,7 +150,10 @@ while not os.path.exists(f"{OUT}/stop") and time.monotonic() < deadline:
                     str(pid),
                 ]
                 spy = subprocess.Popen(
-                    cmd, stdout=open(f"{OUT}/py-spy.log", "w"), stderr=subprocess.STDOUT
+                    cmd,
+                    # open for py-spy's whole life, which outlasts this block; closed when the probe exits
+                    stdout=open(f"{OUT}/py-spy.log", "w"),  # noqa: SIM115
+                    stderr=subprocess.STDOUT,
                 )
                 rec["profiled"] = {
                     "attached_after_s": round(time.time() - rec["start"], 3),

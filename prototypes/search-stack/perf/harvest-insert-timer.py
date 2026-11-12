@@ -8,7 +8,6 @@ The INSERT is upstream's create_harvest_events_bulk_in_db (src/app/db_methods.py
 import time
 
 import psycopg
-
 from config.postgres_config import PostgresConfig
 
 SQL = """

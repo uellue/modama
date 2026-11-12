@@ -16,22 +16,21 @@ import sys
 import time
 
 t_imports = time.monotonic()
-import jsonschema  # noqa: E402
-import psycopg  # noqa: E402
-import xmltodict  # noqa: E402
-from lxml import etree as ET  # noqa: E402
-
-from planning.transform_planning import load_batch  # noqa: E402
+import jsonschema
+import psycopg
+import xmltodict
+from config.postgres_config import PostgresConfig
+from lxml import etree as ET
+from planning.transform_planning import load_batch
 from transform.transform_core import (
+    EMBEDDING_MODEL,
     OAI_METADATA,
     OAI_RECORD,
     TransformResources,
-    EMBEDDING_MODEL,
-)  # noqa: E402
-from utils import handle_xml, normalize_datacite_json  # noqa: E402
-from utils.embedding_utils import _embed_locally, get_embedding_text_from_fields  # noqa: E402
-from utils.queue_utils import HarvestEventQueue  # noqa: E402
-from config.postgres_config import PostgresConfig  # noqa: E402
+)
+from utils import handle_xml, normalize_datacite_json
+from utils.embedding_utils import _embed_locally, get_embedding_text_from_fields
+from utils.queue_utils import HarvestEventQueue
 
 imports_s = time.monotonic() - t_imports
 size = int(sys.argv[1]) if len(sys.argv) > 1 else 250
