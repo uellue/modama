@@ -1,0 +1,46 @@
+{
+  "datasets": [
+    {
+      "anchor": "/settings.schema.json",
+      "basis": "single file, a JSON value first",
+      "collapsed": false,
+      "format": "common/jsonschema",
+      "members": [
+        "/settings.schema.json"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/schema+json",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/settings.schema.json": {
+      "subjects": [],
+      "summary": [
+        "https://json-schema.org/draft/2020-12/schema",
+        "Settings",
+        "object",
+        "number",
+        "minimum 0"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "documents": 1
+        },
+        "original_metadata": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "properties.exposure.minimum": 0,
+          "properties.exposure.type": "number",
+          "required": [
+            "exposure"
+          ],
+          "title": "Settings",
+          "type": "object"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

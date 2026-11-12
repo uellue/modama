@@ -1,0 +1,51 @@
+{
+  "datasets": [
+    {
+      "anchor": "/log.json",
+      "basis": "single file, a JSON value first",
+      "collapsed": false,
+      "format": "common/json",
+      "members": [
+        "/log.json"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/json",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/log.json": {
+      "subjects": [],
+      "summary": [
+        "t 1731417319.33",
+        "start",
+        "t 1731417320.33",
+        "frame",
+        "t 1731417321.33",
+        "t 1731417322.33",
+        "t 1731417323.33",
+        "stop"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "documents": 5
+        },
+        "original_metadata": {
+          "[1].event": "start",
+          "[1].t": 1731417319.33,
+          "[2].event": "frame",
+          "[2].t": 1731417320.33,
+          "[3].event": "frame",
+          "[3].t": 1731417321.33,
+          "[4].event": "frame",
+          "[4].t": 1731417322.33,
+          "[5].event": "stop",
+          "[5].t": 1731417323.33
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
