@@ -4,6 +4,8 @@ Scope: `proposal.md`, `design.md`, `tasks.md` and `specs/cpu-budget/spec.md` of 
 
 Tally: 14 findings: 1 H, 6 M, 7 L. 11 confirmed. 3 are plausible in whole or in part: 3 (the batch-250 RSS), 4 (the race) and 6.
 
+Status (2026-11-12, after @weber's "150 151 153 yes, go ahead"): every finding is addressed in the artifacts, finding 13 but for the rebase; each finding's **Addressed** line says where. The design's R1 to R14 are these findings.
+
 Severity: **H** the change as planned does not do what @weber decided, or a defect at the stated scale; **M** a defect in a reachable case, or a contradiction between requirement, spec and plan; **L** a gap in a test or the wording, or YAGNI.
 
 Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget/spec.md`) and `tasks.md` in this directory; code paths are from the repository root.
@@ -17,6 +19,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** An implementer follows `tasks.md`. Base compose: Airflow's default of 16 still binds, so a 64-core production machine runs 16 × 4 instead of "the full thing". Staging: nothing changes, and the claim of "no numbers" is false.
 - **Verdict.** CONFIRMED (grep of the four files; `git show HEAD --stat`: b9383e4 changed only `design.md`).
 - **Fix.** Fold the decisions in with `/opsx:update` before applying. D6: the base file sets the limit in `x-airflow-common`'s environment from one compose variable (for example `AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: ${INDEXING_SLOTS:-<large>}`), and `staging.env` sets the variable to 16. One value then reaches the scheduler and the worker. A new task for it, with a check that `docker compose config` shows the same value for `airflow-scheduler` and `airflow-worker-transform`. A task to commit `perf/` (with a review, it has not had one). Spec scenarios: the VM with the raised limit, the dev server "with the staging limit of 16". The proposal's sentence on numbers in compose files corrected.
+- **Addressed (2026-11-12).** Proposal: What Changes (the transform worker's bullet), Behaviour towards the user (the one number left, `staging.env`). Design: D6 (`AIRFLOW_TASK_LIMIT`, default 1024, in `x-airflow-common`, 16 in `staging.env`), the decisions section now says where each decision went. Spec: "The transform worker sizes its processes and threads" (The dev server with the limit, The dev server without the limit, The VM, One value for scheduler and worker), "The transform worker logs its CPU budget" (the dev server with `AIRFLOW_TASK_LIMIT` 16). Tasks 3.0 (commit `perf/`, with a review), 3.3 (the variable, `staging.env` in the runbook, the `docker compose config` check). Folding the decision in showed a new problem, batches queued past `task_queued_timeout`: design D6 "Queued tasks", spec "Batches beyond the budget wait without timing out", tasks 3.4 and 3.5.
 
 ### 2 (M) "The full thing" is also capped by Airflow's `core.parallelism` (32), which the start script does not read
 
@@ -24,6 +27,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** On a machine with 64 physical cores and no settings, the script computes P = 64 and T = 1 and logs "64 processes × 1 thread". Celery starts 64 processes, but at most about 28 transform batches ever run. 36 cores stay idle, and the log line states a budget that does not exist. The dev server is not affected (24 cores, staging limited to 16).
 - **Verdict.** CONFIRMED for the defaults (read from the image). The 64-core case is an inference from the scheduler's documented caps; it was not run.
 - **Fix.** Either raise `AIRFLOW__CORE__PARALLELISM` together with the DAG limit (finding 1's variable), and have the script read both as `slots = min(max_active_tasks_per_dag, parallelism)`, with both in the log line. Or let the decision say which caps "the full thing" means. A spec scenario: 64 cores, parallelism 32.
+- **Addressed (2026-11-12).** The first fix. Design D6 (slots = min of both; `AIRFLOW_TASK_LIMIT` sets both). Spec: "The transform worker sizes its processes and threads" (requirement text; scenario Parallelism is the limit), the log scenario shows both. Task 3.2 (its tests), 3.3.
 
 ### 3 (M) The memory term rests on a number from batches of 2,000 and on `MemTotal`; in the VM it would overcommit if it were right, and it is not
 
@@ -34,6 +38,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** If 4.4 GB were right, the VM would run 5 × 4.4 = 22 GB of batches next to 9 GB of services on 23 GiB without swap, and the kernel's OOM killer would end batches. Since it is not right for batch 250, P = 5 instead of 8 follows from a number measured for another batch size. On the dev server (251 GB) the term never binds. As planned, the term limits only where its constant does not apply.
 - **Verdict.** CONFIRMED (RSS from the probe log; the VM's memory). The probe was not a whole batch, so the batch-250 RSS is PLAUSIBLE, not measured.
 - **Fix.** Run task 5.3 (RSS at 250 and 2,000) before task 3.2 fixes the constant, and decide with the numbers. Either the per-process figure follows `CELERY_BATCH_SIZE`, which the worker already has in its environment (the design lists this under Not now, `design.md:86`; it is the case that exists today, with two deployments at two batch sizes), or the memory term goes until a machine hits it. Whichever stays, state in the log line and README that memory is `MemTotal`, which other services share. Ask @weber again about the VM's 5 × 1 once the number is known.
+- **Addressed (2026-11-12).** @weber (153): measure one whole batch at 250. Measured in throwaway containers (design, "Measurement of one batch"): 0.69 GB peak RSS with the VM's records, 5.30 GB at 512 tokens, 8.99 and 9.05 GB for 1,000 and 2,000 texts at 512 tokens; the peak follows the texts' length and fastembed's sub-batch, and with a sub-batch of 32 it is 1.40 GB at 250 and 1.42 GB at 2,000. Design D7 rewritten: lean, a sub-batch of 32 in patch 0002 and 1.7 GB per process (with the slot's supervisor, 0.25 GB); memory = `memory.max`, else `MemAvailable` at start, named in the log line, so the memory other services use at start is left out (Risks: what starts later or grows). The VM's P derived: ⌊9.1 GB ÷ 1.7⌋ = 5, 5 × 1; without the bound 1 × 8. Spec: "The transform worker sizes its processes and threads" (memory source; scenarios with 1.7 GB), "Batch processes start the threads of their budget" (sub-batch; scenario A batch of long texts). Tasks 3.1, 3.2, 4.2 (logged memory against `free`), 6.3, 6.4.
 
 ### 4 (M) The crawler changes `os.environ` inside `walk()` and `extraction._run()`, while the crawl's heartbeat thread opens its database connection
 
@@ -41,6 +46,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** Rare. On some crawl, the heartbeat's connect runs at the moment the walk sets the three variables. The heartbeat then reads a freed environment array and crashes, or connects with a wrong default.
 - **Verdict.** The contradiction with D3 and the code map: CONFIRMED (code). The race: PLAUSIBLE (from the code and glibc's documented thread-safety of `setenv`; not reproduced).
 - **Fix.** Enter the context once in `cli.py`, in `cmd_crawl` and `cmd_records`, before the heartbeat starts and around the walk and the extraction together. It is the same copied code with one `with`, the library functions stay free of environment access, and the restore happens when only the main thread is left. Add a test that a replacement worker (monkeypatch `TASKS_PER_WORKER` to 1, two datasets) also reports 1 thread. Replacement workers are D4's main argument for the parent's environment (`design.md:42`), and no scenario covers them.
+- **Addressed (2026-11-12).** As proposed. Proposal: What Changes (once in `cli.py`). Design: Context (the heartbeat), D3 (`cli.py` enters the context before the heartbeat starts and leaves it after it has stopped; `walk.py` and `extraction.py` do not touch the environment). Spec: "Math libraries in the crawler's worker processes start one thread" (only while no other thread runs; scenario A replacement worker). Task 2.2.
 
 ### 5 (M) The search API runs 6 processes with ONNX Runtime's defaults, pinned to the same cores, against the proposed requirement 2.4
 
@@ -48,6 +54,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** 2.4 is written as accepted, and the stack violates it from the first day. If a CPU limit is later set for the search API (@weber: "We may want to reduce the number of available CPUs to specific services"), ONNX Runtime ignores the quota and fails to pin in a cpuset (the note, section 2). That contradicts "a limit set for a service later is honoured by the same count".
 - **Verdict.** CONFIRMED (measured).
 - **Fix.** Name the search API in Not now with a backlog item: a patch like 0002 for its `TextEmbedding`, and `WORKERS` from the count. `patches/search-api/` already exists. Or narrow 2.4's wording to what this change covers. Ask @weber which.
+- **Addressed (2026-11-12).** @weber (151): in scope, the same pattern. Proposal: Why, What Changes (the search API's bullet), Behaviour, Impact. Design: Context ("Search API": upstream's `ENV WORKERS=6`, `TextEmbedding` at import, the query in `asyncio.to_thread`, rerank over HTTP), D1 (two rows: workers on logical CPUs, at most 6; 1 thread inside), D5 (`budget.py search-api`), D8 (`WORKERS`, `EMBEDDING_THREADS`; `ENV WORKERS=` cleared), D9 (`patches/search-api/0002`), Not now (workers beyond 6). Spec: three requirements "The search API …". Tasks 3.6, 3.7, 5.5 (c).
 
 ### 6 (M) "Load average not above the CPUs" cannot be the acceptance check on staging
 
@@ -55,6 +62,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** An indexing run on staging with a correct budget, during a crawl or a busy devvm, shows a load of 60 on 48 CPUs, and the check fails. Or the check passes because the load is right, while one container is oversubscribed.
 - **Verdict.** PLAUSIBLE (Linux load-average semantics and @weber's statement; not measured on staging).
 - **Fix.** Check per container: CPU time from the container's cgroup `cpu.stat` `usage_usec` over the run (or `docker stats`) against the CPUs it may use, `cpu.pressure` for waiting, and the thread count per batch process (`batch-probe.py`). Keep the load average as context, not as the criterion.
+- **Addressed (2026-11-12).** As proposed. Proposal: the 2.4 wording ("Checked on staging … per container"). Design: "Verification in the VM", the criterion. Task 6.2 (the VM's "load average ≤ 8" removed).
 
 ### 7 (M) The VM's comparisons do not measure what they say, and task 5.3 needs a probe that does not exist
 
@@ -65,6 +73,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** Task 5.2 reports "the budget is X % faster than today" against a 1 × 8 run, which nobody ever ran in production. Task 5.3 cannot be done as written.
 - **Verdict.** CONFIRMED (spec text, the probe's source, how `docker exec` works).
 - **Fix.** Measure the baseline with today's command (a compose override with `celery worker --queues transform --concurrency 1`, bypassing the script), and name it so. Extend `batch-probe.py` with `VmRSS`, `VmHWM` and `VmSize` (or reuse the staging indexing probe that already records `rss=`). Say in the tasks that `exec` probes need the variables passed with `-e`.
+- **Addressed (2026-11-12).** As proposed. Design: "Verification in the VM" (today's command; probes and `-e`). Tasks 3.0 (`batch-probe.py` extended, and `perf/batch-memory.py`, the probe of decision 153), 4.2 and 6.1 (`-e`), 6.2 (today's command, named "today").
 
 ### 8 (L) Counting: cases the spec leaves out, and cgroup v1 nobody has shown to be needed
 
@@ -78,6 +87,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** An implementation parses `max` as a number and fails at start, which stops the worker (finding 10), or treats a missing file as an error on the host.
 - **Verdict.** CONFIRMED (probes).
 - **Fix.** Add the `max`, missing-file and joined-path scenarios with their tests. Ask for `docker info --format '{{.CgroupVersion}}'` on the dev server and production, and drop the v1 branch and its test if both say 2 (AGENTS.md: no cases nobody has hit). If the topology is read, fall back to `thread_siblings_list` (the same content under the deprecated name) before falling back to logical CPUs. Without that fallback, an SMT machine with only the old name counts twice its cores.
+- **Addressed (2026-11-12).** Design D2: the own group's path joined, `max` and a missing file as no quota, cgroup v2 only (no `0::` line: the quota is not read, and the log line and the diagnostic say so), the `thread_siblings_list` fallback. The question of the version on the dev server and in production is 152, "later" (@weber): design Not now and Risks, task 5.5 (b); the diagnostic (D11, task 5.2) shows it on any machine. Spec: "The crawler counts the CPUs it may use" (The VM now `max 100000`, The host's cgroup, The host's cgroup namespace, No cgroup v2), "The transform worker counts the physical cores it may use" (Only the old topology name, No topology). Task 2.1 (no v1 fake any more), 3.2.
 
 ### 9 (L) `PYTHON_CPU_COUNT` acts on the crawler's count but not on the transform worker's cores
 
@@ -85,6 +95,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** Someone sets the variable. The crawler obeys it as an undocumented second override. The transform worker logs "8 cores usable (3 logical CPUs)".
 - **Verdict.** CONFIRMED.
 - **Fix.** Count from `os.sched_getaffinity(0)` in both modules (the overrides are `MODAMA_CRAWLER_EXTRACT_WORKERS`, `TRANSFORM_PROCESSES` and `EMBEDDING_THREADS`), or document it as an override in both. One sentence in D2 either way.
+- **Addressed (2026-11-12).** The first fix. Design D2 ("Logical CPUs"). Spec: "The crawler counts the CPUs it may use" (requirement text; scenario PYTHON_CPU_COUNT is not an override). Task 2.1.
 
 ### 10 (L) What happens when the start script fails is not what the design says
 
@@ -96,12 +107,14 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
 - **Failure scenario.** A `cpu.max` that cannot be parsed on some host, and indexing silently stops.
 - **Verdict.** CONFIRMED (compose file, entrypoint).
 - **Fix.** Say which inputs fail the start (malformed files) and which fall back with a note in the log line (missing files). State the restart loop in Risks, and add one test that a malformed `cpu.max` exits with a message that names the file.
+- **Addressed (2026-11-12).** As proposed. Design D2 ("Failures"), D10 (new: the restart loop, the queue without consumer), Risks. Spec: "The transform worker counts the physical cores it may use" (scenario A malformed quota), "The transform worker's budget can be set" (scenario Not a number). Tasks 3.2, 5.1.
 
 ### 11 (L) `records --verbose` suppresses the budget line the spec requires
 
 - **What.** "`crawl` and `records` SHALL log one line at INFO level" (`spec.md:51`). `cmd_records` sets the package logger to ERROR under `--verbose` (`src/modama_crawler/cli.py:509-510`).
 - **Verdict.** CONFIRMED.
 - **Fix.** "…except `records --verbose`, which logs errors only", in the requirement and task 2.3.
+- **Addressed (2026-11-12).** As proposed. Design D8. Spec: "The crawl logs its CPU budget" (requirement text; scenario records --verbose). Task 2.3.
 
 ### 12 (L) Spec scenarios and tasks that do not yet pin anything down
 
@@ -111,12 +124,14 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
   - *The extractor test.* "An extractor that loads numpy … succeeds within the default memory limit" (`spec.md:42-44`) passes without the change on 8 CPUs (430 MB is far below 4 GiB); only the thread count tests the change.
 - **Verdict.** CONFIRMED (spec and tasks text; the thread counts from the note's table).
 - **Fix.** Run the probe before the spec is final and write the number. Cite every scenario in a task. For the memory part, either a test with `MODAMA_CRAWLER_EXTRACT_MEMORY` set just above the 143 MB of one thread, or drop that clause.
+- **Addressed (2026-11-12).** The probe ran (a whole batch of 250 with T = 1 and the BLAS and Rayon variables at 1, in a throwaway container): 2 threads, none pinned; with the defaults 23, 7 of them pinned one each to CPUs 1 to 7. Spec: "A batch in the test deployment" now says 2; the extractor scenario keeps its memory clause with `MODAMA_CRAWLER_EXTRACT_MEMORY` at 256 MiB. Tasks: every scenario is cited by name (preamble of tasks.md; 2.1 to 2.3, 3.2 to 3.7, 4.2, 5.1, 5.2, 6.3).
 
 ### 13 (L) Stale references to the research note and the branch
 
 - **What.** The design cites the note as "commit 1b77989, on branch `worktree-agent-a7ed4152ec18fcbf9`, not yet on `crawler`" (`design.md:5`), and task 1.1 merges it (`tasks.md:7`). It is on `crawler` now (d0dca90, then 602ce5d "shorten the part for people"). This branch is 4 commits behind `crawler` (`git log HEAD..crawler`). The proposal's citation of "For people" (`proposal.md:5`) points at a section that 602ce5d rewrote.
 - **Verdict.** CONFIRMED.
 - **Fix.** Rebase onto `crawler`, cite the note by path, and drop the merge from task 1.1.
+- **Addressed (2026-11-12), but for the rebase.** The note is cited by path, with "on `crawler` since d0dca90" (proposal Why, design Context), "For people" is no longer cited, and task 1.1 merges nothing. The rebase is @weber's (AGENTS.md: "Commands that change something (push, rebase, posts) are run by @weber"); task 1.1 says so.
 
 ### 14 (L) Smaller points of scope and wording
 
@@ -126,6 +141,7 @@ Line numbers: `design.md`, `proposal.md`, `spec.md` (short for `specs/cpu-budget
   - *The mount.* D5 mounts `budget.py` from the repository (`design.md:46`), while D9 builds an image of our own anyway. A `COPY` there would keep the script with the patch it depends on, in one artifact, without a bind mount of the source tree.
 - **Verdict.** CONFIRMED (text).
 - **Fix.** Reword the first two. The third is optional: decide it in task 3.1.
+- **Addressed (2026-11-12).** Spec Purpose: "by default". R43 in the proposal: the matching is CPU-bound pure Python, the extraction I/O-bound; design D1's row. The mount: decided for `COPY`, since the search API's image now needs the script too (design D5, D9; tasks 3.1, 3.6).
 
 ## What is right and should stay
 
