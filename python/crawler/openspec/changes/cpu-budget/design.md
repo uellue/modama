@@ -87,11 +87,11 @@ Rebuild the stack's images, `./downtest.sh && ./uptest.sh`; staging picks it up 
 - Patch 0001 (one validator), which changes the best P against T (the note, section 5).
 - Turning ONNX Runtime's spinning off (not reachable through fastembed 0.8.0).
 
-## Questions for @weber
+## Decisions by @weber, 2026-11-12
 
-- Indexing DAG limit: keep Airflow's 16 active tasks, so that the dev server runs 16 × 1 and leaves 8 cores to PostgreSQL and OpenSearch (lean), or raise it so that the cores govern (24 × 1)? The measurement on staging can settle it.
-- Physical cores for the transform worker until the SMT measurement (lean), or logical from the start, given your experience that hyperthreading helps I/O-bound work and batches are partly pure-Python validation?
-- The VM's test deployment would run 5 batch processes instead of 1: fine, or pin it to 1 in the override file to keep the e2e test light?
-- Production: does it run Docker with cgroup v2 and quotas only per container (what the count reads), or on a systemd slice with a quota of its own?
-- Names of the transform worker's overrides: `TRANSFORM_PROCESSES` and `EMBEDDING_THREADS` (patch 0002's), in the warehouse's style without a prefix?
-- The `perf/` scripts are untracked in the main checkout; commit them to `prototypes/search-stack/perf/` with this change, so that the verification can be repeated?
+- **The DAG's limit (D6):** "without any settings it should run the full thing, but here (devvms running etc) we restrict it. 16 sounds sensible." So with no setting the cores and memory govern: the base compose file must not let Airflow's default of 16 active tasks per DAG bind (D6 changes: raise or derive it there), and the dev server restricts it to 16 in its own deployment file (`docker-compose.staging.yml`, `AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "16"`), which the start script reads as today.
+- **Physical cores for the math pools (D1): agreed.** "In my experience it worked well to have physical cores for math, and background work done by hyperthreading in parallel."
+- **The VM: 5 × 1 is fine** (8 cores, memory limits it to 5).
+- **Production limits:** "I don't think we have any limits beyond what we do with docker at this time." A backlog item: whether and how to manage CPU limits in production (slices, per-container quotas).
+- **Override names:** explained to @weber (they bypass the computed budget for measurements; no clash found with existing variables); pending his answer, the names stay.
+- **`perf/`: commit it** with this change, in `prototypes/search-stack/perf/` (search-stack benchmarks, next to the compose files they use).
