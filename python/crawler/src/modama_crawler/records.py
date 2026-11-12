@@ -8,9 +8,11 @@ import posixpath
 import pwd
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 from functools import cache
 from urllib.parse import quote_plus
 
+from .extraction import MAX_STRING
 from .formats import Dataset, Format
 from .mimedb import comment
 from .render import format_datestamp
@@ -97,22 +99,48 @@ def description(dataset: Dataset) -> str:
     return text
 
 
+def as_stored(value):
+    """A JSON value as the database gives it back, so that a record does not depend on whether its extraction ran or was reused.
+
+    JSONB keeps a number's decimal digits, not its type: a float that Python
+    writes with a positive exponent (1.3166796483380824e+17, a DM time stamp)
+    comes back as an integer, and -0.0 as 0.0.
+    """
+    if isinstance(value, float):
+        text = repr(value)
+        return int(Decimal(text)) if "e+" in text else value + 0.0
+    if isinstance(value, list | tuple):
+        return [as_stored(v) for v in value]
+    if isinstance(value, dict):
+        return {k: as_stored(v) for k, v in value.items()}
+    return value
+
+
 def tags(dataset: Dataset) -> str:
     """The file's own tags as found, `values["original_metadata"]`, one `name: value` line each (decision 234).
 
     Sorted by name: the stored values (JSONB) do not keep the file's order, and
     a record must not change between a fresh and a reused extraction. Strings
-    as they are, any other value as its JSON text; empty values left out.
+    as they are, any other value as its JSON text, cut to the storage's limit
+    for a string with "…" at the end; empty values left out.
     """
     extracted = dataset.extraction.extracted if dataset.extraction else None
     found = extracted.values.get("original_metadata") if extracted else None
     if not found:
         return ""
-    return "\n".join(
-        f"{name}: {value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)}"
-        for name, value in sorted(found.items())
-        if value not in ("", [])
-    )
+    lines = []
+    for name, value in sorted(found.items()):
+        if value in ("", []):
+            continue
+        text = (
+            value
+            if isinstance(value, str)
+            else json.dumps(as_stored(value), ensure_ascii=False)
+        )
+        if len(text) > MAX_STRING:
+            text = text[:MAX_STRING] + "…"
+        lines.append(f"{name}: {text}")
+    return "\n".join(lines)
 
 
 def format_names(formats: Iterable[Format]) -> dict[str, str]:

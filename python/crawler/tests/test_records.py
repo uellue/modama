@@ -1,12 +1,18 @@
+import json
 import os
 import pwd
 import re
+import shutil
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
+import modama_formats_em
 import pytest
-from conftest import DC, OAI
+from conftest import CRAWLER, DC, OAI, shell
 from modama_crawler import selection
+from modama_crawler.extraction import MAX_STRING
 from modama_crawler.formats import Dataset, Extracted, Extraction, Format, Result
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
@@ -18,7 +24,7 @@ from modama_crawler.records import (
     format_names,
     oai_identifier,
 )
-from modama_crawler.store import store
+from modama_crawler.store import Stored, store
 from modama_crawler.walk import walk
 
 PREFIX = "oai:er-c-data-mgmt.fz-juelich.de:"
@@ -223,6 +229,151 @@ def test_a_failed_extraction_gives_no_subjects():
     metadata = build(dataset, {})[1]
     assert "subject" not in metadata
     assert metadata["description"][0].endswith("1 file, 0 B, in /")
+
+
+# "The file's tags go into a second description" (change tags-in-the-record)
+
+
+def tagged(original_metadata) -> Dataset:
+    values = (
+        {} if original_metadata is None else {"original_metadata": original_metadata}
+    )
+    return Dataset(
+        anchor="/tem/scan.dm4",
+        members=("/tem/scan.dm4",),
+        type="application/octet-stream",
+        format="em/dm",
+        uid=os.getuid(),
+        extraction=Extraction("em/dm", "1", "", Extracted(["300kV"], [], values)),
+    )
+
+
+def descriptions(dataset: Dataset) -> list[str]:
+    return build(dataset, {})[1]["description"]
+
+
+def test_a_dataset_with_tags_gets_a_second_description():
+    dataset = tagged(
+        {
+            "Microscope Info.Voltage": 300000.0,
+            "DataBar.Device Name": "K2-IS-0001",
+            # No list of wanted tags: whatever the format kept is shown
+            "Foo Vendor.New Setting": 7,
+        }
+    )
+    summary, tags = descriptions(dataset)
+    assert summary.startswith("300kV; ")
+    assert tags == (
+        "DataBar.Device Name: K2-IS-0001\n"
+        "Foo Vendor.New Setting: 7\n"
+        "Microscope Info.Voltage: 300000.0"
+    )
+
+
+@pytest.mark.parametrize("original_metadata", [None, {}, {"a": "", "b": []}])
+def test_a_dataset_without_tags_gets_none(original_metadata):
+    assert len(descriptions(tagged(original_metadata))) == 1
+    # Nor one without an extraction
+    assert len(descriptions(replace(tagged(None), extraction=None))) == 1
+
+
+def test_empty_values_are_left_out():
+    dataset = tagged(
+        {
+            "Session Info.Operator": [],
+            "QuickSaved.fields.minitext": "",
+            "Session Info.Specimen": "Au",
+        }
+    )
+    assert descriptions(dataset)[1] == "Session Info.Specimen: Au"
+
+
+def test_sorted_by_name():
+    dataset = tagged({"b.y": 2, "B.z": 3, "a.x": 1, "a w": 0})
+    assert descriptions(dataset)[1] == "B.z: 3\na w: 0\na.x: 1\nb.y: 2"
+
+
+def test_values_as_stored():
+    dataset = tagged(
+        {
+            "Acquisition.Device.Active Size (pixels)": [1920, 1792],
+            "Microscope Info.Stage Position.Stage Alpha": -2.4043772802208405,
+            "Acquisition.Parameters.High Level.Exposure Live Time": "inf",
+            "Session Info.Specimen": "Au µm",
+        }
+    )
+    assert descriptions(dataset)[1].splitlines() == [
+        "Acquisition.Device.Active Size (pixels): [1920, 1792]",
+        "Acquisition.Parameters.High Level.Exposure Live Time: inf",
+        "Microscope Info.Stage Position.Stage Alpha: -2.4043772802208405",
+        "Session Info.Specimen: Au µm",
+    ]
+
+
+def test_a_very_long_value_is_cut():
+    values = list(range(2000))
+    text = json.dumps(values)
+    assert len(text) > MAX_STRING
+    (line,) = descriptions(tagged({"Huge.Array": values}))[1].splitlines()
+    assert line == "Huge.Array: " + text[:MAX_STRING] + "…"
+
+
+def test_numbers_as_the_database_gives_them_back(conn):
+    # JSONB keeps a number's digits, not its type: what a fresh extraction
+    # gives and what the next crawl reads back make the same lines
+    dataset = replace(
+        tagged(
+            {
+                "DataBar.Acquisition Time (OS)": 1.316679648365784e17,
+                "Huge": [1e20, -0.0, 1e-07, 300000.0, 7],
+                "Stage Alpha": -0.0,
+                "Group": {"Inner": 2.5e16},
+            }
+        ),
+        stamp="s",
+    )
+    store(conn, Result([dataset]), {})
+    stored = Stored(conn).extractions([dataset.anchor])[dataset.anchor]
+    again = replace(dataset, extraction=stored)
+    assert descriptions(again) == descriptions(dataset)
+    assert descriptions(dataset)[1].splitlines() == [
+        "DataBar.Acquisition Time (OS): 131667964836578400",
+        'Group: {"Inner": 25000000000000000}',
+        "Huge: [100000000000000000000, 0.0, 1e-07, 300000.0, 7]",
+        "Stage Alpha: 0.0",
+    ]
+
+
+CAPTURE52 = Path(modama_formats_em.__file__).parent / "k2is/tests/fixtures/capture52"
+FIRST_TAG = "Acquisition.Device.Active Size (pixels): [1920, 1792]"
+
+
+def test_a_stored_extraction_gives_the_same_record(conn, env, oai, tmp_path):
+    # Crawled as typed, twice: the first crawl builds the record from the
+    # extraction it ran, the second from the stored one (JSONB, which keeps
+    # no order of its own)
+    shutil.copytree(CAPTURE52, tmp_path / "k2is")
+    run = shell(f"{CRAWLER} crawl --root {tmp_path / 'k2is'}", env)
+    assert run.returncode == 0, run.stderr
+    conn.commit()
+    conn.execute("UPDATE records SET datestamp = '2000-01-01T00:00:00Z'")
+    conn.commit()
+    run = shell(f"{CRAWLER} crawl --root {tmp_path / 'k2is'}", env)
+    assert run.returncode == 0, run.stderr
+    conn.commit()
+    assert conn.execute("SELECT datestamp FROM records").fetchall() == [
+        (datetime(2000, 1, 1, tzinfo=UTC),)
+    ]
+    # The served record: the summary, then the tags
+    record = oai(
+        verb="GetRecord",
+        identifier=oai_identifier("/Capture52_.gtg"),
+        metadataPrefix="oai_dc",
+    )
+    summary, tags = (e.text for e in record.iter(f"{DC}description"))
+    assert summary.startswith("IMAGING, SCANNING, STEM NANOPROBE, 300kV")
+    assert tags.splitlines()[0] == FIRST_TAG
+    assert len(tags.splitlines()) == len(set(tags.splitlines())) > 200
 
 
 def test_collection_relations():
