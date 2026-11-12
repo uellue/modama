@@ -17,6 +17,8 @@ Metadata extraction uses [RosettaSciIO](https://github.com/hyperspy/rosettasciio
 
 An extractor shows what the file or its reader (the format driver, for example RosettaSciIO) says, without editorializing: no number rounded (the DM reader's `18.325349807739258`, not `18.3`), no unit guessed from a value's size, no unit converted, no number from one tag joined with a unit from another. Where the driver gives no unit, the description says so ("unit unknown"). Consistent units and metadata blocks (with pint or similar) come later, in the drivers upstream where possible (@weber, 2026-11-11).
 
+**What the file says comes first** (@weber, 2026-11-12, decision 230). For every format read through RosettaSciIO, the values are its `original_metadata` first: complete, as the instrument wrote it, minus GUI settings (window, page and display settings) and large arrays. The mapped metadata (HyperSpy's standard names) is kept as a second, labelled section, for comparing across formats; its conversions are RosettaSciIO's, shown as such, and where it disagrees with the original, the original wins and the difference goes to the RosettaSciIO list in `python/crawler/BACKLOG.md`. Getting the meaning of metadata right across vendors, reliably, is a big project of its own and out of scope here: the record represents to the user what is in the file, without editorializing, and the user makes their own sense of it. Open (decision 231): whether the summary line, today a few chosen tags, stays, or the record shows the tags as `name: value` just as they are found in the file.
+
 ## Setup and tests
 
 ```bash
