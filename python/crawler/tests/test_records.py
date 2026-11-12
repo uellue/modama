@@ -310,6 +310,16 @@ def test_values_as_stored():
     ]
 
 
+def test_a_line_break_in_a_value():
+    # The block file fixture test2.blo's Note, as RosettaSciIO reads it
+    note = "Precession angle : \r\nPrecession Frequency : \r\nCamera gamma : on"
+    dataset = tagged({"blockfile_header.Note": note, "blockfile_header.NX": 3})
+    assert descriptions(dataset)[1].splitlines() == [
+        "blockfile_header.NX: 3",
+        "blockfile_header.Note: Precession angle :  Precession Frequency :  Camera gamma : on",
+    ]
+
+
 def test_a_very_long_value_is_cut():
     values = list(range(2000))
     text = json.dumps(values)

@@ -121,8 +121,9 @@ def tags(dataset: Dataset) -> str:
 
     Sorted by name: the stored values (JSONB) do not keep the file's order, and
     a record must not change between a fresh and a reused extraction. Strings
-    as they are, any other value as its JSON text, cut to the storage's limit
-    for a string with "…" at the end; empty values left out.
+    as they are but for line breaks (a space each), any other value as its
+    JSON text, cut to the storage's limit for a string with "…" at the end;
+    empty values left out.
     """
     extracted = dataset.extraction.extracted if dataset.extraction else None
     found = extracted.values.get("original_metadata") if extracted else None
@@ -132,11 +133,12 @@ def tags(dataset: Dataset) -> str:
     for name, value in sorted(found.items()):
         if value in ("", []):
             continue
-        text = (
-            value
-            if isinstance(value, str)
-            else json.dumps(as_stored(value), ensure_ascii=False)
-        )
+        if isinstance(value, str):
+            # One line per tag: a line break in a value becomes a space, as
+            # the harvester's conversion makes it anyway (a block file's Note)
+            text = " ".join(value.splitlines())
+        else:
+            text = json.dumps(as_stored(value), ensure_ascii=False)
         if len(text) > MAX_STRING:
             text = text[:MAX_STRING] + "…"
         lines.append(f"{name}: {text}")
