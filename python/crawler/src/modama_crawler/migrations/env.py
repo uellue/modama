@@ -37,22 +37,20 @@ def offline() -> None:
         context.run_migrations()
 
 
-def _wait_for_crawl_lock(conninfo: str) -> psycopg.Connection:
-    """The crawl lock, on a connection of its own, waiting for it if a crawl or another migration holds it."""
-    lock = psycopg.connect(conninfo, autocommit=True)
-    try:
-        ((taken,),) = lock.execute(
-            "SELECT pg_try_advisory_lock(%s, %s)", CRAWL_LOCK
-        ).fetchall()
-        if not taken:
-            log.info(
-                "waiting for the crawl lock (a crawl or another migration holds it)"
-            )
-            lock.execute("SELECT pg_advisory_lock(%s, %s)", CRAWL_LOCK)
-    except BaseException:  # Ctrl-C while waiting: nothing has changed
-        lock.close()
-        raise
-    return lock
+def _wait_for_crawl_lock(connection) -> None:
+    """The crawl lock for the migration's transaction, waiting if a crawl or another migration holds it.
+
+    A transaction lock on the migration's own connection, so that it lasts
+    exactly as long as the migration's transaction, also when the client is
+    killed while the server still runs a statement (review 2.7, finding 6).
+    Taken before the lock timeout is set, which would end the wait.
+    """
+    taken = connection.exec_driver_sql(
+        "SELECT pg_try_advisory_xact_lock(%s, %s)", CRAWL_LOCK
+    ).scalar()
+    if not taken:
+        log.info("waiting for the crawl lock (a crawl or another migration holds it)")
+        connection.exec_driver_sql("SELECT pg_advisory_xact_lock(%s, %s)", CRAWL_LOCK)
 
 
 def _applied(step, **kwargs) -> None:
@@ -73,30 +71,22 @@ def online() -> None:
         creator=lambda: psycopg.connect(conninfo),
         poolclass=sa.pool.NullPool,
     )
-    lock = None
-    try:
-        with engine.connect() as connection:
-            context.configure(
-                connection=connection,
-                target_metadata=None,
-                on_version_apply=_applied,
-            )
+    with engine.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=None,
+            on_version_apply=_applied,
+        )
+        # inside Alembic's transaction: before it, SQLAlchemy would begin one of its own
+        with context.begin_transaction():
             if not context.get_context().opts.get("dont_mutate"):
-                lock = _wait_for_crawl_lock(conninfo)
-            with context.begin_transaction():
-                # inside Alembic's transaction: before it, SQLAlchemy would begin one of its own
-                connection.exec_driver_sql(
-                    f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT_SECONDS}s'"
-                )
-                # under the lock: a migration that waited for another finds it done
-                config.attributes["before"] = (
-                    context.get_context().get_current_revision()
-                )
-                context.run_migrations()
-    finally:
-        # after the migration's transaction has ended
-        if lock is not None:
-            lock.close()
+                _wait_for_crawl_lock(connection)
+            connection.exec_driver_sql(
+                f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT_SECONDS}s'"
+            )
+            # under the lock: a migration that waited for another finds it done
+            config.attributes["before"] = context.get_context().get_current_revision()
+            context.run_migrations()
 
 
 if context.is_offline_mode():

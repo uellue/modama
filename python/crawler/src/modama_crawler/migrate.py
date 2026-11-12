@@ -61,6 +61,10 @@ def upgrade(conninfo: str, script_location: Path = schema.MIGRATIONS) -> int:
         command.upgrade(config, "head")
     except Exception as e:  # noqa: BLE001  the database's error or the revision's own: either way, rolled back
         before = config.attributes.get("before", version)
+        if before is not None and before not in chain:
+            # a newer crawler migrated the database while this one waited (review 2.7, finding 5)
+            log.error("%s", schema.mismatch(before, head, set(chain)))
+            return 2
         applied = config.attributes.get("applied", [])
         start = chain.index(applied[-1]) + 1 if applied else _after(chain, before)
         failed = chain[start] if start < len(chain) else head

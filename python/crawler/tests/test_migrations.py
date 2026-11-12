@@ -247,6 +247,22 @@ def test_a_database_made_before_migrations(postgresql, fresh):
     assert schema_of(postgresql) == schema_of(fresh)
 
 
+def test_tables_made_by_older_code_are_refused(postgresql):
+    # review 2.7, finding 1: ensure_tables before c2b2afb made directories without retry
+    postgresql.execute(BEFORE_MIGRATIONS.read_text())
+    postgresql.execute("ALTER TABLE directories DROP COLUMN retry")
+    before = schema_of(postgresql)
+    run = shell(f"{CRAWLER} migrate", environment(postgresql))
+    assert run.returncode == 1
+    assert run.stderr.endswith(
+        "ERROR migration 0001_baseline failed, the database is unchanged at none: "
+        "the existing tables lack directories.retry or have them with another type: "
+        "they were made by a crawler older than e35e4b4; recreate the database (README)\n"
+    )
+    assert schema_of(postgresql) == before
+    assert version_of(postgresql) is None
+
+
 def test_a_column_is_added_to_a_filled_database(conn, tmp_path):
     fill(conn)
     rows = rows_of(conn)
@@ -419,6 +435,8 @@ def test_a_single_head_equal_to_schema_head():
     assert script.get_heads() == [schema.HEAD]
     # schema.known() reads file names: each file is named after its revision
     assert {r.revision for r in script.walk_revisions()} == schema.known()
+    # alembic_version.version_num is VARCHAR(32) (review 2.7, finding 10)
+    assert all(len(revision) <= 32 for revision in schema.known())
 
 
 def test_every_downgrade_undoes_its_revision_or_refuses(conn, fresh):

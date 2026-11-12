@@ -9,14 +9,17 @@ included: on an empty database they create the schema, on one made by that
 code (staging's) they change nothing, and Alembic records this revision, so
 the database is adopted without `alembic stamp` (design D5 of
 `schema-migrations`). From 0003 on, no revision uses `IF NOT EXISTS`, so
-that a database that drifted from these tables fails loudly.
+that a database that drifted from these tables fails loudly. Tables made by
+older code, with columns missing, are refused here rather than taken over
+(review 2.7, finding 1): the statements run again in a schema of their own,
+and the columns are compared.
 
 The datasets, members and directories tables carry the state of the last
 stored crawl over to the next one (D3), and are read by the chain tool
 (python/search-chain); their shape is provisional.
 """
 
-from alembic import op
+from alembic import context, op
 
 # revision identifiers, used by Alembic.
 revision = "0001_baseline"
@@ -24,8 +27,38 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+# The columns of the baseline's tables that public's tables lack, or have with
+# another type or nullability
+DIFFERENCES = """
+    SELECT b.table_name || '.' || b.column_name FROM information_schema.columns b
+    WHERE b.table_schema = 'baseline_check' AND NOT EXISTS (
+        SELECT FROM information_schema.columns p
+        WHERE p.table_schema = 'public' AND p.table_name = b.table_name
+        AND p.column_name = b.column_name AND p.data_type = b.data_type
+        AND p.is_nullable = b.is_nullable
+    )
+    ORDER BY 1
+"""
+
 
 def upgrade() -> None:
+    _create()
+    if context.is_offline_mode():
+        return
+    op.execute("CREATE SCHEMA baseline_check")
+    op.execute("SET LOCAL search_path = baseline_check")
+    _create()
+    op.execute("SET LOCAL search_path TO DEFAULT")
+    differences = op.get_bind().exec_driver_sql(DIFFERENCES).scalars().all()
+    op.execute("DROP SCHEMA baseline_check CASCADE")
+    if differences:
+        raise RuntimeError(
+            f"the existing tables lack {', '.join(differences)} or have them with another type: "
+            "they were made by a crawler older than e35e4b4; recreate the database (README)"
+        )
+
+
+def _create() -> None:
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS datasets (
