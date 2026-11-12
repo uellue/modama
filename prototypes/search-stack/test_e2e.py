@@ -27,6 +27,7 @@ from modama_chain.cli import stores_from_env
 from modama_crawler.formats import core
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
+from modama_formats_em import k2is
 from modama_formats_em.empad import cheat
 
 DATA = Path("/data")
@@ -50,6 +51,8 @@ RENAMED = ("notes/readme.txt", "notes/readme-renamed.txt")
 LOST_DOCUMENT = "notes/sample-list.csv"
 STRAY_TAGS = "stray/notes.gtg"
 MIXED = Path(core.__file__).parent / "tests" / "fixtures" / "mixed"
+CAPTURE52 = Path(k2is.__file__).parent / "tests" / "fixtures" / "capture52"
+K2IS = "/k2is/Capture52_.gtg"
 
 
 def http(url, data=None, method=None, headers=None):
@@ -240,6 +243,8 @@ def tree():
     # A text file named like a K2IS tag file (change recognition-checks-content)
     (DATA / "stray").mkdir()
     (DATA / STRAY_TAGS).write_text("hello\n")
+    # A K2IS acquisition, whose tags go into a second description (change tags-in-the-record)
+    shutil.copytree(CAPTURE52, DATA / "k2is")
     crawl()
     TREE_CRAWL["started_at"] = latest_crawl_start()
     expected = oracle()
@@ -349,6 +354,32 @@ def test_extracted_metadata_reaches_the_search(tree):
     assert "series_count" in json.dumps(hit, ensure_ascii=False), hit
 
 
+def test_the_file_s_tags_reach_the_index(tree):
+    # Records spec, "The file's tags go into a second description" (change
+    # tags-in-the-record): the summary stays first, the description the search API's hit
+    # and Matchmaker show; the tags are found by the keyword leg
+    url = next(u for t, u in tree.values() if t == K2IS)
+    (doc,) = http(f"{OPENSEARCH}/{INDEX}/_search", {"query": {"term": {"_id": url}}})[
+        "hits"
+    ]["hits"]
+    summary, tags = (d["description"] for d in doc["_source"]["descriptions"])
+    assert summary.startswith("IMAGING, SCANNING, STEM NANOPROBE, 300kV"), summary
+    # The harvester's XSLT joins the lines into one (normalize-space)
+    assert tags.startswith(
+        "Acquisition.Device.Active Size (pixels): [1920, 1792] "
+        "Acquisition.Device.CCD.Pixel Size (um): [10.0, 10.0] "
+    ), tags[:200]
+    # A word of a tag's value only, in the keyword leg's field
+    found = http(
+        f"{OPENSEARCH}/{INDEX}/_search",
+        {"query": {"match": {"_description": "high_resolution"}}},
+    )["hits"]["hits"]
+    assert [h["_id"] for h in found] == [url]
+    hits = http(f"{SEARCH}/search?q=Capture52&resource=datasets")
+    (hit,) = [h for h in hits["hits"] if h["_source"]["url"] == url]
+    assert hit["description"] == summary
+
+
 BROWSE = "http://browse:7655"
 
 
@@ -402,12 +433,17 @@ def test_the_browser_shows_the_record_the_server_serves(tree):
     assert record_c14n(stored["record"]["text"]) == record_c14n(served)
 
 
-def test_the_browser_computes_what_the_warehouse_stored(tree):
+@pytest.mark.parametrize("which", ["empad", "k2is"])
+def test_the_browser_computes_what_the_warehouse_stored(tree, which):
     # Spec chain-browse, "The live index document matches the stored one": the harvester's
     # XSLT, the warehouse's transformation and the search API's hit, run or emulated by the
-    # browser, against what the stack stored for the EMPAD header
-    (header,) = (DATA / "scan").glob("*.xml")
-    path = f"/scan/{header.name}"
+    # browser, against what the stack stored for the EMPAD header, and for a record with
+    # two descriptions (change tags-in-the-record)
+    if which == "empad":
+        (header,) = (DATA / "scan").glob("*.xml")
+        path = f"/scan/{header.name}"
+    else:
+        path = K2IS
     stored = {v["key"]: v for v in browse("stored", path)["views"]}
     live = {v["key"]: v for v in browse("live", path)["views"]}
     doc = json.loads(live["document"]["text"])

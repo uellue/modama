@@ -1,12 +1,22 @@
+import json
+import math
 import os
 import pwd
+import random
 import re
+import shutil
+import struct
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
+import modama_formats_em
 import pytest
-from conftest import DC, OAI
+from conftest import BASE_URL, CRAWLER, DC, OAI, shell
+from lxml import etree
 from modama_crawler import selection
+from modama_crawler.extraction import MAX_STRING, _storable
 from modama_crawler.formats import Dataset, Extracted, Extraction, Format, Result
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
@@ -17,9 +27,12 @@ from modama_crawler.records import (
     creator,
     format_names,
     oai_identifier,
+    tags,
 )
-from modama_crawler.store import store
+from modama_crawler.render import list_records
+from modama_crawler.store import Stored, store
 from modama_crawler.walk import walk
+from modama_formats_em.blockfile import Blockfile
 
 PREFIX = "oai:er-c-data-mgmt.fz-juelich.de:"
 
@@ -223,6 +236,224 @@ def test_a_failed_extraction_gives_no_subjects():
     metadata = build(dataset, {})[1]
     assert "subject" not in metadata
     assert metadata["description"][0].endswith("1 file, 0 B, in /")
+
+
+# "The file's tags go into a second description" (change tags-in-the-record)
+
+
+def tagged(original_metadata) -> Dataset:
+    values = (
+        {} if original_metadata is None else {"original_metadata": original_metadata}
+    )
+    return Dataset(
+        anchor="/tem/scan.dm4",
+        members=("/tem/scan.dm4",),
+        type="application/octet-stream",
+        format="em/dm",
+        uid=os.getuid(),
+        extraction=Extraction("em/dm", "1", "", Extracted(["300kV"], [], values)),
+    )
+
+
+def descriptions(dataset: Dataset) -> list[str]:
+    return build(dataset, {})[1]["description"]
+
+
+def test_a_dataset_with_tags_gets_a_second_description():
+    dataset = tagged(
+        {
+            "Microscope Info.Voltage": 300000.0,
+            "DataBar.Device Name": "K2-IS-0001",
+            # No list of wanted tags: whatever the format kept is shown
+            "Foo Vendor.New Setting": 7,
+        }
+    )
+    summary, tags = descriptions(dataset)
+    assert summary.startswith("300kV; ")
+    assert tags == (
+        "DataBar.Device Name: K2-IS-0001\n"
+        "Foo Vendor.New Setting: 7\n"
+        "Microscope Info.Voltage: 300000.0"
+    )
+
+
+@pytest.mark.parametrize("original_metadata", [None, {}, {"a": "", "b": []}])
+def test_a_dataset_without_tags_gets_none(original_metadata):
+    assert len(descriptions(tagged(original_metadata))) == 1
+    # Nor one without an extraction
+    assert len(descriptions(replace(tagged(None), extraction=None))) == 1
+
+
+def test_empty_values_are_left_out():
+    dataset = tagged(
+        {
+            "Session Info.Operator": [],
+            "QuickSaved.fields.minitext": "",
+            "Session Info.Specimen": "Au",
+        }
+    )
+    assert descriptions(dataset)[1] == "Session Info.Specimen: Au"
+
+
+def test_sorted_by_name():
+    dataset = tagged({"b.y": 2, "B.z": 3, "a.x": 1, "a w": 0})
+    assert descriptions(dataset)[1] == "B.z: 3\na w: 0\na.x: 1\nb.y: 2"
+
+
+def test_values_as_stored():
+    dataset = tagged(
+        {
+            "Acquisition.Device.Active Size (pixels)": [1920, 1792],
+            "Microscope Info.Stage Position.Stage Alpha": -2.4043772802208405,
+            "Acquisition.Parameters.High Level.Exposure Live Time": "inf",
+            "Session Info.Specimen": "Au µm",
+        }
+    )
+    assert descriptions(dataset)[1].splitlines() == [
+        "Acquisition.Device.Active Size (pixels): [1920, 1792]",
+        "Acquisition.Parameters.High Level.Exposure Live Time: inf",
+        "Microscope Info.Stage Position.Stage Alpha: -2.4043772802208405",
+        "Session Info.Specimen: Au µm",
+    ]
+
+
+def test_a_string_with_line_breaks():
+    # The block file fixture Stingray16bit_7_11.blo: its Note holds lines that
+    # look like tags ("Detector: AVT Stingray F046B")
+    stingray = (
+        Path(modama_formats_em.__file__).parent / "blockfile/tests/fixtures/stingray"
+    )
+    extracted = Blockfile().extract(
+        Dataset(anchor="/Stingray16bit_7_11.blo"), str(stingray)
+    )
+    note = extracted.values["original_metadata"]["blockfile_header.Note"]
+    assert "\r\nDetector: AVT Stingray F046B\r\n" in note
+    dataset = replace(
+        tagged(None), extraction=Extraction("em/blockfile", "1", "", extracted)
+    )
+    lines = descriptions(dataset)[1].splitlines()
+    assert len(lines) == len(extracted.values["original_metadata"])
+    assert "blockfile_header.Note: " + json.dumps(note, ensure_ascii=False) in lines
+    assert not [line for line in lines if line.startswith("Detector")]
+
+
+def test_a_dict_value_with_its_keys_sorted():
+    dataset = tagged({"Group": {"zz": 1, "a": 2}})
+    assert descriptions(dataset)[1] == 'Group: {"a": 2, "zz": 1}'
+
+
+def test_a_very_long_value_is_cut():
+    values = list(range(2000))
+    text = json.dumps(values)
+    assert len(text) > MAX_STRING
+    (line,) = descriptions(tagged({"Huge.Array": values}))[1].splitlines()
+    assert line == "Huge.Array: " + text[:MAX_STRING] + "…"
+
+
+def test_numbers_as_the_database_gives_them_back(conn):
+    # JSONB keeps a number's digits, not its type: what a fresh extraction
+    # gives and what the next crawl reads back make the same lines
+    dataset = replace(
+        tagged(
+            {
+                "DataBar.Acquisition Time (OS)": 1.316679648365784e17,
+                "Huge": [1e20, -0.0, 1e-07, 300000.0, 7],
+                "Stage Alpha": -0.0,
+                "Group": {"Inner": 2.5e16},
+            }
+        ),
+        stamp="s",
+    )
+    store(conn, Result([dataset]), {})
+    stored = Stored(conn).extractions([dataset.anchor])[dataset.anchor]
+    again = replace(dataset, extraction=stored)
+    assert descriptions(again) == descriptions(dataset)
+    assert descriptions(dataset)[1].splitlines() == [
+        "DataBar.Acquisition Time (OS): 131667964836578400",
+        'Group: {"Inner": 25000000000000000}',
+        "Huge: [100000000000000000000, 0.0, 1e-07, 300000.0, 7]",
+        "Stage Alpha: 0.0",
+    ]
+
+
+def any_float(r: random.Random) -> float:
+    k = r.random()
+    if k < 0.4:  # any bit pattern
+        return struct.unpack("d", struct.pack("Q", r.getrandbits(64)))[0]
+    if k < 0.7:
+        return r.uniform(-1, 1) * 10 ** r.randint(-30, 30)
+    return r.choice(
+        [0.0, -0.0, 1e16, 9999999999999998.0, 0.1 + 0.2, 5e-324, 1.7976931348623157e308, 2.0**63, -(2.0**70), 1e-5]
+    )  # fmt: skip
+
+
+def test_a_stored_extraction_gives_the_same_lines_whatever_the_values(conn):
+    # The review's round trip (change tags-in-the-record): random floats and
+    # awkward values through storing as a crawl stores them, and back
+    r = random.Random(1)
+    values = {f"f{i:05d}": any_float(r) for i in range(700)}
+    values |= {f"l{i:04d}": [any_float(r) for _ in range(4)] for i in range(150)}
+    values = {
+        k: [x for x in v if math.isfinite(x)] if isinstance(v, list) else v
+        for k, v in values.items()
+        if not isinstance(v, float) or math.isfinite(v)
+    }
+    values |= {
+        "int_big": 2**80,
+        "neg_int": -(2**63),
+        "u": "Ǻ µm ° 日本 😀 ﻿ x",
+        "ctrl": "a\x01b\x0bc]]>d￾e",
+        "nul": "a\x00b",
+        "crlf": "line1\r\nline2",
+        "nested": {"zz": 1, "a": 2, "bbb": 1e20},
+        "emptytuple": (),
+        "bool": True,
+        "long": "x" * 5000,
+        "longlist": list(range(2000)),
+    }
+    extracted = Extracted(["300kV"], [], _storable({"original_metadata": values}))
+    fresh = replace(
+        tagged(None), stamp="s", extraction=Extraction("em/dm", "1", "", extracted)
+    )
+    store(conn, Result([fresh]), {})
+    again = replace(
+        fresh, extraction=Stored(conn).extractions([fresh.anchor])[fresh.anchor]
+    )
+    assert tags(again) == tags(fresh)
+    md = build(again, {})[1]
+    etree.fromstring(list_records(BASE_URL, [("oai:x:1", datetime.now(UTC), md)]))
+
+
+CAPTURE52 = Path(modama_formats_em.__file__).parent / "k2is/tests/fixtures/capture52"
+FIRST_TAG = "Acquisition.Device.Active Size (pixels): [1920, 1792]"
+
+
+def test_a_stored_extraction_gives_the_same_record(conn, env, oai, tmp_path):
+    # Crawled as typed, twice: the first crawl builds the record from the
+    # extraction it ran, the second from the stored one (JSONB, which keeps
+    # no order of its own)
+    shutil.copytree(CAPTURE52, tmp_path / "k2is")
+    run = shell(f"{CRAWLER} crawl --root {tmp_path / 'k2is'}", env)
+    assert run.returncode == 0, run.stderr
+    conn.commit()
+    conn.execute("UPDATE records SET datestamp = '2000-01-01T00:00:00Z'")
+    conn.commit()
+    run = shell(f"{CRAWLER} crawl --root {tmp_path / 'k2is'}", env)
+    assert run.returncode == 0, run.stderr
+    conn.commit()
+    assert conn.execute("SELECT datestamp FROM records").fetchall() == [
+        (datetime(2000, 1, 1, tzinfo=UTC),)
+    ]
+    # The served record: the summary, then the tags
+    record = oai(
+        verb="GetRecord",
+        identifier=oai_identifier("/Capture52_.gtg"),
+        metadataPrefix="oai_dc",
+    )
+    summary, tags = (e.text for e in record.iter(f"{DC}description"))
+    assert summary.startswith("IMAGING, SCANNING, STEM NANOPROBE, 300kV")
+    assert tags.splitlines()[0] == FIRST_TAG
+    assert len(tags.splitlines()) == len(set(tags.splitlines())) > 200
 
 
 def test_collection_relations():

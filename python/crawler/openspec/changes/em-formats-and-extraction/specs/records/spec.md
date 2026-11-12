@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Every record carries a description
-Every record SHALL carry one `dc:description`, a readable summary on one line. For a dataset with extracted metadata it SHALL start with the extracted values; otherwise it SHALL state the type's human-readable name, the number of files and their total size, and the folder the dataset is in.
+Every record SHALL carry a first `dc:description`, a readable summary on one line (a second one, with the file's tags: change `tags-in-the-record`). For a dataset with extracted metadata it SHALL start with the extracted values; otherwise it SHALL state the type's human-readable name, the number of files and their total size, and the folder the dataset is in.
 
 #### Scenario: A file without an extractor
 - **WHEN** a plain text file of 1,234 bytes in `notes/` is a dataset

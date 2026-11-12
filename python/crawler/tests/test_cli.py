@@ -6,7 +6,9 @@ import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
+import modama_formats_em
 import pytest
 from conftest import CRAWLER, database_environment, validate_oai
 from conftest import shell as typed
@@ -94,6 +96,24 @@ def test_verbose_diagnostics_travel_with_the_records(store):
     # Also accepted before the subcommand
     before = records("--verbose", "records", str(store))
     assert before.returncode == 0 and before.stdout.count(b"<!--") == text.count("<!--")
+
+
+def test_the_records_command_shows_the_tags(tmp_path):
+    # records spec, "The file's tags go into a second description" (change tags-in-the-record)
+    capture52 = (
+        Path(modama_formats_em.__file__).parent / "k2is/tests/fixtures/capture52"
+    )
+    shutil.copytree(capture52, tmp_path / "k2is")
+    run = shell(
+        f"{sys.executable} -m modama_crawler records --verbose {tmp_path / 'k2is'} | cat"
+    )
+    assert run.returncode == 0, run.stderr
+    validate_oai(run.stdout)
+    summary, tags = (
+        e.text for e in etree.fromstring(run.stdout).iter(f"{DC}description")
+    )
+    assert summary.startswith("IMAGING, SCANNING, STEM NANOPROBE, 300kV")
+    assert tags.startswith("Acquisition.Device.Active Size (pixels): [1920, 1792]\n")
 
 
 def test_options_in_any_order(store):
