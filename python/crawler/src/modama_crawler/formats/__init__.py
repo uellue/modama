@@ -17,6 +17,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
+from .. import mime
+
 log = logging.getLogger(__name__)
 
 DIRECTORY = "directory"  # in reacts_to: run on every directory, pre- and post-order
@@ -161,6 +163,11 @@ class Directory:
         self._by_name = {e.name: e for e in entries}
         self._budget = 0
         self.retry = False  # a format met a read error or the time limit
+        # File rel -> "<format>: not <type>, <reason>", from not_of_type; goes into the basis
+        self.notes: dict[str, str] = {}
+        # File rel -> "<format>: <text>", from note: also into the basis, the type kept
+        self.remarks: dict[str, str] = {}
+        self._format = ""  # the id of the format being called
 
     @property
     def name(self) -> str:
@@ -182,6 +189,68 @@ class Directory:
         # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole buffer
         with open(entry.path, "rb", buffering=0) as f:
             return f.read(n)
+
+    def not_of_type(self, entry: Entry, reason: str) -> Entry:
+        """Say that a file is not of the type its name gave it; returns its entry with the type detection gives without it.
+
+        Only a type from the one best name rule is dropped; any other stays,
+        with a warning (spec recognition, recognition-checks-content D1, D2).
+        Finding the new type is not charged to the byte budget (decision 166);
+        a read error keeps the type (cannot_read), so that one unreadable file
+        does not change the rest of the directory's result.
+        """
+        if self.phase != "post":
+            raise ValueError(f"{entry.rel}: no types in the pre-order call")
+        if self._by_name.get(entry.name) is not entry:
+            raise ValueError(f"{entry.rel} is not an entry of {self.rel}")
+        if mime.by_name(entry.name) != entry.mime:
+            self.warn(
+                entry.rel,
+                f"{self._format}: {entry.name} is not {entry.mime} ({reason}), but that "
+                "type does not come from its name alone; type kept",
+            )
+            return entry
+        try:
+            new, tie = mime.detect_with_tie(
+                entry.path, exclude=frozenset({entry.mime}), strict=True
+            )
+        except OSError as e:
+            self.cannot_read(entry, e)
+            return entry
+        if tie:  # as the walk reports a tie
+            self.warn(
+                entry.rel, f"type is ambiguous between {', '.join(tie)}; using {new}"
+            )
+        replaced = replace(entry, mime=new)
+        self.entries = [replaced if e is entry else e for e in self.entries]
+        self._by_name[entry.name] = replaced
+        self.notes[entry.rel] = f"{self._format}: not {entry.mime}, {reason}"
+        return replaced
+
+    def note(self, entry: Entry, text: str) -> None:
+        """A note for the basis of the dataset that holds the file, its type kept: a file of interest (decisions 174, 183)."""
+        if self._by_name.get(entry.name) is not entry:
+            raise ValueError(f"{entry.rel} is not an entry of {self.rel}")
+        self.remarks[entry.rel] = f"{self._format}: {text}"
+
+    def cannot_read(self, entry: Entry, error: OSError) -> None:
+        """A file a format could not check: it keeps its type, the crawl warns at it, and the directory is recognised again next crawl.
+
+        For a read error on one file while checking it, so that the rest of the
+        format's result stands (spec recognition, "A read error on one file").
+        """
+        self.warn(
+            entry.rel,
+            f"{self._format}: cannot read {entry.name}: {error.strerror or error}; "
+            "type kept",
+        )
+        self.retry = True
+
+    def _undrop(self, entry: Entry) -> None:
+        """Put back the entry of a file whose type a format dropped, and its note."""
+        self.entries = [entry if e.name == entry.name else e for e in self.entries]
+        self._by_name[entry.name] = entry
+        del self.notes[entry.rel]
 
     def warn(self, rel: str, text: str) -> None:
         self.warnings.append((rel, text))
@@ -241,15 +310,24 @@ def ordered(formats: Iterable[Format]) -> list[Format]:
 
 def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Dataset]:
     d._budget = byte_budget
+    d._format = fmt.id
+    # A discarded call leaves every type as it was, and its warnings go with
+    # its result (D3): not_of_type replaces the list, so the old one is the
+    # state before the call
+    entries, notes, warned = d.entries, dict(d.notes), len(d.warnings)
+    remarks = dict(d.remarks)
     start = time.monotonic()
     try:
         datasets = list(fmt.recognize(d))
-    except BudgetExceeded as e:
-        d.warn(d.rel, f"{fmt.id} skipped: {e}")
-        return []
     except Exception as e:  # noqa: BLE001  a failing format must not stop the crawl
-        d.warn(d.rel, f"{fmt.id} failed: {e!r}")
-        d.retry = d.retry or isinstance(e, OSError)
+        d.entries, d.notes, d.remarks = entries, notes, remarks
+        d._by_name = {x.name: x for x in entries}
+        del d.warnings[warned:]
+        if isinstance(e, BudgetExceeded):
+            d.warn(d.rel, f"{fmt.id} skipped: {e}")
+        else:
+            d.warn(d.rel, f"{fmt.id} failed: {e!r}")
+            d.retry = d.retry or isinstance(e, OSError)
         return []
     elapsed = time.monotonic() - start
     if elapsed > slow:
@@ -300,17 +378,34 @@ def run_pre(
 def run_post(
     d: Directory, formats: Iterable[Format], slow: float, byte_budget: int
 ) -> tuple[list[Dataset], dict[str, str]]:
-    """The post-order call. Returns the directory's datasets and the adoptions (child anchor -> parent anchor)."""
-    present = {e.mime for e in d.entries if e.mime}
+    """The post-order call. Returns the directory's datasets and the adoptions (child anchor -> parent anchor).
+
+    A format may drop a file's name type (Directory.not_of_type): the formats
+    after it see the new type, and the file's dataset carries the note in its
+    basis (recognition-checks-content D3, D4).
+    """
     files = {e.rel: e for e in d.entries if e.kind == "file"}
     children = {c.anchor: c for c in d.children}
     claimed_by: dict[str, str] = {}  # file rel or child anchor -> format id
     out: list[Dataset] = []
     adoptions: dict[str, str] = {}
-    for fmt in ordered(formats):
+    order = ordered(formats)
+    for i, fmt in enumerate(order):
+        present = {e.mime for e in d.entries if e.mime}
         if DIRECTORY not in fmt.reacts_to and not (fmt.reacts_to & present):
             continue
-        for ds in _call(fmt, d, slow, byte_budget):
+        before = set(d.notes)
+        datasets = _call(fmt, d, slow, byte_budget)
+        dropped = set(d.notes) - before
+        for rel in sorted(dropped & claimed_by.keys()):  # claimed earlier: kept
+            d._undrop(files[rel])
+            d.warn(
+                rel,
+                f"{fmt.id}: {files[rel].name} is claimed by {claimed_by[rel]}; "
+                "type kept",
+            )
+        _check_order(d, order[:i], fmt, dropped - claimed_by.keys())
+        for ds in datasets:
             members = set(ds.members) | ({ds.anchor} if ds.anchor in files else set())
             parts = set(ds.parts) | ({ds.anchor} if ds.anchor in children else set())
             if (
@@ -363,12 +458,12 @@ def run_post(
             out.append(filled)
             for p in parts:
                 adoptions[p] = filled.anchor
-    for rel, e in files.items():
-        if rel not in claimed_by:
+    for e in d.entries:  # the current entries, with the types formats dropped
+        if e.kind == "file" and e.rel not in claimed_by:
             out.append(
                 Dataset(
-                    anchor=rel,
-                    members=(rel,),
+                    anchor=e.rel,
+                    members=(e.rel,),
                     type=e.mime or "",
                     basis="single file",
                     mtime=e.mtime,
@@ -378,4 +473,27 @@ def run_post(
                     directory=d.rel,
                 )
             )
-    return out, adoptions
+    return [_noted(ds, d.notes, d.remarks) for ds in out], adoptions
+
+
+def _check_order(
+    d: Directory, earlier: list[Format], fmt: Format, dropped: set[str]
+) -> None:
+    """Warn when a format that ran before fmt reacts to the new type of a file fmt dropped (D3)."""
+    for rel in sorted(dropped):
+        new = next(e.mime for e in d.entries if e.rel == rel)
+        for f in earlier:
+            if new in f.reacts_to:
+                d.warn(
+                    rel,
+                    f"{f.id} runs before {fmt.id} and did not see "
+                    f"{PurePosixPath(rel).name} as {new}",
+                )
+
+
+def _noted(ds: Dataset, notes: dict[str, str], remarks: dict[str, str]) -> Dataset:
+    """The dataset with its members' notes in its basis: a dropped name type (D4), then a remark (note)."""
+    mine = [n[m] for m in ds.members for n in (notes, remarks) if m in n]
+    if not mine:
+        return ds
+    return replace(ds, basis="; ".join([ds.basis, *mine]))

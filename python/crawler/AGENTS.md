@@ -60,7 +60,7 @@ The Bash hook `.claude/hooks/no-inline-edits.py` refuses in-place edits by shell
 
 ```
 src/modama_crawler/
-├── cli.py          # crawl, runs, timer, serve, records; the only place that reads the environment
+├── cli.py          # crawl, runs, timer, serve, records, migrate; the only place that reads the environment
 ├── walk.py         # post-order walk with pre-order collapse check -> Result; takes over unchanged directories; asyncio tasks, I/O in a thread pool
 ├── extraction.py   # runs Format.extract in a process pool with a time limit; reuse by extractor identity and stamp
 ├── formats/        # Entry, Directory, Dataset, Result, Format, Collection; the runner (run_pre, run_post)
@@ -74,7 +74,10 @@ src/modama_crawler/
 ├── harvest.py      # starts the warehouse's harvest of this endpoint after a crawl (Airflow API)
 ├── records.py      # OAI identifier, browse URL, Dublin Core mapping of a Dataset, description and subjects
 ├── render.py       # oai_dc XML, shared by the server and the records command
-├── store.py        # PostgreSQL schema (datasets, members, directories, records, crawl_runs), storing a Result, the stored state for the next crawl, recording runs, the crawl and store locks
+├── store.py        # storing a Result in datasets, members, directories and records, the stored state for the next crawl, recording runs (crawl_runs), the crawl and store locks; no DDL
+├── schema.py       # the database's schema version against the code's (HEAD): the check of every database command but migrate; no Alembic
+├── migrate.py      # modama-crawler migrate with Alembic: look first, then upgrade in one transaction; the only module that imports Alembic
+├── migrations/     # Alembic: env.py (the crawl lock, the lock timeout), script.py.mako, versions/NNNN_name.py (0001_baseline: the tables before migrations)
 ├── server.py       # OAI-PMH WSGI app (werkzeug), reads the records table only; 503 while a crawl writes records
 └── testing.py      # pytest plugin: fixtures, manifest, expected results, coverage rule
 ```
@@ -83,7 +86,7 @@ The detailed behaviour of the walk, records, selection and configuration is in `
 
 ## Writing tests
 
-- `tests/conftest.py`: `conn` (a fresh `pytest-postgresql` database with the schema), `records`/`add_record` (five records with fixed datestamps on the `from`/`until` boundaries; page size 2 makes three pages), `server`, `oai` (werkzeug test client plus XSD validation), `validate_oai`, `base_url` (real HTTP for the client libraries). The plugin's session fixture `mime_database` builds the MIME database of all installed collections; it is autouse here. A collection's own tests run with its definitions plus the core's only.
+- `tests/conftest.py`: `conn` (a fresh `pytest-postgresql` database, migrated to the head by `migrate.upgrade`; `postgresql` is the same database empty), `env` (the crawler's environment pointing at it), `records`/`add_record` (five records with fixed datestamps on the `from`/`until` boundaries; page size 2 makes three pages), `server`, `oai` (werkzeug test client plus XSD validation), `validate_oai`, `base_url` (real HTTP for the client libraries). The plugin's session fixture `mime_database` builds the MIME database of all installed collections; it is autouse here. A collection's own tests run with its definitions plus the core's only.
 - Collection test modules are importable packages (`src/.../tests/__init__.py`); the plugin finds the collection from the test module's package.
 - Behaviour changes come with a test per spec scenario they touch (`test_mime.py` is the pattern: one test per scenario).
 - Output meant for people (the `records` command) is checked by eye in a real terminal, not only by parsing text: `tools/xterm-shots.py` starts an xterm under a virtual X server, sends keys and takes screenshots, which you read as PNGs (needs xvfb, xterm, xdotool, imagemagick; not yet in the VM). See `design/playtest.md`, visual check.

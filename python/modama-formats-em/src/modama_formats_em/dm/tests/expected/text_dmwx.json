@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.dmwx",
+      "basis": "single file; em/dmwx: not application/x.dm-dmwx, no .dmw first in a ZIP",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.dmwx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

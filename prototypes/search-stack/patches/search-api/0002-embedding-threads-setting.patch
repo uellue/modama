@@ -1,0 +1,40 @@
+Embedding threads per worker from the setting EMBEDDING_THREADS
+
+Each uvicorn worker creates its query-embedding model at import with fastembed's
+defaults: ONNX Runtime starts one intra-op thread per core and pins them to
+cores 1..n-1, the same cores in every worker (measured in the modama search
+stack on 8 vCPUs, 6 workers: 25 threads per worker, 7 pinned one each to CPUs
+1 to 7). A setting `embedding_threads` (EMBEDDING_THREADS) passes fastembed's
+`threads`, which sets intra_op_num_threads explicitly, so that ONNX Runtime
+pins nothing. Unset, nothing changes. Embedding one query of tens of tokens
+needs no more than one thread per worker.
+
+Against the image ghcr.io/eosc-data-commons/data-commons-search:0.10.2 with
+0001 applied; modama search stack, change cpu-budget (design D5, D9).
+
+diff --git a/src/data_commons_search/config.py b/src/data_commons_search/config.py
+index b8bcd54..6c82cba 100644
+--- a/src/data_commons_search/config.py
++++ b/src/data_commons_search/config.py
+@@ -71,6 +71,8 @@ class Settings(BaseSettings):
+     # Embedding models: https://qdrant.github.io/fastembed/examples/Supported_Models/#supported-text-embedding-models
+     embedding_model: str = "BAAI/bge-small-en-v1.5"
+     embedding_dimensions: int = 384  # 60MB
++    # ONNX Runtime threads per worker process; unset: one per core, pinned (fastembed's default)
++    embedding_threads: int | None = None
+     # sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 384
+     # sentence-transformers/paraphrase-multilingual-mpnet-base-v2 768
+     # embedding_model: str = "intfloat/multilingual-e5-large"
+diff --git a/src/data_commons_search/mcp_server.py b/src/data_commons_search/mcp_server.py
+index b4d73c8..edbd271 100644
+--- a/src/data_commons_search/mcp_server.py
++++ b/src/data_commons_search/mcp_server.py
+@@ -26,7 +26,7 @@ mcp = FastMCP(
+     streamable_http_path="/",
+ )
+
+-embedding_model = TextEmbedding(settings.embedding_model)
++embedding_model = TextEmbedding(settings.embedding_model, threads=settings.embedding_threads)
+ opensearch_client = OpenSearch(hosts=[settings.opensearch_url], pool_maxsize=20)
+
+ # Guard rail on the `limit` a caller can ask a search tool for

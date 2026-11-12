@@ -1,4 +1,5 @@
-"""The records command (the `records-cli` spec), run as a subprocess like a user would."""
+"""The records command (the `records-cli` spec), and the database commands' refusal of a database that does not fit
+(the `database-schema` spec), run as a subprocess like a user would."""
 
 import os
 import shutil
@@ -6,8 +7,10 @@ import subprocess
 import sys
 
 import pytest
-from conftest import validate_oai
+from conftest import CRAWLER, database_environment, validate_oai
+from conftest import shell as typed
 from lxml import etree
+from modama_crawler import schema
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
 from modama_crawler.records import oai_identifier
 
@@ -281,3 +284,61 @@ def test_dataset_warnings_are_reported_without_verbose(tmp_path):
     assert verbose.index("<!-- /broken.zarr: WARNING: ") < verbose.index(
         "<!-- /broken.zarr: application/x-zarr by zarr/zarr"
     )
+
+
+# Commands refuse a database that is behind or ahead of the code (database-schema spec)
+
+# The crawler with one more revision than the code has, standing in for a newer crawler
+NEWER_CRAWLER = (
+    f"{sys.executable} -c 'import sys; from modama_crawler import cli, schema; "
+    'schema.HEAD = "0002_crawl_runs_scope"; '
+    'schema.known = lambda: {"0001_baseline", "0002_crawl_runs_scope"}; '
+    "sys.exit(cli.main())'"
+)
+
+
+def tables_in(conn) -> list[str]:
+    conn.commit()
+    rows = conn.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+    return sorted(name for (name,) in rows.fetchall())
+
+
+def test_one_migration_missing(conn, env, tree):
+    run = typed(f"{NEWER_CRAWLER} crawl --root {tree}", env)
+    assert run.returncode == 2
+    assert run.stderr.endswith(
+        "ERROR the database schema is at 0001_baseline, this crawler needs 0002_crawl_runs_scope: "
+        "run modama-crawler migrate\n"
+    )
+    assert conn.execute("SELECT count(*) FROM crawl_runs").fetchall() == [(0,)]
+
+
+def test_no_schema_yet(postgresql):
+    env = {**os.environ, **database_environment(postgresql)}
+    run = typed(f"{CRAWLER} serve", env)
+    assert run.returncode == 2
+    assert run.stderr == (
+        f"ERROR the database has no schema version, this crawler needs {schema.HEAD}: "
+        "run modama-crawler migrate\n"
+    )
+    assert tables_in(postgresql) == []
+
+
+@pytest.mark.parametrize(
+    "command", ["crawl", "runs", "timer --at 19:00", "serve", "migrate"]
+)
+def test_an_image_rolled_back(conn, env, tree, command):
+    conn.execute("UPDATE alembic_version SET version_num = '0002_crawl_runs_scope'")
+    conn.commit()
+    tables = tables_in(conn)
+    if command == "crawl":
+        command = f"crawl --root {tree}"
+    run = typed(f"{CRAWLER} {command}", env)
+    assert run.returncode == 2
+    assert run.stderr.endswith(
+        "ERROR the database schema is at 0002_crawl_runs_scope, which this crawler does not know: "
+        "a newer crawler migrated it; use that crawler, or downgrade with it first (README)\n"
+    )
+    assert tables_in(conn) == tables
+    assert schema.current(conn) == "0002_crawl_runs_scope"
+    assert conn.execute("SELECT count(*) FROM crawl_runs").fetchall() == [(0,)]

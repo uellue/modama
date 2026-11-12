@@ -377,6 +377,43 @@ complex and the slow step was found by sampling `docker stats`. Proposed: OpenTe
 with a collector service in the compose file; Airflow can emit metrics and traces
 itself. Not decided.
 
+**F18 (matchmaker, search API): AI Mode failed on every question, then worked**
+(@weber, 2026-11-12). After the build with patch 0001 (AI Mode without login), each
+chat ended in "Something went wrong while searching"; plain search worked. Cause, from
+`.claude/field-tests/matchmaker-check.sh`: the page named the model `cesnet/agentic` in
+every request, the search API took it over its `DEFAULT_LLM_MODEL` (Blablador) and
+failed with "Missing credentials" (no CESNET key); its error path then raised
+`UnboundLocalError: used_model`, so the page got no error event (backlog, "Sync with
+upstream"). Our end-to-end chat test sent no model and passed. Fixed by patch 0002 (the
+model only with the model selector on, decision 194; b5c1d0a), with an end-to-end check
+that the page's request names no model. After `dc build matchmaker && dc up -d --no-deps
+matchmaker`, about 12:15 UTC, @weber: "it works, and super well!!", still with the
+partial index (indexing under way).
+
+**F19 (matchmaker): links in AI Mode's answers end at the first closing bracket of the
+path** (@weber, 2026-11-12, `.claude/field-tests/badlinks/`: the conversation exported as
+Markdown and printed as PDF). Asked for DM4 spectra, the answer linked e.g. "acq 01" to
+`…/01_15meV.ch_-111_to_111_0.1s_1.5h_acqtime/SI+data+(20)/Spectrum+of+Live+EELS+Spectrum.dm4`;
+the page made the link end after `SI+data+(20` and showed
+`/Spectrum+of+Live+EELS+Spectrum.dm4)` as text, so the link leads nowhere. The model wrote
+every link in full (the export has them). Cause: matchmaker's own Markdown subset matches
+links with `\[(.+?)]\((.+?)\)` (`src/components/MessageMarkdown.tsx:92`), a lazy match up to
+the first `)`; CommonMark allows balanced brackets in a link. The citation list uses the same
+pattern (`src/lib/datasetCitations.ts:56`), so those links also got no number and are missing
+from "Datasets cited" (7 of the 14 inline links in the answer are cited, all without brackets; the 7 with brackets are not). Many of our
+paths have brackets (`SI data (20)`, `(3) Spectrum of … (low-loss).dm4`). No link was
+invented: all 14 paths, opened as encoded browse URLs, are real files (@weber, 2026-11-12,
+item 213).
+
+Fixed in matchmaker (decision 212, not by encoding our URLs): patch
+`prototypes/search-stack/patches/matchmaker/0003-links-with-brackets-in-the-address.patch`
+reads a link's address as CommonMark does, with brackets in balanced pairs (nested up to
+three deep), in the page, the citation list and the Markdown export; a bracket without its
+pair makes no link. On the exported conversation, the old pattern finds the 14 ER-C links
+with 7 addresses whole (ending in `.dm4`), the new one all 14. On staging since 13:58 UTC
+(`dc build matchmaker && dc up -d --no-deps matchmaker`; the build applied the patches
+afresh, `run-3/session.log`); @weber: "Looks fixed on my side".
+
 ## Review of the staging changes, 2026-11-11
 
 By an agent that did not write them (f2171b6..1bc2bc5: the staging override and scripts,

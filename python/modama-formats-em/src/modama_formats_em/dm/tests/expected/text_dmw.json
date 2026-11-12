@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.dmw",
+      "basis": "single file; em/dmw: not application/x.dm-dmw, no DM header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.dmw"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

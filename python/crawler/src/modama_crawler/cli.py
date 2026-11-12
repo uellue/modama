@@ -1,10 +1,11 @@
-"""Command line: crawl, runs, timer, serve, records. Configuration from environment variables and an optional TOML file."""
+"""Command line: crawl, runs, timer, serve, records, cpu-budget, migrate. Configuration from environment variables and an optional TOML file."""
 
 from __future__ import annotations
 
 import argparse
 import logging
 import os
+import pwd
 import signal
 import subprocess
 import sys
@@ -20,7 +21,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
-from . import extraction, harvest, mimedb, render, selection
+from . import cpus, extraction, harvest, mimedb, render, schema, selection
 from .formats import Format, Result
 from .records import build, format_names
 from .server import OAIError, OAIServer, parse_range
@@ -28,7 +29,6 @@ from .store import (
     Run,
     Stored,
     end_run,
-    ensure_tables,
     get_run,
     last_finished,
     previous,
@@ -179,12 +179,14 @@ def crawl_tree(
     *,
     progress=None,
     threads: int = DEFAULT_THREADS,
+    check_user: int | None = None,
 ) -> tuple[Result, extraction.Report, int]:
     """Walk, extract and store one crawl: the result, the extraction report and the number of records changed.
 
     The last stored crawl's datasets are taken over for unchanged directories
     if it ran under the same rule set, and its extractions are reused where
-    the extractor and the files are the same (D3).
+    the extractor and the files are the same (D3). With `check_user`, the user
+    database must know that uid before the store (crawl-runs spec).
     """
     # The walk and extraction read the stored state for hours: one query at a
     # time, not one transaction left idle all along. Restored on success only:
@@ -226,6 +228,7 @@ def crawl_tree(
     )
     conn.autocommit = autocommit
     _check_terminated()
+    _check_names(check_user)
     changed = store(
         conn, result, format_names(formats), run_id, rules, check=_check_terminated
     )
@@ -233,9 +236,58 @@ def crawl_tree(
 
 
 def _workers() -> int | None:
-    """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1); also the walk's matching processes."""
+    """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1); also the walk's matching processes.
+
+    Exits with status 2 if it is set and not a positive integer."""
     value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
-    return int(value) if value else None
+    if not value:
+        return None
+    if not value.isdigit() or int(value) < 1:
+        log.error(
+            "MODAMA_CRAWLER_EXTRACT_WORKERS must be a positive integer: %r", value
+        )
+        raise SystemExit(2)
+    return int(value)
+
+
+def _budget(usable: cpus.Usable) -> str:
+    """The crawl's CPU budget as one line: worker processes, math threads, where the number came from (R43)."""
+    workers = _workers()
+    if workers:
+        source = f"set by MODAMA_CRAWLER_EXTRACT_WORKERS; {usable}"
+    else:
+        workers = extraction.default_workers()
+        source = str(usable)
+        if usable.cpus > extraction.MAX_WORKERS:
+            source += f"; at most {extraction.MAX_WORKERS}"
+    return f"CPU budget: {workers} worker processes, 1 math thread each; {source}"
+
+
+def cmd_cpu_budget(args) -> int:
+    """Print the crawl's CPU budget and its inputs, without crawling (spec `cpu-budget`, for cpu-budget.sh)."""
+    usable = cpus.usable()
+    if not usable.cgroup_v2:
+        quota = "not read (no cgroup v2)"
+    elif usable.quota is None:
+        quota = "none"
+    elif usable.quota == int(usable.quota):
+        quota = f"{usable.quota:g} CPUs (cpu.max of the own cgroup)"
+    else:  # the crawler's pools are I/O-bound: a fractional quota counts up (R43)
+        quota = f"{usable.quota:g} CPUs (cpu.max of the own cgroup): {usable.cpus} for I/O (rounded up)"
+    value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
+    print(_budget(usable))
+    print(f"  logical CPUs of the affinity: {usable.affinity}")
+    print(f"  cgroup v2: {'yes' if usable.cgroup_v2 else 'no'}; CPU quota: {quota}")
+    print(
+        f"  override: MODAMA_CRAWLER_EXTRACT_WORKERS={value}"
+        if value
+        else "  override: none"
+    )
+    print(
+        "  MODAMA_CRAWLER_EXTRACT_WORKERS=N in the crawler's environment sets the matching and extraction"
+        " processes in place of the count, also above the CPUs (for measurements)"
+    )
+    return 0
 
 
 def _memory() -> int:
@@ -259,15 +311,49 @@ def _threads() -> int:
     return threads
 
 
+class NamesUnavailable(SystemExit):
+    """The user database does not know the check user: the crawl stores nothing (crawl-runs spec; decision 207)."""
+
+
+def _check_user() -> int | None:
+    """SSSD_CHECK_USER's uid (the value may be uid:gid), or None if unset; exits with status 2 if it is not a uid."""
+    value = os.environ.get("SSSD_CHECK_USER")
+    if not value:
+        return None
+    uid = value.partition(":")[0]
+    if not uid.isdigit():
+        log.error("SSSD_CHECK_USER must be a uid or uid:gid: %r", value)
+        raise SystemExit(2)
+    return int(uid)
+
+
+def _check_names(uid: int | None) -> None:
+    """Before the store: a crawl whose owners the user database cannot name would turn names into numbers."""
+    if uid is None:
+        return
+    try:
+        pwd.getpwuid(uid)
+    except KeyError:
+        message = (
+            f"the user database does not know SSSD_CHECK_USER {uid}: sssd is not answering"
+            " (check `docker compose ps sssd` and `docker compose logs sssd`); no records stored"
+        )
+        log.error("%s", message)
+        raise NamesUnavailable(message) from None
+
+
 def cmd_crawl(args) -> int:
     _sigterm.clear()  # one crawl per process, but tests run several
     signal.signal(signal.SIGTERM, _terminate)
+    check_user = _check_user()
     threads = _threads()
     config, formats, rules = _configure(args)
+    # before the run is recorded: a malformed setting exits here, leaving no run behind
+    log.info("%s", _budget(cpus.usable()))
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
         # held until this connection ends, also if the crawler crashes
         if not try_crawl_lock(conn):
             latest = recent_runs(conn, 1)
@@ -279,46 +365,51 @@ def cmd_crawl(args) -> int:
             log.error("another crawl is running on this database%s", holder)
             return 1
         run_id = start_run(conn, root)
-        heartbeat = _Heartbeat(conninfo, run_id)
-        heartbeat.start()
-        try:
-            result, report, changed = crawl_tree(
-                conn,
-                run_id,
-                root,
-                formats,
-                config,
-                rules,
-                progress=heartbeat,
-                threads=threads,
-            )
-            warnings = _report(result)
-        except (
-            BaseException
-        ) as e:  # Ctrl-C and SIGTERM too: the run must not look running
-            heartbeat.stop()
-            # A signal may have interrupted a query: closing the connection makes the server
-            # roll back the store and release the crawl lock; the failure goes in on a new one
-            conn.close()
+        # The worker processes inherit one thread per math library (R43). Set while
+        # no other thread runs: libpq reads the environment in the heartbeat's
+        # connect, and setenv is not safe against a concurrent getenv (D3)
+        with cpus.set_num_threads_env(1):
+            heartbeat = _Heartbeat(conninfo, run_id)
+            heartbeat.start()
             try:
-                with psycopg.connect(conninfo) as other:
-                    end_run(
-                        other,
-                        run_id,
-                        "failed",
-                        directories=heartbeat.directories,
-                        files=heartbeat.files,
-                        error=str(e) or type(e).__name__,
-                    )
+                result, report, changed = crawl_tree(
+                    conn,
+                    run_id,
+                    root,
+                    formats,
+                    config,
+                    rules,
+                    progress=heartbeat,
+                    threads=threads,
+                    check_user=check_user,
+                )
+                warnings = _report(result)
             except (
-                psycopg.Error
-            ) as db_error:  # keep the original error; the run shows as stale
-                log.error("cannot record the failed run: %s", db_error)
-            if isinstance(e, OSError):
-                log.error("cannot read %s: %s", e.filename or root, e.strerror)
-                return 2
-            raise
-        heartbeat.stop()
+                BaseException
+            ) as e:  # Ctrl-C and SIGTERM too: the run must not look running
+                heartbeat.stop()
+                # A signal may have interrupted a query: closing the connection makes the server
+                # roll back the store and release the crawl lock; the failure goes in on a new one
+                conn.close()
+                try:
+                    with psycopg.connect(conninfo) as other:
+                        end_run(
+                            other,
+                            run_id,
+                            "failed",
+                            directories=heartbeat.directories,
+                            files=heartbeat.files,
+                            error=str(e) or type(e).__name__,
+                        )
+                except (
+                    psycopg.Error
+                ) as db_error:  # keep the original error; the run shows as stale
+                    log.error("cannot record the failed run: %s", db_error)
+                if isinstance(e, OSError):
+                    log.error("cannot read %s: %s", e.filename or root, e.strerror)
+                    return 2
+                raise
+            heartbeat.stop()
         end_run(
             conn,
             run_id,
@@ -399,7 +490,7 @@ def cmd_timer(args) -> int:
 
     signal.signal(signal.SIGTERM, stop)
     with psycopg.connect(conninfo_from_env()) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
         run_now = overdue(last_finished(conn), datetime.now(UTC))
     while True:
         if not run_now:
@@ -451,7 +542,7 @@ def _run_line(run: Run) -> str:
 def cmd_runs(args) -> int:
     """The recent crawl runs, newest first; with --follow, the running one until it ends."""
     with psycopg.connect(conninfo_from_env(), autocommit=True) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
         runs = recent_runs(conn, RUNS_SHOWN)
         if not runs:
             print("no crawl has run")
@@ -481,7 +572,7 @@ def cmd_runs(args) -> int:
 def cmd_serve(args) -> int:
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
-        ensure_tables(conn)
+        schema.check(conn)
     with ConnectionPool(conninfo, open=True) as pool:
         server = OAIServer(
             pool,
@@ -490,6 +581,13 @@ def cmd_serve(args) -> int:
         )
         run_simple(os.environ.get("OAI_BIND", "localhost"), 7654, server, threaded=True)
     return 0
+
+
+def cmd_migrate(args) -> int:
+    """Bring the database's schema to this code's (database-schema spec)."""
+    from . import migrate  # the only command that imports Alembic (D4)
+
+    return migrate.upgrade(conninfo_from_env())
 
 
 def cmd_records(args) -> int:
@@ -510,25 +608,27 @@ def cmd_records(args) -> int:
         logging.getLogger("modama_crawler").setLevel(logging.ERROR)
     threads = _threads()
     config, formats, _ = _configure(args)
-    try:
-        result = walk(
-            args.path,
+    log.info("%s", _budget(cpus.usable()))
+    with cpus.set_num_threads_env(1):  # the worker processes' math threads (R43)
+        try:
+            result = walk(
+                args.path,
+                formats,
+                exclude=config.exclude,
+                per_path_ignores=config.per_path_ignores,
+                threads=threads,
+                processes=_workers() or extraction.default_workers(),
+            )
+        except OSError as e:
+            log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
+            return 2
+        report = extraction.extract(
+            result,
             formats,
-            exclude=config.exclude,
-            per_path_ignores=config.per_path_ignores,
-            threads=threads,
-            processes=_workers() or extraction.default_workers(),
+            os.path.abspath(args.path),
+            workers=_workers(),
+            memory=_memory(),
         )
-    except OSError as e:
-        log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
-        return 2
-    report = extraction.extract(
-        result,
-        formats,
-        os.path.abspath(args.path),
-        workers=_workers(),
-        memory=_memory(),
-    )
     warnings = result.all_warnings()
     # Everything in path order: one note per skipped entry and per warning, a note and a record per dataset
     NOTE, RECORD = 0, 1
@@ -547,6 +647,9 @@ def cmd_records(args) -> int:
         identifier, metadata = build(d, names)
         if d.format:
             note = f"{d.anchor}: {d.type} by {d.format} {d.version}, basis: {d.basis}"
+        elif d.basis != "single file":  # a format dropped its name type (records-cli)
+            note = f"{d.anchor}: {d.type}, basis: {d.basis}"
+            plain += 1
         else:  # a single file by its MIME type: routine, counted, not commented
             note = None
             plain += 1
@@ -636,6 +739,11 @@ def main(argv: list[str] | None = None) -> int:
         help="serve the OAI-PMH endpoint on port 7654 (address from OAI_BIND, default localhost)",
     )
     serve.set_defaults(func=cmd_serve)
+    migrate = sub.add_parser(
+        "migrate",
+        help="bring the database's schema to this crawler's, then exit; the other database commands need it",
+    )
+    migrate.set_defaults(func=cmd_migrate)
     records = sub.add_parser(
         "records", help="print the ListRecords response for a path; no database needed"
     )
@@ -656,6 +764,11 @@ def main(argv: list[str] | None = None) -> int:
     records.add_argument("--until", metavar="DATESTAMP")
     selection_args(records)
     records.set_defaults(func=cmd_records)
+    budget = sub.add_parser(
+        "cpu-budget",
+        help="print the crawl's worker processes and threads, and where they come from",
+    )
+    budget.set_defaults(func=cmd_cpu_budget)
 
     args = parser.parse_args(argv)
     load_dotenv()

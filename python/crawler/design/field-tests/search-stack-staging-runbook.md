@@ -59,7 +59,11 @@ STAGING_USER=<uid>:<gid>                # who the crawler reads the tree as
 STAGING_GROUP=<gid of iff>              # the group some of the tree needs
 STAGING_CRAWL_CONFIG=libertem.toml      # the crawl's exclusions in stagingconf/;
                                         # full.toml for the whole tree
+AIRFLOW_TASK_LIMIT=16                   # at most 16 indexing batches at once on this shared
+                                        # machine (@weber, 2026-11-12)
 ```
+
+What each service then chooses on this machine, and how to change it: `./cpu-budget.sh staging`, and the stack's README, "CPU budget".
 
 ## Steps
 
@@ -93,6 +97,7 @@ echo "STAGING_DATA=/storage/er-c-data" >> staging.env
 echo "STAGING_USER=$(id -u):$(id -g)" >> staging.env
 echo "STAGING_GROUP=$(getent group iff | cut -d: -f3)" >> staging.env
 echo "STAGING_CRAWL_CONFIG=libertem.toml" >> staging.env
+echo "AIRFLOW_TASK_LIMIT=16" >> staging.env
 ```
 
 **8.** Check what the stack will use, and that you can read the subtree:
@@ -197,6 +202,220 @@ data tree's mount, into the run's folder:
 
 Leave `monitor.sh` (and `nfs-stats.sh`) running overnight in a terminal that survives
 the night (screen or tmux).
+
+## Upgrade
+
+An upgrade of the code keeps the crawler's database: a schema change comes as a
+migration, which `crawler-migrate` applies before `crawler` and `crawl-timer` start
+(change `schema-migrations`, R42; the general steps are in
+`/prototypes/search-stack/README.md`, "Upgrade"). The first upgrade to code with
+migrations takes staging's tables over as `0001_baseline` and changes nothing in them.
+On the server, in the stack's folder, with the `dc` shorthand of step 12. Not during a
+crawl if it can be helped: `--build` stops a running crawl, which is then recorded as
+failed, and the timer catches up at once.
+
+**U1.** Before pulling, note the deployed commit; after pulling, see whether the new code
+brings a migration (a file listed means: one comes):
+
+```bash
+deployed=$(git rev-parse HEAD); echo "$deployed"
+```
+```bash
+git diff --stat "$deployed" HEAD -- ../../python/crawler/src/modama_crawler/migrations/versions/
+```
+
+**U2.** The state before, to compare afterwards:
+
+```bash
+dc exec crawler modama-crawler runs | head -3; dc exec crawler modama-chain status
+```
+```bash
+dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*), max(datestamp) FROM records"
+```
+
+**U3.** Optional, on staging as in production: a dump. The way back is an empty database
+and a crawl ("The way back" below; @weber, 2026-11-12: "we don't need to worry about a
+backup of the crawler + warehouse. We just need to be able to reproduce any failure in a test
+case, and bring up a fresh staging", and "The same goes for production"); a dump only saves
+that crawl. If you take one, to the location agreed with @weber (not in the checkout, never
+under `/storage`), and check that it is readable:
+
+```bash
+DUMP=<location agreed>/crawler-db-$(date +%F).dump
+```
+```bash
+dc exec -T crawler-db pg_dump -U postgres -Fc modama_crawler > "$DUMP"; ls -l "$DUMP"
+```
+```bash
+dc exec -T crawler-db pg_restore --list < "$DUMP" | head -5
+```
+
+**U4.** The upgrade:
+
+```bash
+./upstaging.sh --build
+```
+```bash
+dc logs -t crawler-migrate
+```
+
+Expected: `schema migrated from … to …` (on the first upgrade to migrations, after
+`tables made before migrations found: adopted as 0001_baseline`), then `crawler` and
+`crawl-timer` running. If `up` fails with `service "crawler-migrate" didn't complete
+successfully`, the log names the reason and the step (`python/crawler/README.md`, "The
+database schema"); the database is unchanged then.
+
+**U5.** The state after, compared with U2: the same runs (plus the stopped crawl, if
+one ran), the same count of records and newest datestamp, `modama-chain status` as
+before:
+
+```bash
+dc exec crawler modama-crawler runs | head -3; dc exec crawler modama-chain status
+```
+```bash
+dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*), max(datestamp) FROM records"
+```
+
+**U6.** The migrated schema equals a fresh one (design D5 of `schema-migrations`: a
+database that differs from `0001_baseline` would be taken over too). It replaces the dry
+run on a copy that this runbook had before 2026-11-12. About a minute; `diff` prints
+nothing and `same schema`, and the scratch database is removed at the end (the real one is
+`modama_crawler`, without a suffix). `--no-deps` keeps compose to the scratch database:
+
+```bash
+dc exec -T crawler-db createdb -U postgres modama_crawler_fresh && dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_fresh crawler-migrate
+```
+```bash
+schema() { dc exec -T crawler-db psql -U postgres -d "$1" -At -c "SELECT table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = 'public' UNION ALL SELECT tablename, indexname, indexdef, '', '' FROM pg_indexes WHERE schemaname = 'public' UNION ALL SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid), '', '' FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1, 2, 3"; }
+```
+```bash
+diff <(schema modama_crawler) <(schema modama_crawler_fresh) && echo "same schema"; dc exec -T crawler-db dropdb -U postgres modama_crawler_fresh
+```
+
+A difference is a failure: "The way back" below.
+
+**The way back** from the first upgrade: the code before migrations ignores Alembic's
+table and finds its own tables unchanged, so checking it out and building is enough:
+
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
+```
+
+From a later migration: first the downgrade with the image that is still there, then,
+only if it ended with exit status 0, the older code:
+
+```bash
+dc stop crawl-timer
+```
+```bash
+dc run --rm crawler-migrate alembic -c /src/alembic.ini downgrade <revision before the upgrade>
+```
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
+```
+
+Where the downgrade refuses (`start from an empty database and crawl again`), or the
+database is damaged: first keep what shows the failure, so that it can become a test
+case, in this run's folder:
+
+```bash
+dc ps -a > ../../.claude/field-tests/run-<n>/upgrade-failure.txt; dc logs -t >> ../../.claude/field-tests/run-<n>/upgrade-failure.txt
+```
+
+Then an empty crawler database and the older code, as production would do it;
+`crawl-timer` crawls at once, since it finds no finished crawl, and the harvest and the
+indexing that follow take as long as a first full run:
+
+```bash
+dc stop crawler crawl-timer
+```
+```bash
+dc exec -T crawler-db dropdb -U postgres modama_crawler
+```
+```bash
+dc exec -T crawler-db createdb -U postgres modama_crawler
+```
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
+```
+
+Or a fresh staging, all its stores emptied: `./downstaging.sh --reset`, then
+`git checkout "$deployed" && ./upstaging.sh --build`. With a dump of U3, restore it into
+the empty database before `git checkout` instead of crawling
+(`dc exec -T crawler-db pg_restore -U postgres -d modama_crawler < "$DUMP"`).
+
+## Owners' names, 2026-11-12
+
+Change `owner-names-in-the-search-stack`: an `sssd` service gives the crawler the owners'
+names from the real directory, with `/var/local/data-mgmt/sssd.conf` (the file for testing
+`deploy/` against it; used with `services = nss`, not changed). The creator becomes the
+owner's full name. The same `./upstaging.sh --build` also brings the first upgrade to
+migrations, so the steps U1 to U6 above belong in it. On the server, in the stack's folder,
+with the `dc` shorthand of step 12; before 18:30 UTC, so that the stack is up for the
+crawl at 19:00.
+
+**N1.** The last crawl's harvest and indexing have finished (`--build` recreates `crawler`,
+which the harvest reads); `harvest` and `indexing` show a finished run:
+
+```bash
+dc exec crawler modama-chain status
+```
+
+**N2.** The option names of sssd's file, without their values (a CA file or another file
+it names, for example `ldap_tls_cacert`, would need one more mount: stop here then):
+
+```bash
+sudo grep -o '^[a-z_]*' /var/local/data-mgmt/sssd.conf | sort -u
+```
+
+**N3.** Whether the timer will crawl at once: it does when the last finished crawl is more
+than a day old at the start (then again at 19:00), otherwise it waits for 19:00:
+
+```bash
+dc exec crawler modama-crawler runs | head -3
+```
+
+**N4.** U1 to U3 of "Upgrade" (the deployed commit, the state, the optional dump), then
+U4, which builds and starts everything, sssd included:
+
+```bash
+./upstaging.sh --build
+```
+
+**N5.** sssd healthy, and the crawler names you (your full name, not a number):
+
+```bash
+dc ps sssd
+```
+```bash
+dc exec crawler python -c "from modama_crawler.records import creator; print(creator($(id -u)))"
+```
+
+If `./upstaging.sh` fails waiting for sssd, or `dc ps sssd` does not say `healthy`,
+`dc logs sssd` names the failing step; the way back is "The way back" above.
+
+**N6.** U5 and U6 of "Upgrade".
+
+**N7.** After the crawl (from 19:00, about 1 h 20 min): its end, and the records whose
+creator is still a number (owners the directory does not know):
+
+```bash
+dc logs --tail 5 crawl-timer
+```
+```bash
+dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*) FILTER (WHERE metadata->'creator'->>0 ~ '^[0-9]+\$'), count(*) FROM records"
+```
+
+A crawl that logs `the user database does not know SSSD_CHECK_USER …: sssd is not
+answering` stored nothing: check `dc ps sssd` and `dc logs sssd`; the timer crawls again
+at the next 19:00, or crawl by hand with `dc exec crawl-timer modama-crawler crawl`.
+
+What it costs: nearly every record (1,451,848 in run 3) changes its creator, so the
+harvest takes them all again (run 3: 5 h 14 min, to about 01:30) and the indexing embeds
+them all again (726 batches: 8 to 9 h at run 3's rate after the worker's restart, up to
+27 h at its slow rate). So the search shows the full names by mid-morning tomorrow at
+best, and the indexing may still run at tomorrow's 19:00 crawl. A way back after 19:00
+costs another full re-index. Follow it with `dc exec crawler modama-chain status`.
 
 ## For colleagues
 

@@ -46,6 +46,7 @@ ADDED_FILE = "notes/added-after-the-first-harvest.txt"
 LATE_FILE = "notes/late-arrival.txt"
 RENAMED = ("notes/readme.txt", "notes/readme-renamed.txt")
 LOST_DOCUMENT = "notes/sample-list.csv"
+STRAY_TAGS = "stray/notes.gtg"
 MIXED = Path(core.__file__).parent / "tests" / "fixtures" / "mixed"
 
 
@@ -234,6 +235,9 @@ def tree():
     (DATA / DISTINCT_FILE).write_text("Ferritin lamella, thickness map\n")
     (DATA / "notes" / "readme.txt").write_text("Plain notes\n")
     (DATA / "notes" / "sample-list.csv").write_text("id,name\n1,a\n")
+    # A text file named like a K2IS tag file (change recognition-checks-content)
+    (DATA / "stray").mkdir()
+    (DATA / STRAY_TAGS).write_text("hello\n")
     crawl()
     TREE_CRAWL["started_at"] = latest_crawl_start()
     expected = oracle()
@@ -293,8 +297,22 @@ def test_the_raw_file_of_an_empad_pair(tree):
     (header,) = (DATA / "scan").glob("*.xml")
     stages, first = trace(f"/scan/{raw.name}")
     assert first is None
-    assert stages["crawler"].detail == f"member of /scan/{header.name}"
+    # Then the dataset's basis (spec chain-trace, change recognition-checks-content)
+    assert stages["crawler"].detail.startswith(
+        f"member of /scan/{header.name}; basis: "
+    )
     assert stages["index"].key.endswith(f"/scan/{header.name}")
+
+
+def test_the_crawler_line_shows_the_datasets_basis(tree):
+    # Spec chain-trace, "A text file named like a K2IS tag file" and "A plain file"
+    stages, first = trace("/" + STRAY_TAGS)
+    assert first is None
+    assert stages["crawler"].detail == (
+        "dataset; basis: single file; em/k2is: not application/x.dm-gtg, no DM header"
+    )
+    stages, _ = trace("/" + DISTINCT_FILE)
+    assert stages["crawler"].detail == "dataset; basis: single file"
 
 
 def test_extracted_metadata_reaches_the_search(tree):
@@ -335,6 +353,49 @@ def test_the_frontend_serves_its_page(tree):
     assert "<title>EOSC Data Commons</title>" in page, page[:500]
 
 
+def test_the_chat_page_needs_no_login(tree):
+    # patches/matchmaker/: the chat page's code, as its page loads it, has no login gate
+    with urllib.request.urlopen(FRONTEND + "/chat", timeout=30) as response:
+        page = response.read().decode()
+    chunk = re.search(r"/assets/ChatPage-[\w-]+\.js", page)
+    assert chunk, page[:500]
+    with urllib.request.urlopen(FRONTEND + chunk[0], timeout=30) as response:
+        code = response.read().decode()
+    assert "Authentication Required" not in code
+    assert "Conversations are kept only with an account" in code
+
+
+def test_the_chat_page_leaves_the_model_to_the_search_api(tree):
+    # patches/matchmaker/0002: the chat page's request names no model, so that the
+    # search API's DEFAULT_LLM_MODEL applies (keys.env); upstream's page sent
+    # "cesnet/agentic", which failed without a CESNET key (staging 2026-11-12). The
+    # chat test below sends what the page sends, so this check keeps the two alike.
+    with urllib.request.urlopen(FRONTEND + "/chat", timeout=30) as response:
+        page = response.read().decode()
+    requests = []
+    for path in sorted(set(re.findall(r"/assets/[\w-]+\.js", page))):
+        with urllib.request.urlopen(FRONTEND + path, timeout=30) as response:
+            code = response.read().decode()
+        # the request body, minified: `{items:messages.filter(…).map(…)}` up to its `;`
+        requests += re.findall(r"=\{items:[^;]*\};\w+&&\(\w+\.thread_id=", code)
+    assert len(requests) == 1, requests
+    assert "model" not in requests[0], requests[0]
+
+
+def test_the_chat_page_keeps_brackets_in_link_addresses(tree):
+    # patches/matchmaker/0003: the chat page reads a link's address with brackets in
+    # balanced pairs, so ".../SI+data+(20)/..." stays one link with its citation (staging
+    # finding F19); upstream's code ended the address at the first closing bracket.
+    with urllib.request.urlopen(FRONTEND + "/chat", timeout=30) as response:
+        page = response.read().decode()
+    code = ""
+    for path in sorted(set(re.findall(r"/assets/[\w-]+\.js", page))):
+        with urllib.request.urlopen(FRONTEND + path, timeout=30) as response:
+            code += response.read().decode()
+    assert r"]\((.+?)\)" not in code  # upstream's address pattern
+    assert r"(?:[^()\n]|\(" in code  # the patch's, as the build keeps it
+
+
 def test_the_frontend_finds_the_file(tree):
     # the route the frontend's search page calls (matchmaker's src/lib/api.ts), which its
     # server proxies to the search API
@@ -365,6 +426,8 @@ def test_chat_answers_with_a_search(tree):
     # The chat agent searches with its tool and answers; one short question, so that a
     # run costs a few requests to the language model service in keys.env. runtest.sh sets
     # E2E_CHAT: 1 run, 0 skipped on request, "missing:…" no key, which fails (README).
+    # Through matchmaker's proxy without a login, the route its chat page calls
+    # (src/lib/api.ts), so that one run also shows AI Mode works for visitors.
     chat = os.environ.get("E2E_CHAT", "")
     if chat == "0":
         pytest.skip("WARNING: chat not tested, E2E_CHAT=0")
@@ -383,7 +446,7 @@ def test_chat_answers_with_a_search(tree):
         ]
     }
     request = urllib.request.Request(
-        f"{SEARCH}/chat",
+        f"{FRONTEND}/api/search/chat",
         data=json.dumps(question).encode(),
         headers={"Content-Type": "application/json"},
     )
@@ -469,7 +532,9 @@ def test_read_only_accounts_suffice(tree):
 def test_a_changed_record_replaces_the_old_one(tree):
     # Same identifier, new content: the owner changes, which records.py maps to
     # dc:creator and the warehouse to creators (it drops dc:format, so a changed
-    # type would not reach the index). Nothing else changes, mtime included.
+    # type would not reach the index). Nothing else changes, mtime included. The new
+    # owner is known only to the test directory, through sssd (records spec, scenario
+    # An owner from the directory).
     path = "/" + DISTINCT_FILE
     url = next(u for t, u in tree.values() if t == path)
     identifier = next(i for i, (t, _) in tree.items() if t == path)
@@ -481,14 +546,14 @@ def test_a_changed_record_replaces_the_old_one(tree):
     assert creator == "root"
     count = opensearch_count()
     time.sleep(2)  # datestamps have seconds granularity
-    os.chown(DATA / DISTINCT_FILE, 4242, -1)  # a uid without a name: creator "4242"
+    os.chown(DATA / DISTINCT_FILE, 10001, -1)  # alice: creator "Alice Anderson"
     crawl()  # starts the harvest and waits for it
     with crawler_db() as conn:
         ((after, creator),) = conn.execute(
             "SELECT datestamp, metadata->'creator'->>0 FROM records WHERE identifier = %s",
             (identifier,),
         ).fetchall()
-    assert (creator, after > before) == ("4242", True)
+    assert (creator, after > before) == ("Alice Anderson", True)
     with warehouse_db() as conn:
         rows = conn.execute(
             "SELECT r.datestamp, r.opensearch_synced FROM records r "
@@ -503,7 +568,7 @@ def test_a_changed_record_replaces_the_old_one(tree):
         "hits"
     ]["hits"]
     assert [[c.get("creatorName") for c in d["_source"]["creators"]] for d in docs] == [
-        ["4242"]
+        ["Alice Anderson"]
     ], docs
     hits = http(f"{SEARCH}/search?q=ferritin&resource=datasets")["hits"]
     assert [h["_source"]["url"] for h in hits].count(url) == 1, hits

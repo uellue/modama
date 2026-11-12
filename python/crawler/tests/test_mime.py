@@ -1,6 +1,8 @@
+import errno
 import gzip
 
 import pytest
+from modama_crawler import mime
 from modama_crawler.mime import detect, detect_with_tie
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(32)
@@ -63,3 +65,66 @@ def test_sniffing_reads_only_the_magic(tmp_path, bytes_read):
     before = bytes_read()
     assert detect(str(path)) == "image/png"
     assert bytes_read() - before < 64 * 1024
+
+
+# Detection can leave a type out (spec mime-database, recognition-checks-content)
+
+# GIF, not PNG: *.png is a glob of image/apng too, which would decide when image/png is left out
+LEFT_OUT = frozenset({"image/gif"})
+GIF = b"GIF89a" + bytes(32)
+
+
+def unreadable(monkeypatch):
+    """Every open of the detection fails, as on a stale NFS handle."""
+
+    def fail(*args, **kwargs):
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(mime, "open", fail, raising=False)
+
+
+def test_by_name():
+    assert mime.by_name("x.gif") == "image/gif"
+    # The best glob, not the weaker README*
+    assert mime.by_name("README.gif") == "image/gif"
+    assert mime.by_name("scan_0001") is None  # no glob
+    assert mime.by_name("data.json") is None  # two types tie on *.json
+
+
+def test_a_weaker_name_rule_decides(tmp_path, monkeypatch):
+    path = tmp_path / "README.gif"
+    path.write_text("hello\n")
+    unreadable(monkeypatch)  # the name decides: the content is not read
+    assert detect_with_tie(str(path), exclude=LEFT_OUT, strict=True) == (
+        "text/x-readme",
+        None,
+    )
+
+
+def test_the_content_matches_the_left_out_type(tmp_path):
+    path = tmp_path / "x.gif"
+    path.write_bytes(GIF)
+    assert detect(str(path)) == "image/gif"
+    assert detect_with_tie(str(path), exclude=LEFT_OUT) == (
+        "application/octet-stream",
+        None,
+    )
+
+
+def test_no_rule_left_the_content_decides(tmp_path):
+    path = tmp_path / "notes.gif"
+    path.write_text("hello\n")
+    assert detect_with_tie(str(path), exclude=LEFT_OUT) == ("text/plain", None)
+
+
+def test_a_read_error_is_raised_when_asked(tmp_path, monkeypatch):
+    path = tmp_path / "notes.gif"
+    path.write_text("hello\n")
+    unreadable(monkeypatch)
+    with pytest.raises(OSError, match="Input/output error"):
+        detect_with_tie(str(path), exclude=LEFT_OUT, strict=True)
+    # Not asked: the fallback, as the walk's detection has it
+    assert detect_with_tie(str(path), exclude=LEFT_OUT) == (
+        "application/octet-stream",
+        None,
+    )

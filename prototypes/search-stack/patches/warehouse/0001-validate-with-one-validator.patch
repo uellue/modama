@@ -1,0 +1,64 @@
+One JSON-schema validator per process instead of jsonschema.validate() per record
+
+What: TransformResources builds the validator for the warehouse's schema once (validator_for,
+check_schema), and transform_batch_impl validates each record with it (best_match of
+iter_errors), instead of calling jsonschema.validate(instance, schema) for every record.
+
+Why: validate() checks the schema against its metaschema and builds a validator on every call.
+With the warehouse's schema that is about 21 ms per record against 0.18 ms for the record itself
+(modama staging finding F16), about 60 % of a batch of 250 records (perf/phase-timer.py: 5.2 s
+of the batch); a batch of 250 ran 2.5 times as fast with it in the modama search stack's VM.
+
+Same result: in jsonschema 4.26.0 (the transform venv's), validate() is exactly
+`cls = validator_for(schema); cls.check_schema(schema); error = best_match(cls(schema).iter_errors(
+instance)); if error is not None: raise error`. The schema is checked once, at start, instead of
+per record, so an invalid schema now fails TransformResources() rather than every record.
+
+Against metadata-warehouse v1.10.0; applied with `patch -p1` in the image build (modama search
+stack, warehouse-airflow.Dockerfile; @weber, decision 177, change cpu-budget D9).
+
+diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
+index b63e17a..c329889 100644
+--- a/src/transform/transform_core.py
++++ b/src/transform/transform_core.py
+@@ -8,7 +8,9 @@ from typing import Any
+ import psycopg
+ import xmltodict
+ from fastembed import TextEmbedding
+-from jsonschema.validators import validate
++from jsonschema.exceptions import best_match
++from jsonschema.protocols import Validator
++from jsonschema.validators import validator_for
+ from lxml import etree as ET
+ from opensearchpy import OpenSearch
+ from opensearchpy.helpers import BulkIndexError, bulk
+@@ -55,6 +57,7 @@ class TransformResources:
+     embedding_transformer: TextEmbedding
+     client: OpenSearch
+     schema: dict[Any, Any]
++    validator: Validator
+     postgres_config: PostgresConfig
+
+     def __init__(self) -> None:
+@@ -76,6 +79,10 @@ class TransformResources:
+
+         with open(SCHEMA_PATH) as f:
+             self.schema = json.load(f)
++        # what jsonschema.validate() does on every call, once: checking the schema itself is the slow part
++        cls = validator_for(self.schema)
++        cls.check_schema(self.schema)
++        self.validator = cls(self.schema)
+
+
+ def transform_batch_impl(
+@@ -176,7 +183,9 @@ def transform_batch_impl(
+                 normalized_record = normalize_datacite_json.normalize_datacite_json(
+                     resource, metadata_namespace_for_access
+                 )
+-                validate(instance=normalized_record, schema=resources.schema)
++                error = best_match(resources.validator.iter_errors(normalized_record))
++                if error is not None:
++                    raise error
+                 normalized.append(
+                     SourceWithEmbeddingText(
+                         src=normalized_record,

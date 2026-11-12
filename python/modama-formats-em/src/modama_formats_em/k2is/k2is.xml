@@ -10,9 +10,12 @@
   </mime-type>
   <!-- The .gtg file has the DM4 header and holds tags, no image (staging run 3,
        finding F15: 33 .gtg files, 32 of them named <stem>_.gtg as K2IS captures
-       are). The name decides: a name match that is a subclass of the sniffed
-       type wins, so the DM4 format does not take it. A .gtg without its sector
-       files (a configuration file, for example) stays a file of this type. -->
+       are). The name decides the type without reading the file, so the DM4
+       format does not take it. A .gtg with its 8 sector files is a capture
+       whatever it holds. A .gtg without sector files (a configuration file,
+       for example) stays a file of this type if it has the DM4 header; the K2IS
+       format checks it, and one without gets the type it has without this glob
+       (change recognition-checks-content). -->
   <mime-type type="application/x.dm-gtg">
     <comment>Gatan Digital Micrograph .gtg tag file</comment>
     <sub-class-of type="application/x.dm4"/>

@@ -1,0 +1,15 @@
+# Indexing benchmark (perf/indexing-bench.sh), on top of docker-compose.yml and
+# docker-compose.override.yml (the test deployment): the transform worker's budget overrides
+# from PERF_CONCURRENCY and PERF_THREADS (empty: the computed budget; README, "CPU budget"),
+# and the scheduler's task_queued_timeout from PERF_QUEUED_TIMEOUT (Airflow's default 600 s).
+# CELERY_BATCH_SIZE is read by docker-compose.yml itself. perf/docker-compose.today.yml on top
+# runs the worker as before the CPU budget instead.
+services:
+  airflow-worker-transform:
+    environment:
+      TRANSFORM_PROCESSES: ${PERF_CONCURRENCY:-}
+      EMBEDDING_THREADS: ${PERF_THREADS:-}
+
+  airflow-scheduler:
+    environment:
+      AIRFLOW__SCHEDULER__TASK_QUEUED_TIMEOUT: ${PERF_QUEUED_TIMEOUT:-600}

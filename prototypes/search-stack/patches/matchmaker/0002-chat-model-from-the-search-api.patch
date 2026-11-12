@@ -1,0 +1,75 @@
+The chat's model from the search API's setting
+
+The chat page sends a model with every question, "cesnet/agentic" unless someone
+picked another in the model selector, which is off unless the build sets
+VITE_SHOW_MODEL_SELECTOR=true. The search API then uses that model, not its own
+DEFAULT_LLM_MODEL; a deployment without a CESNET key gets "Missing credentials"
+on every chat (staging 2026-11-12, @weber). Send the model only when the selector
+is on, so that otherwise the search API's setting chooses it.
+
+- api.ts, sendChatMessage: `model` in the request only with the selector on; the
+  argument stays, for the analytics events that name it.
+- api.test.ts: without the selector the request has no model; with it, the one
+  picked.
+
+--- a/src/lib/api.test.ts
++++ b/src/lib/api.test.ts
+@@ -202,6 +202,39 @@ describe("sendChatMessage", () => {
+         expect(requestBody).not.toHaveProperty("thread_id");
+     });
+
++    it("leaves the model to the search API when nobody could pick one", async () => {
++        let requestBody: { model?: string } | undefined;
++        server.use(
++            http.post("/api/search/chat", async ({request}) => {
++                requestBody = await request.json() as typeof requestBody;
++                return sseResponse(chatRun);
++            }),
++        );
++        await sendChatMessage([{sender: "user", content: "hi"}], "cesnet/agentic", undefined, () => {
++        }, () => {
++        });
++        expect(requestBody).not.toHaveProperty("model");
++    });
++
++    it("sends the model picked in the model selector", async () => {
++        vi.stubEnv("VITE_SHOW_MODEL_SELECTOR", "true");
++        let requestBody: { model?: string } | undefined;
++        server.use(
++            http.post("/api/search/chat", async ({request}) => {
++                requestBody = await request.json() as typeof requestBody;
++                return sseResponse(chatRun);
++            }),
++        );
++        try {
++            await sendChatMessage([{sender: "user", content: "hi"}], "cesnet/mini", undefined, () => {
++            }, () => {
++            });
++        } finally {
++            vi.unstubAllEnvs();
++        }
++        expect(requestBody?.model).toBe("cesnet/mini");
++    });
++
+     it("resolves without an error when its signal aborts the stream", async () => {
+         // Sends the first event, then stays open like an answer still being written.
+         server.use(http.post("/api/search/chat", () => new HttpResponse(
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -176,10 +176,12 @@ export const sendChatMessage = async (
+             content: [{text: msg.content}]
+         }));
+
+-    const requestBody: Record<string, unknown> = {
+-        items,
+-        model: model
+-    };
++    // The model only when the person could pick one (the model selector, a build option);
++    // otherwise the search API's own setting (DEFAULT_LLM_MODEL) chooses it.
++    const requestBody: Record<string, unknown> = {items};
++    if (import.meta.env.VITE_SHOW_MODEL_SELECTOR === 'true') {
++        requestBody.model = model;
++    }
+
+     if (threadId) {
+         requestBody.thread_id = threadId;

@@ -1,0 +1,13 @@
+# The transform worker as before the CPU budget, for comparison ("today", change cpu-budget,
+# review finding 7): one batch process with the libraries' default threads, bypassing
+# budget.py. With PERF_TODAY=1, perf/indexing-bench.sh adds this file. Not quite the old image:
+# patch 0002's sub-batch of 32 texts stays (the threads stay ONNX Runtime's default), and the
+# pool `transform`, which budget.py would set, is set to the 1 process here.
+services:
+  airflow-worker-transform:
+    environment:
+      EMBEDDING_THREADS: ""  # ONNX Runtime's default, whatever PERF_THREADS says
+    command:
+      - bash
+      - -c
+      - airflow pools set transform 1 today > /dev/null && exec /entrypoint celery worker --queues transform --concurrency 1

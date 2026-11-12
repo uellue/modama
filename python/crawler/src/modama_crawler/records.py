@@ -53,11 +53,17 @@ def oai_identifier(path: str) -> str:
 
 
 @cache
-def user_name(uid: int) -> str:
+def creator(uid: int) -> str:
+    """The owner's full name, from the user database (decision 201).
+
+    The GECOS field up to its first comma (passwd(5); Debian's adduser writes ",,,"
+    for a user without a name), else the login name, else the uid.
+    """
     try:
-        return pwd.getpwuid(uid).pw_name
+        user = pwd.getpwuid(uid)
     except KeyError:
         return str(uid)
+    return user.pw_gecos.split(",")[0].strip() or user.pw_name
 
 
 def size_text(size: int) -> str:
@@ -119,7 +125,7 @@ def dc_metadata(dataset: Dataset, names: Mapping[str, str]) -> dict[str, list[st
         relations.append(browse_url(dataset.parent))
     metadata = {
         "title": [dataset.anchor],
-        "creator": [user_name(dataset.uid)],
+        "creator": [creator(dataset.uid)],
         "description": [description(dataset)],
         "date": [format_datestamp(datetime.fromtimestamp(dataset.mtime, UTC))],
         "type": ["Dataset"],
