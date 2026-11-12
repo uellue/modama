@@ -382,6 +382,20 @@ def test_the_chat_page_leaves_the_model_to_the_search_api(tree):
     assert "model" not in requests[0], requests[0]
 
 
+def test_the_chat_page_keeps_brackets_in_link_addresses(tree):
+    # patches/matchmaker/0003: the chat page reads a link's address with brackets in
+    # balanced pairs, so ".../SI+data+(20)/..." stays one link with its citation (staging
+    # finding F19); upstream's code ended the address at the first closing bracket.
+    with urllib.request.urlopen(FRONTEND + "/chat", timeout=30) as response:
+        page = response.read().decode()
+    code = ""
+    for path in sorted(set(re.findall(r"/assets/[\w-]+\.js", page))):
+        with urllib.request.urlopen(FRONTEND + path, timeout=30) as response:
+            code += response.read().decode()
+    assert r"]\((.+?)\)" not in code  # upstream's address pattern
+    assert r"(?:[^()\n]|\(" in code  # the patch's, as the build keeps it
+
+
 def test_the_frontend_finds_the_file(tree):
     # the route the frontend's search page calls (matchmaker's src/lib/api.ts), which its
     # server proxies to the search API
