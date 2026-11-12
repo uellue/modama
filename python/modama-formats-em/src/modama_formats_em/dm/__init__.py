@@ -30,8 +30,7 @@ from modama_crawler.formats import (
     Extracted,
     Format,
 )
-
-from ..values import textual
+from modama_crawler.formats.values import textual
 
 HERE = Path(__file__).parent
 # Python sizes a file's buffer from st_blksize, 1 MiB on NFS: every seek in the tag

@@ -13,8 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
-
-from ..values import textual
+from modama_crawler.formats.values import textual
 
 log = logging.getLogger(__name__)
 HERE = Path(__file__).parent

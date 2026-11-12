@@ -1,8 +1,9 @@
-"""Whether a value from a file can be shown as text, for every format of this package.
+"""Whether a value from a file can be shown as text, one check for the formats of every collection.
 
 @weber (2026-11-12, TEMPLATE.md): skip "tags with content that is not suitable
 for text display (too large, binary data)". The limits, from RosettaSciIO's
-110 DM test files and the K2IS fixture Capture52 (2026-11-12):
+110 DM test files and the K2IS fixture Capture52 (2026-11-12; moved here from
+modama_formats_em.values):
 """
 
 import re
