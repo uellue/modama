@@ -17,7 +17,7 @@ from modama_crawler.testing import recognise
 from modama_crawler.walk import walk
 
 from modama_formats_em import dm
-from modama_formats_em.dm import first_image, parsed, settings, tag_paths, version
+from modama_formats_em.dm import first_image, kept, parsed, version
 from modama_formats_em.testing import described, stale
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -54,15 +54,14 @@ def test_a_dmw_file_with_the_dm4_header(collection_tests, tmp_path):
     assert dmw.subjects == ["Gatan Digital Micrograph workspace"]
 
 
-# A workspace as GMS writes it (2026-11-12): root tags only, no ImageList
+# A workspace as GMS writes it (2026-11-12): root tags only, no ImageList;
+# its windows, Window 0 (217, 84, 646, 536) and Window 1, are left out (decision 235)
 WORKSPACE = [
     "File count 2",
     "File name 0 .\\exemplary_workspace\\h1.dm4",
     "File name 1 .\\exemplary_workspace\\100 deg C.dm4",
     "Frame 0 None",
     "Frame 1 None",
-    "Window 0 (217, 84, 646, 536)",
-    "Window 1 (641, -17, 835, 207)",
     "Workspace name exemplary_workspace",
 ]
 
@@ -70,8 +69,9 @@ WORKSPACE = [
 def test_a_representative_dmw_file(collection_tests, tmp_path):
     (dmw,) = described(collection_tests, "workspace", tmp_path)
     assert dmw.dataset.basis == "Digital Micrograph header"
-    # Every tag as the reader gives it, in its order (decision 173), the Windows
-    # paths with their backslashes; the images it names are not there
+    # Every tag but the skip list as the reader gives it, in its order
+    # (decisions 173, 235), the Windows paths with their backslashes; the
+    # images it names are not there
     assert dmw.dataset.extraction.extracted.summary == WORKSPACE
     assert dmw.description == (
         ", ".join(WORKSPACE)
@@ -98,15 +98,13 @@ def test_the_stored_dmw_description(collection_tests, tmp_path):
     assert d.extraction.extracted.summary == WORKSPACE
 
 
-def test_a_tag_longer_than_storage_keeps(collection_tests, tmp_path):
-    # Each phrase cut to 4,096 characters (extraction.MAX_STRING): the DM3
-    # stand-in's colour table, 6,053 characters as the extractor gives it
+def test_a_tag_not_suitable_for_text_is_left_out(collection_tests, tmp_path):
+    # The DM3 stand-in's colour table (a list of 256 colours, 6,053 characters
+    # as a phrase, cut by storage before) and its page setup are not in the
+    # description: the skip list (spec formats/dm, "What is left out")
     summary = stored(collection_tests, "dm3_dmw", tmp_path).extraction.extracted.summary
-    assert len(summary) == 236 <= extraction.MAX_ITEMS
-    (cut,) = [p for p in summary if len(p) == extraction.MAX_STRING]
-    clut = "DocumentObjectList.TagGroup0.ImageDisplayInfo.CLUT [(0, 0, 0), "
-    assert cut.startswith(clut)
-    assert max(len(p) for p in summary) == extraction.MAX_STRING
+    assert not [p for p in summary if "CLUT" in p or p.startswith("PageSetup.")]
+    assert max(len(p) for p in summary) < extraction.MAX_STRING
 
 
 def test_a_representative_compressed_workspace(collection_tests, tmp_path):
@@ -220,7 +218,9 @@ def test_a_dmw_file_with_the_dm3_header(collection_tests, tmp_path):
         "Digital Micrograph header; file of interest: DM3, no .dmw in DM3 seen yet"
     )
     summary = dmw.dataset.extraction.extracted.summary
-    assert len(summary) == 236
+    # 236 tags, 107 of them on the skip list (the document's, page's and
+    # window's settings, the Session Info form, the image data not read)
+    assert len(summary) == 129
     name = "ImageList.TagGroup1.ImageTags.Microscope Info.Name FEI Tecnai Remote"
     assert name in summary
 
@@ -249,12 +249,18 @@ def test_the_dm_header():
     assert version(b"") is None
 
 
+# The data image's tags in the values: under the path RosettaSciIO's
+# original_metadata gives them
+IMAGE = "ImageList.TagGroup0.ImageTags."
+
+
 def test_a_representative_dm4_image(collection_tests, tmp_path):
     (image,) = described(collection_tests, "cl_image_dm4", tmp_path)
-    # The values as the file holds them, a number after its tag's name
+    # The values as the file holds them, a number after its tag's name; the
+    # size as the reader gives it
     assert image.description.startswith(
-        "IMAGING, SCANNING, SEM, 3kV, 2.5kx, STEM Camera Length 1.0, 5/14/2021, "
-        "11:41:07 AM; "
+        "IMAGING, SCANNING, SEM, 3kV, 2.5kx, STEM Camera Length 1.0, DigiScan, "
+        "y 2, x 2, scale 18.325349807739258 µm, 5/14/2021, 11:41:07 AM; "
     )
     assert image.subjects == [
         "Gatan Digital Micrograph (DM4)",
@@ -263,14 +269,17 @@ def test_a_representative_dm4_image(collection_tests, tmp_path):
         "CL",
         "IMAGING",
     ]
-    # 119 image tags, without the 18 of the Session Info form; then
-    # RosettaSciIO's mapping, labelled (decision 230)
+    # Every tag but the skip list (120: the image's 101 tags but the Session
+    # Info form, its 19 image data and name tags); then RosettaSciIO's
+    # mapping, labelled (decision 230)
     values = image.dataset.extraction.extracted.values
-    assert list(values) == ["original_metadata", "metadata", "axes"]
+    assert list(values) == ["original_metadata", "mapped_metadata", "axes"]
     tags = values["original_metadata"]
-    assert len(tags) == 101
-    assert tags["Acquisition.Monarc Spectrometer.Grating"] == "300"
-    assert values["metadata"]["Acquisition_instrument.SEM.beam_energy"] == 3.0
+    assert len(tags) == 120
+    assert tags[IMAGE + "Acquisition.Monarc Spectrometer.Grating"] == "300"
+    assert values["mapped_metadata"]["Acquisition_instrument.SEM.beam_energy"] == 3.0
+    # Stored with the dataset, not in the record
+    assert "Monarc" not in image.description
     # The tags, not the whole file (D7), in a small buffer: 143,372 bytes with
     # RosettaSciIO's file_reader on a local disk, 1 MiB per refill on NFS (F14)
     assert image.bytes_read < 100_000
@@ -290,7 +299,7 @@ def test_a_representative_dm3_image(collection_tests, tmp_path):
     # no parameter set; Session Info.Operator and Specimen empty
     assert image.description.startswith(
         "DIFFRACTION, SCANNING, STEM NANOPROBE, 200kV, 225kx, STEM Camera Length 135.0, "
-        "8/8/2016, 4:26:37 PM; "
+        "DigiScan, y 68, x 68, scale 0.24853801727294922 nm, 8/8/2016, 4:26:37 PM; "
     )
     assert image.subjects == [
         "Gatan Digital Micrograph (DM3)",
@@ -375,13 +384,19 @@ CAMERA = {
 }
 
 
-def from_camera(monkeypatch, **session) -> Extracted:
-    """The DM4 extraction of an image with CAMERA's tags, Session Info's fields as given:
-    the image of stem_image_dm3 with these tags."""
+def from_camera(monkeypatch, tags=None, mapping=(), **session) -> Extracted:
+    """The DM4 extraction of an image with tags (CAMERA's by default), Session Info's fields
+    as given, 3838 × 3710 pixels of 0.45048588514328003 nm as the reader gives the camera
+    file's: the image of stem_image_dm3 with these tags and axes, and RosettaSciIO's
+    mapping with the given entries added."""
     image = first_image(os.path.join(FIXTURES, "stem_image_dm3", "test_STEM_image.dm3"))
-    tags = deepcopy(CAMERA)
-    tags["Session Info"].update(session)
+    tags = deepcopy(CAMERA) if tags is None else tags
+    if "Session Info" in tags:
+        tags["Session Info"].update(session)
     image["original_metadata"]["ImageList"]["TagGroup0"]["ImageTags"] = tags
+    image["mapping"].update(mapping)
+    for axis, size in zip(image["axes"], (3838, 3710)):
+        axis.update(size=size, scale=0.45048588514328003, units="nm")
     monkeypatch.setattr(dm, "first_image", lambda path: image)
     return dm.Dm4().extract(Dataset(anchor="/2018-7-17 15_29_0000.dm4"), "/nowhere")
 
@@ -389,15 +404,20 @@ def from_camera(monkeypatch, **session) -> Extracted:
 def test_the_summary_line_of_an_image_from_a_camera(monkeypatch):
     extracted = from_camera(monkeypatch)
     # As the file holds them (decision 230): Lorentz, the imaging and the
-    # operation mode, once; a number after its tag's name
+    # operation mode, once; a number after its tag's name; the size as the
+    # reader gives it
     assert extracted.summary == [
         "Lorentz",
         "TEM NANOPROBE",
         "300kV",
         "11.5kx",
         "K2 summit",
+        "K2-0001",
         "Exposure Time (s) 2.0",
         "Search",
+        "y 3838",
+        "x 3710",
+        "scale 0.45048588514328003 nm",
         "7/17/2018",
         "3:29:20 PM",
     ]
@@ -406,24 +426,74 @@ def test_the_summary_line_of_an_image_from_a_camera(monkeypatch):
 
 def test_empty_tags_and_infinities(monkeypatch):
     tags = from_camera(monkeypatch).values["original_metadata"]
-    assert tags["Session Info.Operator"] == []
-    assert tags["Acquisition.Parameters.High Level.Exposure Live Time"] == "inf"
+    assert tags[IMAGE + "Session Info.Operator"] == []
+    assert tags[IMAGE + "Acquisition.Parameters.High Level.Exposure Live Time"] == "inf"
 
 
 def test_user_interface_settings_are_left_out_of_the_values(monkeypatch):
     tags = from_camera(monkeypatch).values["original_metadata"]
-    objects = "Acquisition.Parameters.Objects."
+    objects = IMAGE + "Acquisition.Parameters.Objects."
     assert tags[objects + "TagGroup0.Frame Combine Style"] == "Copy"
     assert tags[objects + "TagGroup2.Class Name"] == "cm_imgproc_histogram"
     assert not [p for p in tags if p.startswith(objects + "TagGroup1.")]
-    assert not [p for p in tags if p.startswith("Session Info.Items")]
-    assert tags["Session Info.Specimen"] == []
+    assert not [p for p in tags if ".Items." in p]
+    assert tags[IMAGE + "Session Info.Specimen"] == []
+
+
+def test_the_older_session_info_form(monkeypatch):
+    # Older GMS keeps the form and its fields under Microscope Info (24 such
+    # tags in RosettaSciIO's test files): left out, the fields read
+    tags = deepcopy(CAMERA)
+    form = tags.pop("Session Info")["Items"]
+    tags["Microscope Info"].update(Items=form, Specimen="FeGe lamella", Operator=[])
+    extracted = from_camera(monkeypatch, tags)
+    assert not [p for p in extracted.values["original_metadata"] if ".Items." in p]
+    assert extracted.summary[-2:] == ["3:29:20 PM", "FeGe lamella"]
+
+
+def test_a_tag_never_seen_before(monkeypatch):
+    # No allow list: what the skip list does not name is kept
+    tags = deepcopy(CAMERA)
+    tags["Foo Vendor"] = {"New Setting": 7}
+    values = from_camera(monkeypatch, tags).values["original_metadata"]
+    assert values[IMAGE + "Foo Vendor.New Setting"] == 7
+
+
+def test_large_arrays_are_left_out(monkeypatch):
+    # A CL detector's Saturation fraction, 67 values in RosettaSciIO's
+    # 2D__test-MonarcCL_spectrum-SI.dm4; the camera's 2-value sizes stay
+    tags = deepcopy(CAMERA)
+    tags["CL"] = {"Acquisition": {"Saturation fraction": [0.25] * 67}}
+    tags["Acquisition"]["Device"]["Active Size (pixels)"] = (3838, 3710)
+    # RosettaSciIO maps it to Acquisition_instrument.Detector.saturation_fraction
+    fraction = "Acquisition_instrument.Detector.saturation_fraction"
+    path = IMAGE + "CL.Acquisition.Saturation fraction"
+    extracted = from_camera(monkeypatch, tags, {path: (fraction, None)})
+    values = extracted.values["original_metadata"]
+    mapped = extracted.values["mapped_metadata"]
+    assert path not in values
+    assert values[IMAGE + "Acquisition.Device.Active Size (pixels)"] == (3838, 3710)
+    assert fraction not in mapped
+    assert "Acquisition_instrument.TEM.microscope" in mapped
+
+
+def test_what_gms_keeps_outside_the_images_tags(collection_tests, tmp_path):
+    # The document's, page's and window's settings, the thumbnails and the
+    # image data the reader did not read are left out; the image's name and
+    # calibrations stay
+    (image,) = described(collection_tests, "cl_image_dm4", tmp_path)
+    tags = image.dataset.extraction.extracted.values["original_metadata"]
+    roots = {p.split(".", 1)[0] for p in tags}
+    assert roots == {"ImageList"}
+    assert not [p for p in tags if ".ImageData.Data." in p]
+    entry = "ImageList.TagGroup0."
+    assert tags[entry + "ImageData.Calibrations.Dimension.TagGroup0.Units"] == "µm"
+    assert tags[entry + "ImageData.Dimensions.Data0"] == 2
 
 
 def test_the_data_image_not_the_thumbnail(collection_tests, tmp_path):
     # ImageList.TagGroup0 is the thumbnail (Thumbnails names it) with one tag
-    # group of its own; the values are the data image's, TagGroup1, and hold
-    # nothing of the document, page or window settings, which are not in ImageTags
+    # group of its own; the values hold the data image's, TagGroup1
     (image,) = described(collection_tests, "cl_image_dm4", tmp_path)
     file = parsed(
         os.path.join(FIXTURES, "cl_image_dm4", "test-MonarcCL_mono-image.dm4")
@@ -431,11 +501,38 @@ def test_the_data_image_not_the_thumbnail(collection_tests, tmp_path):
     assert file.tags_dict["Thumbnails"]["TagGroup0"]["ImageIndex"] == 0
     images = file.tags_dict["ImageList"]
     assert list(images["TagGroup0"]["ImageTags"]) == ["GMS Version"]
-    data = images["TagGroup1"]["ImageTags"]
-    assert image.dataset.extraction.extracted.values["original_metadata"] == dict(
-        tag_paths(data, settings)
-    )
-    assert len(data["Session Info"]["Items"]) == 3  # the form, left out
+    tags = image.dataset.extraction.extracted.values["original_metadata"]
+    mine = {p.removeprefix(IMAGE): v for p, v in tags.items() if p.startswith(IMAGE)}
+    assert mine == kept(images["TagGroup1"]["ImageTags"])
+    assert len(mine) == 101
+
+
+def test_no_formatted_tags(monkeypatch):
+    # Older GMS: no Formatted Voltage and Formatted Indicated Mag
+    # (2D__test_diffraction_pattern.dm3); the plain tags as the file holds them
+    tags = deepcopy(CAMERA)
+    info = tags["Microscope Info"]
+    del info["Formatted Voltage"], info["Formatted Indicated Mag"]
+    info.update(Voltage=200000.0, **{"Indicated Magnification": 320.0})
+    summary = from_camera(monkeypatch, tags).summary
+    assert summary[2:4] == ["Voltage 200000.0", "Indicated Magnification 320.0"]
+
+
+def test_a_placeholder_zero(monkeypatch):
+    # GMS writes 0 where it has no value: not in the summary line, in the values
+    tags = deepcopy(CAMERA)
+    tags["Microscope Info"]["STEM Camera Length"] = 0.0
+    extracted = from_camera(monkeypatch, tags)
+    assert not [p for p in extracted.summary if "Camera Length" in p]
+    path = IMAGE + "Microscope Info.STEM Camera Length"
+    assert extracted.values["original_metadata"][path] == 0.0
+
+
+def test_a_stack_builders_image(monkeypatch):
+    # RosettaSciIO's get_mapping reads such an image's tags from source.Tags at
+    # creation (test_stackbuilder_imagestack.dm3); so does the summary line
+    extracted = from_camera(monkeypatch, {"source": {"Tags at creation": CAMERA}})
+    assert extracted.summary[:2] == ["Lorentz", "TEM NANOPROBE"]
 
 
 def test_empty_specimen_and_operator_are_left_out_of_the_summary_line(
@@ -447,7 +544,8 @@ def test_empty_specimen_and_operator_are_left_out_of_the_summary_line(
     assert summary[-1] == "11:41:07 AM"
     assert "[]" not in image.description
     tags = image.dataset.extraction.extracted.values["original_metadata"]
-    assert tags["Session Info.Specimen"] == tags["Session Info.Operator"] == []
+    assert tags[IMAGE + "Session Info.Specimen"] == []
+    assert tags[IMAGE + "Session Info.Operator"] == []
 
 
 def test_filled_specimen_and_operator_are_in_the_summary_line(monkeypatch):
@@ -457,9 +555,11 @@ def test_filled_specimen_and_operator_are_in_the_summary_line(monkeypatch):
 
 def test_an_rgba_image(collection_tests, tmp_path):
     # RosettaSciIO's file_reader refuses RGBA images when lazy; the tags are
-    # still read (F14). Its image tags are empty: no summary line
+    # still read (F14). Its image tags are empty: the size alone
     (image,) = described(collection_tests, "rgba_image_dm4", tmp_path)
-    assert image.description.startswith("Gatan Digital Micrograph file, version 4")
+    assert image.description.startswith(
+        "y 2, x 2; Gatan Digital Micrograph file, version 4"
+    )
     assert image.subjects == ["Gatan Digital Micrograph (DM4)"]
 
 

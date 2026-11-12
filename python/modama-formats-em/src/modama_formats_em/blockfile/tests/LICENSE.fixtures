@@ -1,0 +1,19 @@
+fixtures/scan/test2.blo is a test file of RosettaSciIO
+(https://github.com/hyperspy/rosettasciio), copied unchanged from its tag
+v0.15.0, rsciio/tests/data/blockfile/test2.blo. The fixture header_only is its
+first 4,096 bytes, made at test time by generate.py.
+
+Copyright 2007-2026 The HyperSpy developers.
+
+They are distributed under the GNU General Public License, version 3 or (at
+your option) any later version, as RosettaSciIO is; the licence text is in
+../../../../COPYING.rosettasciio, copied from RosettaSciIO's COPYING.txt.
+
+fixtures/stingray/Stingray16bit_7_11.blo comes from the block file
+Stingray16bit_7_11.blo of LiberTEM's test data (libertem-test-data), published
+here with its owner's agreement (2026-11-12). It holds metadata only: the
+file's first 4,096 bytes, its header and note, unchanged. The diffraction
+patterns are not included. blo-fixture.sh of the field tests did the cut.
+
+It is distributed under the MIT licence of modama-formats-em, as is the rest
+of modama-formats-em; see ../../../../LICENSE.

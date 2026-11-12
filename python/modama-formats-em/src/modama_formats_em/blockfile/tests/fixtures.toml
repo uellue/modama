@@ -1,0 +1,25 @@
+[scan]
+purpose = "representative"
+validity = "parser-only: a 3x2 scan of 5x5 pixel diffraction patterns, header ID IMGBLO, MAGIC 258, 200000 V, camera length 2000 (10 x mm), scan rotation 2500 (100 x degrees), acquired 2015-12-01 15:43 (serial date), a note ('Precession angle', 'Precession Frequency', 'Camera gamma : on'); read by rosettasciio 0.15.0 on 2026-11-12. RosettaSciIO does not document how it was made; its Data_offset_2 (4108) is what RosettaSciIO's writer computes for a 3x2 scan, so it is probably a real acquisition's header written out by HyperSpy with cropped data"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/blockfile/test2.blo, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/blockfile/test2.blo, sha256 96099a906d02e16938a70402d64d8a5365717455fb8f5a4ccfd6e8c0c676fa20, unchanged"
+
+[header_only]
+purpose = "reproducer"
+validity = "invalid-by-design: the block file of fixture scan cut after its header and note (Data_offset_1, 4,096 bytes), without the virtual bright-field image and the diffraction patterns (spec formats/blockfile, the header, not the data)"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.blockfile.tests.generate:header_only, from the file of scan"
+generator = "modama_formats_em.blockfile.tests.generate:header_only"
+
+[stingray]
+purpose = "representative"
+validity = "vendor-written, header only (first 4,096 bytes): the header and note up to Data_offset_1 (0x1000), unchanged, without the virtual bright-field image and the diffraction patterns (decision 232). MAGIC 259, the 16-bit variant (the note: 'Acquisition SW: ScanDpa v3.0 [Build:202409051150]', 'Detector: AVT Stingray F046B', 'Blo Bit Depth: 16 bits'), a 7x11 scan of 576x576 patterns, Beam_energy 60000, Camera_length 6000, Acquisition_time 45552.0 (2024-09-17, no time of day); read by rosettasciio 0.15.0 on 2026-11-12 with its warning 'Blockfile has unrecognized header signature' (spec formats/blockfile, the 16-bit variant)"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "libertem-test-data/Stingray16bit_7_11.blo on the ER-C staging data (the file that started this format, found with modama-chain browse on 2026-11-12), cut by @weber with .claude/field-tests/blo-fixture.sh on 2026-11-12; sha256 461c7ccba3b5236db9e1992c6b0e5377987a797698a65dffd09933cb29694ec2"
+
+[text_blo]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.blo without the IMGBLO header (spec formats/blockfile, a text file named like a block file)"
+licence = "MIT"
+source = "modama_formats_em.blockfile.tests.generate:text_blo"
+generator = "modama_formats_em.blockfile.tests.generate:text_blo"
