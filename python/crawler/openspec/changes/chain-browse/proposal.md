@@ -47,7 +47,7 @@ Serves: @weber's requests of 2026-11-12 (scenario D); requirements-pipeline 1.3 
 
 - `python/search-chain/`: `src/modama_chain/browse.py` (web app), `views.py` (the views of a path), `live.py` (the crawler part, run as a child process), `upstream.py` (harvester, warehouse, search API, matchmaker), small additions to `crawler.py` and `warehouse.py`; `cli.py` (`browse`); tests; README; `pyproject.toml` (extra `browse`).
 - `python/crawler/`: `src/modama_crawler/walk.py` (`top`), `src/modama_crawler/cli.py` (`configure`), `tests/test_walk.py`, the `crawl` spec, `AGENTS.md` (snapshots are data), `BACKLOG.md`, `design/requirements-pipeline.md`, `design/field-tests/search-stack-staging-runbook.md`.
-- `prototypes/search-stack/`: `docker-compose.yml`, `docker-compose.override.yml`, `docker-compose.staging.yml` (service `browse`), `browse.Dockerfile` (new), `uptest.sh`, `upstaging.sh` (build `crawler` first), `runtest.sh`, `test_e2e.py`, `README.md`.
+- `prototypes/search-stack/`: `docker-compose.yml`, `docker-compose.override.yml`, `docker-compose.staging.yml` (service `browse`, profile `browse` there), `crawler.Dockerfile` (a stage `browse`), `runtest.sh`, `test_e2e.py`, `README.md`.
 - New dependencies (design D15, @weber 2026-11-12, item 215): `xmltodict` 1.0.4 and `jsonschema` 4.26.0 with its dependencies, pinned to the warehouse's transform environment (its `uv.lock` of v1.10.0), in the extra `browse` of `modama-chain` only. No new JavaScript or CSS library, no Debian package.
 
 The review of c182bc1 (2026-11-12) and the main session's decisions on it are folded into design.md (R1 to R16).

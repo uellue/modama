@@ -76,3 +76,30 @@ the warehouse patches don't touch them; pins equal uv.lock; fixtures exist; TIME
 killpg reaches spawned extraction workers; excluding siblings by patterns would change what
 ancestors' pre-order calls see (conda-meta), which supports a crawler change; with `top="/"` the
 crawl's code path is unchanged.
+
+# Code review of 2d49bcd, 581d09c and the stack's changes, 2026-11-12
+
+An agent that did not write the code, given the code, the change and the upstream sources. Each
+finding verified by the author before acting; "Done" says what became of it.
+
+1. BLOCKER: a file at the top of the tree gave `top="/"`, which the walk took for "no top": the
+   whole tree. Verified (`walk(root, [], top="/")` listed every folder). Done: `top=None` is the
+   crawl, `top="/"` the root alone; test in `test_subfolders_are_not_entered`.
+2. SHOULD: a killed child leaves its MIME database (6.5 MB) in the tmpfs. Verified by reading
+   (`cli.configure`'s `TemporaryDirectory`, SIGKILL skips its cleanup). Done: a folder per run,
+   `TMPDIR` for the child, removed after the child ended.
+3. SHOULD: `upstaging.sh` building `crawler` first recreates `crawler` and `crawl-timer` on a plain
+   run when the checkout moved. Verified by reading. Done: the browse image is a stage of
+   `crawler.Dockerfile`; `uptest.sh` and `upstaging.sh` unchanged.
+4. SHOULD: `./upstaging.sh` would start `browse` with the stack and fail without the snapshot
+   folder. Done: profile `browse` in `docker-compose.staging.yml` (`config --services` without it
+   has no `browse`, with it has).
+5. NIT: a cross-site `GET /api/live` ends the running computation. Done: the header is required.
+6. NIT: a folder swapped for a symlink between check and listing. Accepted, stated in D12.
+7. NIT: two snapshots in the same second gave 500. Done: 409.
+8. NIT: `above()` dropped the ancestors' pre-order warnings. Done: kept. Its raising on an
+   unlistable folder above: kept (the caller asked for that path).
+9. NIT: `LIMIT` repeated `TIME_LIMIT`. Done: `2 * TIME_LIMIT`.
+10. NIT: notes overwrote one another. Done: each store's error on its own views.
+11. NIT: `sanitizeLinkHref` not cited; the cut counts characters, not UTF-16 units. Done: cited,
+    the difference noted in the code.

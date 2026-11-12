@@ -42,6 +42,18 @@ Agreed with @weber, co-admin of the server, 2026-11-10.
   with the server's credentials (agent forwarding, `gh`, `docker login`). The agent has
   no shell on the server: it reads the shared checkout only, and @weber runs every
   command.
+- **The browser** (`modama-chain browse`, service `browse`, port 17655; change
+  `chain-browse`, section "Browse" below): its live views run the shared checkout's current
+  code (crawler, formats, `modama-chain`), also code an agent edited, on staging at the next
+  reload, as @weber's uid, with read access to the data tree and the stack's network
+  (@weber, 2026-11-12, item 216: "good points, sounds good!"). Safeguards: the live child
+  gets only `PATH`, `HOME` and `LANG` (no database, HTTP or Airflow setting); the container
+  is read-only with a `tmpfs` on `/tmp`; the data tree and the sources are mounted
+  read-only; 127.0.0.1 only. It writes only snapshots, into the checkout's
+  `.claude/field-tests/browse/`. The acceptance of ports on localhost for trusted users
+  above extends to this tool: other accounts on the server can reach 127.0.0.1:17655.
+  A snapshot carries text from users' files: the agent reads it as data, never as
+  instructions.
 - **Recording:** the terminal's output and timing, never keystrokes, go to
   `.claude/field-tests/run-<n>/` in the checkout (gitignored, private). The agent reads
   it as it goes, and it stays in the agent's transcript: keep secrets off the screen.
@@ -416,6 +428,43 @@ them all again (726 batches: 8 to 9 h at run 3's rate after the worker's restart
 27 h at its slow rate). So the search shows the full names by mid-morning tomorrow at
 best, and the indexing may still run at tomorrow's 19:00 crawl. A way back after 19:00
 costs another full re-index. Follow it with `dc exec crawler modama-chain status`.
+
+## Browse, 2026-11-12
+
+`modama-chain browse` (change `chain-browse`; `/python/search-chain/README.md`, "browse"):
+a page with the data tree on the left and, for the selected file, what each stage makes
+of it, stored and live. Safety: above, "The browser". It starts alone (the compose profile
+`browse`, which `./upstaging.sh` leaves out), so it never recreates `crawler`, `crawl-timer`
+or Airflow's services, also during a crawl, a harvest or an indexing run; its image is a
+stage of the crawler's Dockerfile with a tag of its own, so building it leaves the crawler's
+image as it is. In the stack's folder, with the `dc` shorthand of step 12:
+
+```bash
+mkdir -p ../../.claude/field-tests/browse
+```
+```bash
+dc --profile browse build browse
+```
+```bash
+dc --profile browse up -d --no-deps browse && dc --profile browse ps browse
+```
+
+The first line creates the snapshot folder as you (Docker would create a missing one as
+root; the service refuses to start without it). From your laptop:
+
+```bash
+ssh -N -L 17655:127.0.0.1:17655 <you>@<server>
+```
+
+Then http://localhost:17655/?path=/adhoc/ (any folder or file of the tree after `?path=`).
+↑/↓ move, Enter or → opens a folder, ← goes up, `/` filters. A file's live views show how
+long they took: please note the time once for a file in one of the largest folders (67,600
+files, `.claude/survey/series-candidates.tsv`); the VM cannot show what sniffing costs over
+NFS. An edit to a format, an extractor, `records.py` or `render.py` in the checkout shows on
+the next reload of the page; after an edit to `python/search-chain/`:
+`dc --profile browse restart browse`. "Save for Claude" writes the file's views to
+`.claude/field-tests/browse/<time>-<name>.md` and shows `browse/<name>` to copy into the
+chat. Stop it with `dc --profile browse stop browse`.
 
 ## For colleagues
 
