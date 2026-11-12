@@ -29,13 +29,20 @@ These need tasks 1.1 and 1.2.
 
 ## 3. Integration
 
-- [ ] 3.1 Crawl a test tree twice in the search stack, with the `em` collection enabled. The tree holds Capture52, `notes.gtg`, `notes.dmw`, `empty.dmw`, `exemplary_workspace.dmw`, the composed `exemplary_workspace.dmwx` and `IDES_DMS_Config.gtg`. Between the crawls, change one unrelated file in the directory. Verify:
+- [x] 3.1 Crawl a test tree twice in the search stack, with the `em` collection enabled. The tree holds Capture52, `notes.gtg`, `notes.dmw`, `empty.dmw`, `exemplary_workspace.dmw`, the composed `exemplary_workspace.dmwx` and `IDES_DMS_Config.gtg`. Between the crawls, change one unrelated file in the directory. Verify:
   - `modama-crawler records` shows the types of tasks 2.2 and 2.3.
   - The second crawl recognises that directory again and gives the same types and bases. Records of unchanged datasets keep their datestamps.
   - `modama-chain trace` on `notes.gtg` shows the basis of spec `chain-trace`.
   - `./runtest.sh e2e` in `/prototypes/search-stack/`, the crawler suite and the `modama-formats-em` suite pass, with the number skipped given.
 
-  State: the e2e tree holds `stray/notes.gtg`, and `test_the_crawler_line_shows_the_datasets_basis` in `prototypes/search-stack/test_e2e.py` traces it and a plain file (code review finding 3). `./runtest.sh e2e` is pending: the VM's stack is held by another agent.
+  State: the e2e tree holds `stray/notes.gtg`, and `test_the_crawler_line_shows_the_datasets_basis` in `prototypes/search-stack/test_e2e.py` traces it and a plain file (code review finding 3).
+
+  Done 2026-11-12, 12:42 to 12:58 UTC, on the branch merged with `crawler` at 3e96867 (schema migrations, AI Mode), in `prototypes/search-stack/` with `MODAMA_SECRETS_DIR=/home/dev/.config/modama/e2e-secrets`:
+  - `./downtest.sh --reset && ./uptest.sh --build`: up, exit 0. `./runtest.sh`: 9 PASS, 0 FAIL. `E2E_CHAT=0 ./runtest.sh e2e`: 21 passed, 1 skipped (`test_chat_answers_with_a_search`, skipped by `E2E_CHAT=0`), `test_the_crawler_line_shows_the_datasets_basis` among the passed.
+  - The tree of this task, from the fixtures and generators, copied to `/data/task31` with `docker compose cp` and crawled with `docker compose exec crawler modama-crawler crawl --root /data`. Stored datasets: `capture52/Capture52_.gtg` `application/x.k2is` by `em/k2is` (9 files); `lone/IDES_DMS_Config.gtg` `application/x.dm-gtg`, `single file`; `rcc/exemplary_workspace.dmw` by `em/dmw`; `rcc/exemplary_workspace.dmwx` by `em/dmwx`; `rcc/notes.gtg`, `rcc/notes.dmw`, `rcc/empty.dmw` `text/plain` with their notes. `modama-crawler records --verbose /data/task31` shows the same, with the comments.
+  - `unrelated.txt` changed, crawled again: "0 run, 4 reused, 0 failed; 1 records changed"; the stored types and bases identical (`diff`); of the 8 records only `rcc/unrelated.txt`'s datestamp moved.
+  - `modama-chain trace /task31/rcc/notes.gtg`: every stage `ok`, the crawler line `dataset; basis: single file; em/k2is: not application/x.dm-gtg, no DM header`.
+  - Crawler suite 348 passed, `modama-formats-em` 88 passed, `search-chain` 31 passed, 0 skipped each. `./downtest.sh --reset` at the end.
 
 ## 4. Code review (`code-review.md`, 2026-11-12)
 
