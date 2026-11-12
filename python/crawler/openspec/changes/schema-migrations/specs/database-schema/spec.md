@@ -17,6 +17,10 @@ How the crawler's database gets its schema and keeps it in step with the code, s
 - **WHEN** `migrate` runs a second time on the same database
 - **THEN** it logs `INFO schema up to date at <head>`, the schema is unchanged, and it exits with status 0
 
+#### Scenario: Nothing to do while a crawl runs
+- **WHEN** `migrate` runs on a database at the code's version while another process holds the crawl lock
+- **THEN** it logs `INFO schema up to date at <head>` and exits with status 0 at once, without waiting for the lock
+
 ### Requirement: An existing database migrates in place
 `migrate` SHALL bring a database made by an earlier version of the crawler to the code's schema without losing its rows. A database whose tables were made before migrations existed SHALL be taken as revision `0001_baseline`.
 
@@ -47,27 +51,34 @@ Every database command, `migrate` included, SHALL exit with status 2 on a databa
 - **THEN** `crawl`, `runs`, `timer`, `serve` and `migrate` each exit with status 2, the error names `0002_crawl_runs_scope` as unknown to this crawler, and the database is unchanged
 
 ### Requirement: One migration at a time, and none during a crawl
-A migration SHALL hold the crawl lock while it runs. A second migration started meanwhile SHALL wait and then find the database up to date. A migration started while a crawl runs SHALL log that it waits for the crawl and SHALL start once the crawl has ended.
+A migration that has revisions to apply SHALL hold the crawl lock while it runs. A second migration started meanwhile SHALL wait and then find the database up to date. A migration with revisions to apply started while a crawl runs SHALL log that it waits for the crawl lock and SHALL start once the crawl has ended.
 
 #### Scenario: Two migrations start at once
 - **WHEN** two `migrate` processes start against the same database that lacks one migration
 - **THEN** both exit with status 0, the migration is applied once, and one of them logs `up to date`
 
 #### Scenario: A crawl is running
-- **WHEN** `migrate` starts while another process holds the crawl lock
-- **THEN** it logs that it waits for the running crawl, changes nothing while the lock is held, and migrates after the lock is released
+- **WHEN** `migrate` starts on a database that lacks a migration while another process holds the crawl lock
+- **THEN** it logs `INFO waiting for the crawl lock (a crawl or another migration holds it)`, changes nothing while the lock is held, and migrates after the lock is released
 
 #### Scenario: A crawl starts during a migration
 - **WHEN** `crawl` starts while `migrate` holds the crawl lock
 - **THEN** it exits with a non-zero status and records no run
 
 ### Requirement: A failed migration changes nothing
-All migrations of one `migrate` run SHALL be applied in one transaction. If any of them fails, `migrate` SHALL exit with status 1 and an error naming the revision that failed, and the database SHALL be left with the schema and the version it had before the run.
+All migrations of one `migrate` run SHALL be applied in one transaction. If any of them fails, `migrate` SHALL exit with status 1 and an error naming the revision that failed and the version the database is still at, and the database SHALL be left with the schema and the version it had before the run.
 
 #### Scenario: The second of two migrations fails
 - **WHEN** `migrate` applies two pending migrations to a database at `0001_baseline`, and the second fails after the first has added a column
-- **THEN** it exits with status 1 naming the second revision, the column is not there, and the database is still at `0001_baseline`
+- **THEN** it exits with status 1, stderr holds `ERROR migration <second revision> failed, the database is unchanged at 0001_baseline:` followed by the database's error, the column is not there, and the database is still at `0001_baseline`
 
 #### Scenario: A lock on a table is not granted in time
 - **WHEN** a migration's statement waits longer than the lock timeout for a table that another transaction holds
-- **THEN** `migrate` exits with status 1 with an error saying that the lock was not granted, and the database is unchanged
+- **THEN** `migrate` exits with status 1 with an error saying that the lock was not granted and to run `migrate` again, and the database is unchanged
+
+### Requirement: A downgrade with no way back refuses with the step
+Every migration SHALL have a downgrade. Where a migration cannot be undone so that the older code reads the result correctly, its downgrade SHALL refuse with an error that names the migration and says to restore the dump taken before the upgrade, and SHALL change nothing.
+
+#### Scenario: Downgrading below the baseline
+- **WHEN** `alembic downgrade base` runs on a database at `0001_baseline`
+- **THEN** it exits with status 1, its last line is `NotImplementedError: no downgrade from 0001_baseline: restore the dump taken before the upgrade (README, Upgrade)`, and the database is still at `0001_baseline` with its tables and rows
