@@ -18,7 +18,8 @@
     "/test-8.dm4": {
       "subjects": [],
       "summary": [
-        "2\u00d72"
+        "y 2",
+        "x 2"
       ],
       "values": {
         "axes": [
@@ -35,11 +36,31 @@
             "units": ""
           }
         ],
-        "detector": null,
-        "tags": {
+        "mapped_metadata": {
           "Signal.Noise_properties.Variance_linear_model.gain_factor": 1.0,
           "Signal.Noise_properties.Variance_linear_model.gain_offset": 0.0,
           "Signal.quantity": "Intensity"
+        },
+        "original_metadata": {
+          "ImageList.TagGroup0.ImageData.Calibrations.Brightness.Origin": 0.0,
+          "ImageList.TagGroup0.ImageData.Calibrations.Brightness.Scale": 1.0,
+          "ImageList.TagGroup0.ImageData.Calibrations.Brightness.Units": [],
+          "ImageList.TagGroup0.ImageData.Calibrations.Dimension.TagGroup0.Origin": 0.0,
+          "ImageList.TagGroup0.ImageData.Calibrations.Dimension.TagGroup0.Scale": 1.0,
+          "ImageList.TagGroup0.ImageData.Calibrations.Dimension.TagGroup0.Units": [],
+          "ImageList.TagGroup0.ImageData.Calibrations.Dimension.TagGroup1.Origin": 0.0,
+          "ImageList.TagGroup0.ImageData.Calibrations.Dimension.TagGroup1.Scale": 1.0,
+          "ImageList.TagGroup0.ImageData.Calibrations.Dimension.TagGroup1.Units": [],
+          "ImageList.TagGroup0.ImageData.Calibrations.DisplayCalibratedUnits": 1,
+          "ImageList.TagGroup0.ImageData.DataType": 23,
+          "ImageList.TagGroup0.ImageData.Dimensions.Data0": 2,
+          "ImageList.TagGroup0.ImageData.Dimensions.Data1": 2,
+          "ImageList.TagGroup0.ImageData.PixelDepth": 4,
+          "ImageList.TagGroup0.Name": "test",
+          "ImageList.TagGroup0.UniqueID.Data0": 820988818,
+          "ImageList.TagGroup0.UniqueID.Data1": 531767699,
+          "ImageList.TagGroup0.UniqueID.Data2": 1864204130,
+          "ImageList.TagGroup0.UniqueID.Data3": 1935500971
         }
       }
     }
