@@ -1,0 +1,52 @@
+Embedding threads from EMBEDDING_THREADS, and sub-batches of 32 texts
+
+Threads. Unset, ONNX Runtime starts one intra-op thread per core and pins its
+pool threads to cores 1..n-1 in every process (on 8 vCPUs: Cpus_allowed_list 1
+to 7), so with P batch processes at once their pools share the same cores. In
+the modama search stack on 8 vCPUs, 4 processes with the default embedded 118
+texts/s at 62.6 ms CPU per text, 4 processes x 2 threads 194 texts/s at
+36.4 ms, 8 x 1 206 texts/s. fastembed passes `threads` as
+intra_op_num_threads, set explicitly, which also stops the pinning. Unset,
+nothing changes.
+
+Sub-batch. `embed` without `batch_size` takes 256 texts at a time; one batch
+process then peaks at 5.3 GB RSS for 250 texts of 512 tokens and at about 9 GB
+from 1,000 texts on (bge-small-en-v1.5); with 32 it peaks at 1.40 GB for 250 and
+1.42 GB for 2,000, at about 7 % more time (48.0 against 45.0 s for 250 texts of
+512 tokens). The bound lets a worker size its processes by memory.
+
+Against metadata-warehouse v1.10.0; applied with `patch -p1` in the image build
+(modama search stack, warehouse-airflow.Dockerfile; change cpu-budget, D7, D9).
+
+diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
+index b63e17a..9c04a16 100644
+--- a/src/transform/transform_core.py
++++ b/src/transform/transform_core.py
+@@ -61,7 +61,11 @@ class TransformResources:
+         if not EMBEDDING_MODEL:
+             raise ValueError('Missing EMBEDDING_MODEL environment variable')
+
+-        self.embedding_transformer = TextEmbedding(model_name=EMBEDDING_MODEL, cache_dir=FASTEMBED_CACHE_DIR)
++        # ONNX Runtime threads; unset: one per core, pinned to the same cores in every batch process
++        threads = int(os.environ['EMBEDDING_THREADS']) if os.environ.get('EMBEDDING_THREADS') else None
++        self.embedding_transformer = TextEmbedding(
++            model_name=EMBEDDING_MODEL, cache_dir=FASTEMBED_CACHE_DIR, threads=threads
++        )
+         logger.info(f'Setting up embedding transformer with model {EMBEDDING_MODEL}')
+
+         opensearch_config = OpenSearchConfig()
+diff --git a/src/utils/embedding_utils.py b/src/utils/embedding_utils.py
+index 22d8f15..84e634a 100644
+--- a/src/utils/embedding_utils.py
++++ b/src/utils/embedding_utils.py
+@@ -169,7 +169,9 @@ def _embed(
+
+ def _embed_locally(texts: list[str], embedding_model: TextEmbedding) -> list[list[float]]:
+     """Embed texts using the local model, returning plain Python lists (not ndarrays)."""
+-    embeddings_ndarr = list(embedding_model.embed(texts))
++    # Sub-batches of 32 texts: fastembed's default of 256 peaks at 5.3 GB RSS for 250 texts of 512 tokens
++    # and about 9 GB from 1,000 on; 32 at 1.4 GB for 250 and for 2,000, about 7 % slower
++    embeddings_ndarr = list(embedding_model.embed(texts, batch_size=32))
+     return [emb.tolist() for emb in embeddings_ndarr]
+
+
