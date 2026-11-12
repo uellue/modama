@@ -1,0 +1,77 @@
+{
+  "datasets": [
+    {
+      "anchor": "/README.md",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/markdown",
+      "members": [
+        "/README.md"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/markdown",
+      "warnings": []
+    },
+    {
+      "anchor": "/note.md",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/markdown",
+      "members": [
+        "/note.md"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/markdown",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/README.md": {
+      "subjects": [],
+      "summary": [
+        "Session 2026-11",
+        "ascii",
+        "lines 3"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "ascii",
+          "first heading": "Session 2026-11",
+          "lines": 3
+        },
+        "original_metadata": {}
+      }
+    },
+    "/note.md": {
+      "subjects": [],
+      "summary": [
+        "Lamella preparation",
+        "2026-11-12T10:00:00+01:00",
+        "ascii",
+        "lines 18"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "ascii",
+          "first heading": "Lamella preparation",
+          "lines": 18
+        },
+        "original_metadata": {
+          "author[0].affiliation": "ER-C",
+          "author[0].name": "A. Example",
+          "date": "2026-11-12T10:00:00+01:00",
+          "draft": false,
+          "tags": [
+            "FIB",
+            "lamella"
+          ],
+          "title": "Lamella preparation"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -11,6 +11,17 @@ version = "0.0.1.dev0"
 dependencies = [
     # Each part adds the libraries it reads its formats with
     "modama-crawler",
+    # text: Markdown front matter
+    "PyYAML==6.0.3",
+    # text: Markdown, with its front matter plugin
+    "markdown-it-py==4.3.0",
+    "mdit-py-plugins==0.7.0",
+    # text: reStructuredText
+    "docutils==0.23",
+    # text: LaTeX
+    "pylatexenc==2.11",
+    # text: BibTeX
+    "bibtexparser==2.1.0",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},

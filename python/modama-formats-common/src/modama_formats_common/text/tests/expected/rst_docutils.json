@@ -1,0 +1,45 @@
+{
+  "datasets": [
+    {
+      "anchor": "/tools.rst",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/rst",
+      "members": [
+        "/tools.rst"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-rst",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/tools.rst": {
+      "subjects": [],
+      "summary": [
+        "Docutils Front-End Tools",
+        "David Goodger",
+        "2024-12-04",
+        "utf-8",
+        "lines 570"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "utf-8",
+          "lines": 570
+        },
+        "original_metadata": {
+          "author": "David Goodger",
+          "contact": "docutils-develop@lists.sourceforge.net",
+          "copyright": "This document has been placed in the public domain.",
+          "date": "2024-12-04",
+          "revision": "9993",
+          "title": "Docutils Front-End Tools"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

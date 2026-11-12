@@ -1,0 +1,12 @@
+fixtures/rst_docutils/tools.rst is docs/user/tools.rst of Docutils 0.23
+(https://docutils.sourceforge.io/), copied unchanged from its source
+distribution on PyPI (docutils-0.23.tar.gz). Its docinfo says "This document
+has been placed in the public domain", under the Public Domain Dedication in
+Docutils' COPYING.rst. The fixtures html_docutils and latex_docutils are
+written from it at test time by Docutils' own writers (generate.py); the HTML
+embeds Docutils' style sheet minimal.css, released under the 2-Clause BSD
+license.
+
+The other fixtures are written at test time by generate.py, which is under the
+MIT licence of modama-formats-common, as is the rest of the package; see
+../../../../LICENSE.

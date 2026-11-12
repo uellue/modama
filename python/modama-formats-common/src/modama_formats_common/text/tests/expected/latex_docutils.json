@@ -1,0 +1,42 @@
+{
+  "datasets": [
+    {
+      "anchor": "/tools.tex",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/tex",
+      "members": [
+        "/tools.tex"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-tex",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/tools.tex": {
+      "subjects": [],
+      "summary": [
+        "Docutils Front-End Tools",
+        "article",
+        "utf-8",
+        "lines 850"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "utf-8",
+          "lines": 850
+        },
+        "original_metadata": {
+          "author": "",
+          "date": "",
+          "documentclass": "article",
+          "title": "Docutils Front-End Tools"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

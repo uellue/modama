@@ -71,6 +71,9 @@ def test_default_invocation(tmp_path):
 
 def test_verbose_diagnostics_travel_with_the_records(store):
     zarr_fixtures.corrupt(store / "broken")
+    # A file no format claims: binary, without a name rule (the store's notes.txt
+    # is common/text's, the common collection being installed)
+    (store / "store" / "frames").write_bytes(bytes(16))
     # Typed as the documentation shows it: the flag after the subcommand, through a pipe
     run = shell(f"{sys.executable} -m modama_crawler records --verbose {store} | cat")
     assert run.returncode == 0, run.stderr
@@ -84,10 +87,10 @@ def test_verbose_diagnostics_travel_with_the_records(store):
     warning = text.index("<!-- /broken/broken.zarr: WARNING: ")
     assert warning < text.index(oai_identifier("/broken/broken.zarr"))
     # A single file by its MIME type gets no comment of its own
-    assert "<!-- /store/notes.txt" not in text
+    assert "<!-- /store/frames" not in text
     # (the identity: the em collection, which has extractors, is installed)
     assert re.search(
-        r"<!-- 3 records \(1 single files by type\), 1 warnings, 0 skipped"
+        r"<!-- 4 records \(1 single files by type\), 1 warnings, 0 skipped"
         r"; extraction identity [0-9a-f]{12} -->",
         text,
     )

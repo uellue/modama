@@ -1,0 +1,61 @@
+[encodings]
+purpose = "representative"
+validity = "second-reader: Python's codecs; the same two lines of notes as written in ASCII, UTF-8, UTF-8 with a BOM and CRLF (Windows Notepad's 'UTF-8 with BOM'), Windows-1252, and UTF-16 little-endian with a BOM and CRLF (Windows PowerShell 5's Out-File)"
+licence = "MIT"
+source = "modama_formats_common.text.tests.generate:encodings"
+generator = "modama_formats_common.text.tests.generate:encodings"
+
+[big_log]
+purpose = "representative"
+validity = "parser-only: a log of 1.5 MiB in lines of 52 bytes as acquisition software writes them, larger than the head the extractor reads (spec formats/text, a log larger than the bound)"
+licence = "MIT"
+source = "modama_formats_common.text.tests.generate:big_log"
+generator = "modama_formats_common.text.tests.generate:big_log"
+
+[readme]
+purpose = "representative"
+validity = "parser-only: a README without an extension, three lines as a person writes one in a session folder"
+licence = "MIT"
+source = "modama_formats_common.text.tests.generate:readme"
+generator = "modama_formats_common.text.tests.generate:readme"
+
+[not_text]
+purpose = "reproducer"
+validity = "invalid-by-design: frames.txt holds the bytes 0 to 255 sixteen times, empty.txt nothing (spec formats/text, content that is not text, an empty file)"
+licence = "MIT"
+source = "modama_formats_common.text.tests.generate:not_text"
+generator = "modama_formats_common.text.tests.generate:not_text"
+
+[markdown]
+purpose = "representative"
+validity = "parser-only, read by markdown-it-py 4.3.0 and PyYAML 6.0.3: note.md with a YAML front matter as Jekyll, Hugo and Pandoc read it (title, a list of authors as mappings, a date and time with its offset, tags, a boolean), a setext and an ATX heading; README.md with an ATX heading and no front matter"
+licence = "MIT"
+source = "modama_formats_common.text.tests.generate:markdown"
+generator = "modama_formats_common.text.tests.generate:markdown"
+
+[rst_docutils]
+purpose = "representative"
+validity = "vendor-written: Docutils' own documentation 'Docutils Front-End Tools' (docs/user/tools.rst of Docutils 0.23), with a title and a docinfo (Author, Contact, Revision, Date, Copyright) and an include directive at the top; read by docutils 0.23"
+licence = "Public domain (LICENSE.fixtures beside this file)"
+source = "docutils-0.23.tar.gz from PyPI (sha256 746f5060322511280a1e50eb76846ed6bf2342984b2ac04dc42caa1a8d78799e), docs/user/tools.rst, sha256 b384a73cc5229a172d2bba1a202ceb8172bf3dfa2b1e49dd157c855f9acb0d32, unchanged"
+
+[html_docutils]
+purpose = "representative"
+validity = "vendor-written: written at test time by docutils 0.23's html5 writer from the fixture rst_docutils (title, html lang, meta charset, generator, viewport, author, dcterms.date, dcterms.rights, an embedded style sheet)"
+licence = "Public domain for the text, BSD-2-Clause for Docutils' embedded style sheet (LICENSE.fixtures beside this file)"
+source = "modama_formats_common.text.tests.generate:html_docutils, from the fixture rst_docutils"
+generator = "modama_formats_common.text.tests.generate:html_docutils"
+
+[latex_docutils]
+purpose = "representative"
+validity = "vendor-written: written at test time by docutils 0.23's LaTeX writer from the fixture rst_docutils (\\documentclass[a4paper]{article}, \\title, an empty \\author and \\date)"
+licence = "Public domain (LICENSE.fixtures beside this file)"
+source = "modama_formats_common.text.tests.generate:latex_docutils, from the fixture rst_docutils"
+generator = "modama_formats_common.text.tests.generate:latex_docutils"
+
+[bibtex]
+purpose = "representative"
+validity = "vendor-written: three made-up article entries written at test time by bibtexparser 2.1.0's writer"
+licence = "MIT"
+source = "modama_formats_common.text.tests.generate:bibtex"
+generator = "modama_formats_common.text.tests.generate:bibtex"

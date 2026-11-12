@@ -1,0 +1,143 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes_ascii.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/text",
+      "members": [
+        "/notes_ascii.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes_utf16.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/text",
+      "members": [
+        "/notes_utf16.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes_utf8.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/text",
+      "members": [
+        "/notes_utf8.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes_utf8_bom.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/text",
+      "members": [
+        "/notes_utf8_bom.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes_windows.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/text",
+      "members": [
+        "/notes_windows.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/notes_ascii.txt": {
+      "subjects": [],
+      "summary": [
+        "ascii",
+        "lines 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "ascii",
+          "lines": 2
+        },
+        "original_metadata": {}
+      }
+    },
+    "/notes_utf16.txt": {
+      "subjects": [],
+      "summary": [
+        "UTF-16",
+        "lines 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "UTF-16",
+          "lines": 2
+        },
+        "original_metadata": {}
+      }
+    },
+    "/notes_utf8.txt": {
+      "subjects": [],
+      "summary": [
+        "utf-8",
+        "lines 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "utf-8",
+          "lines": 2
+        },
+        "original_metadata": {}
+      }
+    },
+    "/notes_utf8_bom.txt": {
+      "subjects": [],
+      "summary": [
+        "UTF-8-SIG",
+        "lines 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "UTF-8-SIG",
+          "lines": 2
+        },
+        "original_metadata": {}
+      }
+    },
+    "/notes_windows.txt": {
+      "subjects": [],
+      "summary": [
+        "Windows-1252",
+        "lines 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "Windows-1252",
+          "lines": 2
+        },
+        "original_metadata": {}
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
