@@ -160,8 +160,27 @@ def match_in(pool: Executor) -> Callable[[bytes], Mime.MIMEtype | None]:
     return match
 
 
+def _name_candidates(name: str, exclude: frozenset[str]) -> list[Mime.MIMEtype]:
+    """The types of the globs with the biggest weight, then the longest pattern, leaving out exclude."""
+    matches = [m for m in glob_matches(name) if str(m[2]) not in exclude]
+    if not matches:
+        return []
+    best = max((weight, length) for weight, length, _ in matches)
+    return sorted({t for w, n, t in matches if (w, n) == best}, key=str)
+
+
+def by_name(name: str) -> str | None:
+    """The type a file's name alone gives: the one best glob's, or None when no glob or several tie."""
+    candidates = _name_candidates(name, frozenset())
+    return str(candidates[0]) if len(candidates) == 1 else None
+
+
 def detect_with_tie(
-    path: str, match: Callable[[bytes], Mime.MIMEtype | None] | None = None
+    path: str,
+    match: Callable[[bytes], Mime.MIMEtype | None] | None = None,
+    *,
+    exclude: frozenset[str] = frozenset(),
+    strict: bool = False,
 ) -> tuple[str, tuple[str, ...] | None]:
     """MIME type of the regular file at path and, if candidates tied, the tied types.
 
@@ -169,19 +188,17 @@ def detect_with_tie(
     here. A tie between candidates resolves to their nearest common ancestor
     in the subclass hierarchy (architecture C); it counts as a tie only when
     that ancestor is none of the candidates. `match` replaces pyxdg's magic
-    matching of the bytes read (match_in).
+    matching of the bytes read (match_in). The types in `exclude` are left
+    out of the name rules and the content match, for a type a format dropped
+    (spec mime-database, "Detection can leave a type out"); `strict` raises a
+    read error instead of falling back.
     """
     if database is None:
         raise RuntimeError("no MIME database active; call mimedb.build() first")
 
-    # Globs with the biggest weight, then the longest pattern
-    candidates = []
-    matches = glob_matches(os.path.basename(path))
-    if matches:
-        best = max((weight, length) for weight, length, _ in matches)
-        candidates = sorted({t for w, n, t in matches if (w, n) == best}, key=str)
-        if len(candidates) == 1:
-            return str(candidates[0]), None
+    candidates = _name_candidates(os.path.basename(path), exclude)
+    if len(candidates) == 1:
+        return str(candidates[0]), None
 
     # No or conflicting globs: sniff the contents
     try:
@@ -192,12 +209,16 @@ def detect_with_tie(
                 os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
             data = f.read(Mime.magic.maxlen)
     except OSError:
+        if strict:
+            raise
         if candidates:
             return _resolve(candidates)
         return str(Mime.octet_stream), None
     sniffed = (match or Mime.magic.match_data)(data)
     if sniffed is not None:
         sniffed = sniffed.canonical()
+        if str(sniffed) in exclude:
+            sniffed = None
     if not candidates:
         if sniffed is not None:
             return str(sniffed), None
