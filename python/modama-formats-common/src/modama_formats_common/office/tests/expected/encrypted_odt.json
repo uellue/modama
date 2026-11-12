@@ -17,7 +17,9 @@
   "extractions": {
     "/testODTEncrypted.odt": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "(encrypted)"
+      ],
       "values": {
         "mapped_metadata": {
           "encrypted": true

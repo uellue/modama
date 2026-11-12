@@ -5,7 +5,7 @@ tree's root and these two objects; never the pages' content. A file without
 `%%EOF` at its end is not given to pypdf, and pypdf reads at most `BUDGET`
 bytes (BACKLOG, "Sync with upstream"). An encrypted file is opened with the
 empty user password, as viewers open it; one that needs a password keeps its
-header and `encrypted` only. pypdf's `XmpInformation` gives named properties
+header and `encrypted` only, and its summary line says `(encrypted)`. pypdf's `XmpInformation` gives named properties
 only, so the XMP packet is flattened here, every property it holds.
 
 Skip list (spec formats/office, "What is left out"): the RDF syntax of XMP
@@ -23,7 +23,7 @@ from defusedxml import ElementTree
 from modama_crawler.formats import Extracted
 from modama_crawler.formats.values import textual
 
-from .common import OverBudget, headline, kept, opened
+from .common import ENCRYPTED, OverBudget, headline, kept, opened
 
 # The core's magic: %PDF- within the first 1,024 bytes; %%EOF is to be within
 # the last 1,024 (ISO 32000-1, 7.5.5; pypdf accepts it there too)
@@ -174,7 +174,7 @@ def described(f) -> Extracted:
     mapped = {"header": header, "encrypted": reader.is_encrypted}
     if reader.is_encrypted and reader.decrypt("") == PasswordType.NOT_DECRYPTED:
         return Extracted(
-            summary=[],
+            summary=[ENCRYPTED],
             subjects=[],
             values={"original_metadata": {}, "mapped_metadata": mapped},
         )
