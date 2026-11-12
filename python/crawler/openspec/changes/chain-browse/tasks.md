@@ -33,3 +33,9 @@ Written with the coordinator's leans of 2026-11-12 as assumptions (design D1 to 
 - [x] 5.3 Edit `records.py`'s description in the checkout while the stack runs; reload; the live record changes; revert. Verify: before and after in the hand-over.
 - [x] 5.4 Review of the code by an agent that did not write it (standing rule: more than a few hundred lines), given the code and the spec. Verify: findings verified and addressed or listed (`review.md`, "Code review").
 - [x] 5.5 `uvx ruff format --check --diff && uvx ruff check` from the repo root; the crawler's and `modama-chain`'s suites; `./downtest.sh --reset` at the end.
+
+## 6. Out of sync (D16, @weber 2026-11-12)
+
+- [x] 6.1 `sync.py` (the actual values from the stack's Dockerfiles and patch folders, the comparison), the declarations `HIT` and `ENTRY` in `upstream.py`, `SOURCES` formatted from them. Verify: `tests/test_sync.py` passes on the repository and fails with a changed commit.
+- [x] 6.2 The page's red line and the snapshot's (`check_sync`, `browse.html`), the files mounted read-only under `/upstream/search-stack/` in `docker-compose.yml`. Verify: the scenario "An emulation out of sync" in `test_browse.py`; a screenshot with a changed commit in a copy; `docker compose config` of the test deployment and of staging (fake values).
+- [x] 6.3 README "browse", configuration, tests; spec scenario; backlog. Verify: read against the spec.
