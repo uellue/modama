@@ -91,7 +91,8 @@ class Pair(Format):
 
 `extract` runs in a worker process with a time limit, without database
 access; plain JSON values only. It may open the members itself, unbuffered
-(`open(path, "rb", buffering=0)`, see the README's pitfalls). If it raises,
+(`open(path, "rb", buffering=0)`), or with a 64 KiB buffer and readahead off
+for a library that reads in tiny pieces (see the README's pitfalls). If it raises,
 crashes or runs over the limit, the dataset keeps a basic description and the
 crawl reports a warning; the failure is kept until the files or the
 `extractor_version` change. Return `None` if there is nothing to extract.
