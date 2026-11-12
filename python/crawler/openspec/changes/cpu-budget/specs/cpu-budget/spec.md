@@ -101,7 +101,11 @@ Every matching and extraction process, replacement workers included, SHALL start
 - **THEN** it prints `CPU budget: 4 worker processes, 1 math thread each; 4 CPUs usable (affinity 8, quota 4)`, that no override is set, and the line on `MODAMA_CRAWLER_EXTRACT_WORKERS`, and exits with status 0
 
 ### Requirement: The transform worker counts the physical cores it may use
-The search stack's transform worker SHALL count, at start, the physical cores among the CPUs of its affinity (logical CPUs that share a core count once, by `topology/core_cpus_list`, else `topology/thread_siblings_list`), and no more than its CPU quota divided by the period, rounded up. Without either topology file it SHALL count the logical CPUs and say so in its log line.
+The search stack's transform worker SHALL count, at start, the physical cores among the CPUs of its affinity (logical CPUs that share a core count once, by `topology/core_cpus_list`, else `topology/thread_siblings_list`), and no more than its CPU quota divided by the period, rounded down, at least 1 (a math pool: processes × threads stay within the quota). Without either topology file it SHALL count the logical CPUs and say so in its log line.
+
+#### Scenario: A fractional quota
+- **WHEN** the transform worker runs on 8 cores with `cpu.max` `250000 100000`, `150000 100000` or `50000 100000`
+- **THEN** it counts 2, 1 or 1 cores, and its explanation says, for the first, `2.5 CPUs: 2 for math (rounded down), 3 for I/O (rounded up)`
 
 #### Scenario: The VM
 - **WHEN** the transform worker runs on 8 logical CPUs, each its own core, without quota
@@ -158,8 +162,8 @@ The transform worker SHALL run P batch processes at once, P being the smallest o
 - **THEN** it runs 8 batch processes with 1 thread each
 
 #### Scenario: Memory is the limit
-- **WHEN** it counts 24 cores in a container with a memory limit (`memory.max`) of 16 GB, with 1.7 GB per batch process
-- **THEN** it runs 9 batch processes with 2 threads each
+- **WHEN** it counts 24 cores in a container with a memory limit (`memory.max`) of 16 GiB, with 1.6 GiB per batch process
+- **THEN** it runs 10 batch processes with 2 threads each
 
 #### Scenario: Parallelism is the limit
 - **WHEN** it counts 64 cores, has no memory limit, `core.max_active_tasks_per_dag` is 1024 and `core.parallelism` is 32
@@ -209,8 +213,23 @@ At start, before Celery's banner, the transform worker SHALL log one line that s
 - **THEN** its log has the line `CPU budget: 16 processes × 1 thread; 24 cores usable (48 logical CPUs, no quota); no memory limit; 16 task slots (max_active_tasks_per_dag 16, parallelism 16); no override`
 
 #### Scenario: A memory limit
-- **WHEN** it starts on 24 cores with `memory.max` 16 GB and no other limit
-- **THEN** its log line has `memory for 9 (memory.max 16.0 GB, 1.7 GB each)`
+- **WHEN** it starts on 24 cores with `memory.max` 16 GiB and no other limit
+- **THEN** its log line has `memory for 10 (memory.max 16.0 GiB, 1.6 GiB each)`
+
+### Requirement: More memory expected than available is a warning
+Without a memory limit, when the expected memory (the transform worker's processes × 1.6 GiB, the search API's workers × 0.45 GiB) is more than `MemAvailable` at start, the service SHALL log a second line that names both amounts and the override that lowers the count (`TRANSFORM_PROCESSES`, `WORKERS`), and SHALL NOT change the count (@weber, 159). Memory SHALL be shown in GiB.
+
+#### Scenario: The VM with 9 GiB available
+- **WHEN** the transform worker starts on 8 cores without a memory limit and `MemAvailable` is 9 GiB
+- **THEN** it runs 8 batch processes, and its log has `CPU budget warning: 8 batch processes × 1.6 GiB = 12.8 GiB expected at most, more than the 9.0 GiB available now (MemAvailable), and no memory limit; the count stays; TRANSFORM_PROCESSES=N lowers it`
+
+#### Scenario: The search API on the dev server
+- **WHEN** the search API starts on 48 logical CPUs without a memory limit and 16 GiB available
+- **THEN** it runs 48 workers and warns of `48 workers × 0.45 GiB = 21.6 GiB`, naming `WORKERS`
+
+#### Scenario: A memory limit, or enough memory
+- **WHEN** the container has a `memory.max`, or the expected memory fits into `MemAvailable`, or `/proc/meminfo` has no `MemAvailable`
+- **THEN** there is no warning
 
 #### Scenario: An override
 - **WHEN** it starts with `TRANSFORM_PROCESSES` 4 on 24 cores
@@ -226,6 +245,10 @@ The search API SHALL start as many uvicorn workers as the logical CPUs it may us
 #### Scenario: A container with a CPU quota
 - **WHEN** it starts in a container with `cpu.max` `200000 100000`
 - **THEN** it runs 2 workers with 1 thread each
+
+#### Scenario: A fractional quota
+- **WHEN** it starts in a container with `cpu.max` `250000 100000` (its workers are I/O-bound: rounded up)
+- **THEN** it runs 3 workers with 1 thread each
 
 #### Scenario: The dev server
 - **WHEN** it starts on 48 logical CPUs without quota
@@ -261,7 +284,7 @@ The services that do background work, `crawler`, `crawl-timer`, `airflow-worker`
 - **THEN** `/sys/fs/cgroup/cpu.weight` is 20 in the background services' containers and 100 in `search-api`'s
 
 ### Requirement: The diagnostic shows every service's budget
-`prototypes/search-stack/cpu-budget.sh` SHALL print, for a deployment (the test deployment by default, `staging`), the cgroup version and driver Docker reports, and for the crawler, the transform worker and the search API, each in a container with the service's limits: the budget line of its next start, its inputs, its CPU weight, the active overrides, and how to set each. A service whose budget cannot be computed SHALL be reported with its start's message, and the script SHALL exit non-zero.
+`prototypes/search-stack/cpu-budget.sh` SHALL print, for a deployment (the test deployment by default, `staging`), the cgroup version and driver Docker reports, and for the crawler, the transform worker and the search API, each in a container with the service's limits: the budget line of its next start, its inputs (a fractional quota with what each kind of pool counts of it), its CPU weight, a memory warning, the active overrides, and how to set each. A service whose budget cannot be computed SHALL be reported with its start's message, and the script SHALL exit non-zero. When the service's running container has other cgroup limits (`cpu.max`, `cpuset.cpus.effective`, `memory.max`) than its next start would get, the script SHALL say so in one line for that service, with both.
 
 #### Scenario: The test deployment in the VM
 - **WHEN** `./cpu-budget.sh` runs in the VM with the images built
@@ -274,3 +297,7 @@ The services that do background work, `crawler`, `crawl-timer`, `airflow-worker`
 #### Scenario: An override
 - **WHEN** `TRANSFORM_PROCESSES=2` is set for `airflow-worker-transform` and `./cpu-budget.sh` runs
 - **THEN** the transform worker's part names `TRANSFORM_PROCESSES` as set and shows 2 processes
+
+#### Scenario: A running container with other limits
+- **WHEN** the crawler runs with `cpus: 4` from an earlier start and the compose files no longer set it
+- **THEN** the crawler's part has the line `the running container has other limits than its next start: running cpu.max 400000 100000, …; next start cpu.max max 100000, …`

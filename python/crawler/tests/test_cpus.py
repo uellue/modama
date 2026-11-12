@@ -324,6 +324,18 @@ def test_a_malformed_setting_leaves_no_run(conn, env, tree, monkeypatch):
     assert conn.execute("SELECT count(*) FROM crawl_runs").fetchone() == (0,)
 
 
+def test_a_fractional_quota_is_explained(tmp_path, monkeypatch, capsys):
+    # The crawler's pools are I/O-bound: rounded up (decided 2026-11-12, D2)
+    machine(tmp_path, monkeypatch, affinity=8, cpu_max="250000 100000")
+    monkeypatch.delenv("MODAMA_CRAWLER_EXTRACT_WORKERS", raising=False)
+    assert cli.main(["cpu-budget"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert (
+        "  cgroup v2: yes; CPU quota: 2.5 CPUs (cpu.max of the own cgroup): 3 for I/O (rounded up)"
+        in out
+    )
+
+
 def test_one_cpu_is_singular(tmp_path, monkeypatch):
     machine(tmp_path, monkeypatch, affinity=1)
     assert str(cpus.usable()) == "1 CPU usable (affinity 1, no quota)"

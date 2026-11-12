@@ -7,7 +7,7 @@
 import budget
 import pytest
 
-GB = 1_000_000_000
+GIB = 1 << 30
 NO_LIMIT = (1024, 1024)  # the base compose file's AIRFLOW_TASK_LIMIT
 
 
@@ -22,13 +22,18 @@ def fake(
     cpu_max="max 100000",
     memory_max="max",
     unified=True,
+    available=200 * GIB,
 ):
     """A machine under root: the affinity `cpus`; `siblings` maps a CPU to its core's CPU list (default: its own
     core; None for no topology at all); the own group's cpu.max and memory.max (None: no file); `cgroup.controllers`
-    at the root if the hierarchy is unified (not a hybrid host)."""
+    at the root if the hierarchy is unified (not a hybrid host); MemAvailable in bytes (None: no /proc/meminfo)."""
     monkeypatch.setattr(budget.os, "sched_getaffinity", lambda pid: set(cpus))
     (root / "proc/self").mkdir(parents=True)
     (root / "proc/self/cgroup").write_text(group + "\n")
+    if available is not None:
+        (root / "proc/meminfo").write_text(
+            f"MemTotal:       263000000 kB\nMemAvailable:   {available // 1024} kB\n"
+        )
     cgroup = root / "sys/fs/cgroup" / group.partition("0::/")[2]
     cgroup.mkdir(parents=True)
     if unified:
@@ -142,9 +147,31 @@ def test_quota_a_hybrid_host(tmp_path, monkeypatch):
     assert "quota not read: no cgroup v2" in budget.search_api(m).line
 
 
-def test_quota_fractional(tmp_path, monkeypatch):
-    m = fake(tmp_path, monkeypatch, cpu_max="250000 100000")
-    assert (m.logical, m.cores) == (3, 3)
+@pytest.mark.parametrize(
+    ("cpu_max", "cores", "logical"),
+    [("250000 100000", 2, 3), ("150000 100000", 1, 2), ("50000 100000", 1, 1)],
+    ids=["2.5", "1.5", "0.5"],
+)
+def test_quota_fractional(tmp_path, monkeypatch, cpu_max, cores, logical):
+    # Math pools round a fractional quota down (at least 1), I/O-bound pools up (decided 2026-11-12, D2)
+    m = fake(tmp_path, monkeypatch, cpu_max=cpu_max)
+    assert (m.cores, m.logical) == (cores, logical)
+    assert size(budget.transform(m, slots=NO_LIMIT)) == (cores, 1)
+    assert size(budget.search_api(m)) == (logical, 1)
+
+
+def test_quota_fractional_explained(tmp_path, monkeypatch, capsys):
+    fake(tmp_path, monkeypatch, cpu_max="250000 100000")
+    monkeypatch.setattr(budget, "_slots", lambda: NO_LIMIT)
+    assert budget.main(["explain", "transform"], {}, tmp_path) == 0
+    out = capsys.readouterr().out
+    assert (
+        "CPU quota: 2.5 CPUs: 2 for math (rounded down), 3 for I/O (rounded up)" in out
+    )
+    assert (
+        "physical cores usable: 2 (topology, capped by the CPU quota rounded down)"
+        in out
+    )
 
 
 def test_quota_missing_cpu_max(tmp_path, monkeypatch):
@@ -224,8 +251,8 @@ def test_sizes_the_vm(tmp_path, monkeypatch):
 
 
 def test_sizes_memory_is_the_limit(tmp_path, monkeypatch):
-    m = fake(tmp_path, monkeypatch, **DEV, memory_max=str(16 * GB))
-    assert size(budget.transform(m, slots=NO_LIMIT)) == (9, 2)
+    m = fake(tmp_path, monkeypatch, **DEV, memory_max=str(16 * GIB))
+    assert size(budget.transform(m, slots=NO_LIMIT)) == (10, 2)
 
 
 def test_sizes_parallelism_is_the_limit(tmp_path, monkeypatch):
@@ -267,10 +294,60 @@ def test_log_line_the_dev_server(tmp_path, monkeypatch):
 
 
 def test_log_line_a_memory_limit(tmp_path, monkeypatch):
-    m = fake(tmp_path, monkeypatch, **DEV, memory_max=str(16 * GB))
+    # Docker's mem_limit 16g is 16 GiB
+    m = fake(tmp_path, monkeypatch, **DEV, memory_max=str(16 * GIB))
     assert (
-        "memory for 9 (memory.max 16.0 GB, 1.7 GB each)"
+        "memory for 10 (memory.max 16.0 GiB, 1.6 GiB each)"
         in budget.transform(m, slots=NO_LIMIT).line
+    )
+
+
+# More memory expected than available, without a limit: a warning, the count unchanged (159)
+
+
+def test_a_memory_warning_for_the_batches(tmp_path, monkeypatch, capsys):
+    fake(tmp_path, monkeypatch, available=9 * GIB)
+    _, ran = start(monkeypatch, tmp_path, {})
+    err = capsys.readouterr().err.splitlines()
+    assert err[0].startswith("CPU budget: 8 processes × 1 thread;")
+    assert err[1] == (
+        "CPU budget warning: 8 batch processes × 1.6 GiB = 12.8 GiB expected at most, more than the 9.0 GiB "
+        "available now (MemAvailable), and no memory limit; the count stays; TRANSFORM_PROCESSES=N lowers it"
+    )
+    assert ran[1][-1] == "8"  # --concurrency 8: unchanged
+
+
+def test_a_memory_warning_for_the_workers(tmp_path, monkeypatch):
+    m = fake(tmp_path, monkeypatch, **DEV, available=16 * GIB)
+    b = budget.search_api(m)
+    assert b.processes == 48
+    assert "48 workers × 0.45 GiB = 21.6 GiB expected at most" in b.warning
+    assert "WORKERS=N lowers it" in b.warning
+
+
+@pytest.mark.parametrize(
+    ("memory_max", "available"),
+    [("max", 200 * GIB), (str(4 * GIB), 1 * GIB), ("max", None)],
+    ids=["enough", "a limit", "no meminfo"],
+)
+def test_no_memory_warning(tmp_path, monkeypatch, memory_max, available):
+    m = fake(tmp_path, monkeypatch, memory_max=memory_max, available=available)
+    assert budget.transform(m, slots=NO_LIMIT).warning is None
+
+
+def test_the_warning_in_the_explanation(tmp_path, monkeypatch, capsys):
+    fake(tmp_path, monkeypatch, available=9 * GIB)
+    monkeypatch.setattr(budget, "_slots", lambda: NO_LIMIT)
+    assert budget.main(["explain", "transform"], {}, tmp_path) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[1].startswith("CPU budget warning: 8 batch processes")
+    assert (
+        "  cgroup v2: yes; CPU quota: none; memory limit: none; available now: 9.0 GiB"
+        in out
+    )
+    assert (
+        "  expected memory: up to 8 × 1.6 GiB = 12.8 GiB (texts of 512 tokens; less for shorter ones)"
+        in out
     )
 
 
