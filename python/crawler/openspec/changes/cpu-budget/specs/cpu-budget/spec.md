@@ -139,26 +139,26 @@ A `cpu.max`, topology list or `memory.max` that exists and cannot be parsed, or 
 - **THEN** the start stops with a message that names `TRANSFORM_PROCESSES`, and Celery is not started
 
 ### Requirement: The transform worker sizes its processes and threads
-The transform worker SHALL run P batch processes at once, P being the smallest of: the cores it counts, its memory divided by the memory of one batch process (rounded down, at least 1), and its task slots, the smaller of Airflow's `core.max_active_tasks_per_dag` and `core.parallelism`. Its memory SHALL be its cgroup's `memory.max` if that is a number, else `MemAvailable` at start. Each batch process SHALL get T = the cores divided by P, rounded down, at least 1, threads for its math libraries.
+The transform worker SHALL run P batch processes at once, P being the smallest of: the cores it counts, its task slots (the smaller of Airflow's `core.max_active_tasks_per_dag` and `core.parallelism`), and, only where its cgroup's `memory.max` is a number, that memory divided by the memory of one batch process (rounded down, at least 1). Without a memory limit, memory SHALL NOT reduce P. Each batch process SHALL get T = the cores divided by P, rounded down, at least 1, threads for its math libraries.
 
 #### Scenario: The dev server
-- **WHEN** the transform worker counts 24 cores, has 200 GB available, a batch process needs 1.7 GB and `staging.env` sets `AIRFLOW_TASK_LIMIT` to 16
+- **WHEN** the transform worker counts 24 cores, has no memory limit and `staging.env` sets `AIRFLOW_TASK_LIMIT` to 16
 - **THEN** it runs 16 batch processes with 1 thread each
 
 #### Scenario: The dev server without the limit
-- **WHEN** it counts 24 cores, has 200 GB available, 1.7 GB per batch process, and no `AIRFLOW_TASK_LIMIT` is set
+- **WHEN** it counts 24 cores, has no memory limit, and no `AIRFLOW_TASK_LIMIT` is set
 - **THEN** it runs 24 batch processes with 1 thread each
 
 #### Scenario: The VM
-- **WHEN** it counts 8 cores, has 9.1 GB available and no memory limit, with 1.7 GB per batch process, and no `AIRFLOW_TASK_LIMIT`
-- **THEN** it runs 5 batch processes with 1 thread each
+- **WHEN** it counts 8 cores, has no memory limit (9.1 GB available), and no `AIRFLOW_TASK_LIMIT`
+- **THEN** it runs 8 batch processes with 1 thread each
 
 #### Scenario: Memory is the limit
 - **WHEN** it counts 24 cores in a container with a memory limit (`memory.max`) of 16 GB, with 1.7 GB per batch process
 - **THEN** it runs 9 batch processes with 2 threads each
 
 #### Scenario: Parallelism is the limit
-- **WHEN** it counts 64 cores, has 500 GB available, `core.max_active_tasks_per_dag` is 1024 and `core.parallelism` is 32
+- **WHEN** it counts 64 cores, has no memory limit, `core.max_active_tasks_per_dag` is 1024 and `core.parallelism` is 32
 - **THEN** it runs 32 batch processes with 2 threads each
 
 ### Requirement: Airflow's task limits are one setting
@@ -172,7 +172,7 @@ Without settings the base compose file SHALL set `core.max_active_tasks_per_dag`
 An indexing run with more transform batches than P SHALL run them all, P at a time; a batch that waits for a free batch process SHALL NOT be failed or retried by Airflow's `task_queued_timeout`.
 
 #### Scenario: More batches than processes
-- **WHEN** the test deployment indexes 16,000 records in batches of 250 (64 batches) with P = 5 and `AIRFLOW__SCHEDULER__TASK_QUEUED_TIMEOUT` set to 60 s
+- **WHEN** the test deployment indexes 16,000 records in batches of 250 (64 batches) with P = 8 and `AIRFLOW__SCHEDULER__TASK_QUEUED_TIMEOUT` set to 60 s
 - **THEN** all 64 transform batches succeed at their first try
 
 ### Requirement: Batch processes start the threads of their budget
@@ -198,22 +198,26 @@ Each batch process SHALL run ONNX Runtime with T intra-op threads set explicitly
 - **THEN** it runs 24 batch processes with 2 threads each, and its log line says that 48 threads exceed the 24 cores
 
 ### Requirement: The transform worker logs its CPU budget
-At start, before Celery's banner, the transform worker SHALL log one line that states P, T, the cores counted and from what (logical CPUs of the affinity, quota, cgroup v2 or not), the number of processes the memory allows and where the memory came from, the task slots, and which overrides are set.
+At start, before Celery's banner, the transform worker SHALL log one line that states P, T, the cores counted and from what (logical CPUs of the affinity, quota, cgroup v2 or not), the memory limit and the number of processes it allows, or that there is none, the task slots, and which overrides are set.
 
 #### Scenario: The dev server
-- **WHEN** the transform worker starts on the dev server with 200 GB available and `AIRFLOW_TASK_LIMIT` 16
-- **THEN** its log has the line `CPU budget: 16 processes × 1 thread; 24 cores usable (48 logical CPUs, no quota); memory for 117 (200.0 GB available); 16 task slots (max_active_tasks_per_dag 16, parallelism 16); no override`
+- **WHEN** the transform worker starts on the dev server without a memory limit and with `AIRFLOW_TASK_LIMIT` 16
+- **THEN** its log has the line `CPU budget: 16 processes × 1 thread; 24 cores usable (48 logical CPUs, no quota); no memory limit; 16 task slots (max_active_tasks_per_dag 16, parallelism 16); no override`
+
+#### Scenario: A memory limit
+- **WHEN** it starts on 24 cores with `memory.max` 16 GB and no other limit
+- **THEN** its log line has `memory for 9 (memory.max 16.0 GB, 1.7 GB each)`
 
 #### Scenario: An override
 - **WHEN** it starts with `TRANSFORM_PROCESSES` 4 on 24 cores
 - **THEN** its log line says 4 processes × 6 threads and names `TRANSFORM_PROCESSES` as set
 
 ### Requirement: The search API sizes its workers and their threads
-The search API SHALL start min(the logical CPUs it may use, counted as the crawler counts them, 6) uvicorn workers, and each worker SHALL run ONNX Runtime with 1 intra-op thread set explicitly, the tokenizer with 1 thread and BLAS with 1 thread, all set before the libraries load. Upstream's `WORKERS=6` in its image SHALL NOT count as a setting. No thread of a worker SHALL be pinned to fewer CPUs than the process may use.
+The search API SHALL start as many uvicorn workers as the logical CPUs it may use, counted as the crawler counts them (@weber, 158: "Let's run on all usable CPUs"), and each worker SHALL run ONNX Runtime with 1 intra-op thread set explicitly, the tokenizer with 1 thread and BLAS with 1 thread, all set before the libraries load. Upstream's `WORKERS=6` in its image SHALL NOT count as a setting. No thread of a worker SHALL be pinned to fewer CPUs than the process may use.
 
 #### Scenario: The VM
 - **WHEN** the search API starts on 8 logical CPUs without quota
-- **THEN** it runs 6 workers with 1 thread each
+- **THEN** it runs 8 workers with 1 thread each
 
 #### Scenario: A container with a CPU quota
 - **WHEN** it starts in a container with `cpu.max` `200000 100000`
@@ -221,7 +225,7 @@ The search API SHALL start min(the logical CPUs it may use, counted as the crawl
 
 #### Scenario: The dev server
 - **WHEN** it starts on 48 logical CPUs without quota
-- **THEN** it runs 6 workers with 1 thread each
+- **THEN** it runs 48 workers with 1 thread each
 
 #### Scenario: No pinned threads
 - **WHEN** the search API runs in the VM's test deployment and a probe lists each worker's threads after a search
@@ -239,10 +243,21 @@ At start, before uvicorn's first line, the search API SHALL log one line that st
 
 #### Scenario: The VM
 - **WHEN** the search API starts in the VM's test deployment without settings
-- **THEN** its log has the line `CPU budget: 6 workers × 1 thread; 8 CPUs usable (affinity 8, no quota); at most 6; no override`
+- **THEN** its log has the line `CPU budget: 8 workers × 1 thread; 8 CPUs usable (affinity 8, no quota); no override`
+
+### Requirement: Background services run at a lower CPU weight
+The services that do background work, `crawler`, `crawl-timer`, `airflow-worker`, `airflow-worker-transform` and `transform`, SHALL run with a CPU weight below Docker's default (`cpu_shares` 512), and the services that answer users, `search-api` and `matchmaker`, with the default, so that live requests go first when the CPUs are contended (@weber, 163). No service SHALL get a CPU limit or reservation from this.
+
+#### Scenario: The compose files
+- **WHEN** `docker compose config` renders the test deployment or staging
+- **THEN** the five background services have `cpu_shares: 512`, and `search-api` and `matchmaker` have none
+
+#### Scenario: In the VM
+- **WHEN** the test deployment runs in the VM (cgroup v2, runc 1.1.15)
+- **THEN** `/sys/fs/cgroup/cpu.weight` is 20 in the background services' containers and 100 in `search-api`'s
 
 ### Requirement: The diagnostic shows every service's budget
-`prototypes/search-stack/cpu-budget.sh` SHALL print, for a deployment (the test deployment by default, `staging`), the cgroup version and driver Docker reports, and for the crawler, the transform worker and the search API, each in a container with the service's limits: the budget line of its next start, its inputs, the active overrides, and how to set each. A service whose budget cannot be computed SHALL be reported with its start's message, and the script SHALL exit non-zero.
+`prototypes/search-stack/cpu-budget.sh` SHALL print, for a deployment (the test deployment by default, `staging`), the cgroup version and driver Docker reports, and for the crawler, the transform worker and the search API, each in a container with the service's limits: the budget line of its next start, its inputs, its CPU weight, the active overrides, and how to set each. A service whose budget cannot be computed SHALL be reported with its start's message, and the script SHALL exit non-zero.
 
 #### Scenario: The test deployment in the VM
 - **WHEN** `./cpu-budget.sh` runs in the VM with the images built
