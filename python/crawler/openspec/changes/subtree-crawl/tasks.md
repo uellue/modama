@@ -1,6 +1,6 @@
 # Tasks
 
-Written before the answers to the questions in `design.md`; the leans are assumptions. Tasks 2.2 (file as PATH), 2.3 (from scratch), 3.1 (`scope` in place) and section 5 change if @weber decides otherwise.
+The leans for 2.2 (file as PATH), 2.3 (from scratch) and 3.1 (`scope` in place) were agreed on 2026-11-12 (`design.md`, Decisions). D7 (request 2) is open; 4.2's procedure for an improved format waits for it. Added from the decisions: 6.1.
 
 ## 1. Before the code
 
@@ -30,6 +30,10 @@ Written before the answers to the questions in `design.md`; the leans are assump
 ## 5. Review
 
 - [ ] 5.1 Review by an agent that did not write the code, given the code, this change's specs and `design/requirements.md` (the store deletes rows: AGENTS.md asks for a review of code that changes data on its own). Findings verified before acting, in `review.md`. Verify: `review.md` and the fixes' tests.
+
+## 6. Notes from the decisions
+
+- [ ] 6.1 `BACKLOG.md`: (a) the timer skips its night when a subtree crawl holds the lock: fix with a test before production (acceptable until the demo, 2026-11-17); (b) schema migrations are becoming a requirement (production needs them; start testing them in dev iterations; follow upstream's practice). Verify: the diff.
 
 ## Workflow follow-up
 

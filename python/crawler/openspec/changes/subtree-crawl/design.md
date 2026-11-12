@@ -60,11 +60,12 @@ No database recreation (D5). Deploy by rebuilding the crawler image. Rollback: t
 - A warning when a subtree crawl runs under rules other than the last full crawl's.
 - Tombstones (`deletedRecord`) and the purge; the inotify watcher feeding subtree crawls (the decision log's "later, a watcher").
 
-## Questions for @weber
+## Decisions by @weber, 2026-11-12
 
-- Request 2: is "bump `extractor_version` and run `crawl`" enough (lean, D7), or do you want `crawl --format em/dm4`, which re-extracts without a bump?
-- Subtree crawls always run from scratch (lean, D3), or reuse what is stored unless `--force` is given?
-- A file as PATH: does it stand for its directory (lean), is it an error, or should it mean "extract only this dataset, without recognition"?
-- The `scope` column added in place (`ADD COLUMN IF NOT EXISTS`, lean, D5), the first schema step without recreating the database, or recreate it as the README says (on staging, a night of crawl, harvest and indexing)?
-- If a subtree crawl blocks the nightly crawl, is skipping that night acceptable for now (lean), or should the timer retry?
-- Glossary: "subtree crawl" and "crawl of the whole tree" as the terms. Should they go into `/CONTEXT.md` with the other crawler terms when those move there?
+- **Request 2 (D7): open.** "In a typical scenario we will have raised the extractor version anyway. My only concern is that we will raise it to 'high heaven' when running many loops, and we may run into merge conflicts with real world implications when several people raise it in separate git clones. So I'd not call it a version per se, but a hash that is unique for a specific version? Also, it only needs to be valid within one deployment." To be fleshed out by walking through the sequence of events in several scenarios, before D7 is decided; it may become a change of its own (the extractor's identity), and this change then covers requests 1 and 3 only.
+- **From scratch (D3): agreed.** "We may also want to actually test that (performance), so it is fine to crawl a subtree from scratch."
+- **A file as PATH (D2): agreed,** it stands for its directory, which becomes the subtree (with the directories below it).
+- **`scope` in place (D5): agreed for now.** "Let's keep note of a migration requirement starting to emerge, and follow up. We will need migration in production, so we may start testing it safely while we are running dev iterations here." How EOSC Data Commons migrates its schema, and current practice, is being researched; follow upstream as far as sensible.
+- **The timer skipping a night (Risks): acceptable until the demo** (2026-11-17), "but we need to make a note to fix this incl test case. Should not happen in production." A backlog item, with a test.
+- **Review before apply: yes** (task 5.1 covers the code; the proposal is reviewed first).
+- **Glossary:** "subtree crawl" and "crawl of the whole tree" go as input to the glossary question of the search stack (search-specific terms kept apart from general modama terms, e.g. as a section of `/CONTEXT.md`).
