@@ -1,11 +1,12 @@
 """Gatan Digital Micrograph files (DM3, DM4): single-file datasets, recognised by their header (dm.xml).
 
 Extraction goes through RosettaSciIO's reader: it parses the tags and skips the
-image data by seeking past it (D7; bytes read per file in the tests). The data
-image's tags but GMS's user-interface settings are kept as values, a summary
-line built from them (`headline`, shared with K2IS) starts the description. `.dmw`
+image data by seeking past it (D7; bytes read per file in the tests). Every
+tag but one skip list (`skipped`: GMS's user-interface settings, values not
+suitable for text) is kept as values, and a summary line from chosen tags of
+the data image (`headline`, shared with K2IS) starts the description. `.dmw`
 files, typed by their name, are claimed by `em/dmw` when they have a DM header
-and described by all their tags (change recognition-checks-content, E1);
+and described by their tags but the skip list (change recognition-checks-content, E1);
 `.dmwx` files, ZIPs of a workspace and its images, by `em/dmwx` (E4).
 """
 
@@ -17,6 +18,7 @@ import zipfile
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import suppress
 from copy import deepcopy
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import BinaryIO
 
@@ -28,6 +30,8 @@ from modama_crawler.formats import (
     Extracted,
     Format,
 )
+
+from ..values import textual
 
 HERE = Path(__file__).parent
 # Python sizes a file's buffer from st_blksize, 1 MiB on NFS: every seek in the tag
@@ -77,40 +81,72 @@ def header(d: Directory, e: Entry, n: int = HEADER) -> bytes | None:
 
 def tag_paths(
     node: dict,
-    skip: Callable[[tuple[str, ...], dict], bool] = lambda path, group: False,
+    skip: Callable[[tuple[str, ...], object], bool] = lambda path, value: False,
     path: tuple[str, ...] = (),
 ) -> Iterator[tuple[str, object]]:
     """(dotted path, value) of every tag below node in the reader's order, its values
-    as the reader gives them (an empty one too: decision 161), without the groups
-    for which skip(path, group) is true."""
+    as the reader gives them (an empty one too: decision 161), without the tags and
+    groups for which skip(path, value) is true."""
     for key, value in node.items():
         here = (*path, str(key))
+        if skip(here, value):
+            continue
         if isinstance(value, dict):
-            if not skip(here, value):
-                yield from tag_paths(value, skip, here)
+            yield from tag_paths(value, skip, here)
         else:
             yield ".".join(here), value
 
 
-# GMS's user-interface settings, left out of a DM image's and a K2IS tag file's
-# values (decision 129, design D4 of change dm-containers-and-k2is):
-# - a tag group of the image viewer's class: the window's and the screen's
-#   relative position, zoom, auto zoom, view name, viewer class, its version
+# The one skip list of DM files, K2IS tag files and workspaces: every tag is
+# kept but these (decisions 129 and 235; @weber 2026-11-12: "not a positive
+# list, but a negative 'skip these' list"; spec formats/dm, "What is left out"):
+# 1. GMS's user-interface settings, by their dotted path (fnmatch patterns)
+SETTINGS = (
+    # the document's, page's and window's settings at the root of a DM file,
+    # its thumbnails and the document's bookkeeping
+    "ApplicationBounds",
+    "DocumentObjectList",
+    "HasWindowPosition",
+    "Image Behavior",
+    "ImageSourceList",
+    "InImageMode",
+    "LayoutType",
+    "MinVersionList",
+    "NextDocumentObjectID",
+    "Page Behavior",
+    "PageSetup",
+    "SentinelList",
+    "Thumbnails",
+    "WindowPosition",
+    # a workspace's windows (Window 0 (217, 84, 646, 536)); its frames stay
+    "Window [0-9]*",
+    # the definition of GMS's Session Info form (per field its label, tag
+    # path, data type, precision, units, default value), under Microscope Info
+    # in older GMS; the fields' values stay
+    "Session Info.Items",
+    "*.Session Info.Items",
+    "Microscope Info.Items",
+    "*.Microscope Info.Items",
+)
+# 2. a tag group of the image viewer's class: the window's and the screen's
+#    relative position, zoom, auto zoom, view name, viewer class, its version
 VIEWER_CLASSES = frozenset({"cm_stdviewerimagedisplayer"})
-# - the group Items of Session Info: the definition of GMS's Session Info form
-#   (per field its label, tag path, data type, precision, units and default
-#   value); the fields' values are in Session Info itself and stay
-FORM = ("Session Info", "Items")
+# 3. a value not suitable for text: too large, binary, an array not read (values.textual)
 
 
-def settings(path: tuple[str, ...], group: dict) -> bool:
-    """A tag group of GMS's user-interface settings, for tag_paths' skip."""
-    return group.get("Class Name") in VIEWER_CLASSES or path[-2:] == FORM
+def skipped(path: tuple[str, ...], value) -> bool:
+    """Whether a tag or tag group is on the skip list, for tag_paths."""
+    dotted = ".".join(path)
+    return (
+        any(fnmatchcase(dotted, pattern) for pattern in SETTINGS)
+        or (isinstance(value, dict) and value.get("Class Name") in VIEWER_CLASSES)
+        or not textual(value)
+    )
 
 
 def kept(tags: dict) -> dict:
-    """Every tag below tags but the user-interface settings: dotted path -> value, for the
-    values. The infinities and NaN, which JSON cannot hold, as Python writes them ("inf")."""
+    """Every tag below tags but the skip list: dotted path -> value, for the values.
+    The infinities and NaN, which JSON cannot hold, as Python writes them ("inf")."""
 
     def plain(value):
         if isinstance(value, float) and not math.isfinite(value):
@@ -119,7 +155,7 @@ def kept(tags: dict) -> dict:
             return type(value)(plain(v) for v in value)
         return value
 
-    return {path: plain(value) for path, value in tag_paths(tags, settings)}
+    return {path: plain(value) for path, value in tag_paths(tags, skipped)}
 
 
 def at(tags: dict, path: str):
@@ -133,40 +169,58 @@ def at(tags: dict, path: str):
 
 
 # The tags of the summary line, in its order (spec formats/dm, "The summary
-# line of a DM file's tags"): choosing them is its only editorial step
-# (decision 230); the list to change
+# line of a DM file's tags"): the one positive list, by nature; choosing them
+# is the line's only editorial step (decision 230). A tuple: the first of its
+# tags present (decision 235: older GMS writes no Formatted tags, and Specimen
+# and Operator under Microscope Info). SIZE: where the image's size goes
+SIZE = "size"
 HEADLINE = (
     "Microscope Info.Imaging Mode",
     "Microscope Info.Operation Mode",
     "Microscope Info.Illumination Mode",
-    "Microscope Info.Formatted Voltage",
-    "Microscope Info.Formatted Indicated Mag",
+    ("Microscope Info.Formatted Voltage", "Microscope Info.Voltage"),
+    (
+        "Microscope Info.Formatted Indicated Mag",
+        "Microscope Info.Indicated Magnification",
+    ),
     "Microscope Info.STEM Camera Length",
     "Acquisition.Device.Source Model",
+    "DataBar.Device Name",
     "DataBar.Exposure Time (s)",
     "Acquisition.Parameters.Parameter Set Name",
     "SI Dimensions.Size X",
     "SI Dimensions.Size Y",
+    SIZE,
     "DataBar.Acquisition Date",
     "DataBar.Acquisition Time",
-    "Session Info.Specimen",
-    "Session Info.Operator",
+    ("Session Info.Specimen", "Microscope Info.Specimen"),
+    ("Session Info.Operator", "Microscope Info.Operator"),
 )
 
 
-def headline(tags: dict) -> list[str]:
+def headline(tags: dict, size: Iterable[str] = ()) -> list[str]:
     """The summary line of a DM image's ImageTags or a K2IS tag file's tags: the values of
-    the HEADLINE tags present, as the file holds them, a value repeated once.
+    the HEADLINE tags present, as the file holds them, size at SIZE, a value repeated once.
 
     A text as it is (`300kV`, `Lorentz`); a number after its tag's name
-    (`Exposure Time (s) 2.0`), as the number alone says nothing. No word of
-    ours, no conversion (decision 230).
+    (`Exposure Time (s) 2.0`), as the number alone says nothing, and not at all
+    when it is 0, which GMS writes where it has no value (`STEM Camera Length
+    0.0`). No word of ours, no conversion (decision 230).
     """
     phrases = []
-    for path in HEADLINE:
-        if (value := at(tags, path)) is not None:
-            name = path.rsplit(".", 1)[-1]
-            phrases.append(value if isinstance(value, str) else f"{name} {value}")
+    for entry in HEADLINE:
+        if entry == SIZE:
+            phrases += size
+            continue
+        paths = (entry,) if isinstance(entry, str) else entry
+        found = ((p, v) for p in paths if (v := at(tags, p)) is not None)
+        if (hit := next(found, None)) is None:
+            continue
+        path, value = hit
+        if isinstance(value, str):
+            phrases.append(value)
+        elif value != 0:
+            phrases.append(f"{path.rsplit('.', 1)[-1]} {value}")
     return list(dict.fromkeys(phrases))
 
 
@@ -241,13 +295,20 @@ class Dm(Format):
             yield Dataset(anchor=e.rel, basis="Digital Micrograph header")
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """The data image's tags but the user-interface settings, a summary line from them
+        """Every tag but the skip list, a summary line from the data image's tags
         (spec formats/dm, "DM metadata is extracted from the tags")."""
         image = first_image(root + dataset.anchor)
+        original = image["original_metadata"]
         # The data image's, not the thumbnail's: first_image's ImageList holds
-        # the image RosettaSciIO's reader takes (get_image_dictionaries)
-        tags = image["original_metadata"]["ImageList"]["TagGroup0"]["ImageTags"]
-        metadata = mapped(image["original_metadata"], image["mapping"])
+        # the image RosettaSciIO's reader takes (get_image_dictionaries); a
+        # stack builder's image keeps its tags in `source`, where the reader's
+        # get_mapping reads them
+        tags = original["ImageList"]["TagGroup0"]["ImageTags"]
+        source = tags.get("source")
+        created = source.get("Tags at creation") if isinstance(source, dict) else None
+        if isinstance(created, dict):
+            tags = created
+        metadata = mapped(original, image["mapping"])
         instrument = {
             k.split(".", 2)[2]: v
             for k, v in metadata.items()
@@ -262,22 +323,32 @@ class Dm(Format):
             image["metadata"]["Signal"].get("signal_type"),
         ]
         subjects = [s for s in subjects if s] + terms(tags)
+        axes = [
+            {
+                "name": a["name"],
+                "size": a["size"],
+                "scale": float(a["scale"]),
+                "units": a["units"],
+            }
+            for a in axes
+        ]
+        # The size as the reader gives it (decision 235): each axis's name and
+        # size, then its scale where it has a unit
+        size = [f"{a['name']} {a['size']}" for a in axes] + [
+            f"scale {a['scale']} {a['units']}"
+            for a in axes
+            if a["units"] and a["units"] != "<undefined>"
+        ]
         # What the file says first, RosettaSciIO's mapping second, labelled
-        # with the reader's names (decision 230)
+        # (decision 230)
         values = {
-            "original_metadata": kept(tags),
-            "metadata": metadata,
-            "axes": [
-                {
-                    "name": a["name"],
-                    "size": a["size"],
-                    "scale": float(a["scale"]),
-                    "units": a["units"],
-                }
-                for a in axes
-            ],
+            "original_metadata": kept(original),
+            # without what is not suitable for text, as the original (the CL
+            # saturation fraction of 16,384 values maps to a list too)
+            "mapped_metadata": {k: v for k, v in metadata.items() if textual(v)},
+            "axes": axes,
         }
-        return Extracted(summary=headline(tags), subjects=subjects, values=values)
+        return Extracted(summary=headline(tags, size), subjects=subjects, values=values)
 
 
 class Dm3(Dm):
@@ -327,10 +398,11 @@ class Dmw(Format):
                     d.not_of_type(e, "no DM header")
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """Every tag of the file, as the reader gives them (spec formats/dm, "A .dmw file is described by all its tags")."""
-        # Everything for now (decision 173). TODO: filter to the relevant tags
-        # (BACKLOG, ".dmw description")
-        found = tag_paths(parsed(root + dataset.anchor).tags_dict)
+        """Every tag of the file but the skip list, as the reader gives them (spec formats/dm,
+        "A .dmw file is described by all its tags"; "What is left out")."""
+        # Everything not obviously uninteresting (decisions 173, 235). TODO:
+        # filter to the relevant tags (BACKLOG, ".dmw description")
+        found = tag_paths(parsed(root + dataset.anchor).tags_dict, skipped)
         return Extracted(summary=[f"{p} {v}" for p, v in found], subjects=[], values={})
 
 
@@ -367,7 +439,7 @@ class Dmwx(Format):
             members = z.infolist()
             inner = next(i for i in members if i.filename.lower().endswith(".dmw"))
             workspace = parsed_from(io.BytesIO(z.read(inner))).tags_dict
-        summary = [f"{p} {v}" for p, v in tag_paths(workspace)]
+        summary = [f"{p} {v}" for p, v in tag_paths(workspace, skipped)]
         summary += [f"member {i.filename} {i.file_size} B" for i in members]
         return Extracted(summary=summary, subjects=[], values={})
 

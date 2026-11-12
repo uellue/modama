@@ -44,11 +44,11 @@ A file SHALL be typed as a K2IS sector file when it starts with a K2IS block hea
 - **THEN** it is not typed as a K2IS sector file
 
 ### Requirement: K2IS metadata is extracted from the tag file
-For a K2IS dataset, the extractor SHALL keep as values (`original_metadata`) every tag of the `.gtg` file but the user-interface settings (`formats/dm`), with the reader's value, and SHALL NOT read the sector files. The description SHALL start with the summary line of `formats/dm` from the `.gtg` file's root tags; the subjects SHALL carry `Microscope Info.Name` at the root, the imaging mode and the camera model.
+For a K2IS dataset, the extractor SHALL keep as values (`original_metadata`) every tag of the `.gtg` file but the skip list of `formats/dm`, with the reader's value, and SHALL NOT read the sector files. The description SHALL start with the summary line of `formats/dm` from the `.gtg` file's root tags; the subjects SHALL carry `Microscope Info.Name` at the root, the imaging mode and the camera model.
 
 #### Scenario: A representative capture
 - **WHEN** a representative K2IS capture is crawled
-- **THEN** its record's description is `IMAGING, SCANNING, STEM NANOPROBE, 300kV, 320kx, STEM Camera Length 275.0, K2-IS, Exposure Time (s) 0.0025, Search, Size X 35, Size Y 34, 3/29/2018, 1:28:03 PM; K2IS acquisition, 9 files, 27.3 kB, in /`, its values carry the tags of its `.gtg` file with their values as the reader gives them (`DataBar.Device Name` `K2-IS-0001`, `Microscope Info.Stage Position.Stage Alpha` `-2.4043772802208405`), and the extractor reads the `.gtg` file only
+- **THEN** its record's description is `IMAGING, SCANNING, STEM NANOPROBE, 300kV, 320kx, STEM Camera Length 275.0, K2-IS, K2-IS-0001, Exposure Time (s) 0.0025, Search, Size X 35, Size Y 34, 3/29/2018, 1:28:03 PM; K2IS acquisition, 9 files, 27.3 kB, in /`, its values carry the tags of its `.gtg` file with their values as the reader gives them (`DataBar.Device Name` `K2-IS-0001`, `Microscope Info.Stage Position.Stage Alpha` `-2.4043772802208405`), and the extractor reads the `.gtg` file only
 
 #### Scenario: User-interface settings are left out
 - **WHEN** the `.gtg` file holds the image viewer's settings (a tag group of class `cm_stdviewerimagedisplayer`: window and screen position, zoom) and the definition of GMS's Session Info form (`Session Info.Items`)

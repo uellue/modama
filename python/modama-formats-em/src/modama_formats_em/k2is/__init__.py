@@ -3,8 +3,8 @@
 The sector files belong to a .gtg by LiberTEM's naming rule (K2ISDataSet):
 `X.gtg` takes `X*.bin`, and an acquisition has exactly 8 (NUM_SECTORS).
 Extraction reads the .gtg's tags through RosettaSciIO's DM reader on our own
-handle (dm.parsed), keeps all of them but GMS's user-interface settings as
-values and describes the capture by the summary line of DM images
+handle (dm.parsed), keeps all of them but the DM part's skip list (dm.skipped)
+as values and describes the capture by the summary line of DM images
 (dm.headline); the sector files are not read. A .gtg with its 8 sector files is a
 capture whatever it holds (a broken one fails at extraction); only a .gtg
 without sector files is checked for a DM header (decisions 172, 183).
@@ -79,7 +79,7 @@ class K2is(Format):
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """Every tag of the .gtg but GMS's user-interface settings as values, the DM summary line (spec formats/k2is, D4)."""
+        """Every tag of the .gtg but the skip list as values, the DM summary line (spec formats/k2is, D4)."""
         tags = parsed(root + dataset.anchor).tags_dict
         # The scan shape and the microscope from the root, as LiberTEM reads
         # `.SI Dimensions.Size X` (_get_nav_shape): SI Image Tags holds groups
