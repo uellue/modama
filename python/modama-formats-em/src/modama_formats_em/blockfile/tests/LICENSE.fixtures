@@ -1,7 +1,8 @@
 fixtures/scan/test2.blo is a test file of RosettaSciIO
 (https://github.com/hyperspy/rosettasciio), copied unchanged from its tag
 v0.15.0, rsciio/tests/data/blockfile/test2.blo. The fixture header_only is its
-first 4,096 bytes, made at test time by generate.py.
+first 4,096 bytes, and magic_259 is a copy with another MAGIC, both made at
+test time by generate.py.
 
 Copyright 2007-2026 The HyperSpy developers.
 

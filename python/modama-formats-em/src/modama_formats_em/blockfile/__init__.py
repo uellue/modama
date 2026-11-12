@@ -5,6 +5,7 @@ header and the note after it, and maps the diffraction patterns without
 loading them (spec formats/blockfile, "The header, not the data").
 """
 
+import warnings
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -14,7 +15,19 @@ from ..dm import mapped, tag_paths
 
 HERE = Path(__file__).parent
 TYPE = "application/x.blockfile"
-TEM = "Acquisition_instrument.TEM."
+# The header's fields the summary shows, under the reader's names, as found
+# (decision 230); Scan_rotation only where it is not 0
+SUMMARY = ("NX", "NY", "SX", "SY", "DP_SZ", "Beam_energy", "Camera_length")
+# The reader's date and time, converted to the process's local time zone
+# (rsciio.utils._date_time.serial_date_to_ISO_format); the file states no zone
+LOCAL = ("General.date", "General.time", "General.time_zone")
+
+
+def plain(value):
+    """A header field as a JSON value: bytes as Latin-1 text, a NumPy scalar as a Python one."""
+    if isinstance(value, bytes):
+        return value.decode("latin-1")
+    return value.item() if hasattr(value, "item") else value
 
 
 class Blockfile(Format):
@@ -27,32 +40,38 @@ class Blockfile(Format):
             yield Dataset(anchor=e.rel, basis="IMGBLO header")
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """Scan, step, pattern size, beam energy, camera length, rotation and time (spec formats/blockfile)."""
+        """The header's fields as the reader gives them, the mapped metadata second (spec formats/blockfile)."""
         # Imports dask and scikit-image: in the worker only
         from rsciio.blockfile import file_reader
+        from rsciio.utils._date_time import serial_date_to_datetime
 
-        (scan,) = file_reader(root + dataset.anchor, lazy=True)
-        # The metadata as the reader gives it, then its mapping applied, which
-        # converts the header's fields: V to kV, 10 × mm to m, 100 × degrees to
-        # degrees (blockfile/_api.py, mapping and get_header_dtype_list). The
-        # date and time are in the process's local time zone, UTC in the image
-        tags = {
-            **dict(tag_paths(scan["metadata"])),
-            **mapped(scan["original_metadata"], scan["mapping"]),
+        # The reader's warnings go into the record, not only to stderr (a
+        # MAGIC it does not know: spec formats/blockfile, the 16-bit variant)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            (scan,) = file_reader(root + dataset.anchor, lazy=True)
+        said = [str(w.message) for w in caught]
+        header = {
+            k: plain(v)
+            for k, v in scan["original_metadata"]["blockfile_header"].items()
         }
-        y, x, dy, dx = scan["axes"]  # lazy: never squeezed
-        summary = [
-            f"scan of {x['size']}×{y['size']} positions",
-            f"step {float(x['scale'])}×{float(y['scale'])} {x['units']}",
-            f"{dx['size']}×{dy['size']} pixel diffraction patterns",
-            f"beam energy {tags[TEM + 'beam_energy']} kV",
-            f"camera length {tags[TEM + 'camera_length']} m",
-        ]
-        if rotation := tags[TEM + "rotation"]:
-            summary.append(f"scan rotation {rotation}°")
-        summary.append(f"{tags['General.date']} {tags['General.time'][:5]}")
+        # The serial date as written, without the reader's conversion to the
+        # local time zone
+        acquired = serial_date_to_datetime(header["Acquisition_time"]).replace(
+            tzinfo=None
+        )
+        summary = [f"{name} {header[name]}" for name in SUMMARY]
+        if header["Scan_rotation"]:
+            summary.append(f"Scan_rotation {header['Scan_rotation']}")
+        summary.append(acquired.strftime("%Y-%m-%d %H:%M"))
+        summary += [f"reader warning: {text}" for text in said]
         values = {
-            "tags": tags,
+            "original_metadata": {"blockfile_header": header},
+            # HyperSpy's names; the conversions are RosettaSciIO's (its mapping)
+            "mapped_metadata": {
+                **{k: v for k, v in tag_paths(scan["metadata"]) if k not in LOCAL},
+                **mapped(scan["original_metadata"], scan["mapping"]),
+            },
             "axes": [
                 {
                     "name": a["name"],
@@ -62,6 +81,8 @@ class Blockfile(Format):
                 }
                 for a in scan["axes"]
             ],
+            "acquired": acquired.isoformat(),
+            "reader_warnings": said,
         }
         return Extracted(summary=summary, subjects=["4D-STEM"], values=values)
 

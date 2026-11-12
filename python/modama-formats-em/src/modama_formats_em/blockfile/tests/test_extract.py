@@ -4,11 +4,28 @@ Run with -s to see each description, its subjects and the bytes the extractor re
 """
 
 import os
+import time
 
 from modama_crawler.testing import recognise
 from modama_crawler.walk import walk
 
 from modama_formats_em.testing import described, rchar
+
+SCAN = (
+    "NX 3, NY 2, SX 64.0, SY 64.0, DP_SZ 5, Beam_energy 200000, Camera_length 2000, "
+    "Scan_rotation 2500, 2015-12-01 15:43"
+)
+# RosettaSciIO 0.15.0's warning for a MAGIC other than 258
+UNKNOWN_MAGIC = (
+    "Blockfile has unrecognized header signature. "
+    "Will attempt to read, but correctness not guaranteed!"
+)
+
+
+def extracted(collection_tests, tree):
+    (d,) = walk(tree, collection_tests.collection.formats).datasets
+    (blockfile,) = collection_tests.collection.formats
+    return blockfile.extract(d, str(tree))
 
 
 def test_a_block_file_from_astar(collection_tests, tmp_path):
@@ -30,12 +47,17 @@ def test_a_text_file_named_like_a_block_file(collection_tests, tmp_path):
 
 def test_a_representative_block_file(collection_tests, tmp_path):
     (scan,) = described(collection_tests, "scan", tmp_path)
-    assert scan.description.startswith(
-        "scan of 3×2 positions, step 64.0×64.0 nm, 5×5 pixel diffraction patterns, "
-        "beam energy 200.0 kV, camera length 0.2 m, scan rotation 25.0°, "
-        "2015-12-01 15:43; "
-    )
+    assert scan.description.startswith(SCAN + "; ")
     assert scan.subjects == ["NanoMegas ASTAR block file", "4D-STEM"]
+    values = scan.dataset.extraction.extracted.values
+    assert list(values)[:2] == ["original_metadata", "mapped_metadata"]
+    header = values["original_metadata"]["blockfile_header"]
+    assert (header["ID"], header["MAGIC"], header["Beam_energy"]) == (
+        "IMGBLO",
+        258,
+        200000,
+    )
+    assert values["mapped_metadata"]["Acquisition_instrument.TEM.beam_energy"] == 200.0
 
 
 def test_a_scan_rotation_of_0_is_left_out(collection_tests, tmp_path):
@@ -44,10 +66,30 @@ def test_a_scan_rotation_of_0_is_left_out(collection_tests, tmp_path):
     with open(tree / "test2.blo", "r+b") as f:
         f.seek(28)  # Scan_rotation, uint16 (get_header_dtype_list)
         f.write(bytes(2))
-    (d,) = walk(tree, collection_tests.collection.formats).datasets
-    (blockfile,) = collection_tests.collection.formats
-    summary = blockfile.extract(d, str(tree)).summary
-    assert summary[-2:] == ["camera length 0.2 m", "2015-12-01 15:43"]
+    summary = extracted(collection_tests, tree).summary
+    assert summary[-2:] == ["Camera_length 2000", "2015-12-01 15:43"]
+
+
+def test_the_acquisition_time_as_written(collection_tests, tmp_path, monkeypatch):
+    monkeypatch.setenv("TZ", "Europe/Berlin")
+    time.tzset()
+    try:
+        tree = collection_tests.materialise("scan", tmp_path)
+        out = extracted(collection_tests, tree)
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    assert out.summary[-1] == "2015-12-01 15:43"
+    assert out.values["acquired"] == "2015-12-01T15:43:09.828000"
+    assert not any(k.startswith("General.time") for k in out.values["mapped_metadata"])
+
+
+def test_the_16_bit_variant(collection_tests, tmp_path):
+    (scan,) = described(collection_tests, "magic_259", tmp_path)
+    assert scan.description.startswith(f"{SCAN}, reader warning: {UNKNOWN_MAGIC}; ")
+    values = scan.dataset.extraction.extracted.values
+    assert values["original_metadata"]["blockfile_header"]["MAGIC"] == 259
+    assert values["reader_warnings"] == [UNKNOWN_MAGIC]
 
 
 def test_the_header_not_the_data(collection_tests, tmp_path):
@@ -58,13 +100,12 @@ def test_the_header_not_the_data(collection_tests, tmp_path):
         whole.dataset.extraction.extracted.summary
     )
     assert cut.subjects == whole.subjects
-    # A large file: the header with the read buffer of the file RosettaSciIO
-    # opens, not the patterns (16 MiB of zeros after the scan, sparse)
+    # A large file: the header with one read buffer of the file RosettaSciIO
+    # opens (128 KiB here, plus np.fromfile's), not the patterns (16 MiB of
+    # zeros after the scan, sparse)
     tree = collection_tests.materialise("scan", tmp_path / "large")
     os.truncate(tree / "test2.blo", 16 << 20)
-    (d,) = walk(tree, collection_tests.collection.formats).datasets
-    (blockfile,) = collection_tests.collection.formats
-    blockfile.extract(d, str(tree))  # once first: rchar counts the imports' reads too
+    extracted(collection_tests, tree)  # once first: rchar counts the imports' reads too
     before = rchar()
-    blockfile.extract(d, str(tree))
+    extracted(collection_tests, tree)
     assert rchar() - before < 1 << 20

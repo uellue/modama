@@ -18,15 +18,23 @@ A file that starts with `IMGBLO` SHALL be a single-file dataset of the block fil
 - **THEN** it does not get the block file type: it is a single file of the type its content gives (`text/plain`), without a warning
 
 ### Requirement: Block file metadata is extracted from the header
-For a block file dataset, the extractor SHALL yield, from the header as RosettaSciIO's blockfile reader gives it (`file_reader(..., lazy=True)`): the scan size and step with their unit, the diffraction pattern size, the beam energy, the camera length, the scan rotation where it is not 0, and the acquisition date and time; the subjects SHALL say 4D-STEM.
+For a block file dataset, the extractor SHALL read the header with RosettaSciIO's blockfile reader (`file_reader(..., lazy=True)`) and yield its fields as the reader gives them (decision 230): the summary shows the scan size and step, the diffraction pattern size, the beam energy and the camera length, the scan rotation where it is not 0, under the header's names and as found, then the acquisition date and time; the subjects say 4D-STEM.
 
 #### Scenario: A representative block file
-- **WHEN** a representative block file with a 3×2 scan of 64 nm steps and 5×5 pixel diffraction patterns, 200 kV, a camera length of 2000 (10 × mm) and a scan rotation of 2500 (100 × degrees), acquired on 2015-12-01 at 15:43 is crawled
-- **THEN** its record's description starts with `scan of 3×2 positions, step 64.0×64.0 nm, 5×5 pixel diffraction patterns, beam energy 200.0 kV, camera length 0.2 m, scan rotation 25.0°, 2015-12-01 15:43`
-- **AND** the beam energy, camera length and rotation are the values of RosettaSciIO's mapping, with the units the header's fields have after its conversion (V × 10⁻³: kV; 10 × mm × 10⁻⁴: m; 100 × degrees × 10⁻²: degrees)
+- **WHEN** a representative block file with a 3×2 scan, `SX` and `SY` 64.0, `DP_SZ` 5, `Beam_energy` 200000, `Camera_length` 2000 and `Scan_rotation` 2500, acquired on 2015-12-01 at 15:43 is crawled
+- **THEN** its record's description starts with `NX 3, NY 2, SX 64.0, SY 64.0, DP_SZ 5, Beam_energy 200000, Camera_length 2000, Scan_rotation 2500, 2015-12-01 15:43`, with no unit added
+- **AND** its values hold the header's fields first, as the reader gives them, and the mapped metadata (HyperSpy's names, RosettaSciIO's conversions) as a second, labelled section
 - **AND** its subjects are the format's name and `4D-STEM`
+
+#### Scenario: The acquisition time as written
+- **WHEN** a block file is extracted in a process whose local time zone is not UTC
+- **THEN** its date and time are those of the header's serial date, as for UTC: the file states no time zone, and the reader's conversion to the local one is not used
+
+#### Scenario: The 16-bit variant
+- **WHEN** a block file's header has MAGIC 259, as the 16-bit files LiberTEM reads (`Stingray16bit_7_11.blo` on staging), which RosettaSciIO's reader does not know
+- **THEN** it is described as any other, and the reader's warning ("Blockfile has unrecognized header signature …") is in its description and values
 
 #### Scenario: The header, not the data
 - **WHEN** a block file holds its header and nothing after it, as a copy cut short
-- **THEN** its description is the same as that of the whole file: the extractor never loads the diffraction patterns
-- **AND** of a block file of 16 MiB it reads less than 1 MiB: the header, with the read buffer of the file RosettaSciIO opens (128 KiB, Python's default; 1 MiB on NFS, where `st_blksize` sets it)
+- **THEN** its description is the same as that of the whole file: the extractor never decodes the diffraction patterns
+- **AND** of a block file of 16 MiB it reads the header plus one read buffer of the file RosettaSciIO opens (about 132 KiB here; about 1 MiB and 8 KiB on NFS, where `st_blksize` sets the buffer): patterns are read into the buffer, never decoded

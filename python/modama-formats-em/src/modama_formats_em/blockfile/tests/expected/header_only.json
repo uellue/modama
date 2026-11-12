@@ -20,15 +20,18 @@
         "4D-STEM"
       ],
       "summary": [
-        "scan of 3\u00d72 positions",
-        "step 64.0\u00d764.0 nm",
-        "5\u00d75 pixel diffraction patterns",
-        "beam energy 200.0 kV",
-        "camera length 0.2 m",
-        "scan rotation 25.0\u00b0",
+        "NX 3",
+        "NY 2",
+        "SX 64.0",
+        "SY 64.0",
+        "DP_SZ 5",
+        "Beam_energy 200000",
+        "Camera_length 2000",
+        "Scan_rotation 2500",
         "2015-12-01 15:43"
       ],
       "values": {
+        "acquired": "2015-12-01T15:43:09.828000",
         "axes": [
           {
             "name": "y",
@@ -55,17 +58,58 @@
             "units": "cm"
           }
         ],
-        "tags": {
+        "mapped_metadata": {
           "Acquisition_instrument.TEM.beam_energy": 200.0,
           "Acquisition_instrument.TEM.camera_length": 0.2,
           "Acquisition_instrument.TEM.rotation": 25.0,
-          "General.date": "2015-12-01",
           "General.notes": "Precession angle : \r\nPrecession Frequency : \r\nCamera gamma : on",
           "General.original_filename": "cut.blo",
-          "General.time": "15:43:09.828000",
-          "General.time_zone": "UTC",
           "Signal.signal_type": "diffraction"
-        }
+        },
+        "original_metadata": {
+          "blockfile_header": {
+            "Acquisition_time": 42339.654974861114,
+            "Beam_energy": 200000,
+            "Camera_length": 2000,
+            "Centering_N0": 0.0,
+            "Centering_N1": 0.0,
+            "Centering_N2": 0.0,
+            "Centering_N3": 0.0,
+            "Centering_N4": 0.0,
+            "Centering_N5": 0.0,
+            "Centering_N6": 0.0,
+            "Centering_N7": 0.0,
+            "DP_SZ": 5,
+            "DP_rotation": 0,
+            "Data_offset_1": 4096,
+            "Data_offset_2": 4108,
+            "Distortion_N00": 0.0,
+            "Distortion_N01": 0.98,
+            "Distortion_N02": 0.0,
+            "Distortion_N03": 0.0,
+            "Distortion_N04": 0.0,
+            "Distortion_N05": 0.0,
+            "Distortion_N06": 0.0,
+            "Distortion_N07": 0.0,
+            "Distortion_N08": 0.0,
+            "Distortion_N09": 0.945,
+            "Distortion_N10": 0.0,
+            "Distortion_N11": 0.0,
+            "Distortion_N12": 0.0,
+            "Distortion_N13": 0.0,
+            "ID": "IMGBLO",
+            "MAGIC": 258,
+            "NX": 3,
+            "NY": 2,
+            "Note": "Precession angle : \r\nPrecession Frequency : \r\nCamera gamma : on",
+            "SDP": 6226,
+            "SX": 64.0,
+            "SY": 64.0,
+            "Scan_rotation": 2500,
+            "UNKNOWN1": 131135
+          }
+        },
+        "reader_warnings": []
       }
     }
   },

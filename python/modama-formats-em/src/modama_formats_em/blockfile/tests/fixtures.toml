@@ -11,6 +11,13 @@ licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "modama_formats_em.blockfile.tests.generate:header_only, from the file of scan"
 generator = "modama_formats_em.blockfile.tests.generate:header_only"
 
+[magic_259]
+purpose = "reproducer"
+validity = "composed: the block file of fixture scan with MAGIC 259 instead of 258, all else unchanged. LiberTEM reads MAGIC 258 and 259 (libertem/io/dataset/blo.py, MAGIC_EXPECT; its 16-bit test file Stingray16bit_7_11.blo, the name of the file found on staging on 2026-11-12), RosettaSciIO 0.15.0 knows 258 only and warns; stands in for a cut of the staging file until @weber agrees to one (spec formats/blockfile, the 16-bit variant)"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.blockfile.tests.generate:magic_259, from the file of scan"
+generator = "modama_formats_em.blockfile.tests.generate:magic_259"
+
 [text_blo]
 purpose = "reproducer"
 validity = "invalid-by-design: a text file named notes.blo without the IMGBLO header (spec formats/blockfile, a text file named like a block file)"
