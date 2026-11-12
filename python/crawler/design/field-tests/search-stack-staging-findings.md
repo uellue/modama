@@ -390,6 +390,20 @@ that the page's request names no model. After `dc build matchmaker && dc up -d -
 matchmaker`, about 12:15 UTC, @weber: "it works, and super well!!", still with the
 partial index (indexing under way).
 
+**F19 (matchmaker): links in AI Mode's answers end at the first closing bracket of the
+path** (@weber, 2026-11-12, `.claude/field-tests/badlinks/`: the conversation exported as
+Markdown and printed as PDF). Asked for DM4 spectra, the answer linked e.g. "acq 01" to
+`…/01_15meV.ch_-111_to_111_0.1s_1.5h_acqtime/SI+data+(20)/Spectrum+of+Live+EELS+Spectrum.dm4`;
+the page made the link end after `SI+data+(20` and showed
+`/Spectrum+of+Live+EELS+Spectrum.dm4)` as text, so the link leads nowhere. The model wrote
+every link in full (the export has them). Cause: matchmaker's own Markdown subset matches
+links with `\[(.+?)]\((.+?)\)` (`src/components/MessageMarkdown.tsx:92`), a lazy match up to
+the first `)`; CommonMark allows balanced brackets in a link. The citation list uses the same
+pattern (`src/lib/datasetCitations.ts:56`), so those links also got no number and are missing
+from "Datasets cited" (7 of the 15 links in the answer, all without brackets). Many of our
+paths have brackets (`SI data (20)`, `(3) Spectrum of … (low-loss).dm4`). Not yet checked:
+whether any link was invented rather than cut.
+
 ## Review of the staging changes, 2026-11-11
 
 By an agent that did not write them (f2171b6..1bc2bc5: the staging override and scripts,
