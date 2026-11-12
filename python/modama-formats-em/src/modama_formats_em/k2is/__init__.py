@@ -3,8 +3,9 @@
 The sector files belong to a .gtg by LiberTEM's naming rule (K2ISDataSet):
 `X.gtg` takes `X*.bin`, and an acquisition has exactly 8 (NUM_SECTORS).
 Extraction reads the .gtg's tags through RosettaSciIO's DM reader on our own
-handle (dm.parsed) and describes all of them but GMS's user-interface
-settings; the sector files are not read. A .gtg with its 8 sector files is a
+handle (dm.parsed), keeps all of them but GMS's user-interface settings as
+values and describes the capture by the summary line of DM images
+(dm.headline); the sector files are not read. A .gtg with its 8 sector files is a
 capture whatever it holds (a broken one fails at extraction); only a .gtg
 without sector files is checked for a DM header (decisions 172, 183).
 """
@@ -14,24 +15,13 @@ from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
-from ..dm import header, parsed, tag_paths, version
+from ..dm import at, header, headline, kept, parsed, terms, version
 
 HERE = Path(__file__).parent
 ACQUISITION = "application/x.k2is"
 TAGS = "application/x.dm-gtg"
 SECTOR = "application/x.k2is-sector"
 SECTORS = 8
-# First in the description: the tags LiberTEM reads for the scan shape
-# (_get_nav_shape), and the microscope's
-FIRST = ("SI Dimensions", "Microscope Info")
-# GMS's user-interface settings, left out of the description (decision 129, D4):
-# - a tag group of the image viewer's class: the window's and the screen's
-#   relative position, zoom, auto zoom, view name, viewer class, its version
-VIEWER_CLASSES = frozenset({"cm_stdviewerimagedisplayer"})
-# - the group Items of Session Info: the definition of GMS's Session Info form
-#   (per field its label, tag path, data type, precision, units and default
-#   value); the fields' values are in Session Info itself and stay
-FORM = ("Session Info", "Items")
 
 
 class K2is(Format):
@@ -89,29 +79,15 @@ class K2is(Format):
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """Every tag of the .gtg but GMS's user-interface settings, as the reader gives them (spec formats/k2is, D4)."""
+        """Every tag of the .gtg but GMS's user-interface settings as values, the DM summary line (spec formats/k2is, D4)."""
         tags = parsed(root + dataset.anchor).tags_dict
-        # At the root, as LiberTEM reads `.SI Dimensions.Size X` (_get_nav_shape):
-        # SI Image Tags holds groups of the same names
-        values = {
-            group: tags[group]
-            for group in FIRST
-            if isinstance(tags.get(group), dict) and tags[group]
-        }
-        # The scan shape and the microscope first, then the rest in the reader's order
-        ordered = {**values, **{k: v for k, v in tags.items() if k not in values}}
-        summary = [f"{path} {value}" for path, value in tag_paths(ordered, _settings)]
-        subjects = (
-            [n]
-            if isinstance(n := values.get("Microscope Info", {}).get("Name"), str)
-            else []
-        )
-        return Extracted(summary=summary, subjects=subjects, values=values)
-
-
-def _settings(path: tuple[str, ...], group: dict) -> bool:
-    """A tag group of GMS's user-interface settings, left out of the description."""
-    return group.get("Class Name") in VIEWER_CLASSES or path[-2:] == FORM
+        # The scan shape and the microscope from the root, as LiberTEM reads
+        # `.SI Dimensions.Size X` (_get_nav_shape): SI Image Tags holds groups
+        # of the same names
+        name = at(tags, "Microscope Info.Name")
+        subjects = ([name] if isinstance(name, str) else []) + terms(tags)
+        values = {"tags": kept(tags)}
+        return Extracted(summary=headline(tags), subjects=subjects, values=values)
 
 
 # This part of the collection, for its tests; the package's COLLECTION joins the parts.

@@ -1,13 +1,16 @@
 """Gatan Digital Micrograph files (DM3, DM4): single-file datasets, recognised by their header (dm.xml).
 
 Extraction goes through RosettaSciIO's reader: it parses the tags and skips the
-image data by seeking past it (D7; bytes read per file in the tests). `.dmw`
+image data by seeking past it (D7; bytes read per file in the tests). The data
+image's tags but GMS's user-interface settings are kept as values, a summary
+line built from them (`headline`, shared with K2IS) starts the description. `.dmw`
 files, typed by their name, are claimed by `em/dmw` when they have a DM header
 and described by all their tags (change recognition-checks-content, E1);
 `.dmwx` files, ZIPs of a workspace and its images, by `em/dmwx` (E4).
 """
 
 import io
+import math
 import os
 import struct
 import zipfile
@@ -89,6 +92,101 @@ def tag_paths(
             yield ".".join(here), value
 
 
+# GMS's user-interface settings, left out of a DM image's and a K2IS tag file's
+# values (decision 129, design D4 of change dm-containers-and-k2is):
+# - a tag group of the image viewer's class: the window's and the screen's
+#   relative position, zoom, auto zoom, view name, viewer class, its version
+VIEWER_CLASSES = frozenset({"cm_stdviewerimagedisplayer"})
+# - the group Items of Session Info: the definition of GMS's Session Info form
+#   (per field its label, tag path, data type, precision, units and default
+#   value); the fields' values are in Session Info itself and stay
+FORM = ("Session Info", "Items")
+
+
+def settings(path: tuple[str, ...], group: dict) -> bool:
+    """A tag group of GMS's user-interface settings, for tag_paths' skip."""
+    return group.get("Class Name") in VIEWER_CLASSES or path[-2:] == FORM
+
+
+def kept(tags: dict) -> dict:
+    """Every tag below tags but the user-interface settings: dotted path -> value, for the
+    values. The infinities and NaN, which JSON cannot hold, as Python writes them ("inf")."""
+
+    def plain(value):
+        if isinstance(value, float) and not math.isfinite(value):
+            return str(value)
+        if isinstance(value, tuple | list):
+            return type(value)(plain(v) for v in value)
+        return value
+
+    return {path: plain(value) for path, value in tag_paths(tags, settings)}
+
+
+def at(tags: dict, path: str):
+    """The value at a dotted path of tag names, None if it is missing, a group or empty ([] for an empty string)."""
+    node = tags
+    for name in path.split("."):
+        if not isinstance(node, dict) or name not in node:
+            return None
+        node = node[name]
+    return None if isinstance(node, dict) or node in ("", []) else node
+
+
+def headline(tags: dict, size: Iterable[str] = ()) -> list[str]:
+    """The summary line of a DM image's ImageTags or a K2IS tag file's tags (spec formats/dm,
+    "The summary line of a DM file's tags"); size: the image's pixel size and dimensions.
+
+    The values as the tags give them (README, "Values and units"), each where present.
+    """
+    from rsciio.digitalmicrograph._api import ImageObject  # in the worker only
+
+    mode = at(tags, "Microscope Info.Imaging Mode")
+    operation = at(tags, "Microscope Info.Operation Mode")
+    illumination = at(tags, "Microscope Info.Illumination Mode")
+    # STEM as RosettaSciIO's reader decides it (ImageObject._get_mode)
+    stem = "STEM" in str(illumination)
+    length = at(tags, "Microscope Info.STEM Camera Length") if stem else None
+    exposure = at(tags, "DataBar.Exposure Time (s)")
+    preset = at(tags, "Acquisition.Parameters.Parameter Set Name")
+    x, y = at(tags, "SI Dimensions.Size X"), at(tags, "SI Dimensions.Size Y")
+    date, time = (
+        at(tags, "DataBar.Acquisition Date"),
+        at(tags, "DataBar.Acquisition Time"),
+    )
+    # The reader's own conversions, which its mapping applies to General.date
+    # and General.time; they do not use self
+    day = ImageObject._get_date(None, date) if date is not None else None
+    clock = ImageObject._get_time(None, time) if time is not None else None
+    specimen = at(tags, "Session Info.Specimen")
+    operator = at(tags, "Session Info.Operator")
+    phrases = [
+        mode,
+        operation if operation != mode else None,
+        illumination,
+        at(tags, "Microscope Info.Formatted Voltage"),
+        at(tags, "Microscope Info.Formatted Indicated Mag"),
+        f"STEM Camera Length {length}" if length is not None else None,
+        at(tags, "Acquisition.Device.Source Model"),
+        f"{exposure} s exposure" if exposure is not None else None,
+        f"parameter set {preset}" if preset is not None else None,
+        f"scan of {x}×{y} positions" if x is not None and y is not None else None,
+        *size,
+        f"{day} {(clock or '')[:5]}".strip() if day else None,
+        f"specimen {specimen}" if specimen is not None else None,
+        f"operator {operator}" if operator is not None else None,
+    ]
+    return [str(p) for p in phrases if p is not None]
+
+
+def terms(tags: dict) -> list[str]:
+    """Subjects from a DM image's or a K2IS tag file's tags: the imaging mode and the camera model."""
+    found = (
+        at(tags, "Microscope Info.Imaging Mode"),
+        at(tags, "Acquisition.Device.Source Model"),
+    )
+    return [str(t) for t in found if t is not None]
+
+
 def parsed(path: str):
     """RosettaSciIO's DM reader with the file's tag tree parsed, from our own handle.
 
@@ -151,46 +249,37 @@ class Dm(Format):
             yield Dataset(anchor=e.rel, basis="Digital Micrograph header")
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """The acquisition values the tags hold (spec formats/dm, "DM metadata is extracted from the tags")."""
+        """The data image's tags but the user-interface settings, a summary line from them
+        (spec formats/dm, "DM metadata is extracted from the tags")."""
         image = first_image(root + dataset.anchor)
-        tags = mapped(image["original_metadata"], image["mapping"])
+        # The data image's, not the thumbnail's: first_image's ImageList holds
+        # the image RosettaSciIO's reader takes (get_image_dictionaries)
+        tags = image["original_metadata"]["ImageList"]["TagGroup0"]["ImageTags"]
+        metadata = mapped(image["original_metadata"], image["mapping"])
         instrument = {
             k.split(".", 2)[2]: v
-            for k, v in tags.items()
+            for k, v in metadata.items()
             if k.startswith(
                 ("Acquisition_instrument.TEM.", "Acquisition_instrument.SEM.")
             )
         }
-        summary, subjects = [], []
-        # The reader's names and numbers as it gives them, not rounded, no unit
-        # added (README, "Values and units"). TODO: units and meaning (BACKLOG,
+        # The numbers as the reader gives them, not rounded, no unit added
+        # (README, "Values and units"). TODO: units and meaning (BACKLOG,
         # "Units and meaning")
-        for name in ("beam_energy", "magnification", "camera_length"):
-            if (value := instrument.get(name)) is not None:
-                summary.append(f"{name} {value}")
         axes = image["axes"]
+        size = []
         x = next((a for a in axes if a["name"] == "x"), None)
         if x is not None and x["units"] and x["units"] != "<undefined>":
-            summary.append(f"{float(x['scale'])} {x['units']}/pixel")
-        summary.append("×".join(str(a["size"]) for a in reversed(axes)))
-        databar = image["original_metadata"]["ImageList"]["TagGroup0"]["ImageTags"].get(
-            "DataBar", {}
-        )
-        if detector := databar.get("Device Name"):
-            summary.append(detector)
-        if microscope := instrument.get("microscope"):
-            summary.append(microscope)
-            subjects.append(microscope)
-        if "General.date" in tags:
-            summary.append(
-                f"{tags['General.date']} {tags.get('General.time', '')[:5]}".strip()
-            )
-        if mode := instrument.get("acquisition_mode"):
-            subjects.append(mode)
-        if signal := image["metadata"]["Signal"].get("signal_type"):
-            subjects.append(signal)
+            size.append(f"{float(x['scale'])} {x['units']}/pixel")
+        size.append("×".join(str(a["size"]) for a in reversed(axes)))
+        subjects = [
+            instrument.get("microscope"),
+            instrument.get("acquisition_mode"),
+            image["metadata"]["Signal"].get("signal_type"),
+        ]
+        subjects = [s for s in subjects if s] + terms(tags)
         values = {
-            "tags": tags,
+            "tags": kept(tags),
             "axes": [
                 {
                     "name": a["name"],
@@ -200,9 +289,8 @@ class Dm(Format):
                 }
                 for a in axes
             ],
-            "detector": detector,
         }
-        return Extracted(summary=summary, subjects=subjects, values=values)
+        return Extracted(summary=headline(tags, size), subjects=subjects, values=values)
 
 
 class Dm3(Dm):
