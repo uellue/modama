@@ -124,8 +124,6 @@ from modama_crawler.formats import Extracted
 
 class Pair(Format):
     ...
-    # Raise it when the output changes: the datasets are extracted again
-    extractor_version = "1"
 
     def extract(self, dataset, root):
         header = root + dataset.anchor  # a member's path on disk: root + member
@@ -141,10 +139,15 @@ class Pair(Format):
 `extract` runs in a worker process with a time limit, without database
 access; plain JSON values only. It may open the members itself, unbuffered
 (`open(path, "rb", buffering=0)`), or with a 64 KiB buffer and readahead off
-for a library that reads in tiny pieces (see the README's pitfalls). If it raises,
-crashes or runs over the limit, the dataset keeps a basic description and the
-crawl reports a warning; the failure is kept until the files or the
-`extractor_version` change. Return `None` if there is nothing to extract.
+for a library that reads in tiny pieces (see the README's pitfalls). It reads
+the dataset's members only: a change to any other file would not bring it to
+run again. If it raises, crashes or runs over the limit, the dataset keeps a
+basic description and the crawl reports a warning; the next crawl tries again.
+Return `None` if there is nothing to extract. There is no version to raise
+when the output changes: a change to the installed code (yours, or a library
+it uses) changes the crawl's extractor identity, and the next crawl extracts
+every dataset again. The fixture tests record each fixture's extraction next
+to its recognition result, so a change of output shows as a diff to review.
 
 ## Fixtures
 
