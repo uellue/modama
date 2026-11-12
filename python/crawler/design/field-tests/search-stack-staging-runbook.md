@@ -59,7 +59,11 @@ STAGING_USER=<uid>:<gid>                # who the crawler reads the tree as
 STAGING_GROUP=<gid of iff>              # the group some of the tree needs
 STAGING_CRAWL_CONFIG=libertem.toml      # the crawl's exclusions in stagingconf/;
                                         # full.toml for the whole tree
+AIRFLOW_TASK_LIMIT=16                   # at most 16 indexing batches at once on this shared
+                                        # machine (@weber, 2026-11-12)
 ```
+
+What each service then chooses on this machine, and how to change it: `./cpu-budget.sh staging`, and the stack's README, "CPU budget".
 
 ## Steps
 
@@ -93,6 +97,7 @@ echo "STAGING_DATA=/storage/er-c-data" >> staging.env
 echo "STAGING_USER=$(id -u):$(id -g)" >> staging.env
 echo "STAGING_GROUP=$(getent group iff | cut -d: -f3)" >> staging.env
 echo "STAGING_CRAWL_CONFIG=libertem.toml" >> staging.env
+echo "AIRFLOW_TASK_LIMIT=16" >> staging.env
 ```
 
 **8.** Check what the stack will use, and that you can read the subtree:

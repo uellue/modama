@@ -1,0 +1,7 @@
+services:
+  crawler:
+    environment: {MODAMA_CRAWLER_EXTRACT_WORKERS: "20"}
+  search-api:
+    environment: {WORKERS: "2", EMBEDDING_THREADS: "16"}
+  airflow-worker-transform:
+    environment: {TRANSFORM_PROCESSES: "3"}

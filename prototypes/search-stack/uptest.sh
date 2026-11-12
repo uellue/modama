@@ -7,5 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # Like deploy/.env: the secrets directory; the test deployment's throwaway values unless set
 [ -e .env ] || echo "MODAMA_SECRETS_DIR=./testconf/secrets" > .env
+# the base of our Airflow image, which Compose cannot build in order (docker-compose.yml)
+docker compose build --quiet airflow-upstream
 docker compose up -d --wait --wait-timeout "${UPTEST_TIMEOUT:-900}" "$@"
 echo "search stack is up; run ./runtest.sh to check it"
