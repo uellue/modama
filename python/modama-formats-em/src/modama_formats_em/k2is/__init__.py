@@ -42,8 +42,6 @@ class K2is(Format):
     reacts_to = frozenset({TAGS, SECTOR})
     # 2: a lone .gtg without a DM header loses the .gtg type (decisions 172, 183)
     version = "2"
-    # 2: every tag but the user-interface settings (decision 129), not rounded
-    extractor_version = "3"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         sectors = d.of_type(SECTOR)

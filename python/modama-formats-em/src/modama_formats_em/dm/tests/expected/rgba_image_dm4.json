@@ -14,6 +14,36 @@
       "warnings": []
     }
   ],
+  "extractions": {
+    "/test-8.dm4": {
+      "subjects": [],
+      "summary": [
+        "2\u00d72"
+      ],
+      "values": {
+        "axes": [
+          {
+            "name": "y",
+            "scale": 1.0,
+            "size": 2,
+            "units": ""
+          },
+          {
+            "name": "x",
+            "scale": 1.0,
+            "size": 2,
+            "units": ""
+          }
+        ],
+        "detector": null,
+        "tags": {
+          "Signal.Noise_properties.Variance_linear_model.gain_factor": 1.0,
+          "Signal.Noise_properties.Variance_linear_model.gain_offset": 0.0,
+          "Signal.quantity": "Intensity"
+        }
+      }
+    }
+  },
   "skipped": [],
   "warnings": []
 }

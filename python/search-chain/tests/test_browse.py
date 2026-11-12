@@ -408,7 +408,7 @@ def test_save_for_claude(tree, tmp_path, monkeypatch):
     )
     text = written.read_text()
     assert "Path on the server: `/storage/er-c-data/scan/SCA2_rings.xml`" in text
-    assert "Extractor: em/empad, extractor version" in text
+    assert re.search(r"Extractor: em/empad, extractor identity [0-9a-f]{12}\n", text)
     assert (
         "## Message\n\n> The date is wrong.\n> Should be the acquisition time.\n"
         in text

@@ -109,7 +109,7 @@ def described(ct: CollectionTests, fixture: str, workdir: Path) -> list[Describe
             fmt.extract(d, str(tree))
         d = replace(
             d,
-            extraction=Extraction(fmt.id, fmt.extractor_version, d.stamp, extracted),
+            extraction=Extraction(fmt.id, "", d.stamp, extracted),
         )
         out.append(Described(d, description(d), subjects(d, names), read, reads))
         print(

@@ -234,6 +234,62 @@ def test_a_plain_file_and_a_member():
     assert crawler_detail(None, False, True) == "keys rebuilt from the path"
 
 
+# "The trace names the identity behind a description" (change extractor-identity)
+
+H0, H1 = "6d881430e7c8" + "0" * 52, "77b1e2d4a0c9" + "1" * 52
+
+
+def test_a_description_from_the_current_installation():
+    from modama_chain.chain import crawler_detail
+    from modama_chain.crawler import Holding
+
+    found = Holding("/a.dm4", False, "*.dm4", "em/dm4", H0)
+    assert crawler_detail(found, True, True, H0) == (
+        "dataset; basis: *.dm4; extracted by em/dm4 under 6d881430e7c8, "
+        "the last crawl's (current)"
+    )
+
+
+def test_a_description_left_from_another_installation():
+    from modama_chain.chain import crawler_detail
+    from modama_chain.crawler import Holding
+
+    found = Holding("/a.dm4", False, "*.dm4", "em/dm4", H1)
+    assert crawler_detail(found, True, True, H0).endswith(
+        "extracted by em/dm4 under 77b1e2d4a0c9, the last crawl's is 6d881430e7c8: they differ"
+    )
+    # a failed extraction (review of the code, 7)
+    failed = Holding("/a.dm4", False, "*.dm4", "em/dm4", H0, True)
+    assert (
+        "; extraction by em/dm4 failed under 6d881430e7c8, the last crawl's (current)"
+        in (crawler_detail(failed, True, True, H0))
+    )
+    # a label from before identities, quoted as runs shows it
+    old = Holding("/a.dm4", False, "*.dm4", "em/dm4", "4")
+    assert 'under "4", the last crawl\'s is 6d881430e7c8' in crawler_detail(
+        old, True, True, H0
+    )
+
+
+# "The status shows the last crawl's re-extraction"
+
+
+def test_after_a_crawl_that_extracted_again():
+    from modama_chain.chain import crawl_line
+
+    run = Run(
+        at(0), at(5), at(5), "finished", 2, 3, 3, 1, None, timedelta(0), H0,
+        [{"format": "em/dm4", "from": H1, "datasets": 2, "changed": 1, "differences": []}],
+    )  # fmt: skip
+    assert crawl_line(run).endswith(
+        "3 datasets, 1 records changed; identity 6d881430e7c8, 2 extracted again, "
+        "1 result changed"
+    )
+    # A crawler database from before identities: the line as before
+    before = Run(at(0), at(5), at(5), "finished", 2, 3, 3, 1, None, timedelta(0))
+    assert crawl_line(before).endswith("3 datasets, 1 records changed")
+
+
 def test_trace_lines_show_the_keys_once_and_wrap_long_details():
     from modama_chain.cli import trace_lines
 

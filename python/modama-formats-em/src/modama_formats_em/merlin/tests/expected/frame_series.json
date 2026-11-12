@@ -214,6 +214,30 @@
       "warnings": []
     }
   ],
+  "extractions": {
+    "/acq.hdr": {
+      "subjects": [
+        "Merlin Quad"
+      ],
+      "summary": [
+        "1 frame",
+        "256\u00d7256 pixels",
+        "6-bit",
+        "Merlin Quad",
+        "2021-04-15 14:43"
+      ],
+      "values": {
+        "acquired": "2021-04-15T14:43:23",
+        "counter_depth": 6,
+        "frame": [
+          256,
+          256
+        ],
+        "frames": 1,
+        "readout": "Merlin Quad"
+      }
+    }
+  },
   "skipped": [],
   "warnings": []
 }

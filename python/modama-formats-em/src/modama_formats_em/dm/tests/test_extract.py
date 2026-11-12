@@ -80,7 +80,9 @@ def stored(ct, fixture, tmp_path):
     """The dataset of a fixture as a crawl stores it: recognised, then extracted in a worker."""
     tree = ct.materialise(fixture, tmp_path)
     result = walk(tree, ct.collection.formats)
-    extraction.extract(result, ct.collection.formats, str(tree), workers=1)
+    extraction.extract(
+        result, ct.collection.formats, str(tree), identity="test", workers=1
+    )
     assert result.all_warnings() == []
     (d,) = result.datasets
     return d

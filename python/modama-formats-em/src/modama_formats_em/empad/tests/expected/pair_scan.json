@@ -15,6 +15,26 @@
       "warnings": []
     }
   ],
+  "extractions": {
+    "/SCA2_rings.xml": {
+      "subjects": [],
+      "summary": [
+        "series of 4 frames",
+        "128\u00d7128 pixel frames",
+        "exposure time 1 (unit unknown)",
+        "2022-05-02 17:28"
+      ],
+      "values": {
+        "acquired": "2022-05-02T17:28:39.775119",
+        "exposure_time": 1.0,
+        "frame": [
+          128,
+          128
+        ],
+        "frames": 4
+      }
+    }
+  },
   "skipped": [],
   "warnings": []
 }

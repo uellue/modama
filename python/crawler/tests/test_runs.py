@@ -1,14 +1,20 @@
 """Crawl runs (the `crawl-runs` spec): crawl and runs as typed, against a throwaway database."""
 
 import os
+import re
+import shutil
 import threading
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+import modama_formats_em
+import pytest
 from conftest import CRAWLER, shell
-from modama_crawler import cli
+from modama_crawler import cli, identity
 from modama_crawler.store import Run, end_run, progress_run, start_run
 from modama_crawler.walk import walk
+from psycopg.types.json import Jsonb
 
 
 def runs(conn) -> list[tuple]:
@@ -179,7 +185,9 @@ def test_runs_newest_first(conn, env, tree):
     shell(f"{CRAWLER} crawl --root {tree / 'gone'}", env)
     lines = shell(f"{CRAWLER} runs", env).stdout.splitlines()
     assert [line.split()[1] for line in lines] == ["failed", "finished", "finished"]
-    assert lines[1].endswith(f"2 directories unchanged  {tree}")
+    assert re.search(
+        f"2 directories unchanged; identity [0-9a-f]{{12}}  {tree}$", lines[1]
+    )
     assert "0 records changed; extraction: 0 run" in lines[1]
     assert "No such file" in lines[0]
 
@@ -247,8 +255,109 @@ def test_run_states():
             None,
             None,
             None,
+            None,
+            None,
+            None,
             timedelta(seconds=age),
         )
 
     assert cli._state(run(119)) == "running"
     assert cli._state(run(121)) == "stale"
+
+
+# "The runs command says what the next crawl will extract again" (change extractor-identity)
+
+DM4 = (
+    Path(modama_formats_em.__file__).parent
+    / "dm/tests/fixtures/cl_image_dm4/test-MonarcCL_mono-image.dm4"
+)
+
+
+@pytest.fixture
+def dm4_tree(tmp_path):
+    """Two DM4 files below /one, one below /two."""
+    root = tmp_path / "dm"
+    for name in ("one/a.dm4", "one/b.dm4", "two/c.dm4"):
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(DM4, root / name)
+    return root
+
+
+def crawled(conn, env, root) -> tuple[str, dict]:
+    """Crawl as typed; the identity and ingredients the run recorded."""
+    run = shell(f"{CRAWLER} crawl --root {root}", env)
+    assert run.returncode == 0, run.stderr
+    conn.commit()
+    return conn.execute(
+        "SELECT identity, identity_ingredients FROM crawl_runs ORDER BY run_id DESC LIMIT 1"
+    ).fetchone()
+
+
+def older(ingredients: dict) -> tuple[str, dict]:
+    """The installation with an older RosettaSciIO."""
+    before = {
+        **ingredients,
+        "distributions": {**ingredients["distributions"], "rosettasciio": "0.14.0"},
+    }
+    return identity.digest(before), before
+
+
+def test_runs_after_an_upgrade(conn, env, dm4_tree):
+    current, ingredients = crawled(conn, env, dm4_tree / "one")
+    old, before = older(ingredients)
+    conn.execute(
+        "UPDATE crawl_runs SET identity = %s, identity_ingredients = %s",
+        (old, Jsonb(before)),
+    )
+    conn.execute("UPDATE datasets SET extractor_identity = %s", (old,))
+    conn.commit()
+    run = shell(f"{CRAWLER} runs", env)
+    assert run.returncode == 0
+    assert run.stderr.startswith(
+        f"note: extraction identity {identity.short(current)} is installed; the next crawl "
+        f"extracts again em/dm4 2 datasets stored under {identity.short(old)} "
+        "(rosettasciio 0.14.0 -> 0.15.0); under a minute on "
+    )
+    assert len(run.stderr.splitlines()) == 1
+    assert len(run.stdout.splitlines()) == 1  # the run lines as before
+    head = shell(f"{CRAWLER} runs | head -1", env)
+    assert head.stdout == run.stdout
+
+
+def test_runs_left_over_from_an_experiment(conn, env, dm4_tree):
+    current, ingredients = crawled(conn, env, dm4_tree)
+    old, before = older(ingredients)
+    # A subtree crawl of /one under the other installation, before the last crawl
+    conn.execute(
+        "INSERT INTO crawl_runs (root, started_at, updated_at, finished_at, outcome, identity,"
+        " identity_ingredients) VALUES ('/x', now() - interval '1 day', now() - interval '1 day',"
+        " now() - interval '1 day', 'finished', %s, %s)",
+        (old, Jsonb(before)),
+    )
+    conn.execute(
+        "UPDATE datasets SET extractor_identity = %s WHERE anchor LIKE '/one/%%'",
+        (old,),
+    )
+    conn.commit()
+    (latest,) = conn.execute(
+        "SELECT identity FROM crawl_runs ORDER BY started_at DESC LIMIT 1"
+    ).fetchone()
+    assert latest == current
+    run = shell(f"{CRAWLER} runs", env)
+    assert f"em/dm4 2 datasets stored under {identity.short(old)}" in run.stderr
+
+
+def test_runs_when_nothing_changed(conn, env, dm4_tree):
+    crawled(conn, env, dm4_tree)
+    run = shell(f"{CRAWLER} runs", env)
+    assert (run.returncode, run.stderr) == (0, "")
+
+
+# records-cli: "The records summary names the extractor identity"
+
+
+def test_records_of_a_dm_file(conn, env, dm4_tree):
+    current, _ = crawled(conn, env, dm4_tree / "two")
+    run = shell(f"{CRAWLER} records --verbose {dm4_tree / 'two'}", env)
+    assert run.returncode == 0, run.stderr
+    assert f"; extraction identity {identity.short(current)} -->" in run.stdout

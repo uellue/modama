@@ -96,20 +96,34 @@ def end_run(
     warnings: int | None = None,
     records_changed: int | None = None,
     extraction: Report | None = None,
+    ingredients: dict | None = None,
     error: str | None = None,
 ) -> None:
+    """Record the run's end; with `extraction`, its counts, its identity with `ingredients`, the re-extraction and the spot check."""
     now = datetime.now(UTC)
     counts = (
-        (extraction.run, extraction.reused, extraction.failed, extraction.unchanged)
+        (
+            extraction.run,
+            extraction.reused,
+            extraction.failed,
+            extraction.unchanged,
+            extraction.identity or None,
+            Jsonb(ingredients) if ingredients is not None else None,
+            Jsonb(extraction.reextracted_json()),
+            Jsonb(extraction.retried_json()),
+            Jsonb(extraction.spot.to_json()) if extraction.spot else None,
+        )
         if extraction
-        else (None, None, None, None)
+        else (None,) * 9
     )
     conn.execute(
         """
         UPDATE crawl_runs SET finished_at = %s, updated_at = %s, outcome = %s,
             directories = %s, files = %s, datasets = %s, warnings = %s,
             records_changed = %s, extractions_run = %s, extractions_reused = %s,
-            extractions_failed = %s, directories_unchanged = %s, error = %s
+            extractions_failed = %s, directories_unchanged = %s, identity = %s,
+            identity_ingredients = %s, reextracted = %s, retried = %s, spot_check = %s,
+            error = %s
         WHERE run_id = %s
         """,
         (
@@ -129,6 +143,30 @@ def end_run(
     conn.commit()
 
 
+def ingredients_of(conn: psycopg.Connection, identity: str) -> dict | None:
+    """The ingredients of a stored identity, from the newest run that has it; None if no run has (D6)."""
+    row = conn.execute(
+        "SELECT identity_ingredients FROM crawl_runs WHERE identity = %s"
+        " AND identity_ingredients IS NOT NULL ORDER BY run_id DESC LIMIT 1",
+        (identity,),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def other_identities(
+    conn: psycopg.Connection, identity: str
+) -> list[tuple[str, str, int, float]]:
+    """(stored identity, format, datasets, their summed extraction seconds) of the stored extractions under another identity (D7)."""
+    return conn.execute(
+        """
+        SELECT extractor_identity, format, count(*), coalesce(sum(extract_seconds), 0)
+        FROM datasets WHERE extractor IS NOT NULL AND extractor_identity IS DISTINCT FROM %s
+        GROUP BY 1, 2 ORDER BY 1, 2
+        """,
+        (identity,),
+    ).fetchall()
+
+
 @dataclass(frozen=True)
 class Run:
     run_id: int
@@ -146,14 +184,17 @@ class Run:
     extractions_reused: int | None
     extractions_failed: int | None
     directories_unchanged: int | None
+    identity: str | None
+    reextracted: list | None  # Report.reextracted_json()
+    spot_check: dict | None  # SpotCheck.to_json()
     error: str | None
     age: timedelta  # since the last update, by the database's clock, so that readers on other hosts agree
 
 
 _RUN_SELECT = """SELECT run_id, root, started_at, updated_at, finished_at, outcome,
     directories, files, datasets, warnings, records_changed, extractions_run,
-    extractions_reused, extractions_failed, directories_unchanged, error,
-    now() - updated_at AS age
+    extractions_reused, extractions_failed, directories_unchanged, identity,
+    reextracted, spot_check, error, now() - updated_at AS age
     FROM crawl_runs"""
 
 
@@ -181,8 +222,7 @@ def last_finished(conn: psycopg.Connection) -> datetime | None:
 _COLUMNS = (
     "anchor", "type", "format", "version", "basis", "warnings", "parent",
     "collapsed", "mtime", "uid", "parts", "size", "stamp", "directory",
-    "extractor", "extractor_version", "extracted", "extract_error", "extract_seconds",
-    "extract_retry",
+    "extractor", "extractor_identity", "extracted", "extract_error", "extract_seconds",
 )  # fmt: skip
 _COLUMN_LIST = ", ".join(_COLUMNS)
 _VALUES = ", ".join(f"EXCLUDED.{c}" for c in _COLUMNS[1:])
@@ -201,9 +241,9 @@ def _row(d: Dataset) -> tuple:
         d.anchor, d.type, d.format, d.version, d.basis, Jsonb(list(d.warnings)),
         d.parent, d.collapsed, d.mtime, d.uid, Jsonb(list(d.parts)), d.size,
         d.stamp, d.directory,
-        x and x.extractor, x and x.version,
+        x and x.extractor, x and x.identity,
         Jsonb(asdict(x.extracted)) if x and x.extracted else None,
-        x and x.error, x and x.seconds, x and x.retry,
+        x and x.error, x and x.seconds,
     )  # fmt: skip
 
 
@@ -238,8 +278,8 @@ class Stored:
         """The stored extractions of the datasets at these anchors."""
         rows = self.conn.execute(
             """
-            SELECT anchor, extractor, extractor_version, stamp, extracted, extract_error,
-                extract_seconds, extract_retry
+            SELECT anchor, extractor, extractor_identity, stamp, extracted, extract_error,
+                extract_seconds
             FROM datasets WHERE anchor = ANY(%s) AND extractor IS NOT NULL
             """,
             (anchors,),
@@ -251,17 +291,14 @@ def _pairs(warnings: list) -> tuple[tuple[str, str], ...]:
     return tuple((path, text) for path, text in warnings)
 
 
-def _extraction(
-    extractor, version, stamp, extracted, error, seconds, retry
-) -> Extraction:
+def _extraction(extractor, identity, stamp, extracted, error, seconds) -> Extraction:
     return Extraction(
         extractor,
-        version,
+        identity,
         stamp,
         Extracted(**extracted) if extracted is not None else None,
         error,
         seconds,
-        retry,
     )
 
 
@@ -284,8 +321,8 @@ def _dataset(row: tuple) -> Dataset:
         stamp=v["stamp"],
         directory=v["directory"],
         extraction=_extraction(
-            v["extractor"], v["extractor_version"], v["stamp"], v["extracted"],
-            v["extract_error"], v["extract_seconds"], v["extract_retry"],
+            v["extractor"], v["extractor_identity"], v["stamp"], v["extracted"],
+            v["extract_error"], v["extract_seconds"],
         ) if v["extractor"] is not None else None,
     )  # fmt: skip
 

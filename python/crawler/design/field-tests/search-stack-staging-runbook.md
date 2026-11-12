@@ -420,7 +420,9 @@ dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*)
 
 A crawl that logs `the user database does not know SSSD_CHECK_USER …: sssd is not
 answering` stored nothing: check `dc ps sssd` and `dc logs sssd`; the timer crawls again
-at the next 19:00, or crawl by hand with `dc exec crawl-timer modama-crawler crawl`.
+at the next 19:00, or crawl by hand with the timer's configuration:
+`dc exec crawl-timer modama-crawler --config /stagingconf/libertem.toml crawl` (the
+file named by `STAGING_CRAWL_CONFIG` in `staging.env`).
 
 What it costs: nearly every record (1,451,848 in run 3) changes its creator, so the
 harvest takes them all again (run 3: 5 h 14 min, to about 01:30) and the indexing embeds

@@ -6,10 +6,13 @@ dataset of `Stand`, each `*.other` file one of `Other`; what the extractor
 does is written in the file:
 
 - `ok <word>` returns the word; `versioned <word>` returns it with the
-  extractor's version, so that its output changes with the version
+  format's `variant`, so that its output changes with the installed code
 - `raise` raises as a reader does on a broken file; `oserror` and `import`
   raise as the environment does (a stale NFS handle, a missing module)
-- `kill` kills its own process, `hang` sleeps, `eat` allocates 8 GiB
+- `kill` kills its own process, `hang` sleeps, `eat` allocates 8 GiB,
+  `eat <MiB>` that many MiB
+- whatever the file says, a `variant` of `"raise"` raises, standing in for a
+  reader that now fails
 - `nan`, `nul` and `big` return values the database cannot store as they are
 - `threads` imports numpy and returns its process's threads, pid and
   `OMP_NUM_THREADS` (the cpu-budget spec)
@@ -30,7 +33,7 @@ class Stand(Format):
     type = "application/x.stand"
     display_name = "Stand-in format"
     reacts_to = frozenset({DIRECTORY})
-    extractor_version = "1"
+    variant = "1"  # stands in for the installed code
     suffix = ".stand"
 
     def __init__(self, calls: str):
@@ -47,6 +50,8 @@ class Stand(Format):
             log.write(dataset.anchor + "\n")
         with open(root + dataset.anchor, "rb", buffering=0) as f:
             command, _, word = f.read(64).decode().strip().partition(" ")
+        if self.variant == "raise":
+            raise ValueError("the reader now fails")
         match command:
             case "raise":
                 raise ValueError("truncated file")
@@ -59,7 +64,7 @@ class Stand(Format):
             case "hang":
                 time.sleep(600)
             case "eat":
-                bytearray(8 << 30)
+                bytearray((int(word) if word else 8 << 10) << 20)
             case "nan":
                 return Extracted([], [], {"x": float("nan")})
             case "nul":
@@ -67,7 +72,7 @@ class Stand(Format):
             case "big":
                 return Extracted(["x" * 100_000], [], {"list": list(range(100_000))})
             case "versioned":
-                word = f"{word} v{self.extractor_version}"
+                word = f"{word} v{self.variant}"
             case "threads":
                 import numpy  # noqa: F401  # starts OpenBLAS's thread pool
 

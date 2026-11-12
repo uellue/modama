@@ -317,6 +317,19 @@ def test_the_crawler_line_shows_the_datasets_basis(tree):
     assert stages["crawler"].detail == "dataset; basis: single file"
 
 
+def test_the_crawler_line_names_the_identity_behind_a_description(tree):
+    # Spec chain-trace, "A description from the current installation" (change
+    # extractor-identity), with the EMPAD header: the tree has no DM4 file
+    (header,) = (DATA / "scan").glob("*.xml")
+    stages, _ = trace(f"/scan/{header.name}")
+    assert re.search(
+        r"; extracted by em/empad under [0-9a-f]{12}, the last crawl's \(current\)$",
+        stages["crawler"].detail,
+    ), stages["crawler"].detail
+    (crawl_line, *_) = freshness()[2]
+    assert re.search(r"; identity [0-9a-f]{12}", crawl_line), crawl_line
+
+
 def test_extracted_metadata_reaches_the_search(tree):
     # The EMPAD header's extracted values reach the index as description and subjects
     # (dc:description, dc:subject), and the search API returns them in the hit.

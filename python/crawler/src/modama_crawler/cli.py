@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import pwd
+import secrets
 import signal
 import subprocess
 import sys
@@ -21,7 +22,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
-from . import cpus, extraction, harvest, mimedb, render, schema, selection
+from . import cpus, extraction, harvest, identity, mimedb, render, schema, selection
 from .formats import Format, Result
 from .records import build, format_names
 from .server import OAIError, OAIServer, parse_range
@@ -30,7 +31,9 @@ from .store import (
     Stored,
     end_run,
     get_run,
+    ingredients_of,
     last_finished,
+    other_identities,
     previous,
     progress_run,
     recent_runs,
@@ -181,14 +184,18 @@ def crawl_tree(
     progress=None,
     threads: int = DEFAULT_THREADS,
     check_user: int | None = None,
+    installed: tuple[str, dict] | None = None,
 ) -> tuple[Result, extraction.Report, int]:
     """Walk, extract and store one crawl: the result, the extraction report and the number of records changed.
 
     The last stored crawl's datasets are taken over for unchanged directories
     if it ran under the same rule set, and its extractions are reused where
-    the extractor and the files are the same (D3). With `check_user`, the user
-    database must know that uid before the store (crawl-runs spec).
+    the extractor, the files and the extractor identity are the same (D3).
+    `installed` is the identity and its ingredients (`_installed()`, the
+    default). With `check_user`, the user database must know that uid before
+    the store (crawl-runs spec).
     """
+    current, ingredients = installed or _installed()
     # The walk and extraction read the stored state for hours: one query at a
     # time, not one transaction left idle all along. Restored on success only:
     # after a failure the caller closes the connection.
@@ -222,11 +229,17 @@ def crawl_tree(
         result,
         formats,
         root,
+        identity=current,
         stored=(stored or Stored(conn)).extractions,
         workers=_workers(),
         memory=_memory(),
         check=_check_terminated,
+        seed=secrets.randbits(64),
     )
+    report.causes = {
+        before: identity.differences(ingredients_of(conn, before), before, ingredients)
+        for _, before in report.reextracted
+    }
     conn.autocommit = autocommit
     _check_terminated()
     _check_names(check_user)
@@ -234,6 +247,14 @@ def crawl_tree(
         conn, result, format_names(formats), run_id, rules, check=_check_terminated
     )
     return result, report, changed
+
+
+def _installed() -> tuple[str, dict]:
+    """The installation's extractor identity and its ingredients; a warning per path install without source (D1)."""
+    ingredients, warnings = identity.ingredients()
+    for text in warnings:
+        log.warning("%s", text)
+    return identity.digest(ingredients), ingredients
 
 
 def _workers() -> int | None:
@@ -351,6 +372,7 @@ def cmd_crawl(args) -> int:
     config, formats, rules = configure(args)
     # before the run is recorded: a malformed setting exits here, leaving no run behind
     log.info("%s", _budget(cpus.usable()))
+    installed = _installed()  # at the crawl's start, before any worker (D1)
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
@@ -383,6 +405,7 @@ def cmd_crawl(args) -> int:
                     progress=heartbeat,
                     threads=threads,
                     check_user=check_user,
+                    installed=installed,
                 )
                 warnings = _report(result)
             except (
@@ -421,8 +444,10 @@ def cmd_crawl(args) -> int:
             warnings=warnings,
             records_changed=changed,
             extraction=report,
+            ingredients=installed[1],
         )
-    log.info("%s", report)
+    for line in report.lines():
+        log.info("%s", line)
     log.info(
         "%d datasets, %d warnings, %d records changed",
         len(result.datasets),
@@ -536,14 +561,56 @@ def _run_line(run: Run) -> str:
                 f"extraction: {run.extractions_run} run, {run.extractions_reused} reused, "
                 f"{run.extractions_failed} failed; {run.directories_unchanged} directories unchanged"
             )
+            if run.identity:
+                counts += f"; identity {identity.short(run.identity)}"
+            again = [
+                f"{r['format']} {r['datasets']} ({r['changed']} "
+                f"{'result' if r['changed'] == 1 else 'results'} changed)"
+                for r in run.reextracted or ()
+            ]
+            if again:
+                counts += f"; extracted again: {', '.join(again)}"
+            differ = (run.spot_check or {}).get("differences", 0)
+            if differ:
+                counts += (
+                    f"; spot check: {differ} {'differs' if differ == 1 else 'differ'}"
+                )
     line = f"{_when(run.started_at)}  {state:<8}  {when}  {counts}  {run.root}"
     return f"{line}  {run.error}" if state == "failed" else line
+
+
+def _next_crawl_note(conn: psycopg.Connection) -> str | None:
+    """What the next crawl extracts again because stored datasets carry another identity than the installed one (D7)."""
+    current, ingredients = _installed()
+    groups = other_identities(conn, current)
+    if not groups:
+        return None
+    parts, seconds = [], 0.0
+    for before in dict.fromkeys(g[0] for g in groups):
+        counts = ", ".join(f"{fmt} {n}" for b, fmt, n, _ in groups if b == before)
+        causes = ", ".join(
+            identity.differences(ingredients_of(conn, before), before, ingredients)
+        )
+        parts.append(
+            f"{counts} datasets stored under {identity.short(before)} ({causes})"
+        )
+        seconds += sum(s for b, _, _, s in groups if b == before)
+    workers = _workers() or extraction.default_workers()
+    minutes = seconds / workers / 60
+    when = "under a minute" if minutes < 1 else f"about {round(minutes)} minutes"
+    return (
+        f"note: extraction identity {identity.short(current)} is installed; the next crawl "
+        f"extracts again {'; '.join(parts)}; {when} on {workers} processes"
+    )
 
 
 def cmd_runs(args) -> int:
     """The recent crawl runs, newest first; with --follow, the running one until it ends."""
     with psycopg.connect(conninfo_from_env(), autocommit=True) as conn:
         schema.check(conn)
+        note = _next_crawl_note(conn)
+        if note is not None:  # stderr, so that `runs | head -1` is still the latest run
+            print(note, file=sys.stderr, flush=True)
         runs = recent_runs(conn, RUNS_SHOWN)
         if not runs:
             print("no crawl has run")
@@ -610,6 +677,8 @@ def cmd_records(args) -> int:
     threads = _threads()
     config, formats, _ = configure(args)
     log.info("%s", _budget(cpus.usable()))
+    # the same identity a crawl in this installation records (records-cli spec)
+    current = _installed()[0] if any(f.has_extractor for f in formats) else ""
     with cpus.set_num_threads_env(1):  # the worker processes' math threads (R43)
         try:
             result = walk(
@@ -627,6 +696,7 @@ def cmd_records(args) -> int:
             result,
             formats,
             os.path.abspath(args.path),
+            identity=current,
             workers=_workers(),
             memory=_memory(),
         )
@@ -671,6 +741,7 @@ def cmd_records(args) -> int:
         items.append(
             f"{count} records ({plain} single files by type), "
             f"{len(warnings)} warnings, {len(result.skipped)} skipped"
+            + (f"; extraction identity {identity.short(current)}" if current else "")
         )
     base_url = os.environ.get("OAI_BASE_URL", DEFAULT_BASE_URL)
     sys.stdout.buffer.write(render.list_records(base_url, items))

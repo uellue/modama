@@ -62,7 +62,8 @@ The Bash hook `.claude/hooks/no-inline-edits.py` refuses in-place edits by shell
 src/modama_crawler/
 ├── cli.py          # crawl, runs, timer, serve, records, migrate; the only place that reads the environment
 ├── walk.py         # post-order walk with pre-order collapse check -> Result; takes over unchanged directories; asyncio tasks, I/O in a thread pool; top=: one folder alone (modama-chain browse)
-├── extraction.py   # runs Format.extract in a process pool with a time limit; reuse by extractor identity and stamp
+├── extraction.py   # runs Format.extract in a process pool with a time limit; reuse by extractor identity and stamp, failures never; the spot check
+├── identity.py     # the extractor identity: a digest of the installation (versions, our and path-installed source), what changed between two
 ├── formats/        # Entry, Directory, Dataset, Result, Format, Collection; the runner (run_pre, run_post)
 │   ├── TEMPLATE.md # how to write a collection
 │   ├── core/       # vendored freedesktop.org.xml (GPL-2.0-or-later) + er-c.xml curation (ties that force content checks)

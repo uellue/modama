@@ -27,7 +27,7 @@ from werkzeug.exceptions import (
 from werkzeug.routing import Map, Rule
 from werkzeug.wrappers import Request, Response
 
-from . import chain, upstream, views
+from . import chain, crawler, upstream, views
 
 # The header a live or snapshot request must carry: another site cannot make the browser send it (D14)
 SNAPSHOT_HEADER = "X-Modama-Browse"
@@ -118,7 +118,8 @@ def snapshot(
         f"- Time: {now.strftime('%Y-%m-%dT%H:%M:%SZ')}",
         "- Extractor: "
         + (
-            f"{extraction['extractor']}, extractor version {extraction['version']}"
+            f"{extraction['extractor']}, extractor identity "
+            f"{crawler.short(extraction['identity'])}"
             if extraction
             else "none"
         ),

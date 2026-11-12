@@ -14,6 +14,22 @@
       "warnings": []
     }
   ],
+  "extractions": {
+    "/exemplary_workspace.dmw": {
+      "subjects": [],
+      "summary": [
+        "File count 2",
+        "File name 0 .\\exemplary_workspace\\h1.dm4",
+        "File name 1 .\\exemplary_workspace\\100 deg C.dm4",
+        "Frame 0 None",
+        "Frame 1 None",
+        "Window 0 (217, 84, 646, 536)",
+        "Window 1 (641, -17, 835, 207)",
+        "Workspace name exemplary_workspace"
+      ],
+      "values": {}
+    }
+  },
   "skipped": [],
   "warnings": []
 }

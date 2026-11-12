@@ -48,7 +48,7 @@ def summary(d: dict) -> dict:
         "extraction": d["extraction"]
         and {
             k: d["extraction"][k]
-            for k in ("extractor", "version", "extracted", "error", "seconds")
+            for k in ("extractor", "identity", "extracted", "error", "seconds")
         },
     }
 
@@ -74,7 +74,7 @@ def compute(
     """
     # Imported here: the child's imports are the point (D4)
     from lxml import etree
-    from modama_crawler import cli, cpus, extraction, records, render
+    from modama_crawler import cli, cpus, extraction, identity, records, render
     from modama_crawler.formats import Result
     from modama_crawler.walk import walk
 
@@ -92,7 +92,9 @@ def compute(
             top=folder,
         )
         mine = Result(datasets=[d for d in result.datasets if holds(d, path)][:1])
-        report = extraction.extract(mine, formats, root, workers=1)
+        # the identity a crawl in this installation extracts under (records-cli does the same)
+        installed = identity.digest(identity.ingredients()[0])
+        report = extraction.extract(mine, formats, root, identity=installed, workers=1)
     # The warnings about the file, its dataset's members and the folder, not every file of the folder
     concerned = {
         path,
@@ -145,7 +147,7 @@ def compute(
         "record_note": note,
         "extractor": None
         if fmt is None or not fmt.has_extractor
-        else {"format": fmt.id, "extractor_version": fmt.extractor_version},
+        else {"format": fmt.id, "identity": installed},
     }
 
 

@@ -9,7 +9,7 @@ Status: alpha, on the `crawler` branch. The work goes in three steps: the OAI-PM
 A crawl has four steps:
 
 1. **Walk and recognise.** `walk()` goes through the tree once. In each directory the enabled *formats* look at the entries and claim the files they recognise. For example, the EMPAD format claims an XML header together with its raw file, and the Zarr format claims a whole Zarr store. Large uninteresting trees such as Python environments, `node_modules` or `.git` are *collapsed* into one dataset without being walked. Every file nobody claims becomes a single-file dataset of its MIME type. A format may also read a file's first bytes and say it is not of the type its name gave it (a text file named `notes.gtg` is no Gatan tag file): the file then gets the type it has without that name rule, for the formats after it and as a single file, and the reason goes into its dataset's basis; a type from the file's content is kept, with a warning (spec `recognition`). The output is a *recognition result*: a list of datasets with their members, format and the reason they were recognised. This step needs no database. A crawl lists every directory, but a directory whose listing (names, types, sizes, owners, times), and those of all directories below it, are unchanged since the last crawl under the same rules keeps its stored datasets: none of its files is read again. The rules include the versions of the crawler and of the packages that provide the formats. A directory whose recognition met a read error or a format's time limit is recognised again next crawl; one the crawler cannot list stays unchanged while it stays unlistable.
-2. **Extract.** `extraction.py` runs the extractor of each dataset's format, if it has one, in worker processes with a time limit per dataset and a memory budget per process. An extraction is reused while the extractor, its version and the dataset's files are the same; a failed one too when the reader failed on the file's content, so a broken file is not retried every night. A timeout, a dead process, an OS error (a stale NFS handle) or a missing module is retried next crawl. A failure leaves the dataset with a basic description and the crawl with a warning. Before storing, NUL characters and lone surrogates in an extractor's result become U+FFFD, strings are cut to 4096 characters and lists to 1000 entries; a result that still cannot be stored (NaN) becomes the dataset's extraction error.
+2. **Extract.** `extraction.py` runs the extractor of each dataset's format, if it has one, in worker processes with a time limit per dataset and a memory budget per process. A successful extraction is reused while the extractor, the dataset's files and the *extractor identity* are the same. The identity is a digest of the installation, computed at the start of every crawl (`identity.py`): the Python version, the name and version of every installed distribution, and the source of the packages that provide formats, of those installed from a path or a repository, and of any package imported from outside site-packages (a checkout on `PYTHONPATH`). Nobody sets it: a changed reader, an upgraded RosettaSciIO or a reverted experiment reaches the index with the next crawl, which extracts every dataset again. Settings (the memory and time limits, the number of processes) are not part of it. A failure is never reused: every crawl tries it again, whatever its cause, so a setting that fixes a failure brings its datasets back by the next crawl. A failure leaves the dataset with a basic description and the crawl with a warning. Each crawl also extracts a random sample of what it reuses again, 20 datasets per format, and reports any that differ from what is stored (the *spot check*, `spot check (seed …): em/dm4 20 of 20 as stored`); a new result replaces the stored one. The report says per format how many datasets were extracted again for a new identity, what changed (`rosettasciio 0.15.0 -> 0.16.0`, `source of modama_formats_em.dm changed`) and how many results changed; `runs` shows the identity and these counts, and prints a note on standard error when stored datasets carry another identity than the installed one, with what the next crawl will extract again. Before storing, NUL characters and lone surrogates in an extractor's result become U+FFFD, strings are cut to 4096 characters and lists to 1000 entries; a result that still cannot be stored (NaN) becomes the dataset's extraction error.
 3. **Store.** `store.py` writes the result to PostgreSQL. The datasets stay there from crawl to crawl, for the next crawl to take over. A record's datestamp only moves when its content changes, so harvesters can fetch increments.
 4. **Serve.** `server.py` answers OAI-PMH requests from the records table, in `oai_dc` (Dublin Core).
 
@@ -105,14 +105,15 @@ The schema of the crawler's database is changed by migrations, so that a change 
 
 ```
 INFO Running upgrade  -> 0001_baseline, baseline: the tables as the crawler made them before migrations
-INFO schema migrated from none to 0001_baseline
+INFO Running upgrade 0001_baseline -> 0002_extractor_identity, extractor identity: reuse by a digest of the installation, failures never reused
+INFO schema migrated from none to 0002_extractor_identity
 ```
 
-Run again, it says `INFO schema up to date at 0001_baseline` at once, also while a crawl runs. On a database made before migrations it first says `INFO tables made before migrations found: adopted as 0001_baseline`. The search stack runs it as the service `crawler-migrate` before `crawler` and `crawl-timer` start. `crawl`, `runs`, `timer` and `serve` only check the version, and exit with status 2 when it does not fit. What you see, and what to do:
+Run again, it says `INFO schema up to date at 0002_extractor_identity` at once, also while a crawl runs. On a database made before migrations it first says `INFO tables made before migrations found: adopted as 0001_baseline`. The search stack runs it as the service `crawler-migrate` before `crawler` and `crawl-timer` start. `crawl`, `runs`, `timer` and `serve` only check the version, and exit with status 2 when it does not fit. What you see, and what to do:
 
 | You see | Step |
 |---|---|
-| `ERROR the database has no schema version, this crawler needs 0001_baseline: run modama-crawler migrate` | `modama-crawler migrate` |
+| `ERROR the database has no schema version, this crawler needs 0002_extractor_identity: run modama-crawler migrate` | `modama-crawler migrate` |
 | `ERROR the database schema is at 0001_baseline, this crawler needs 0002_…: run modama-crawler migrate` | `modama-crawler migrate` |
 | `ERROR the database schema is at 0002_…, which this crawler does not know: a newer crawler migrated it; use that crawler, or downgrade with it first (README)` | the newer crawler, or its downgrade ("Upgrade" below) |
 | `INFO waiting for the crawl lock (a crawl or another migration holds it)`, from `migrate` | wait until the crawl ends, then it migrates; Ctrl-C ends the wait and changes nothing |
@@ -142,10 +143,10 @@ Where a downgrade refuses, or the database is damaged, the way back is an empty 
 A schema change is a new revision, never an edit of a revision that has shipped (a database that has run it would not run it again), and never DDL in `store.py`. From `python/crawler/`:
 
 ```bash
-alembic revision -m "crawl_runs scope" --rev-id 0002_crawl_runs_scope
+alembic revision -m "crawl_runs scope" --rev-id 0003_crawl_runs_scope
 ```
 
-This writes `src/modama_crawler/migrations/versions/0002_crawl_runs_scope.py`. The id has at most 32 characters (Alembic's `version_num` column; a test checks it). Then:
+This writes `src/modama_crawler/migrations/versions/0003_crawl_runs_scope.py`. The id has at most 32 characters (Alembic's `version_num` column; a test checks it). Then:
 
 - Write `upgrade()` with Alembic's operations (`op.add_column("crawl_runs", sa.Column("scope", sa.Text()))`) or `op.execute` with SQL text, whichever fits. There are no models.
 - No `IF NOT EXISTS` after `0002`: on a database that drifted from the chain, a migration should fail loudly.
@@ -176,6 +177,7 @@ The recognition result is the oracle throughout: what the fixture tests compare,
 - The MIME database is built from the enabled collections only. Nothing from the host's MIME database is used.
 - Symlinks, special files and unreadable files are skipped with an info line and get no record.
 - The crawler doesn't publish deletions yet (`deletedRecord=no`).
+- Stale bytecode runs under a new identity: Python checks a `.pyc` by the source's size and its mtime in whole seconds, so an edit of the same size within the same second keeps the old code while the identity changes. Keep `__pycache__` out of images (the `.dockerignore` files of the build contexts) and restart the interpreter after such an edit.
 - Read file contents unbuffered (`open(path, "rb", buffering=0)`), as `mime.py` and `Directory.read` do. A buffered open reads a whole buffer for a few bytes: 128 KiB in Python 3.14, or the block size the file system reports, 1 MiB on our NFS (field-test finding F12). `tests/conftest.py` has a `bytes_read` fixture to check it. The exception is a library that reads in many tiny pieces and seeks between them (RosettaSciIO's DM reader walks the tag tree a few bytes at a time), where unbuffered means a system call per piece: give it a buffer of NFS's read size, 64 KiB, with readahead off (`posix_fadvise` with `POSIX_FADV_RANDOM`), as `modama_formats_em.dm.parsed` does (finding F14).
 
 ## Where to read more

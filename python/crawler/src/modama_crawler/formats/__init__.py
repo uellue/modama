@@ -48,17 +48,16 @@ class Extracted:
 
 @dataclass(frozen=True)
 class Extraction:
-    """Which extractor ran on a dataset in which state of its files, and its outcome (D3)."""
+    """Which extractor ran on a dataset in which state of its files, under which installation, and its outcome (D3)."""
 
     extractor: str  # the format id
-    version: str  # the format's extractor_version
+    identity: (
+        str  # the extractor identity of the installation (modama_crawler.identity)
+    )
     stamp: str  # the dataset's stamp when it ran
     extracted: Extracted | None = None  # None: failed, or nothing to extract
-    error: str | None = None
+    error: str | None = None  # a failure is never reused: the next crawl runs again
     seconds: float = 0.0
-    # The failure came from the environment (time limit, dead process, OS or
-    # import error), not from the files: not reused, the next crawl runs again
-    retry: bool = False
 
 
 @dataclass(frozen=True)
@@ -266,8 +265,6 @@ class Format:
     id: str = ""  # set by Collection: collection/name
     display_name: str = ""  # for dc:subject; default: MIME type's comment, else id
 
-    extractor_version: str = "1"  # of extract(), apart from the recognition version
-
     def recognize(self, directory: Directory) -> Iterable[Dataset]:
         return ()
 
@@ -275,8 +272,11 @@ class Format:
         """Metadata from the files of one of this format's datasets; a format without one doesn't override it (D2).
 
         Runs in a worker process after the walk, with a time limit, without
-        database access. A member's path on disk is `root + member`. May raise:
-        the dataset then keeps a basic description and the crawl a warning.
+        database access. A member's path on disk is `root + member`; it reads
+        the dataset's members only. May raise: the dataset then keeps a basic
+        description and the crawl a warning, and the next crawl tries again.
+        Its result is reused while the files and the installation are the
+        same (the extractor identity); there is no version to raise.
         """
         return None
 

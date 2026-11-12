@@ -15,6 +15,31 @@
       "warnings": []
     }
   ],
+  "extractions": {
+    "/EMPAD_v1.2.2_x32_y64_size0.8.xml": {
+      "subjects": [
+        "4D-STEM"
+      ],
+      "summary": [
+        "scan of 32\u00d764 positions",
+        "128\u00d7128 pixel frames",
+        "exposure time 1 (unit unknown)",
+        "2026-03-25 16:47"
+      ],
+      "values": {
+        "acquired": "2026-03-25T16:47:52.586728",
+        "exposure_time": 1.0,
+        "frame": [
+          128,
+          128
+        ],
+        "scan": [
+          32,
+          64
+        ]
+      }
+    }
+  },
   "skipped": [],
   "warnings": []
 }
