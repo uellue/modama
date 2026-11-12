@@ -311,6 +311,8 @@ def cmd_crawl(args) -> int:
     signal.signal(signal.SIGTERM, _terminate)
     threads = _threads()
     config, formats, rules = _configure(args)
+    # before the run is recorded: a malformed setting exits here, leaving no run behind
+    log.info("%s", _budget(cpus.usable()))
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
@@ -326,7 +328,6 @@ def cmd_crawl(args) -> int:
             log.error("another crawl is running on this database%s", holder)
             return 1
         run_id = start_run(conn, root)
-        log.info("%s", _budget(cpus.usable()))
         # The worker processes inherit one thread per math library (R43). Set while
         # no other thread runs: libpq reads the environment in the heartbeat's
         # connect, and setenv is not safe against a concurrent getenv (D3)

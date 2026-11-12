@@ -21,14 +21,18 @@ def fake(
     group="0::/",
     cpu_max="max 100000",
     memory_max="max",
+    unified=True,
 ):
     """A machine under root: the affinity `cpus`; `siblings` maps a CPU to its core's CPU list (default: its own
-    core; None for no topology at all); the own group's cpu.max and memory.max (None: no file)."""
+    core; None for no topology at all); the own group's cpu.max and memory.max (None: no file); `cgroup.controllers`
+    at the root if the hierarchy is unified (not a hybrid host)."""
     monkeypatch.setattr(budget.os, "sched_getaffinity", lambda pid: set(cpus))
     (root / "proc/self").mkdir(parents=True)
     (root / "proc/self/cgroup").write_text(group + "\n")
     cgroup = root / "sys/fs/cgroup" / group.partition("0::/")[2]
     cgroup.mkdir(parents=True)
+    if unified:
+        (root / "sys/fs/cgroup/cgroup.controllers").write_text("cpuset cpu io memory\n")
     for file, text in (("cpu.max", cpu_max), ("memory.max", memory_max)):
         if text is not None:
             (cgroup / file).write_text(text + "\n")
@@ -121,6 +125,20 @@ def test_quota_the_hosts_cgroup_namespace(tmp_path, monkeypatch):
 def test_quota_no_cgroup_v2(tmp_path, monkeypatch):
     m = fake(tmp_path, monkeypatch, group="4:cpu,cpuacct:/", cpu_max="200000 100000")
     assert (m.logical, m.cgroup_v2) == (8, False)
+    assert "quota not read: no cgroup v2" in budget.search_api(m).line
+
+
+def test_quota_a_hybrid_host(tmp_path, monkeypatch):
+    # Review 2026-11-12, finding 2: a 0:: line, but the controllers in v1 (no cgroup.controllers)
+    m = fake(
+        tmp_path,
+        monkeypatch,
+        group="0::/system.slice/x.service",
+        cpu_max=None,
+        memory_max=None,
+        unified=False,
+    )
+    assert (m.cgroup_v2, m.quota, m.memory) == (False, None, None)
     assert "quota not read: no cgroup v2" in budget.search_api(m).line
 
 
@@ -285,6 +303,22 @@ def test_the_start_of_the_transform_worker(tmp_path, monkeypatch):
     ]
     assert {k: environ[k] for k in budget.BLAS} == dict.fromkeys(budget.BLAS, "1")
     assert (environ["EMBEDDING_THREADS"], environ["RAYON_NUM_THREADS"]) == ("1", "1")
+
+
+def test_the_pool_cannot_be_set(tmp_path, monkeypatch, capsys):
+    # Review 2026-11-12, finding 4: Airflow's database not up yet after a host restart
+    fake(tmp_path, monkeypatch)
+    monkeypatch.setattr(budget, "_slots", lambda: NO_LIMIT)
+
+    def fail(cmd, **kw):
+        raise budget.subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(budget.subprocess, "run", fail)
+    started = []
+    monkeypatch.setattr(budget.os, "execvpe", lambda *a: started.append(a))
+    assert budget.main(["transform", "--", "celery", "worker"], {}, tmp_path) == 2
+    assert started == []
+    assert "setting the pool transform failed" in capsys.readouterr().err
 
 
 def test_the_start_of_the_search_api(tmp_path, monkeypatch):

@@ -67,7 +67,8 @@ def usable(root: Path = Path("/")) -> Usable:
     """The CPUs this process may use; `root` is where `proc` and `sys` are (tests)."""
     affinity = len(os.sched_getaffinity(0))
     group = _group(root)
-    if group is None:
+    # cgroup v2 only in unified mode: a hybrid host has a 0:: line too, with the controllers in v1
+    if group is None or not (root / "sys/fs/cgroup/cgroup.controllers").exists():
         return Usable(affinity, None, False)
     return Usable(affinity, _quota(root / "sys/fs/cgroup" / group / "cpu.max"), True)
 

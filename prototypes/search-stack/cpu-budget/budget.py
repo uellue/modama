@@ -91,7 +91,11 @@ def machine(root: Path = Path("/")) -> Machine:
     affinity = sorted(os.sched_getaffinity(0))
     group = None
     for line in (root / "proc/self/cgroup").read_text().splitlines():
-        if line.startswith("0::"):
+        # cgroup v2 only in unified mode: a hybrid host has a 0:: line too, with the controllers in v1
+        if (
+            line.startswith("0::")
+            and (root / "sys/fs/cgroup/cgroup.controllers").exists()
+        ):
             group = root / "sys/fs/cgroup" / line[3:].lstrip("/")
     quota = memory = None
     if group is not None:
@@ -335,7 +339,16 @@ def main(argv: list[str], environ=os.environ, root: Path = Path("/")) -> int:
     )
     environ.update(dict.fromkeys(BLAS, "1"))
     if service == "transform":
-        _set_pool(b.processes)
+        try:
+            _set_pool(b.processes)
+        except subprocess.CalledProcessError as e:
+            # Airflow's database not reachable yet (a host restart starts containers without depends_on):
+            # the container restarts and tries again (D10)
+            print(
+                f"budget.py: setting the pool transform failed ({e}); Celery not started",
+                file=sys.stderr,
+            )
+            return 2
         command = [ENTRYPOINT, *command, "--concurrency", str(b.processes)]
     else:
         command = [*command, "--workers", str(b.processes)]

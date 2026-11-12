@@ -34,7 +34,7 @@ By default the crawl SHALL start as many matching and extraction processes as th
 - **THEN** the crawl starts 8 processes of each kind
 
 ### Requirement: The CPU quota is read from the own cgroup v2 group
-The quota SHALL be the `cpu.max` of the group named by the `0::` line of `/proc/self/cgroup`, under `/sys/fs/cgroup`. `max` or a missing `cpu.max` SHALL mean no quota. Without a `0::` line (no cgroup v2) the quota SHALL NOT be read, and the log line SHALL say so. The crawler, the transform worker and the search API read it alike.
+The quota SHALL be the `cpu.max` of the group named by the `0::` line of `/proc/self/cgroup`, under `/sys/fs/cgroup`. `max` or a missing `cpu.max` SHALL mean no quota. Without a `0::` line, or without `/sys/fs/cgroup/cgroup.controllers` (a hybrid host, whose controllers are in cgroup v1), there is no cgroup v2: the quota SHALL NOT be read, and the log line SHALL say so. The crawler, the transform worker and the search API read it alike.
 
 #### Scenario: The host's cgroup
 - **WHEN** the crawler runs on the host, its group is `0::/user.slice/user-1000.slice/session-5.scope` with `cpu.max` `max 100000`, and the root group has no `cpu.max`
@@ -46,6 +46,10 @@ The quota SHALL be the `cpu.max` of the group named by the `0::` line of `/proc/
 
 #### Scenario: No cgroup v2
 - **WHEN** `/proc/self/cgroup` has no `0::` line, on 8 logical CPUs
+- **THEN** it counts 8 CPUs, and the log line says that the quota was not read (no cgroup v2)
+
+#### Scenario: A hybrid host
+- **WHEN** `/proc/self/cgroup` has a `0::` line but `/sys/fs/cgroup/cgroup.controllers` does not exist, on 8 logical CPUs
 - **THEN** it counts 8 CPUs, and the log line says that the quota was not read (no cgroup v2)
 
 ### Requirement: The number of worker processes can be set

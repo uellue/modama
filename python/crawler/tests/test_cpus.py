@@ -11,8 +11,11 @@ import standin
 from modama_crawler import cli, cpus, extraction, selection
 
 
-def machine(root, monkeypatch, *, affinity=8, group="0::/", cpu_max="max 100000"):
-    """A fake machine under root: `affinity` CPUs, /proc/self/cgroup `group`, the group's `cpu.max` (None: no file).
+def machine(
+    root, monkeypatch, *, affinity=8, group="0::/", cpu_max="max 100000", unified=True
+):
+    """A fake machine under root: `affinity` CPUs, /proc/self/cgroup `group`, the group's `cpu.max` (None: no file),
+    and `cgroup.controllers` at the root if the hierarchy is unified (not a hybrid host).
 
     The crawl's count (`extraction.default_workers`) then reads it."""
     monkeypatch.setattr(cpus.os, "sched_getaffinity", lambda pid: set(range(affinity)))
@@ -21,6 +24,8 @@ def machine(root, monkeypatch, *, affinity=8, group="0::/", cpu_max="max 100000"
     path = group.partition("0::/")[2]
     cgroup = root / "sys/fs/cgroup" / path
     cgroup.mkdir(parents=True)
+    if unified:
+        (root / "sys/fs/cgroup/cgroup.controllers").write_text("cpuset cpu io memory\n")
     if cpu_max is not None:
         (cgroup / "cpu.max").write_text(cpu_max + "\n")
     monkeypatch.setattr(cpus, "usable", partial(cpus.usable, root))
@@ -80,6 +85,20 @@ def test_the_hosts_cgroup_namespace(tmp_path, monkeypatch):
 def test_no_cgroup_v2(tmp_path, monkeypatch):
     machine(tmp_path, monkeypatch, group="4:cpu,cpuacct:/", cpu_max="200000 100000")
     assert cpus.usable().cpus == 8
+    assert (
+        str(cpus.usable()) == "8 CPUs usable (affinity 8, quota not read: no cgroup v2)"
+    )
+
+
+def test_a_hybrid_host(tmp_path, monkeypatch):
+    # Review 2026-11-12, finding 2: a 0:: line, but the CPU controller in v1 (no cgroup.controllers)
+    machine(
+        tmp_path,
+        monkeypatch,
+        group="0::/system.slice/containerd.service",
+        cpu_max=None,
+        unified=False,
+    )
     assert (
         str(cpus.usable()) == "8 CPUs usable (affinity 8, quota not read: no cgroup v2)"
     )
@@ -280,6 +299,29 @@ def test_a_setting_that_is_not_a_positive_integer(monkeypatch, caplog, value):
         f"MODAMA_CRAWLER_EXTRACT_WORKERS must be a positive integer: {value!r}"
         in caplog.messages
     )
+
+
+def test_a_crawl_logs_its_budget_and_restores_the_environment(
+    conn, env, tree, monkeypatch, caplog
+):
+    # Review 2026-11-12, finding 8: the crawl itself, not only `records`
+    monkeypatch.delenv("MODAMA_CRAWLER_EXTRACT_WORKERS", raising=False)
+    monkeypatch.setenv("OMP_NUM_THREADS", "4")
+    monkeypatch.delenv("OPENBLAS_NUM_THREADS", raising=False)
+    assert cli.main(["crawl", "--root", str(tree)]) == 0
+    assert any(m.startswith("CPU budget: ") for m in caplog.messages)
+    assert os.environ["OMP_NUM_THREADS"] == "4"
+    assert "OPENBLAS_NUM_THREADS" not in os.environ
+
+
+def test_a_malformed_setting_leaves_no_run(conn, env, tree, monkeypatch):
+    # Review 2026-11-12, finding 1: it exited after the run was recorded, which then stayed "running"
+    monkeypatch.setenv("MODAMA_CRAWLER_EXTRACT_WORKERS", "abc")
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["crawl", "--root", str(tree)])
+    assert stopped.value.code == 2
+    conn.commit()
+    assert conn.execute("SELECT count(*) FROM crawl_runs").fetchone() == (0,)
 
 
 def test_one_cpu_is_singular(tmp_path, monkeypatch):
