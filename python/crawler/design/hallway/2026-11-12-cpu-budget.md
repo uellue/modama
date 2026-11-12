@@ -38,6 +38,8 @@ The tester asked five questions. The main session's answers went further than th
 
 ## TODO for @weber
 
+Decided the same day (relayed by the coordinator): 1 to 4 as the main session's answers to the tester (math pools round down, I/O-bound pools up; a memory warning, the count unchanged; one line per service when the running container's limits differ; GiB everywhere) and built with their tests (`test_budget.py`: `test_quota_fractional*`, `test_a_memory_warning_*`, `test_no_memory_warning`; `test_cpus.py`: `test_a_fractional_quota_is_explained`; the running-limits line in `cpu-budget.sh`, its quoting checked with `sh`, not yet run against a stack). 5 stays as it is.
+
 - **1** Fractional quotas: D2 rounds up (`cpus: 2.5` counts 3, as dask does), and the crawler's spec says so. For a math pool this means T × P up to 3 on 2.5 CPUs, against 2.4's "within the CPU quota". Lean: math pools (the transform worker's cores) round down, at least 1; I/O pools (the crawler, the search API's workers) round up.
 - **2** No memory limit (159): on the VM the diagnostic expects up to 13.6 GB for 8 batch processes of 512-token texts, with about 12 GiB available, and gives no warning. Lean: one warning line in the diagnostic and the start log when P × 1.7 GB exceeds `MemAvailable`, naming `TRANSFORM_PROCESSES`, without changing P.
 - **3** The diagnostic shows the next start only. Lean: leave it so; the README now says that the running choice is in the start log line. A line per service when the running container's limits differ from the next start would be extra, and nobody needs it yet.

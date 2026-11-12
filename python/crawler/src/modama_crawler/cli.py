@@ -267,8 +267,10 @@ def cmd_cpu_budget(args) -> int:
         quota = "not read (no cgroup v2)"
     elif usable.quota is None:
         quota = "none"
-    else:
+    elif usable.quota == int(usable.quota):
         quota = f"{usable.quota:g} CPUs (cpu.max of the own cgroup)"
+    else:  # the crawler's pools are I/O-bound: a fractional quota counts up (R43)
+        quota = f"{usable.quota:g} CPUs (cpu.max of the own cgroup): {usable.cpus} for I/O (rounded up)"
     value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
     print(_budget(usable))
     print(f"  logical CPUs of the affinity: {usable.affinity}")

@@ -30,18 +30,36 @@ esac
 docker info --format 'Docker: cgroup v{{.CgroupVersion}} ({{.CgroupDriver}}), {{.NCPU}} CPUs, {{.MemTotal}} bytes of memory' \
     || exit 1
 
+# A container's own cgroup limits, as one line: cpu.max, cpuset, memory.max ("-" where a file is missing)
+LIMITS='l() { cat "/sys/fs/cgroup/$1" 2> /dev/null || echo -; }
+echo "cpu.max $(l cpu.max), cpuset $(l cpuset.cpus.effective), memory.max $(l memory.max)"'
+
 failed=0
 show() {  # title, service, command in its image...
-    local title=$1 service=$2
+    local title=$1 service=$2 out status next id running
     shift 2
     echo
     echo "== $title ($service)"
-    # the weight first, from the container's own cgroup, then the service's explanation
-    if ! dc run --rm --no-deps -T --entrypoint sh "$service" -c \
-        'echo "  CPU weight (cpu.weight; Docker default 100): $(cat /sys/fs/cgroup/cpu.weight 2> /dev/null || echo unknown)"
-         exec "$@"' sh "$@"; then
+    # the limits and the weight first, from the container's own cgroup, then the service's explanation
+    out=$(dc run --rm --no-deps -T --entrypoint sh "$service" -c \
+        "echo \"LIMITS \$( $LIMITS )\"
+         echo \"  CPU weight (cpu.weight; Docker default 100): \$(cat /sys/fs/cgroup/cpu.weight 2> /dev/null || echo unknown)\"
+         exec \"\$@\"" sh "$@" 2>&1)
+    status=$?
+    next=$(sed -n 's/^LIMITS //p' <<< "$out")
+    grep -v '^LIMITS ' <<< "$out"
+    if [ "$status" -ne 0 ]; then
         echo "  cannot compute the budget: the service would not start (the message above)"
         failed=1
+    fi
+    # the running container, if there is one, may have been started with other limits
+    id=$(dc ps -q "$service" 2> /dev/null | head -n 1)
+    if [ -n "$id" ] && [ -n "$next" ]; then
+        running=$(docker exec "$id" sh -c "$LIMITS" 2> /dev/null) || return 0
+        if [ "$running" != "$next" ]; then
+            echo "  the running container has other limits than its next start: running $running;" \
+                "next start $next (docker compose up -d applies the next start's)"
+        fi
     fi
 }
 show "crawler: matching and extraction processes" crawler modama-crawler cpu-budget

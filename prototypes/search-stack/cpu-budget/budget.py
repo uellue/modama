@@ -24,9 +24,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+GIB = 1 << 30
 # Peak memory of one batch process with fastembed's sub-batch of 32 (patch 0002): 1.42 GB RSS for 2,000 texts
-# of 512 tokens, plus 0.25 GB for the slot's Airflow supervisor (measured 2026-11-12, bge-small-en-v1.5; design D7)
-PER_PROCESS = 1_700_000_000
+# of 512 tokens, plus 0.25 GB for the slot's Airflow supervisor (measured 2026-11-12, bge-small-en-v1.5; design D7):
+# 1.56 GiB, rounded up
+PER_PROCESS = int(1.6 * GIB)
+# One search API worker with its query model: 0.43 to 0.46 GB RSS (measured 2026-11-12), rounded up
+PER_WORKER = int(0.45 * GIB)
 BLAS = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
 ENTRYPOINT = "/entrypoint"  # the Airflow image's: waits for the broker before `celery`
 
@@ -43,20 +47,44 @@ class Machine:
     quota: float | None  # CPUs per period; None: none, or not read
     cgroup_v2: bool
     memory: int | None  # the cgroup's memory.max in bytes; None: no limit
+    available: int | None = None  # MemAvailable at start, in bytes; None: not read
 
     @property
     def logical(self) -> int:
-        """Logical CPUs usable: the affinity, capped by the quota."""
+        """Logical CPUs usable, for I/O-bound pools: the affinity, capped by the quota rounded up."""
         return (
             self.affinity
             if self.quota is None
-            else min(self.affinity, math.ceil(self.quota))
+            else min(self.affinity, io_cpus(self.quota))
         )
 
     def quota_text(self) -> str:
         if not self.cgroup_v2:
             return "quota not read: no cgroup v2"
         return "no quota" if self.quota is None else f"quota {self.quota:g}"
+
+    def rounding_text(self) -> str:
+        """The quota and what each kind of pool counts of it (D2)."""
+        if not self.cgroup_v2:
+            return "not read"
+        if self.quota is None:
+            return "none"
+        if self.quota == int(self.quota):
+            return f"{self.quota:g} CPUs"
+        return (
+            f"{self.quota:g} CPUs: {math_cpus(self.quota)} for math (rounded down), "
+            f"{io_cpus(self.quota)} for I/O (rounded up)"
+        )
+
+
+def math_cpus(quota: float) -> int:
+    """A CPU quota for math pools: rounded down, at least 1, so that processes × threads stay within it."""
+    return max(1, math.floor(quota))
+
+
+def io_cpus(quota: float) -> int:
+    """A CPU quota for I/O-bound pools, which mostly wait: rounded up, as dask does."""
+    return math.ceil(quota)
 
 
 @dataclass(frozen=True)
@@ -65,6 +93,7 @@ class Budget:
     threads: int
     line: str  # the log line
     overrides: dict[str, int]
+    warning: str | None = None  # a second log line: more memory expected than available
 
 
 def _read(path: Path) -> str | None:
@@ -131,8 +160,28 @@ def machine(root: Path = Path("/")) -> Machine:
             topology = False
     count = len(cores) if topology else len(affinity)
     if quota is not None:
-        count = min(count, math.ceil(quota))
-    return Machine(len(affinity), count, topology, quota, group is not None, memory)
+        count = min(count, math_cpus(quota))
+    return Machine(
+        len(affinity),
+        count,
+        topology,
+        quota,
+        group is not None,
+        memory,
+        _available(root),
+    )
+
+
+def _available(root: Path) -> int | None:
+    """MemAvailable from /proc/meminfo, in bytes; None if it is missing."""
+    meminfo = _read(root / "proc/meminfo") or ""
+    for line in meminfo.splitlines():
+        if line.startswith("MemAvailable:"):
+            fields = line.split()
+            if len(fields) != 3 or not fields[1].isdigit() or fields[2] != "kB":
+                raise Malformed(f"{root / 'proc/meminfo'}: cannot parse {line!r}")
+            return int(fields[1]) * 1024
+    return None
 
 
 def override(environ, name: str) -> int | None:
@@ -145,8 +194,20 @@ def override(environ, name: str) -> int | None:
     return int(value)
 
 
-def _gb(n: int) -> str:
-    return f"{n / 1e9:.1f} GB"
+def _gib(n: int) -> str:
+    return f"{n / GIB:.1f} GiB" if n >= GIB else f"{n / GIB:.2f} GiB"
+
+
+def _memory_warning(
+    m: Machine, count: int, each: int, what: str, variable: str
+) -> str | None:
+    """A warning when count × each exceeds the memory available and no limit is set (159: the count stays)."""
+    if m.memory is not None or m.available is None or count * each <= m.available:
+        return None
+    return (
+        f"CPU budget warning: {count} {what} × {_gib(each)} = {_gib(count * each)} expected at most, more than the "
+        f"{_gib(m.available)} available now (MemAvailable), and no memory limit; the count stays; {variable}=N lowers it"
+    )
 
 
 def _n(count: int, word: str) -> str:
@@ -194,14 +255,17 @@ def transform(
     memory = (
         "no memory limit"
         if by_memory is None
-        else f"memory for {by_memory} (memory.max {_gb(m.memory)}, {_gb(per_process)} each)"
+        else f"memory for {by_memory} (memory.max {_gib(m.memory)}, {_gib(per_process)} each)"
     )
     line = (
         f"CPU budget: {_n(processes, 'process')} × {_n(threads, 'thread')}; {cores}; {memory}; "
         f"{limit} task slots (max_active_tasks_per_dag {slots[0]}, parallelism {slots[1]}); "
         f"{_overrides(overrides, processes * threads, m.cores, 'cores')}"
     )
-    return Budget(processes, threads, line, overrides)
+    warning = _memory_warning(
+        m, processes, per_process, "batch processes", "TRANSFORM_PROCESSES"
+    )
+    return Budget(processes, threads, line, overrides, warning)
 
 
 def search_api(
@@ -220,7 +284,8 @@ def search_api(
         f"{_n(m.logical, 'CPU')} usable (affinity {m.affinity}, {m.quota_text()}); "
         f"{_overrides(overrides, workers * threads, m.logical, 'CPUs')}"
     )
-    return Budget(workers, threads, line, overrides)
+    warning = _memory_warning(m, workers, PER_WORKER, "workers", "WORKERS")
+    return Budget(workers, threads, line, overrides, warning)
 
 
 def _slots() -> tuple[int, int]:
@@ -253,28 +318,29 @@ def _budget(service: str, environ, root: Path) -> tuple[Machine, Budget]:
 
 def explain(service: str, m: Machine, b: Budget) -> str:
     """The budget line, its inputs and how to change it, for cpu-budget.sh (D11)."""
-    lines = [b.line, f"  logical CPUs of the affinity: {m.affinity}"]
+    lines = [b.line] + ([b.warning] if b.warning else [])
+    lines.append(f"  logical CPUs of the affinity: {m.affinity}")
     if service == "transform":
         source = "topology" if m.topology else "no topology: logical CPUs"
-        if m.quota is not None and math.ceil(m.quota) == m.cores:
-            source += ", capped by the CPU quota"
+        if m.quota is not None and math_cpus(m.quota) == m.cores:
+            source += ", capped by the CPU quota rounded down"
         lines.append(f"  physical cores usable: {m.cores} ({source})")
-    quota = (
-        "not read"
-        if not m.cgroup_v2
-        else "none"
-        if m.quota is None
-        else f"{m.quota:g} CPUs"
-    )
-    memory = "none" if m.memory is None else _gb(m.memory)
+    memory = "none" if m.memory is None else _gib(m.memory)
+    available = "" if m.available is None else f"; available now: {_gib(m.available)}"
     lines.append(
-        f"  cgroup v2: {'yes' if m.cgroup_v2 else 'no'}; CPU quota: {quota}; memory limit: {memory}"
+        f"  cgroup v2: {'yes' if m.cgroup_v2 else 'no'}; CPU quota: {m.rounding_text()}; "
+        f"memory limit: {memory}{available}"
+    )
+    each = PER_PROCESS if service == "transform" else PER_WORKER
+    lines.append(
+        f"  expected memory: up to {b.processes} × {_gib(each)} = {_gib(b.processes * each)}"
+        + (
+            " (texts of 512 tokens; less for shorter ones)"
+            if service == "transform"
+            else ""
+        )
     )
     if service == "transform":
-        lines.append(
-            f"  expected memory: up to {b.processes} × {_gb(PER_PROCESS)} = {_gb(b.processes * PER_PROCESS)}"
-            " (texts of 512 tokens; less for shorter ones)"
-        )
         lines.append(
             "  AIRFLOW_TASK_LIMIT in the deployment's env file sets both task limits"
         )
@@ -334,6 +400,8 @@ def main(argv: list[str], environ=os.environ, root: Path = Path("/")) -> int:
         print(f"budget.py: {e}; nothing started", file=sys.stderr)
         return 2
     print(b.line, file=sys.stderr, flush=True)
+    if b.warning:
+        print(b.warning, file=sys.stderr, flush=True)
     environ.update(
         {"EMBEDDING_THREADS": str(b.threads), "RAYON_NUM_THREADS": str(b.threads)}
     )
