@@ -45,13 +45,16 @@ def first_image(path: str) -> dict:
     The same steps as `rsciio.digitalmicrograph.file_reader` (0.15.0) on a file
     opened with a small buffer and readahead off, without `get_data`, which
     maps the image (and refuses RGBA images when lazy). Identical results on
-    RosettaSciIO's 98 DM test files that `file_reader` reads (F14).
+    RosettaSciIO's 98 DM test files that `file_reader` reads (F14); a test
+    compares the two on this part's fixtures.
     """
     from rsciio.digitalmicrograph._api import ImageObject
 
     dm = parsed(path)
     image = ImageObject(dm.get_image_dictionaries()[0], dm.f, order=None)
     image.filename = path
+    # As file_reader: ImageList moves to the end of the tags
+    del dm.tags_dict["ImageList"]
     dm.tags_dict["ImageList"] = {"TagGroup0": image.imdict.to_dict()}
     metadata = image.get_metadata()
     metadata["General"]["original_filename"] = os.path.basename(path)

@@ -9,7 +9,7 @@ import os
 import pytest
 from modama_crawler.testing import recognise
 
-from modama_formats_em.dm import parsed
+from modama_formats_em.dm import first_image, parsed
 from modama_formats_em.testing import described
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -83,3 +83,47 @@ def test_without_the_readahead_advice(monkeypatch, advice):
         monkeypatch.delattr(os, "posix_fadvise")
     dm = parsed(os.path.join(FIXTURES, "cl_image_dm4", "test-MonarcCL_mono-image.dm4"))
     assert "ImageList" in dm.tags_dict
+
+
+def _order(node):
+    """The key order of a tag tree, at every level."""
+    if not isinstance(node, dict):
+        return None
+    return [(k, _order(v)) for k, v in node.items()]
+
+
+def _mapping(mapping: dict) -> dict:
+    """A mapping comparable across calls: tag path -> (metadata path, conversion's name)."""
+    return {
+        path: (target, getattr(convert, "__qualname__", convert))
+        for path, (target, convert) in mapping.items()
+    }
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        "cl_image_dm4/test-MonarcCL_mono-image.dm4",
+        "stem_image_dm3/test_STEM_image.dm3",
+        "rgba_image_dm4/test-8.dm4",
+    ],
+)
+def test_first_image_is_what_file_reader_gives(fixture):
+    # first_image repeats file_reader's steps with RosettaSciIO's private
+    # classes (pinned exactly, pyproject.toml): a release that changes them
+    # shows here first
+    from rsciio.digitalmicrograph import file_reader
+
+    path = os.path.join(FIXTURES, fixture)
+    mine = first_image(path)
+    if fixture.startswith("rgba"):
+        # Why first_image exists: file_reader refuses RGBA images when lazy (F14)
+        with pytest.raises(ValueError, match="RGBA"):
+            file_reader(path, lazy=True)
+        return
+    (theirs,) = file_reader(path, lazy=True)
+    assert mine["axes"] == theirs["axes"]
+    assert mine["metadata"] == theirs["metadata"]
+    assert mine["original_metadata"] == theirs["original_metadata"]
+    assert _order(mine["original_metadata"]) == _order(theirs["original_metadata"])
+    assert _mapping(mine["mapping"]) == _mapping(theirs["mapping"])
