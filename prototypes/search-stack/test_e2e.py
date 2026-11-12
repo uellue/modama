@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -20,6 +21,7 @@ from xml.etree import ElementTree as ET
 
 import psycopg
 import pytest
+from lxml import etree
 from modama_chain import chain
 from modama_chain.cli import stores_from_env
 from modama_crawler.formats import core
@@ -345,6 +347,105 @@ def test_extracted_metadata_reaches_the_search(tree):
     )
     (hit,) = [h for h in hits["hits"] if h["_source"]["url"] == url]
     assert "128×128 pixel frames" in json.dumps(hit, ensure_ascii=False), hit
+
+
+BROWSE = "http://browse:7655"
+
+
+def browse(what, path):
+    # as the page on the machine sends it: the browser refuses other host names, and live
+    # views without the page's header (D14)
+    return http(
+        f"{BROWSE}/api/{what}?" + urllib.parse.urlencode({"path": path}),
+        headers={"Host": "localhost:7655", "X-Modama-Browse": "1"},
+    )
+
+
+def parsed(xml):
+    """An XML document without its formatting."""
+    return etree.fromstring(
+        xml.encode() if isinstance(xml, str) else xml,
+        etree.XMLParser(remove_blank_text=True),
+    )
+
+
+def canonical(xml) -> bytes:
+    return etree.tostring(parsed(xml), method="c14n")
+
+
+def record_c14n(xml) -> bytes:
+    """The `<record>` of a GetRecord response, canonical."""
+    (record,) = parsed(xml).iterfind(".//oai:record", NS)
+    return etree.tostring(record, method="c14n")
+
+
+def test_the_browser_shows_the_record_the_server_serves(tree):
+    # Spec chain-browse, "A file found everywhere": the live record, by the checkout's
+    # code, equals the OAI-PMH server's for an unchanged file
+    path = "/" + DISTINCT_FILE
+    stored = {v["key"]: v for v in browse("stored", path)["views"]}
+    live = {v["key"]: v for v in browse("live", path)["views"]}
+    assert set(live) == {"dataset", "record", "datacite", "document", "hit", "entry"}
+    assert set(stored) == {"dataset", "record", "document", "hit", "entry"}
+    assert json.loads(stored["dataset"]["text"]) == json.loads(live["dataset"]["text"])
+    identifier = "oai:er-c-data-mgmt.fz-juelich.de:" + path
+    with urllib.request.urlopen(
+        OAI_URL
+        + "?"
+        + urllib.parse.urlencode(
+            {"verb": "GetRecord", "identifier": identifier, "metadataPrefix": "oai_dc"}
+        )
+    ) as response:
+        served = response.read()
+    assert live["record"]["note"].startswith("equal to the stored record")
+    assert record_c14n(live["record"]["text"]) == record_c14n(served)
+    assert record_c14n(stored["record"]["text"]) == record_c14n(served)
+
+
+def test_the_browser_computes_what_the_warehouse_stored(tree):
+    # Spec chain-browse, "The live index document matches the stored one": the harvester's
+    # XSLT, the warehouse's transformation and the search API's hit, run or emulated by the
+    # browser, against what the stack stored for the EMPAD header
+    (header,) = (DATA / "scan").glob("*.xml")
+    path = f"/scan/{header.name}"
+    stored = {v["key"]: v for v in browse("stored", path)["views"]}
+    live = {v["key"]: v for v in browse("live", path)["views"]}
+    doc = json.loads(live["document"]["text"])
+    indexed = json.loads(stored["document"]["text"])
+    indexed.pop("emb")
+    assert {k: v for k, v in doc.items() if k != "_additional_metadata"} == {
+        k: v for k, v in indexed.items() if k != "_additional_metadata"
+    }
+    assert canonical(doc["_additional_metadata"]) == canonical(
+        indexed["_additional_metadata"]
+    )
+    hit, real = json.loads(live["hit"]["text"]), json.loads(stored["hit"]["text"])
+    computed = (
+        "_id",
+        "dataset_url",
+        "title",
+        "description",
+        "creator",
+        "publication_date",
+    )
+    assert {k: hit[k] for k in computed} == {k: real[k] for k in computed}
+    assert hit["_source"] == real["_source"]
+    with warehouse_db() as conn:
+        (raw,) = conn.execute(
+            "SELECT e.raw_metadata::text FROM harvest_events e JOIN records r"
+            " ON r.endpoint_id = e.endpoint_id AND r.record_identifier = e.record_identifier"
+            " WHERE r.url = %s ORDER BY e.datestamp DESC LIMIT 1",
+            (doc["url"],),
+        ).fetchone()
+    assert canonical(live["datacite"]["text"]) == canonical(raw)
+    assert live["entry"]["entry"]["title"] == path
+
+
+def test_the_browser_refuses_a_path_outside_the_tree(tree):
+    for path in ("/notes/../../etc/passwd", "etc/passwd", "//etc/passwd"):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            browse("list", path)
+        assert e.value.code == 400, path
 
 
 def test_status_of_a_complete_chain(tree):

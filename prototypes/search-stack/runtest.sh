@@ -39,7 +39,7 @@ if [ "${1:-}" = e2e ]; then
     exec docker compose exec -T -e E2E_CHAT="$chat" crawler pytest -v -p no:cacheprovider /e2e/test_e2e.py "${@:2}"
 fi
 
-SERVICES="crawler crawl-timer crawler-db sssd ldap postgres opensearch transform broker search-api
+SERVICES="crawler crawl-timer crawler-db sssd ldap browse postgres opensearch transform broker search-api
 matchmaker airflow-postgres airflow-api-server airflow-scheduler airflow-dag-processor airflow-worker
 airflow-worker-transform"
 INITS="warehouse-init airflow-init airflow-accounts crawler-migrate"
@@ -130,4 +130,9 @@ check "the harvest DAG is unpaused (seen with the crawler's account)" harvest_da
 check "the crawler is the only active endpoint" only_our_endpoint_active
 check "modama-chain status reaches every store with read-only accounts" \
     dc exec -T crawler modama-chain status
+check "the browser lists the data tree (modama-chain browse)" \
+    dc exec -T browse python -c "
+import json, urllib.request
+r = urllib.request.Request('http://localhost:7655/api/list?path=/', headers={'Host': 'localhost:7655'})
+assert 'entries' in json.load(urllib.request.urlopen(r, timeout=10))"
 exit $FAILED

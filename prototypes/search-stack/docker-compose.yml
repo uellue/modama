@@ -159,6 +159,51 @@ services:
         condition: service_completed_successfully
     networks: [search]
 
+  # modama-chain browse (change chain-browse; README, "Looking around"): the data tree and each
+  # stage's view of a file, stored and live, on a local page. The checkout's code is mounted
+  # read-only where the image's editable installs point, so an edit to a format, an extractor,
+  # records.py or render.py shows on the next reload; `restart browse` for the rest. Reads
+  # only (read-only transactions, GET requests; crawler-db and OpenSearch would let any
+  # container write, so that is the tool's own guard); writes snapshots into
+  # /field-tests/browse alone, which each deployment mounts. Its own image, so starting it
+  # never recreates crawler or crawl-timer (the stage `browse` of the crawler's Dockerfile).
+  browse:
+    build:
+      context: ../../python/crawler
+      dockerfile: ../../prototypes/search-stack/crawler.Dockerfile
+      target: browse
+      additional_contexts:
+        em: ../../python/modama-formats-em
+        chain: ../../python/search-chain
+    image: search-stack-browse
+    command: [modama-chain, browse, --bind, 0.0.0.0]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp  # each live computation's MIME database
+    env_file:
+      # the warehouse database's read-only role; the Airflow account is not used (blanked below)
+      - ${MODAMA_SECRETS_DIR:?see README.md}/chain.env
+    environment:
+      MODAMA_DATA_ROOT: /data
+      MODAMA_BROWSE_SNAPSHOTS: /field-tests/browse
+      MODAMA_CHAIN_AIRFLOW_USER: ""
+      MODAMA_CHAIN_AIRFLOW_PASSWORD: ""
+    volumes:
+      - ssspipes:/var/lib/sss/pipes/:ro
+      - ../../python/crawler/src:/src/src:ro
+      - ../../python/modama-formats-em/src:/em/src:ro
+      - ../../python/search-chain/src:/chain/src:ro
+      - ../EOSC-Data-Commons/metadata-crawlers/harvester:/upstream/metadata-crawlers/harvester:ro
+      - ../EOSC-Data-Commons/metadata-warehouse/src:/upstream/metadata-warehouse/src:ro
+      - ../EOSC-Data-Commons/metadata-warehouse/config:/upstream/metadata-warehouse/config:ro
+    depends_on:
+      crawler-db:
+        condition: service_healthy
+      sssd:
+        condition: service_healthy
+    networks: [search]
+
   # The directory's users, for the crawler's records (dc:creator, the owner's full name), as
   # deploy/ gives them to its services: deploy/sssd's image, its sockets in ssspipes. Name
   # lookups only: the start copies the configuration, which the deployment mounts at

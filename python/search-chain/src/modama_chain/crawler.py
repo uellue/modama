@@ -131,6 +131,68 @@ def dataset_of(conn: psycopg.Connection, path: str) -> Holding | None:
     return Holding(row[0], True, row[1], row[2], row[3]) if row else None
 
 
+_DATASET_COLUMNS = (
+    "anchor", "type", "format", "version", "basis", "warnings", "parent", "collapsed",
+    "mtime", "uid", "parts", "size", "stamp", "directory",
+)  # fmt: skip
+
+
+def stored_dataset(conn: psycopg.Connection, path: str) -> dict | None:
+    """The stored dataset holding path (its anchor, a member, or below a collapsed anchor), shaped as the crawler's Dataset (browse, D6)."""
+    ancestors = []
+    parts = path.strip("/").split("/")
+    for i in range(1, len(parts)):
+        ancestors.append("/" + "/".join(parts[:i]))
+    # extractor_version before the extractor identity (0002_extractor_identity): the label
+    identity = (
+        "extractor_identity"
+        if _has_column(conn, "datasets", "extractor_identity")
+        else "extractor_version"
+    )
+    row = conn.execute(
+        f"""
+        SELECT {", ".join(_DATASET_COLUMNS)}, extractor, {identity}, extracted,
+            extract_error, extract_seconds,
+            array(SELECT m.path FROM members m WHERE m.dataset_id = d.dataset_id ORDER BY m.path)
+        FROM datasets d
+        WHERE anchor = %s
+            OR dataset_id IN (SELECT dataset_id FROM members WHERE path = %s)
+            OR (collapsed AND anchor = ANY(%s))
+        ORDER BY anchor = %s DESC LIMIT 1
+        """,
+        (path, path, ancestors, path),
+    ).fetchone()
+    if row is None:
+        return None
+    n = len(_DATASET_COLUMNS)
+    dataset = dict(zip(_DATASET_COLUMNS, row[:n], strict=True))
+    extractor, identity, extracted, error, seconds, members = row[n:]
+    dataset["members"] = list(members)
+    dataset["extraction"] = (
+        None
+        if extractor is None
+        else {
+            "extractor": extractor,
+            "identity": identity,
+            "stamp": dataset["stamp"],
+            "extracted": extracted,
+            "error": error,
+            "seconds": seconds,
+        }
+    )
+    return dataset
+
+
+def stored_record(
+    conn: psycopg.Connection, identifier: str
+) -> tuple[datetime, dict] | None:
+    """The record's datestamp and Dublin Core metadata, as the crawler stored them."""
+    row = conn.execute(
+        "SELECT datestamp, metadata FROM records WHERE identifier = %s", (identifier,)
+    ).fetchone()
+    return (row[0], row[1]) if row else None
+
+
 def record(conn: psycopg.Connection, identifier: str) -> Record | None:
     row = conn.execute(
         "SELECT identifier, datestamp FROM records WHERE identifier = %s", (identifier,)

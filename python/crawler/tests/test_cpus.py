@@ -132,7 +132,7 @@ def records(tmp_path, monkeypatch):
     calls = tmp_path / "calls"
     formats = standin.collection(calls).formats
     monkeypatch.setattr(
-        cli, "_configure", lambda args: (selection.Config(), formats, "rules")
+        cli, "configure", lambda args: (selection.Config(), formats, "rules")
     )
     results = []
     real = extraction.extract

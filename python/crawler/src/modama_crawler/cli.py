@@ -53,7 +53,7 @@ PROGRESS_INTERVAL = 60.0
 RUNS_SHOWN = 10
 FOLLOW_POLL = 2.0
 
-# Removed at interpreter exit; held here because the database must outlive _configure
+# Removed at interpreter exit; held here because the database must outlive configure
 _mime_directory: tempfile.TemporaryDirectory | None = None
 
 
@@ -68,10 +68,11 @@ def conninfo_from_env() -> str:
     )
 
 
-def _configure(args) -> tuple[selection.Config, list[Format], str]:
+def configure(args) -> tuple[selection.Config, list[Format], str]:
     """The configuration, the enabled formats and the rule set's fingerprint, with the MIME database built and activated.
 
-    Exits with status 2 and an error line when the configuration cannot be
+    `args` has `config`, `select` and `ignore` (the command line's; also
+    used by `modama-chain browse`, change chain-browse). Exits with status 2 and an error line when the configuration cannot be
     loaded or names a format that is not installed.
     """
     try:
@@ -368,7 +369,7 @@ def cmd_crawl(args) -> int:
     signal.signal(signal.SIGTERM, _terminate)
     check_user = _check_user()
     threads = _threads()
-    config, formats, rules = _configure(args)
+    config, formats, rules = configure(args)
     # before the run is recorded: a malformed setting exits here, leaving no run behind
     log.info("%s", _budget(cpus.usable()))
     installed = _installed()  # at the crawl's start, before any worker (D1)
@@ -674,7 +675,7 @@ def cmd_records(args) -> int:
     if args.verbose:
         logging.getLogger("modama_crawler").setLevel(logging.ERROR)
     threads = _threads()
-    config, formats, _ = _configure(args)
+    config, formats, _ = configure(args)
     log.info("%s", _budget(cpus.usable()))
     # the same identity a crawl in this installation records (records-cli spec)
     current = _installed()[0] if any(f.has_extractor for f in formats) else ""
