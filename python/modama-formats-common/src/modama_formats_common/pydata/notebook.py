@@ -9,6 +9,7 @@ import os
 from collections import Counter
 
 import nbformat
+from modama_crawler.formats.values import textual
 
 from .values import Walk, no_readahead
 
@@ -104,7 +105,7 @@ def described(path: str) -> tuple[dict, dict, list[str]]:
     if nb is not None:
         counts = Counter(cell.cell_type for cell in nb.cells)
         mapped |= {f"cells.{kind}": n for kind, n in sorted(counts.items())}
-        if (first := heading(nb)) is not None:
+        if (first := heading(nb)) is not None and textual(first):
             mapped["first_heading"] = first
     entries = {**mapped, **original}
     summary = [entries[k] for k in HEADLINE if isinstance(entries.get(k), str)]
