@@ -8,7 +8,7 @@
 # Upstream: ../EOSC-Data-Commons/metadata-warehouse at v1.10.0, whose docker-compose.yml
 # this follows (re-check on every upgrade). Left out: pgadmin, tool-registry,
 # opensearch-dashboards, coordinator, and the toolmeta DAG bundle. Its frontend is our
-# matchmaker, pinned by digest instead of :latest.
+# matchmaker, built from a pinned upstream commit instead of :latest.
 #
 # Test deployment: docker-compose.override.yml (ports on 127.0.0.1, test data, the e2e
 # test), ./uptest.sh, ./runtest.sh, ./downtest.sh [--reset]. See README.md.
@@ -284,9 +284,15 @@ services:
   # The EOSC search web frontend (github.com/EOSC-Data-Commons/matchmaker, MIT), upstream's
   # "frontend"; its server proxies /api/search/* to the search API. The FAIR check and the
   # Data Player (GRPC_TARGET: upstream's coordinator, which we leave out) keep the image's
-  # defaults, outside services (@weber, 2026-11-12; README, "Open").
+  # defaults, outside services (@weber, 2026-11-12; README, "Open"). Built from upstream's
+  # 0.14.0 source with patches/matchmaker/ applied (matchmaker.Dockerfile): AI Mode
+  # without login (@weber, 2026-11-12).
   matchmaker:
-    image: ghcr.io/eosc-data-commons/matchmaker-frontend:0.14.0@sha256:1637bade91c9e7d429e21120033f8ed9a33d92df01f4fd1a57640977152ae1c2
+    build:
+      context: patches/matchmaker
+      dockerfile: ../../matchmaker.Dockerfile
+      target: production
+    image: search-stack-matchmaker:0.14.0-patched
     restart: unless-stopped
     environment:
       SEARCH_API_URL: http://search-api:8000
