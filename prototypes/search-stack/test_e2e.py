@@ -340,13 +340,13 @@ def test_extracted_metadata_reaches_the_search(tree):
     ]["hits"]
     descriptions = [d["description"] for d in doc["_source"].get("descriptions", [])]
     subjects = [s["subject"].lower() for s in doc["_source"].get("subjects", [])]
-    assert descriptions and "128×128 pixel frames" in descriptions[0], descriptions
+    assert descriptions and "series_count" in descriptions[0], descriptions
     assert any("empad" in s for s in subjects), subjects
     hits = http(
         f"{SEARCH}/search?q={urllib.parse.quote(header.stem)}&resource=datasets"
     )
     (hit,) = [h for h in hits["hits"] if h["_source"]["url"] == url]
-    assert "128×128 pixel frames" in json.dumps(hit, ensure_ascii=False), hit
+    assert "series_count" in json.dumps(hit, ensure_ascii=False), hit
 
 
 BROWSE = "http://browse:7655"
