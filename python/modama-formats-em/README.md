@@ -13,7 +13,7 @@ Metadata extraction uses [RosettaSciIO](https://github.com/hyperspy/rosettasciio
 
 ## Values and units: what the driver says
 
-An extractor shows what the file or its reader (the format driver, for example RosettaSciIO) says, without editorializing: no unit guessed from a value's size, no unit converted, no number from one tag joined with a unit from another. Where the driver gives no unit, the description says so ("unit unknown"). Consistent units and metadata blocks (with pint or similar) come later, in the drivers upstream where possible (@weber, 2026-11-11).
+An extractor shows what the file or its reader (the format driver, for example RosettaSciIO) says, without editorializing: no number rounded (the DM reader's `18.325349807739258`, not `18.3`), no unit guessed from a value's size, no unit converted, no number from one tag joined with a unit from another. Where the driver gives no unit, the description says so ("unit unknown"). Consistent units and metadata blocks (with pint or similar) come later, in the drivers upstream where possible (@weber, 2026-11-11).
 
 ## Setup and tests
 

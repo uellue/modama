@@ -71,8 +71,9 @@ class Dm(Format):
 
     priority = 60
     # 2: the reader's names and numbers, no units added; 3: our own handle (F14),
-    # so RGBA images, which file_reader refused when lazy, are extracted again
-    extractor_version = "3"
+    # so RGBA images, which file_reader refused when lazy, are extracted again;
+    # 4: numbers as the reader gives them, not rounded
+    extractor_version = "4"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for e in d.of_type(self.type):
@@ -90,15 +91,16 @@ class Dm(Format):
             )
         }
         summary, subjects = [], []
-        # The reader's names and numbers as it gives them, no unit added (README,
-        # "Values and units"). TODO: units and meaning (BACKLOG, "Units and meaning")
+        # The reader's names and numbers as it gives them, not rounded, no unit
+        # added (README, "Values and units"). TODO: units and meaning (BACKLOG,
+        # "Units and meaning")
         for name in ("beam_energy", "magnification", "camera_length"):
             if (value := instrument.get(name)) is not None:
-                summary.append(f"{name} {value:g}")
+                summary.append(f"{name} {value}")
         axes = image["axes"]
         x = next((a for a in axes if a["name"] == "x"), None)
         if x is not None and x["units"] and x["units"] != "<undefined>":
-            summary.append(f"{x['scale']:.3g} {x['units']}/pixel")
+            summary.append(f"{float(x['scale'])} {x['units']}/pixel")
         summary.append("×".join(str(a["size"]) for a in reversed(axes)))
         databar = image["original_metadata"]["ImageList"]["TagGroup0"]["ImageTags"].get(
             "DataBar", {}

@@ -39,8 +39,9 @@ def test_a_dmw_file_with_the_dm4_header(collection_tests, tmp_path):
 def test_a_representative_dm4_image(collection_tests, tmp_path):
     (image,) = described(collection_tests, "cl_image_dm4", tmp_path)
     assert image.description.startswith(
-        "beam_energy 3, magnification 2500, camera_length 1, 18.3 µm/pixel, 2×2, "
-        "DigiScan, Zeiss SEM COM, 2021-05-14 11:41; "
+        # The numbers as the reader gives them, not rounded
+        "beam_energy 3.0, magnification 2500.0, camera_length 1.0, "
+        "18.325349807739258 µm/pixel, 2×2, DigiScan, Zeiss SEM COM, 2021-05-14 11:41; "
     )
     assert image.subjects == [
         "Gatan Digital Micrograph (DM4)",
@@ -56,8 +57,8 @@ def test_a_representative_dm4_image(collection_tests, tmp_path):
 def test_a_representative_dm3_image(collection_tests, tmp_path):
     (image,) = described(collection_tests, "stem_image_dm3", tmp_path)
     assert image.description.startswith(
-        "beam_energy 200, magnification 225000, camera_length 135, 0.249 nm/pixel, "
-        "68×68, DigiScan, FEI Titan, 2016-08-08 16:26; "
+        "beam_energy 200.0, magnification 225000.0, camera_length 135.0, "
+        "0.24853801727294922 nm/pixel, 68×68, DigiScan, FEI Titan, 2016-08-08 16:26; "
     )
     assert image.subjects == ["Gatan Digital Micrograph (DM3)", "FEI Titan", "STEM"]
 
