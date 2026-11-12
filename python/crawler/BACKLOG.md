@@ -94,7 +94,7 @@ Issues and fixes for the projects we build on, with their state (@weber, 2026-11
   - AI Mode needs a login, although the search API answers `POST /chat` without one (`src/pages/ChatPage.tsx`, the gate; `src/components/SearchInput.tsx`, the toggle). *Worked around here*: `prototypes/search-stack/patches/matchmaker/0001-ai-mode-without-login.patch`, built by `matchmaker.Dockerfile` (@weber, 2026-11-12). Could become an upstream option, a setting that opens AI Mode to visitors, rather than our fork; not yet offered.
   - Matomo tracking to egi.matomo.cloud is off only for localhost names (`src/lib/analytics.ts`); to settle between @weber and riwtik (decision 81; the search stack's README, "Open").
   - The FAIR check and the Data Player call outside services by default; decide before production (decision 82).
-  - `pm2-runtime -i max` starts one Node process per logical CPU (about 48 and 4 GB on the dev server, estimate); question 112.
+  - `pm2-runtime -i max` starts one Node process per logical CPU (in the VM 8 processes of 11 threads and about 110 MB each; on the dev server 48, about 5 GB). *Worked around here* (decision 112): our compose starts 2. Upstream: a setting for the process count, fire and forget.
 - **RosettaSciIO** (0.15.0, staging finding F14):
   - `file_reader(lazy=True)` refuses RGBA DM images ("Lazy loading of RGBA images is not supported"); its reader classes read their tags. *Worked around here* (our `dm.first_image`, branch `dm-containers`).
   - Merlin: `MIBProperties` from bytes fails for Quad detectors, because it then opens `self.path`, which is `None`. *Found.*

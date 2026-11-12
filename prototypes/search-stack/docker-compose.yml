@@ -293,6 +293,11 @@ services:
       dockerfile: ../../matchmaker.Dockerfile
       target: production
     image: search-stack-matchmaker:0.14.0-patched
+    # Two server processes instead of upstream's one per logical CPU (`npm run prod`:
+    # pm2-runtime -i max; 48 on the dev server, about 110 MB each): the server only passes
+    # requests on, one process carries a few users, the second takes over while pm2
+    # restarts a crashed one (@weber, 2026-11-12, decision 112)
+    command: ["./node_modules/.bin/pm2-runtime", "start", "build/server.js", "--name", "matchmaker", "-i", "2"]
     restart: unless-stopped
     environment:
       SEARCH_API_URL: http://search-api:8000
