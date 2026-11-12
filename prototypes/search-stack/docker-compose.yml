@@ -240,6 +240,9 @@ services:
 
   broker:
     image: rabbitmq:3-management-alpine
+    # RabbitMQ keeps its queues per node name, rabbit@<hostname>: a fixed host name keeps
+    # them across a recreated container (otherwise the random container id is a new node)
+    hostname: broker
     restart: unless-stopped
     env_file:
       - ${MODAMA_SECRETS_DIR:?see README.md}/broker.env
