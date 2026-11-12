@@ -329,7 +329,7 @@ def test_a_file_the_crawler_has_not_seen(tree):
     assert "<datacite:subject>EMPAD</datacite:subject>" in got["datacite"].text
     doc = json.loads(got["document"].text)
     assert doc["titles"] == [{"title": "/scan/SCA2_rings.xml"}]
-    assert "128×128 pixel frames" in doc["descriptions"][0]["description"]
+    assert "series_count 4" in doc["descriptions"][0]["description"]
     assert doc["_repo"] == "ERC" and doc["_harvest_url"] == OAI
     assert doc["_additional_metadata"].startswith("<record")
     hit = json.loads(got["hit"].text)
