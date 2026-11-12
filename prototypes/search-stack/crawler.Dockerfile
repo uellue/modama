@@ -14,13 +14,15 @@ RUN pip install --no-cache-dir -e /em
 COPY --from=common . /common
 RUN pip install --no-cache-dir -e /common
 COPY --from=chain . /chain
-RUN pip install --no-cache-dir -e /chain
-
-# The service browse (target browse; change chain-browse): the same, with modama-chain's extra
-# `browse` (the warehouse's xmltodict and jsonschema). Its sources are mounted from the
-# checkout at run time, so this image changes only with the dependencies.
-FROM crawler AS browse
+# with modama-chain's extra `browse` (the warehouse's xmltodict and jsonschema pins) in the
+# crawler too: the extractor identity is a digest of the whole installation, so the browser's
+# live extraction matches the crawl's only if both have the same packages (jsonschema also
+# comes with nbformat, for the notebooks)
 RUN pip install --no-cache-dir -e "/chain[browse]"
+
+# The service browse (target browse; change chain-browse): the same image. Its sources are
+# mounted from the checkout at run time, so this image changes only with the dependencies.
+FROM crawler AS browse
 
 # The crawler's image: the last stage, the default target
 FROM crawler

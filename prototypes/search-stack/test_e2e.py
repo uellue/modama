@@ -315,11 +315,14 @@ def test_the_crawler_line_shows_the_datasets_basis(tree):
     # Spec chain-trace, "A text file named like a K2IS tag file" and "A plain file"
     stages, first = trace("/" + STRAY_TAGS)
     assert first is None
-    assert stages["crawler"].detail == (
-        "dataset; basis: single file; em/k2is: not application/x.dm-gtg, no DM header"
+    assert stages["crawler"].detail.startswith(
+        "dataset; basis: single file, typed by its content; em/k2is: not application/x.dm-gtg,"
+        " no DM header; extracted by common/text under "
     )
     stages, _ = trace("/" + DISTINCT_FILE)
-    assert stages["crawler"].detail == "dataset; basis: single file"
+    assert stages["crawler"].detail.startswith(
+        "dataset; basis: single file; extracted by common/text under "
+    )
 
 
 def test_the_crawler_line_names_the_identity_behind_a_description(tree):
@@ -418,7 +421,13 @@ def test_the_browser_shows_the_record_the_server_serves(tree):
     live = {v["key"]: v for v in browse("live", path)["views"]}
     assert set(live) == {"dataset", "record", "datacite", "document", "hit", "entry"}
     assert set(stored) == {"dataset", "record", "document", "hit", "entry"}
-    assert json.loads(stored["dataset"]["text"]) == json.loads(live["dataset"]["text"])
+    # the same dataset, but how long its extraction took, a measurement of each run (the
+    # text formats describe this file since change common-text)
+    datasets = [json.loads(v["dataset"]["text"]) for v in (stored, live)]
+    for d in datasets:
+        assert d["extraction"]["seconds"] >= 0
+        del d["extraction"]["seconds"]
+    assert datasets[0] == datasets[1]
     identifier = "oai:er-c-data-mgmt.fz-juelich.de:" + path
     with urllib.request.urlopen(
         OAI_URL
