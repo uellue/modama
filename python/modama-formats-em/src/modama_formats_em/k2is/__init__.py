@@ -86,7 +86,8 @@ class K2is(Format):
         # of the same names
         name = at(tags, "Microscope Info.Name")
         subjects = ([name] if isinstance(name, str) else []) + terms(tags)
-        values = {"tags": kept(tags)}
+        # As the DM part's values; a .gtg has no image, so no mapped metadata
+        values = {"original_metadata": kept(tags)}
         return Extracted(summary=headline(tags), subjects=subjects, values=values)
 
 

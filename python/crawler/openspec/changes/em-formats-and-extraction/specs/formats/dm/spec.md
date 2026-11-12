@@ -18,15 +18,19 @@ A file whose header is that of a Digital Micrograph file of version 3 or 4 SHALL
 - **THEN** it does not get the DM4 type
 
 ### Requirement: DM metadata is extracted from the tags
-For a DM3 or DM4 dataset, the extractor SHALL keep as values every tag of the data image's `ImageTags` but the user-interface settings, each under its path of tag names with RosettaSciIO's value (its `original_metadata`; `[]` for an empty tag, decision 161; `inf` for an infinity, which JSON cannot hold), and the image's axes. The record's description SHALL start with the summary line of these tags; the subjects SHALL carry RosettaSciIO's microscope, acquisition mode and signal type, then the imaging mode and the camera model. The values are stored with the dataset, not in the record.
+For a DM3 or DM4 dataset, the extractor SHALL keep as values, first (`original_metadata`, decision 230), every tag of the data image's `ImageTags` but the user-interface settings, under its path with RosettaSciIO's value; second, labelled `metadata` and `axes`, RosettaSciIO's mapped metadata and axes. The description SHALL start with the summary line of these tags; the subjects SHALL carry RosettaSciIO's microscope, acquisition mode and signal type, then the imaging mode and the camera model.
+
+#### Scenario: Empty tags and infinities
+- **WHEN** a tag is empty, or a number is infinite (`Exposure Live Time` `inf`)
+- **THEN** the empty tag stays as `[]` (decision 161), the infinity is stored as Python writes it, `inf`, as JSON holds none; the values are stored with the dataset, not in the record
 
 #### Scenario: No unit the reader does not give
 - **WHEN** a DM file's tags give the voltage as `Microscope Info.Formatted Voltage` `300kV` and as `Microscope Info.Voltage` `300000.0`
-- **THEN** the description shows `300kV` as the tag gives it, and no value converted to another unit (README, "Values and units")
+- **THEN** the description shows `300kV` as the tag gives it, and no value converted to another unit, neither `300000.0` nor RosettaSciIO's `beam_energy` `300.0` (README, "Values and units")
 
 #### Scenario: A representative DM4 image
 - **WHEN** a representative DM4 file with known tags is crawled (`cl_image_dm4`)
-- **THEN** its record's description starts with `IMAGING, SCANNING, SEM, 3kV, 2.5kx, 18.325349807739258 µm/pixel, 2×2, 2021-05-14 11:41; `, its subjects are the format's name, `Zeiss SEM COM`, `SEM`, `CL` and `IMAGING`, and its values carry its 101 image tags, without the 18 of the Session Info form
+- **THEN** its record's description starts with `IMAGING, SCANNING, SEM, 3kV, 2.5kx, STEM Camera Length 1.0, 5/14/2021, 11:41:07 AM; `, its subjects are the format's name, `Zeiss SEM COM`, `SEM`, `CL` and `IMAGING`, its values carry its 101 image tags, without the 18 of the Session Info form, and RosettaSciIO's mapped metadata in a section of its own
 
 #### Scenario: The data image, not the thumbnail
 - **WHEN** a DM file's `ImageList` holds the thumbnail first (named by `Thumbnails`) and the data image second
@@ -49,33 +53,22 @@ The values of a DM image and of a K2IS tag file SHALL leave out Gatan Microscopy
 
 #### Scenario: What GMS keeps outside the image's tags
 - **WHEN** a DM file holds, outside the data image's `ImageTags`, the document's, page's and window's settings (`DocumentObjectList` with its `ImageDisplayInfo`, `Image Behavior`, `Page Behavior`, `PageSetup`, `WindowPosition`), the thumbnail and the image data's own tags (`ImageData`)
-- **THEN** none of them is in the values; the pixel size and dimensions of `ImageData` are in the axes
+- **THEN** none of them is in `original_metadata`; the pixel size and dimensions of `ImageData` are in the axes, as RosettaSciIO gives them
 
 ### Requirement: The summary line of a DM file's tags
-For a DM image (its `ImageTags`) and a K2IS tag file (its tags), the extractor SHALL build the summary line by one rule, from the tags listed in the scenario "The order of the summary line", each where present and not empty, in that order, the values as the tags give them (README, "Values and units").
+For a DM image (its `ImageTags`) and a K2IS tag file (its tags), the extractor SHALL build the summary line by one rule: the values of a chosen list of tags (`dm.HEADLINE`), each where present and not empty, in the list's order, as the file holds them, a value repeated only once. Choosing the tags is the only editorial step: no word of ours, no conversion, no re-casing (decision 230). A text stands as it is; a number follows its tag's name, as the number alone says nothing.
 
-#### Scenario: The order of the summary line
+#### Scenario: The chosen tags
 - **WHEN** a summary line is built
-- **THEN** it holds, each where present:
-  1. the imaging mode (`Microscope Info.Imaging Mode`), then the operation mode (`Microscope Info.Operation Mode`) where it differs;
-  2. the illumination mode (`Microscope Info.Illumination Mode`);
-  3. the voltage (`Microscope Info.Formatted Voltage`);
-  4. the magnification (`Microscope Info.Formatted Indicated Mag`);
-  5. the camera length, where the illumination mode names STEM (as RosettaSciIO decides the STEM mode): `STEM Camera Length` and the value of `Microscope Info.STEM Camera Length`, no unit (the tag names none);
-  6. the camera model (`Acquisition.Device.Source Model`);
-  7. the exposure: the value of `DataBar.Exposure Time (s)`, then `s exposure`;
-  8. the acquisition's parameter set (`Acquisition.Parameters.Parameter Set Name`: `Search`, `View`, `Record`): `parameter set` and the name;
-  9. the size: the scan (`scan of X×Y positions`, from `SI Dimensions.Size X` and `Size Y` at the top of the tags, as a K2IS tag file holds them), then a DM image's pixel size and dimensions;
-  10. the date and time of `DataBar.Acquisition Date` and `Acquisition Time`, as RosettaSciIO's reader converts them, to the minute;
-  11. the specimen (`specimen` and `Session Info.Specimen`) and the operator (`operator` and `Session Info.Operator`).
+- **THEN** it holds the values of, in this order: `Microscope Info.Imaging Mode`, `Operation Mode`, `Illumination Mode`, `Formatted Voltage`, `Formatted Indicated Mag`, `STEM Camera Length`; `Acquisition.Device.Source Model`; `DataBar.Exposure Time (s)`; `Acquisition.Parameters.Parameter Set Name`; `SI Dimensions.Size X` and `Size Y` (at the top of the tags, as a K2IS tag file holds them); `DataBar.Acquisition Date` and `Acquisition Time`; `Session Info.Specimen` and `Operator`
 
 #### Scenario: The summary line of an image from a camera
-- **WHEN** a DM4 image holds the tags of `2018-7-17 15_29_0000.dm4` (staging, a K2 summit on an FEI Tecnai, as ncempy lists them): `Microscope Info.Imaging Mode` and `Operation Mode` `Lorentz`, `Illumination Mode` `TEM NANOPROBE`, `Formatted Voltage` `300kV`, `Formatted Indicated Mag` `11.5kx`, `Acquisition.Device.Source Model` `K2 summit`, `DataBar.Exposure Time (s)` `2.0`, `Acquisition.Parameters.Parameter Set Name` `Search`, `DataBar.Acquisition Date` `7/17/2018` and `Acquisition Time` `3:29:20 PM`, with a pixel size of 0.45048588514328003 nm and 3710 × 3838 pixels
-- **THEN** its description starts with `Lorentz, TEM NANOPROBE, 300kV, 11.5kx, K2 summit, 2.0 s exposure, parameter set Search, 0.45048588514328003 nm/pixel, 3710×3838, 2018-07-17 15:29; ` and its subjects add `Lorentz` and `K2 summit`
+- **WHEN** a DM4 image holds the tags of `2018-7-17 15_29_0000.dm4` (staging, a K2 summit on an FEI Tecnai, as ncempy lists them): `Microscope Info.Imaging Mode` and `Operation Mode` `Lorentz`, `Illumination Mode` `TEM NANOPROBE`, `Formatted Voltage` `300kV`, `Formatted Indicated Mag` `11.5kx`, `Acquisition.Device.Source Model` `K2 summit`, `DataBar.Exposure Time (s)` `2.0`, `Acquisition.Parameters.Parameter Set Name` `Search`, `DataBar.Acquisition Date` `7/17/2018` and `Acquisition Time` `3:29:20 PM`
+- **THEN** its description starts with `Lorentz, TEM NANOPROBE, 300kV, 11.5kx, K2 summit, Exposure Time (s) 2.0, Search, 7/17/2018, 3:29:20 PM; ` and its subjects add `Lorentz` and `K2 summit`
 
 #### Scenario: A tag that is missing or empty
 - **WHEN** a file has no `Acquisition.Device.Source Model`, no `DataBar.Exposure Time (s)` and an empty `Session Info.Operator` (`stem_image_dm3`)
-- **THEN** the summary line has no camera model, no exposure and no operator, and nothing in their place
+- **THEN** the summary line has no camera model, no exposure and no operator, and nothing in their place: `DIFFRACTION, SCANNING, STEM NANOPROBE, 200kV, 225kx, STEM Camera Length 135.0, 8/8/2016, 4:26:37 PM`
 
 #### Scenario: Empty specimen and operator are left out of the summary line
 - **WHEN** a DM image's `Session Info.Specimen` and `Session Info.Operator` are empty
@@ -83,4 +76,4 @@ For a DM image (its `ImageTags`) and a K2IS tag file (its tags), the extractor S
 
 #### Scenario: Filled specimen and operator are in the summary line
 - **WHEN** a DM image's `Session Info.Specimen` is `FeGe lamella` and its `Session Info.Operator` is `A. Person`
-- **THEN** the summary line ends with `specimen FeGe lamella, operator A. Person`
+- **THEN** the summary line ends with `FeGe lamella, A. Person`

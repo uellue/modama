@@ -37,13 +37,15 @@
         "320kx",
         "STEM Camera Length 275.0",
         "K2-IS",
-        "0.0025 s exposure",
-        "parameter set Search",
-        "scan of 35\u00d734 positions",
-        "2018-03-29 13:28"
+        "Exposure Time (s) 0.0025",
+        "Search",
+        "Size X 35",
+        "Size Y 34",
+        "3/29/2018",
+        "1:28:03 PM"
       ],
       "values": {
-        "tags": {
+        "original_metadata": {
           "Acquisition.Device.Active Size (pixels)": [
             1920,
             1792

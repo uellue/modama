@@ -28,9 +28,8 @@
         "200kV",
         "225kx",
         "STEM Camera Length 135.0",
-        "0.24853801727294922 nm/pixel",
-        "68\u00d768",
-        "2016-08-08 16:26"
+        "8/8/2016",
+        "4:26:37 PM"
       ],
       "values": {
         "axes": [
@@ -47,7 +46,25 @@
             "units": "nm"
           }
         ],
-        "tags": {
+        "metadata": {
+          "Acquisition_instrument.TEM.Stage.tilt_alpha": 24.950478513002935,
+          "Acquisition_instrument.TEM.Stage.x": -0.461276,
+          "Acquisition_instrument.TEM.Stage.y": 0.052003900000000006,
+          "Acquisition_instrument.TEM.Stage.z": 0.0350339,
+          "Acquisition_instrument.TEM.acquisition_mode": "STEM",
+          "Acquisition_instrument.TEM.beam_current": 0.0,
+          "Acquisition_instrument.TEM.beam_energy": 200.0,
+          "Acquisition_instrument.TEM.camera_length": 135.0,
+          "Acquisition_instrument.TEM.dwell_time": 3.5e-06,
+          "Acquisition_instrument.TEM.magnification": 225000.0,
+          "Acquisition_instrument.TEM.microscope": "FEI Titan",
+          "General.date": "2016-08-08",
+          "General.time": "16:26:37",
+          "Signal.Noise_properties.Variance_linear_model.gain_factor": 1.0,
+          "Signal.Noise_properties.Variance_linear_model.gain_offset": 0.0,
+          "Signal.quantity": "Intensity"
+        },
+        "original_metadata": {
           "DataBar.Acquisition Date": "8/8/2016",
           "DataBar.Acquisition Time": "4:26:37 PM",
           "DataBar.Acquisition Time (OS)": 1.3115143597000824e+17,

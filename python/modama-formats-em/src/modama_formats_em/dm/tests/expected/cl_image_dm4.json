@@ -28,9 +28,9 @@
         "SEM",
         "3kV",
         "2.5kx",
-        "18.325349807739258 \u00b5m/pixel",
-        "2\u00d72",
-        "2021-05-14 11:41"
+        "STEM Camera Length 1.0",
+        "5/14/2021",
+        "11:41:07 AM"
       ],
       "values": {
         "axes": [
@@ -47,7 +47,31 @@
             "units": "\u00b5m"
           }
         ],
-        "tags": {
+        "metadata": {
+          "Acquisition_instrument.Detector.pmt_voltage": 1000.0,
+          "Acquisition_instrument.SEM.Stage.tilt_alpha": -0.412373811006546,
+          "Acquisition_instrument.SEM.Stage.tilt_beta": 341.0,
+          "Acquisition_instrument.SEM.Stage.x": 77.84698903560638,
+          "Acquisition_instrument.SEM.Stage.y": 70.4210177063942,
+          "Acquisition_instrument.SEM.Stage.z": 37.70848736166954,
+          "Acquisition_instrument.SEM.acquisition_mode": "SEM",
+          "Acquisition_instrument.SEM.beam_current": 0.0,
+          "Acquisition_instrument.SEM.beam_energy": 3.0,
+          "Acquisition_instrument.SEM.camera_length": 1.0,
+          "Acquisition_instrument.SEM.dwell_time": 1e-05,
+          "Acquisition_instrument.SEM.magnification": 2500.0,
+          "Acquisition_instrument.SEM.microscope": "Zeiss SEM COM",
+          "Acquisition_instrument.Spectrometer.Grating.groove_density": 300.0,
+          "Acquisition_instrument.Spectrometer.bandpass": 14.991599999999998,
+          "Acquisition_instrument.Spectrometer.entrance_slit_width": 0.961,
+          "General.date": "2021-05-14",
+          "General.time": "11:41:07",
+          "Signal.Noise_properties.Variance_linear_model.gain_factor": 1.0,
+          "Signal.Noise_properties.Variance_linear_model.gain_offset": 0.0,
+          "Signal.format": "Image",
+          "Signal.quantity": "Intensity (counts)"
+        },
+        "original_metadata": {
           "Acquisition.Monarc Spectrometer.Bandpass": 14.991599999999998,
           "Acquisition.Monarc Spectrometer.Detector": "DET0",
           "Acquisition.Monarc Spectrometer.Filter": "Out",

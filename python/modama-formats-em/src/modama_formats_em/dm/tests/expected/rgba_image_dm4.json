@@ -17,9 +17,7 @@
   "extractions": {
     "/test-8.dm4": {
       "subjects": [],
-      "summary": [
-        "2\u00d72"
-      ],
+      "summary": [],
       "values": {
         "axes": [
           {
@@ -35,7 +33,12 @@
             "units": ""
           }
         ],
-        "tags": {}
+        "metadata": {
+          "Signal.Noise_properties.Variance_linear_model.gain_factor": 1.0,
+          "Signal.Noise_properties.Variance_linear_model.gain_offset": 0.0,
+          "Signal.quantity": "Intensity"
+        },
+        "original_metadata": {}
       }
     }
   },

@@ -132,50 +132,42 @@ def at(tags: dict, path: str):
     return None if isinstance(node, dict) or node in ("", []) else node
 
 
-def headline(tags: dict, size: Iterable[str] = ()) -> list[str]:
-    """The summary line of a DM image's ImageTags or a K2IS tag file's tags (spec formats/dm,
-    "The summary line of a DM file's tags"); size: the image's pixel size and dimensions.
+# The tags of the summary line, in its order (spec formats/dm, "The summary
+# line of a DM file's tags"): choosing them is its only editorial step
+# (decision 230); the list to change
+HEADLINE = (
+    "Microscope Info.Imaging Mode",
+    "Microscope Info.Operation Mode",
+    "Microscope Info.Illumination Mode",
+    "Microscope Info.Formatted Voltage",
+    "Microscope Info.Formatted Indicated Mag",
+    "Microscope Info.STEM Camera Length",
+    "Acquisition.Device.Source Model",
+    "DataBar.Exposure Time (s)",
+    "Acquisition.Parameters.Parameter Set Name",
+    "SI Dimensions.Size X",
+    "SI Dimensions.Size Y",
+    "DataBar.Acquisition Date",
+    "DataBar.Acquisition Time",
+    "Session Info.Specimen",
+    "Session Info.Operator",
+)
 
-    The values as the tags give them (README, "Values and units"), each where present.
+
+def headline(tags: dict) -> list[str]:
+    """The summary line of a DM image's ImageTags or a K2IS tag file's tags: the values of
+    the HEADLINE tags present, as the file holds them, a value repeated once.
+
+    A text as it is (`300kV`, `Lorentz`); a number after its tag's name
+    (`Exposure Time (s) 2.0`), as the number alone says nothing. No word of
+    ours, no conversion (decision 230).
     """
-    from rsciio.digitalmicrograph._api import ImageObject  # in the worker only
-
-    mode = at(tags, "Microscope Info.Imaging Mode")
-    operation = at(tags, "Microscope Info.Operation Mode")
-    illumination = at(tags, "Microscope Info.Illumination Mode")
-    # STEM as RosettaSciIO's reader decides it (ImageObject._get_mode)
-    stem = "STEM" in str(illumination)
-    length = at(tags, "Microscope Info.STEM Camera Length") if stem else None
-    exposure = at(tags, "DataBar.Exposure Time (s)")
-    preset = at(tags, "Acquisition.Parameters.Parameter Set Name")
-    x, y = at(tags, "SI Dimensions.Size X"), at(tags, "SI Dimensions.Size Y")
-    date, time = (
-        at(tags, "DataBar.Acquisition Date"),
-        at(tags, "DataBar.Acquisition Time"),
-    )
-    # The reader's own conversions, which its mapping applies to General.date
-    # and General.time; they do not use self
-    day = ImageObject._get_date(None, date) if date is not None else None
-    clock = ImageObject._get_time(None, time) if time is not None else None
-    specimen = at(tags, "Session Info.Specimen")
-    operator = at(tags, "Session Info.Operator")
-    phrases = [
-        mode,
-        operation if operation != mode else None,
-        illumination,
-        at(tags, "Microscope Info.Formatted Voltage"),
-        at(tags, "Microscope Info.Formatted Indicated Mag"),
-        f"STEM Camera Length {length}" if length is not None else None,
-        at(tags, "Acquisition.Device.Source Model"),
-        f"{exposure} s exposure" if exposure is not None else None,
-        f"parameter set {preset}" if preset is not None else None,
-        f"scan of {x}×{y} positions" if x is not None and y is not None else None,
-        *size,
-        f"{day} {(clock or '')[:5]}".strip() if day else None,
-        f"specimen {specimen}" if specimen is not None else None,
-        f"operator {operator}" if operator is not None else None,
-    ]
-    return [str(p) for p in phrases if p is not None]
+    phrases = []
+    for path in HEADLINE:
+        if (value := at(tags, path)) is not None:
+            name = path.rsplit(".", 1)[-1]
+            phrases.append(value if isinstance(value, str) else f"{name} {value}")
+    return list(dict.fromkeys(phrases))
 
 
 def terms(tags: dict) -> list[str]:
@@ -263,23 +255,18 @@ class Dm(Format):
                 ("Acquisition_instrument.TEM.", "Acquisition_instrument.SEM.")
             )
         }
-        # The numbers as the reader gives them, not rounded, no unit added
-        # (README, "Values and units"). TODO: units and meaning (BACKLOG,
-        # "Units and meaning")
         axes = image["axes"]
-        size = []
-        x = next((a for a in axes if a["name"] == "x"), None)
-        if x is not None and x["units"] and x["units"] != "<undefined>":
-            size.append(f"{float(x['scale'])} {x['units']}/pixel")
-        size.append("×".join(str(a["size"]) for a in reversed(axes)))
         subjects = [
             instrument.get("microscope"),
             instrument.get("acquisition_mode"),
             image["metadata"]["Signal"].get("signal_type"),
         ]
         subjects = [s for s in subjects if s] + terms(tags)
+        # What the file says first, RosettaSciIO's mapping second, labelled
+        # with the reader's names (decision 230)
         values = {
-            "tags": kept(tags),
+            "original_metadata": kept(tags),
+            "metadata": metadata,
             "axes": [
                 {
                     "name": a["name"],
@@ -290,7 +277,7 @@ class Dm(Format):
                 for a in axes
             ],
         }
-        return Extracted(summary=headline(tags, size), subjects=subjects, values=values)
+        return Extracted(summary=headline(tags), subjects=subjects, values=values)
 
 
 class Dm3(Dm):

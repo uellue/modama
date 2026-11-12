@@ -200,11 +200,11 @@ def test_a_representative_capture(collection_tests, tmp_path):
     # The summary line of DM files' tags (spec formats/dm), the scan as the size
     assert capture.description == (
         "IMAGING, SCANNING, STEM NANOPROBE, 300kV, 320kx, STEM Camera Length 275.0, "
-        "K2-IS, 0.0025 s exposure, parameter set Search, scan of 35×34 positions, "
-        "2018-03-29 13:28; K2IS acquisition, 9 files, 27.3 kB, in /"
+        "K2-IS, Exposure Time (s) 0.0025, Search, Size X 35, Size Y 34, 3/29/2018, "
+        "1:28:03 PM; K2IS acquisition, 9 files, 27.3 kB, in /"
     )
     # The tags as values, under their paths, the values not rounded (decision 129)
-    tags = capture.dataset.extraction.extracted.values["tags"]
+    tags = capture.dataset.extraction.extracted.values["original_metadata"]
     assert {
         "SI Dimensions.Size X": 35,
         "Microscope Info.Voltage": 300000.0,
@@ -227,7 +227,7 @@ def test_a_representative_capture(collection_tests, tmp_path):
 
 def test_user_interface_settings_are_left_out(collection_tests, tmp_path):
     (capture,) = described(collection_tests, "capture52", tmp_path)
-    tags = capture.dataset.extraction.extracted.values["tags"]
+    tags = capture.dataset.extraction.extracted.values["original_metadata"]
     summary = [f"{path} {value}" for path, value in tags.items()]
     # The image viewer (Acquisition.Parameters.Objects.TagGroup1, and the
     # same under SI Image Tags) and the definition of the Session Info form
@@ -267,4 +267,4 @@ def test_the_groups_at_the_root_whatever_the_tag_order(monkeypatch):
     monkeypatch.setattr(k2is, "parsed", lambda path: SimpleNamespace(tags_dict=tags))
     extracted = k2is.K2is().extract(Dataset(anchor="/X_.gtg"), "/nowhere")
     assert extracted.subjects == ["FEI Tecnai Remote"]
-    assert extracted.summary == ["scan of 35×34 positions"]
+    assert extracted.summary == ["Size X 35", "Size Y 34"]
