@@ -4,7 +4,7 @@ The decision for Alembic is @weber's (2026-11-12), and so is A1 (the warehouse's
 
 ## 1. Before the code
 
-- [ ] 1.1 Record R42 in `design/requirements.md` with the wording in `proposal.md` ("Why"), next to R41 and R43 from the open changes, and the decision for Alembic plus the answers on A1 to A6 in the decision log of `design/architecture.md`. Verify: the diff, reviewed by @weber.
+- [x] 1.1 Record R42 in `design/requirements.md` with the wording in `proposal.md` ("Why"), next to R41 and R43 from the open changes, and the decision for Alembic plus the answers on A1 to A6 in the decision log of `design/architecture.md`. Verify: the diff, reviewed by @weber (2026-11-12, question 188: "Makes sense, let's see how that goes!").
 - [x] 1.2 Add `alembic>=1.20` and `SQLAlchemy>=2.0` (imported directly for the engine, D1) to `pyproject.toml`, `*.mako` to the package data, and install into `~/.venv`. Verify: `uv pip show --python ~/.venv/bin/python alembic SQLAlchemy Mako` lists 1.20.1, 2.1.8 and 1.4.3 (or the then current releases, looked up on PyPI and named in the hand-over), MIT each; no other new package in `uv pip list --python ~/.venv/bin/python` than these three (`~/.venv` is made by `uv venv` and has no pip: review L6).
 
 ## 2. Migrations and the command
@@ -32,7 +32,7 @@ The decision for Alembic is @weber's (2026-11-12), and so is A1 (the warehouse's
 
 In the VM, without the search stack (in use by `cpu-budget`); PostgreSQL 17.11, Python 3.14.10.
 
-- 1.1: written (R42 under "Correctness", four decision-log rows); @weber's review of the diff is open, so not ticked.
+- 1.1: written (R42 under "Correctness", four decision-log rows); reviewed by @weber on 2026-11-12 (188), ticked.
 - 1.2: `uv pip list` before and after the install differ by `alembic 1.20.1`, `mako 1.4.3`, `sqlalchemy 2.1.8` only (current on PyPI on 2026-11-12, MIT each); Mako comes through alembic and is not listed in `pyproject.toml`.
 - 2.1: `pip wheel --no-deps` of a copy of `python/crawler`, listed with `python -m zipfile -l` (no `unzip` in the VM): `modama_crawler/migrations/env.py`, `script.py.mako`, `versions/0001_baseline.py`. `alembic revision -m probe --rev-id 0002_probe` without a database writes `versions/0002_probe.py` (`file_template = %%(rev)s`, so that the file is named after the id, which `schema.known()` relies on) with `down_revision = '0001_baseline'` and the refusing `downgrade()`; removed. `cd / && alembic -c <checkout>/python/crawler/alembic.ini heads` prints `0001_baseline (head)`.
 - 2.2: `test_migrations.py`, one test per scenario of the three requirements, plus Ctrl-C during the wait (D10). `alembic current` with the lock held returns at once (`test_alembic_current_takes_no_lock`). `alembic upgrade 0001_baseline:head --sql` with `POSTGRES_ADDRESS=nowhere.invalid` prints `BEGIN; COMMIT;`, exit 0 (the range is empty until 0002 exists); `upgrade head --sql` prints the five `CREATE TABLE IF NOT EXISTS` and the `INSERT INTO alembic_version` (`test_alembic_sql_needs_no_database`).
