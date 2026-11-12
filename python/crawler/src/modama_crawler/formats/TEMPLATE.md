@@ -120,6 +120,8 @@ To see what a format makes of real files while you write it: `modama-chain brows
 
 What to keep (@weber, decisions 129 and 230): what the file says, without editorializing. With a reader that maps metadata to standard names (RosettaSciIO), take its original metadata first, complete but for GUI settings and large arrays, and the mapped metadata as a second, labelled section; where they disagree, the original wins. Interpreting metadata across vendors is out of scope: the user makes their own sense of what the file says (`python/modama-formats-em/README.md`, "Values and units").
 
+Keep every entry the file has, minus a skip list, never a list of wanted entries (@weber, 2026-11-12, for all formats: "we may encounter new and different tags in different files. So we don't keep a positive list, but a negative 'skip these' list"). A header with key/value lines keeps all its keys; a tag tree keeps all its tags; the skip list (GUI settings, large arrays, placeholders) is one named list per format, documented in its spec with examples. A summary line's few chosen entries are the only positive list. Test it with an entry nobody has seen before: it must arrive in the values.
+
 A format may also read metadata from its datasets' files, after recognition:
 
 ```python
