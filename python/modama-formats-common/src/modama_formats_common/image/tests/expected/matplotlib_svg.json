@@ -1,0 +1,40 @@
+{
+  "datasets": [
+    {
+      "anchor": "/multi_font_astext.svg",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/svg",
+      "members": [
+        "/multi_font_astext.svg"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/svg+xml",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/multi_font_astext.svg": {
+      "subjects": [],
+      "summary": [
+        "width 576pt",
+        "height 432pt"
+      ],
+      "values": {
+        "original_metadata": {
+          "@height": "432pt",
+          "@version": "1.1",
+          "@viewBox": "0 0 576 432",
+          "@width": "576pt",
+          "metadata.rdf:RDF.cc:Work.dc:creator.cc:Agent.dc:title": "Matplotlib v3.6.0.dev2840+g372782e258.d20220809, https://matplotlib.org/",
+          "metadata.rdf:RDF.cc:Work.dc:date": "2022-08-09T18:42:37.025191",
+          "metadata.rdf:RDF.cc:Work.dc:format": "image/svg+xml",
+          "metadata.rdf:RDF.cc:Work.dc:type.@rdf:resource": "http://purl.org/dc/dcmitype/StillImage"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

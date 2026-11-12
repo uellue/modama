@@ -1,0 +1,48 @@
+{
+  "datasets": [
+    {
+      "anchor": "/pattern.webp",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/webp",
+      "members": [
+        "/pattern.webp"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/webp",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/pattern.webp": {
+      "subjects": [],
+      "summary": [
+        "ER-C",
+        "Test Camera 1",
+        "width 64",
+        "height 48"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "height": 48,
+          "mode": "RGB",
+          "width": 64
+        },
+        "original_metadata": {
+          "background": [
+            255,
+            255,
+            255,
+            255
+          ],
+          "exif.Make": "ER-C",
+          "exif.Model": "Test Camera 1",
+          "loop": 1
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

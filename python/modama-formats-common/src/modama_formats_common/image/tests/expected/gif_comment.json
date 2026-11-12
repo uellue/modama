@@ -1,0 +1,39 @@
+{
+  "datasets": [
+    {
+      "anchor": "/pattern.gif",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/gif",
+      "members": [
+        "/pattern.gif"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/gif",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/pattern.gif": {
+      "subjects": [],
+      "summary": [
+        "width 64",
+        "height 48"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "height": 48,
+          "mode": "L",
+          "width": 64
+        },
+        "original_metadata": {
+          "background": 0,
+          "comment": "made for a test"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

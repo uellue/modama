@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/figure.eps",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/figure.eps"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/x-eps",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
