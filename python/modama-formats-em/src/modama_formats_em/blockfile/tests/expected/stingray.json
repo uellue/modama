@@ -1,0 +1,118 @@
+{
+  "datasets": [
+    {
+      "anchor": "/Stingray16bit_7_11.blo",
+      "basis": "IMGBLO header",
+      "collapsed": false,
+      "format": "em/blockfile",
+      "members": [
+        "/Stingray16bit_7_11.blo"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.blockfile",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/Stingray16bit_7_11.blo": {
+      "subjects": [
+        "4D-STEM"
+      ],
+      "summary": [
+        "NX 7",
+        "NY 11",
+        "SX 12.5",
+        "SY 12.5",
+        "DP_SZ 576",
+        "Beam_energy 60000",
+        "Camera_length 6000",
+        "2024-09-17 00:00",
+        "reader warning: Blockfile has unrecognized header signature. Will attempt to read, but correctness not guaranteed!"
+      ],
+      "values": {
+        "acquired": "2024-09-17T00:00:00",
+        "axes": [
+          {
+            "name": "y",
+            "scale": 12.5,
+            "size": 11,
+            "units": "nm"
+          },
+          {
+            "name": "x",
+            "scale": 12.5,
+            "size": 7,
+            "units": "nm"
+          },
+          {
+            "name": "dy",
+            "scale": 0.016666666666666666,
+            "size": 576,
+            "units": "cm"
+          },
+          {
+            "name": "dx",
+            "scale": 0.016666666666666666,
+            "size": 576,
+            "units": "cm"
+          }
+        ],
+        "mapped_metadata": {
+          "Acquisition_instrument.TEM.beam_energy": 60.0,
+          "Acquisition_instrument.TEM.camera_length": 0.6,
+          "Acquisition_instrument.TEM.rotation": 0.0,
+          "General.notes": "Acquisition SW: ScanDpa v3.0 [Build:202409051150]\r\nDetector: AVT Stingray F046B\r\n\r\nPrecession: Off\r\nOnline Distortion Correction: Off\r\nAcq. Rate (fps): 37.01\r\nExposure (ms): 1.6\r\n# of images: 77\r\nGamma: 0.45\r\nGain: 0\r\n\r\nDetector Bit Depth:  8 bits\r\nBlo Bit Depth: 16 bits\r\nAdjust Display: Mean/Std\r\nImage mode calibration (nm/pxl): 1.419484\r\nDiffraction mode calibration (1/nm/pxl): 0.045169\r\nxl): 0.045169\r\r\n",
+          "General.original_filename": "Stingray16bit_7_11.blo",
+          "Signal.signal_type": "diffraction"
+        },
+        "original_metadata": {
+          "blockfile_header.Acquisition_time": 45552.0,
+          "blockfile_header.Beam_energy": 60000,
+          "blockfile_header.Camera_length": 6000,
+          "blockfile_header.Centering_N0": 0.0,
+          "blockfile_header.Centering_N1": 0.0,
+          "blockfile_header.Centering_N2": 0.0,
+          "blockfile_header.Centering_N3": 0.0,
+          "blockfile_header.Centering_N4": 0.0,
+          "blockfile_header.Centering_N5": 0.0,
+          "blockfile_header.Centering_N6": 0.0,
+          "blockfile_header.Centering_N7": 0.0,
+          "blockfile_header.DP_SZ": 576,
+          "blockfile_header.DP_rotation": 0,
+          "blockfile_header.Data_offset_1": 4096,
+          "blockfile_header.Data_offset_2": 4176,
+          "blockfile_header.Distortion_N00": 0.0,
+          "blockfile_header.Distortion_N01": 1.0,
+          "blockfile_header.Distortion_N02": 0.0,
+          "blockfile_header.Distortion_N03": 0.0,
+          "blockfile_header.Distortion_N04": 0.0,
+          "blockfile_header.Distortion_N05": 0.0,
+          "blockfile_header.Distortion_N06": 0.0,
+          "blockfile_header.Distortion_N07": 0.0,
+          "blockfile_header.Distortion_N08": 0.0,
+          "blockfile_header.Distortion_N09": 1.0,
+          "blockfile_header.Distortion_N10": 0.0,
+          "blockfile_header.Distortion_N11": 0.0,
+          "blockfile_header.Distortion_N12": 0.0,
+          "blockfile_header.Distortion_N13": 0.0,
+          "blockfile_header.ID": "IMGBLO",
+          "blockfile_header.MAGIC": 259,
+          "blockfile_header.NX": 7,
+          "blockfile_header.NY": 11,
+          "blockfile_header.Note": "Acquisition SW: ScanDpa v3.0 [Build:202409051150]\r\nDetector: AVT Stingray F046B\r\n\r\nPrecession: Off\r\nOnline Distortion Correction: Off\r\nAcq. Rate (fps): 37.01\r\nExposure (ms): 1.6\r\n# of images: 77\r\nGamma: 0.45\r\nGain: 0\r\n\r\nDetector Bit Depth:  8 bits\r\nBlo Bit Depth: 16 bits\r\nAdjust Display: Mean/Std\r\nImage mode calibration (nm/pxl): 1.419484\r\nDiffraction mode calibration (1/nm/pxl): 0.045169\r\nxl): 0.045169\r\r\n",
+          "blockfile_header.SDP": 6000,
+          "blockfile_header.SX": 12.5,
+          "blockfile_header.SY": 12.5,
+          "blockfile_header.Scan_rotation": 0,
+          "blockfile_header.UNKNOWN1": 8389001
+        },
+        "reader_warnings": [
+          "Blockfile has unrecognized header signature. Will attempt to read, but correctness not guaranteed!"
+        ]
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

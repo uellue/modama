@@ -110,9 +110,16 @@ def test_the_acquisition_time_as_written(collection_tests, tmp_path, monkeypatch
 
 
 def test_the_16_bit_variant(collection_tests, tmp_path):
-    (scan,) = described(collection_tests, "magic_259", tmp_path)
-    assert scan.description.startswith(f"{SCAN}, reader warning: {UNKNOWN_MAGIC}; ")
+    # The header of the staging file that started this format (decision 232)
+    (scan,) = described(collection_tests, "stingray", tmp_path)
+    assert scan.description.startswith(
+        "NX 7, NY 11, SX 12.5, SY 12.5, DP_SZ 576, Beam_energy 60000, "
+        f"Camera_length 6000, 2024-09-17 00:00, reader warning: {UNKNOWN_MAGIC}; "
+    )
     values = scan.dataset.extraction.extracted.values
+    assert (
+        "Blo Bit Depth: 16 bits" in values["original_metadata"]["blockfile_header.Note"]
+    )
     assert values["original_metadata"]["blockfile_header.MAGIC"] == 259
     assert values["reader_warnings"] == [UNKNOWN_MAGIC]
 

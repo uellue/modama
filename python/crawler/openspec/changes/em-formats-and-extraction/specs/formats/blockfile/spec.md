@@ -31,8 +31,8 @@ For a block file dataset, the extractor SHALL read the header with RosettaSciIO'
 - **THEN** its date and time are those of the header's serial date, as for UTC: the file states no time zone, and the reader's conversion to the local one is not used
 
 #### Scenario: The 16-bit variant
-- **WHEN** a block file's header has MAGIC 259, as the 16-bit files LiberTEM reads (`Stingray16bit_7_11.blo` on staging), which RosettaSciIO's reader does not know
-- **THEN** it is described as any other, and the reader's warning ("Blockfile has unrecognized header signature …") is in its description and values
+- **WHEN** a block file's header has MAGIC 259, as the 16-bit files LiberTEM reads (the header of `Stingray16bit_7_11.blo` on staging), which RosettaSciIO's reader does not know
+- **THEN** it is described as any other, starting with `NX 7, NY 11, SX 12.5, SY 12.5, DP_SZ 576, Beam_energy 60000, Camera_length 6000, 2024-09-17 00:00`, and the reader's warning ("Blockfile has unrecognized header signature …") is in its description and values
 
 #### Scenario: The header, not the data
 - **WHEN** a block file holds its header and nothing after it, as a copy cut short
