@@ -108,27 +108,28 @@ class Holding:
     basis: str  # why the crawler recognised it, with the notes of dropped name types
     extractor: str | None = None  # the format whose extractor produced its description
     identity: str | None = None  # the extractor identity it was produced under
+    failed: bool = False  # the extraction failed: the record has a basic description
 
 
 def dataset_of(conn: psycopg.Connection, path: str) -> Holding | None:
     """The dataset holding path, or None."""
     extraction = (
-        "d.extractor, d.extractor_identity"
+        "d.extractor, d.extractor_identity, d.extract_error IS NOT NULL"
         if _has_column(conn, "datasets", "extractor_identity")
-        else "NULL, NULL"
+        else "NULL, NULL, false"
     )
     row = conn.execute(
         f"SELECT d.anchor, d.basis, {extraction} FROM datasets d WHERE d.anchor = %s",
         (path,),
     ).fetchone()
     if row:
-        return Holding(row[0], False, row[1], row[2], row[3])
+        return Holding(row[0], False, *row[1:])
     row = conn.execute(
         f"SELECT d.anchor, d.basis, {extraction} FROM members m JOIN datasets d USING (dataset_id)"
         " WHERE m.path = %s",
         (path,),
     ).fetchone()
-    return Holding(row[0], True, row[1], row[2], row[3]) if row else None
+    return Holding(row[0], True, *row[1:]) if row else None
 
 
 _DATASET_COLUMNS = (

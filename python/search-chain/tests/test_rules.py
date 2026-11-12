@@ -258,6 +258,12 @@ def test_a_description_left_from_another_installation():
     assert crawler_detail(found, True, True, H0).endswith(
         "extracted by em/dm4 under 77b1e2d4a0c9, the last crawl's is 6d881430e7c8: they differ"
     )
+    # a failed extraction (review of the code, 7)
+    failed = Holding("/a.dm4", False, "*.dm4", "em/dm4", H0, True)
+    assert (
+        "; extraction by em/dm4 failed under 6d881430e7c8, the last crawl's (current)"
+        in (crawler_detail(failed, True, True, H0))
+    )
     # a label from before identities, quoted as runs shows it
     old = Holding("/a.dm4", False, "*.dm4", "em/dm4", "4")
     assert 'under "4", the last crawl\'s is 6d881430e7c8' in crawler_detail(

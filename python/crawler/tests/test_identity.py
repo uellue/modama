@@ -152,6 +152,36 @@ def test_a_bare_pth_editable_install(tmp_path):
     assert computed(tmp_path / "cwd", site)["identity"] != before["identity"]
 
 
+def test_an_open_editor_does_not_count(tmp_path):
+    # Review of the code, 3: an Emacs lock file is a dangling symlink; it stopped the crawl
+    pkg = package(tmp_path / "path", "edited")
+    before = computed(tmp_path / "cwd", pythonpath=tmp_path / "path")
+    (pkg / ".#__init__.py").symlink_to("dev@host.12345:1731400000")
+    (pkg / "__init__.py~").write_text("X = 0\n")
+    (pkg / ".__init__.py.swp").write_bytes(b"\0swap")
+    after = computed(tmp_path / "cwd", pythonpath=tmp_path / "path")
+    assert after["identity"] == before["identity"]
+
+
+def test_a_console_script_and_python_m_give_the_same_identity(tmp_path):
+    # Review of the code, 2: the timer starts crawls with -m, people the console script
+    tree = tmp_path / "empty"
+    tree.mkdir()
+    script = Path(sys.executable).parent / "modama-crawler"
+    shown = []
+    for command in ([str(script)], [sys.executable, "-m", "modama_crawler"]):
+        run = subprocess.run(
+            [*command, "records", "--verbose", str(tree)],
+            cwd="/",
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
+        shown.append(run.stdout.rsplit("extraction identity ", 1)[1][:12])
+    assert shown[0] == shown[1]
+
+
 # "Settings and numerical noise are not part of the identity"
 
 

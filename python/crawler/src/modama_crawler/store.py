@@ -110,10 +110,11 @@ def end_run(
             extraction.identity or None,
             Jsonb(ingredients) if ingredients is not None else None,
             Jsonb(extraction.reextracted_json()),
+            Jsonb(extraction.retried_json()),
             Jsonb(extraction.spot.to_json()) if extraction.spot else None,
         )
         if extraction
-        else (None,) * 8
+        else (None,) * 9
     )
     conn.execute(
         """
@@ -121,7 +122,8 @@ def end_run(
             directories = %s, files = %s, datasets = %s, warnings = %s,
             records_changed = %s, extractions_run = %s, extractions_reused = %s,
             extractions_failed = %s, directories_unchanged = %s, identity = %s,
-            identity_ingredients = %s, reextracted = %s, spot_check = %s, error = %s
+            identity_ingredients = %s, reextracted = %s, retried = %s, spot_check = %s,
+            error = %s
         WHERE run_id = %s
         """,
         (

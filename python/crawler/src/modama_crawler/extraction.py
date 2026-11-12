@@ -125,7 +125,8 @@ class SpotCheck:
             "seed": f"{self.seed:016x}",
             "checked": dict(sorted(self.checked.items())),
             "differ": {
-                fid: [d.to_json() for d in found[:MAX_NAMED]]
+                # every one, with its stored and new values (192); at most the sample's size
+                fid: [d.to_json() for d in found]
                 for fid, found in sorted(self.differ.items())
             },
             "differences": self.differences,
@@ -190,6 +191,13 @@ class Report:
             }
             for (fid, before), (n, changed) in sorted(self.reextracted.items())
         ]
+
+    def retried_json(self) -> dict:
+        """The failures tried again per format, as the run keeps them (D9, R45)."""
+        return {
+            fid: {"tried": n, "succeed": succeed}
+            for fid, (n, succeed) in sorted(self.retried.items())
+        }
 
 
 Stored = Callable[[list[str]], dict[str, Extraction]]
@@ -317,7 +325,9 @@ def extract(
         memory,
         check,
     )
-    for i, (extracted, error, seconds) in zip(tasks, outcomes, strict=False):
+    for i, (extracted, error, seconds) in zip(
+        tasks, outcomes[: len(tasks)], strict=True
+    ):
         d = result.datasets[i]
         fmt = by_id[d.format]
         new = Extraction(fmt.id, identity, d.stamp, extracted, error, seconds)

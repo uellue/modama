@@ -18,7 +18,7 @@
 - [x] 4.1 Re-extraction reasons, report lines per format, the changed results counted by comparing the stored and the new result in `extract()` (not the records; review finding 4), the line for failures tried again (D9), and the counts stored with the run and shown by `runs` (D6). Verify: tests per scenario of "The crawl reports re-extraction and its cause" and "The crawl reports failures tried again"; `test_runs.py` for the run line.
 - [ ] 4.2 The note of `runs` (D7), triggered by the stored datasets' identities, not the last run's (review finding 7). Verify: `test_runs.py` per scenario of "The runs command says what the next crawl will extract again", including the experiment left over and `runs | head -1`; checked by eye in a real terminal (`tools/xterm-shots.py`, `design/playtest.md`).
 - [ ] 4.3 The identity in the summary of `records`. Verify: a test per the records-cli scenario; `records --verbose | less` checked by eye (R40).
-- [ ] 4.4 `modama-chain trace` and `status` read the new columns, and work against a crawler database without them, as for the table today (`search-chain/src/modama_chain/crawler.py`). Update `python/search-chain/README.md`, which lists the crawler tables it reads. Verify: search-chain tests per scenario of the `chain-trace` delta; `./runtest.sh e2e` in `/prototypes/search-stack/`.
+- [x] 4.4 `modama-chain trace` and `status` read the new columns, and work against a crawler database without them, as for the table today (`search-chain/src/modama_chain/crawler.py`). Update `python/search-chain/README.md`, which lists the crawler tables it reads. Verify: search-chain tests per scenario of the `chain-trace` delta; `./runtest.sh e2e` in `/prototypes/search-stack/`.
 - [x] 4.5 The spot check (D10): the sample of 20 per format from a seed of `secrets.randbits(64)`, extracted in the same pool, compared in stored form, the report line and the log's warnings, a new success stored, a new failure not, the outcome in `crawl_runs.spot_check` and `spot check: N differ` on the `runs` line. Verify: tests per scenario of "Each crawl spot-checks a sample of what it reuses" and "A spot-check difference is reported, not spread"; the take-over tests of 3.1 still read no file contents outside the sample.
 
 ## 5. Recorded fixture extractions (D5 b)
@@ -37,7 +37,7 @@
 
 ## 8. Review and acceptance
 
-- [ ] 8.1 Review of the code by an agent that did not write it, given the code, the specs, R44 and R45, not this design's conclusions (AGENTS.md: more than a few hundred lines, and a migration); findings verified before they are acted on. The design was reviewed before any code (`review.md`, parts A to D, with each finding's outcome). Verify: the code review's findings added to `review.md`, each with its outcome.
+- [x] 8.1 Review of the code by an agent that did not write it, given the code, the specs, R44 and R45, not this design's conclusions (AGENTS.md: more than a few hundred lines, and a migration); findings verified before they are acted on. The design was reviewed before any code (`review.md`, parts A to D, with each finding's outcome). Verify: the code review's findings added to `review.md`, each with its outcome.
 - [ ] 8.2 Final acceptance with the commands CI and the hook run: `uvx ruff format --check --diff` and `uvx ruff check` from the repository root, `pytest` of the crawler, `modama-formats-em` and `search-chain`, and `./runtest.sh e2e`. Verify: the output, with the number of skipped tests and where the local environment differs from CI's.
 
 ## Workflow follow-up

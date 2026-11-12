@@ -220,7 +220,9 @@ def crawler_detail(
         detail += f"; basis: {found.basis}"
     if found and found.extractor:
         detail += (
-            f"; extracted by {found.extractor} under {crawler.short(found.identity)}"
+            f"; extraction by {found.extractor} failed under {crawler.short(found.identity)}"
+            if found.failed
+            else f"; extracted by {found.extractor} under {crawler.short(found.identity)}"
         )
         if found.identity == last_identity:
             detail += ", the last crawl's (current)"

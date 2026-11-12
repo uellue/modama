@@ -105,14 +105,15 @@ The schema of the crawler's database is changed by migrations, so that a change 
 
 ```
 INFO Running upgrade  -> 0001_baseline, baseline: the tables as the crawler made them before migrations
-INFO schema migrated from none to 0001_baseline
+INFO Running upgrade 0001_baseline -> 0002_extractor_identity, extractor identity: reuse by a digest of the installation, failures never reused
+INFO schema migrated from none to 0002_extractor_identity
 ```
 
-Run again, it says `INFO schema up to date at 0001_baseline` at once, also while a crawl runs. On a database made before migrations it first says `INFO tables made before migrations found: adopted as 0001_baseline`. The search stack runs it as the service `crawler-migrate` before `crawler` and `crawl-timer` start. `crawl`, `runs`, `timer` and `serve` only check the version, and exit with status 2 when it does not fit. What you see, and what to do:
+Run again, it says `INFO schema up to date at 0002_extractor_identity` at once, also while a crawl runs. On a database made before migrations it first says `INFO tables made before migrations found: adopted as 0001_baseline`. The search stack runs it as the service `crawler-migrate` before `crawler` and `crawl-timer` start. `crawl`, `runs`, `timer` and `serve` only check the version, and exit with status 2 when it does not fit. What you see, and what to do:
 
 | You see | Step |
 |---|---|
-| `ERROR the database has no schema version, this crawler needs 0001_baseline: run modama-crawler migrate` | `modama-crawler migrate` |
+| `ERROR the database has no schema version, this crawler needs 0002_extractor_identity: run modama-crawler migrate` | `modama-crawler migrate` |
 | `ERROR the database schema is at 0001_baseline, this crawler needs 0002_…: run modama-crawler migrate` | `modama-crawler migrate` |
 | `ERROR the database schema is at 0002_…, which this crawler does not know: a newer crawler migrated it; use that crawler, or downgrade with it first (README)` | the newer crawler, or its downgrade ("Upgrade" below) |
 | `INFO waiting for the crawl lock (a crawl or another migration holds it)`, from `migrate` | wait until the crawl ends, then it migrates; Ctrl-C ends the wait and changes nothing |
@@ -142,10 +143,10 @@ Where a downgrade refuses, or the database is damaged, the way back is an empty 
 A schema change is a new revision, never an edit of a revision that has shipped (a database that has run it would not run it again), and never DDL in `store.py`. From `python/crawler/`:
 
 ```bash
-alembic revision -m "crawl_runs scope" --rev-id 0002_crawl_runs_scope
+alembic revision -m "crawl_runs scope" --rev-id 0003_crawl_runs_scope
 ```
 
-This writes `src/modama_crawler/migrations/versions/0002_crawl_runs_scope.py`. The id has at most 32 characters (Alembic's `version_num` column; a test checks it). Then:
+This writes `src/modama_crawler/migrations/versions/0003_crawl_runs_scope.py`. The id has at most 32 characters (Alembic's `version_num` column; a test checks it). Then:
 
 - Write `upgrade()` with Alembic's operations (`op.add_column("crawl_runs", sa.Column("scope", sa.Text()))`) or `op.execute` with SQL text, whichever fits. There are no models.
 - No `IF NOT EXISTS` after `0002`: on a database that drifted from the chain, a migration should fail loudly.

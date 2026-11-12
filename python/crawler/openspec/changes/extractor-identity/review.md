@@ -109,3 +109,17 @@ Where it can happen: a library version that changes how a number is computed. Ra
 - How the worker's address space grows beyond 8 CPUs (OpenBLAS caps its threads at the CPUs present; this VM has 8).
 - Whether ER-C's DM files contain partial dates (row 20), and the cost of the spot check on staging's NFS.
 - The code itself: this change has none yet. The findings are about the design and the existing code it builds on.
+
+## E. Review of the code (task 8.1, 2026-11-12)
+
+An independent reviewer read ec204fb..1998574 and e5d8359 against the specs, R44 and R45; decisions by the main session. Verdict: sound; migration 0002 loses nothing and its downgrade gives the older code what it reads correctly. Nine findings, each verified here before it was acted on, with its outcome:
+
+1. **Blocker: `modama-chain browse` (merged from `crawler` meanwhile) broke** at run time: the stored view selected `extractor_version` and `extract_retry`, the live view called `extract()` without an identity and read `fmt.extractor_version`. *Verified* by `test_browse.py` after the merge. *Fixed* in the merge commits: the stored view reads `extractor_identity` (`extractor_version` on a database before 0002), the live extraction runs under the installation's identity, the snapshot names the extractor identity. `test_browse.py` passes. *Open:* on staging the browser's live view runs the shared checkout, whose identity usually differs from the image's; the view shows both identities but does not say so in words.
+2. **The identity depended on how the crawler is started** (the scripts directory is `sys.path[0]` for a console script, not under `python -m`; the timer uses `-m`). *Verified:* two identities in the venv. *Fixed:* the scripts directory is not scanned; test `test_a_console_script_and_python_m_give_the_same_identity`; by hand from `/`: both `f8c6ab9d82ee`.
+3. **A dangling symlink in a hashed package (an Emacs lock file) stopped every command.** *Fixed:* only regular files are hashed, editor files (`.#*`, `*.swp`, `*~`) are left out, an unreadable file is hashed as `unreadable: …`; test `test_an_open_editor_does_not_count`.
+4. **`upstaging.sh` printed the crawl command without staging's `--config`.** *Fixed:* it reads `STAGING_CRAWL_CONFIG` from `staging.env`; the runbook's line too. The README's line is for the test deployment, which has no configuration file, and stays.
+5. **The run kept the values of five differences per format only.** *Fixed:* every difference (at most the sample's 20 per format).
+6. **The run did not keep the failures tried again.** *Fixed:* `crawl_runs.retried` in 0002, which has not shipped; `runs` and `modama-chain status` do not show it yet.
+7. **The trace said "extracted by" for a failed extraction.** *Fixed:* "extraction by … failed under …", with a test.
+8. **`*.egg-info/` in `.dockerignore` matches at the context root only.** *Fixed:* `**/*.egg-info/` in the three build contexts.
+9. **Nits:** `zip(strict=False)` now strict on the tasks' part; the README's `migrate` example names 0002, its "Adding a migration" example 0003; tasks ticked or named as open in the hand-over.

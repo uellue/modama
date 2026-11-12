@@ -437,6 +437,10 @@ def test_a_failure_under_a_lowered_memory_limit(conn, tmp_path, monkeypatch):
     assert result.all_warnings() == []
     assert (report.run, report.reused, report.failed) == (1, 1, 0)
     assert "t/stand: 1 tried again after a failure, 1 now succeeds" in report.lines()
+    # The run keeps the counts (R45)
+    assert conn.execute(
+        "SELECT retried FROM crawl_runs ORDER BY run_id DESC LIMIT 1"
+    ).fetchone() == ({"t/stand": {"tried": 1, "succeed": 1}},)
 
 
 # "The crawl reports re-extraction and its cause"

@@ -249,11 +249,11 @@ def test_a_database_made_before_migrations(postgresql, fresh):
         f"INFO tables made before migrations found: adopted as 0001_baseline\n"
         f"INFO schema migrated from none to {schema.HEAD}\n"
     )
-    # 0002 drops datasets.extract_retry, the last column, and adds four to crawl_runs
+    # 0002 drops datasets.extract_retry, the last column, and adds five to crawl_runs
     after = rows_of(postgresql)
     assert after.pop("datasets") == [row[:-1] for row in rows.pop("datasets")]
     assert after.pop("crawl_runs") == [
-        (*row, *[None] * 4) for row in rows.pop("crawl_runs")
+        (*row, *[None] * 5) for row in rows.pop("crawl_runs")
     ]
     assert after == rows
     assert migrate.upgrade(conninfo_of(fresh)) == 0

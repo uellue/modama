@@ -9,7 +9,8 @@ becomes `extractor_identity`: the stored labels ("4") stay, and since no
 label equals a digest, the first crawl afterwards extracts every dataset
 once. `datasets.extract_retry` goes: every failure is tried again (D9).
 `crawl_runs` gets the run's identity, its ingredients, the re-extraction for
-a new identity per format (D6) and the spot check's outcome (D10).
+a new identity per format (D6), the failures tried again per format (D9) and
+the spot check's outcome (D10).
 
 The downgrade undoes it, and the older code reads the result correctly: it
 compares its labels with the stored digests, which never match, so it
@@ -31,6 +32,7 @@ RUN_COLUMNS = (
     ("identity", sa.Text()),
     ("identity_ingredients", JSONB()),
     ("reextracted", JSONB()),
+    ("retried", JSONB()),
     ("spot_check", JSONB()),
 )
 

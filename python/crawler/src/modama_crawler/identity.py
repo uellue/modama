@@ -47,18 +47,28 @@ def _outside(path: str, excluded: list[Path]) -> bool:
     return not any(p.is_relative_to(e) for e in excluded)
 
 
+def _left_out(name: str) -> bool:
+    """Bytecode, and an editor's lock files, autosaves and backups (review of the code, 3)."""
+    return name.endswith((".pyc", ".pyo", ".swp", "~")) or name.startswith(".#")
+
+
 def _files(location: Path) -> Iterable[Path]:
-    """The files of a package directory, tests, __pycache__ and bytecode left out."""
+    """The regular files of a package directory, tests, __pycache__, bytecode and editor files left out."""
     for directory, subdirectories, names in os.walk(location):
         subdirectories[:] = sorted(d for d in subdirectories if d not in LEFT_OUT)
         for name in sorted(names):
-            if not name.endswith((".pyc", ".pyo")):
-                yield Path(directory) / name
+            path = Path(directory) / name
+            # a dangling symlink, such as an Emacs lock file, is not a regular file
+            if not _left_out(name) and path.is_file():
+                yield path
 
 
 def _hash(path: Path) -> str:
-    with open(path, "rb") as f:
-        return hashlib.file_digest(f, "sha256").hexdigest()
+    try:
+        with open(path, "rb") as f:
+            return hashlib.file_digest(f, "sha256").hexdigest()
+    except OSError as e:  # unreadable: the identity is computed all the same
+        return f"unreadable: {e.strerror}"
 
 
 def _source_of(name: str) -> dict[str, str]:
@@ -144,12 +154,16 @@ def ingredients(site_packages: Iterable[str] | None = None) -> tuple[dict, list[
             imports.setdefault(name, set()).add(module.name)
 
     wanted = {m for name in providers | from_path for m in imports.get(name, ())}
-    # Every top-level package found outside site-packages and the standard library
+    # Every top-level package found outside site-packages and the standard library.
+    # Not in the scripts directory: it is sys.path[0] for a console script but not
+    # under `python -m`, so the two would differ (review of the code, 2); a module
+    # there (activate_this.py) is a script, not a library an extractor imports.
     candidates = set().union(*imports.values()) if imports else set()
+    scripts = Path(sysconfig.get_path("scripts")).resolve()
     outside = [
         p
         for p in (os.path.abspath(e or os.curdir) for e in sys.path)
-        if os.path.isdir(p) and _outside(p, excluded)
+        if os.path.isdir(p) and _outside(p, excluded) and Path(p).resolve() != scripts
     ]
     candidates |= {m.name for m in pkgutil.iter_modules(outside)}
     # RECORD-inferred names include dist-info directories and None: not import names
