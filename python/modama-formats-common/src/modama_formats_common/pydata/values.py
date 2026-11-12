@@ -9,7 +9,7 @@ from fnmatch import fnmatchcase
 
 from modama_crawler import extraction
 from modama_crawler.formats import Directory, Entry
-from modama_crawler.formats.values import MAX_ITEMS, textual
+from modama_crawler.formats.values import MAX_ITEMS, credential, textual
 
 # A walk over a file's entries (HDF5 objects, .npz members) stops at the
 # storage's limit of entries per dict, which would cut the rest anyway; after
@@ -44,9 +44,11 @@ class Walk:
         return self.cut is not None
 
     def add(self, name: str, value) -> None:
-        """value under name if it is suitable for text, as JSON holds it."""
+        """value under name if it is suitable for text, as JSON holds it, and no
+        credential (the shared check: a password in an attribute, a script's
+        `__token__`)."""
         value = plain(value)
-        if textual(value) and jsonable(value):
+        if textual(value) and jsonable(value) and not credential(name, value):
             self.values[name] = value
 
     def result(self) -> tuple[dict, dict]:

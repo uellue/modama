@@ -72,6 +72,13 @@ The extractor of the HDF5 types SHALL walk the file's objects with h5py, depth f
 - **WHEN** an HDF5 file has an attribute of 100 numbers, an opaque attribute of bytes, a scalar dataset of a string over 1,000 characters, a scalar object reference and a scalar of 100,000 bytes
 - **THEN** none of them is in `original_metadata`, and neither the attribute of 100 numbers nor the scalar of 100,000 bytes is read
 
+### Requirement: Credentials are left out
+A value that may be a credential by the shared check `modama_crawler.formats.values.credential` (its name, or a text such as a URL with a password) SHALL be left out of `original_metadata`, in every format of this part.
+
+#### Scenario: Credentials are left out
+- **WHEN** an HDF5 file has attributes `password`, `server` with a URL holding a password, and `operator`, and a script assigns `__token__` and `__version__`
+- **THEN** only `operator`, and `__version__` with the script's imports, are in `original_metadata`
+
 ### Requirement: Nothing is read from outside the file
 The extractor SHALL learn from a dataset's creation property list, before anything else is asked of it, whether it keeps its data outside the file: a virtual dataset SHALL give its dtype and the extent its first mapping declares, never its value or its shape as HDF5 computes it (which opens the source files of an unlimited one); a dataset with external raw storage SHALL give its shape and dtype, never its value. The files they refer to SHALL not be opened.
 

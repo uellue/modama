@@ -229,6 +229,18 @@ def test_an_attribute_nobody_has_seen_before(collection_tests, tmp_path):
     assert original(x)["blank"] == ""
 
 
+def test_credentials_are_left_out(collection_tests, tmp_path):
+    with h5py.File(tmp_path / "config.h5", "w") as f:
+        f.attrs["password"] = "hunter2"
+        f.attrs["server"] = "postgres://admin:hunter2@db/data"
+        f.attrs["operator"] = "someone"
+    (tmp_path / "settings.py").write_text('__token__ = "abc123"\n__version__ = "1"\n')
+    x, _ = extracted(collection_tests, tmp_path, "config.h5")
+    y, _ = extracted(collection_tests, tmp_path, "settings.py")
+    assert original(x) == {"operator": "someone"}
+    assert original(y) == {"__version__": "1", "imports": []}
+
+
 def test_values_not_suitable_for_text(collection_tests, tmp_path, monkeypatch):
     with h5py.File(tmp_path / "odd.h5", "w") as f:
         f.attrs["hundred"] = numpy.arange(100)
@@ -328,14 +340,14 @@ def test_raw_data_stored_in_another_file(collection_tests, tmp_path):
         text = h5py.h5t.C_S1.copy()
         text.set_size(8)
         scalar = h5py.h5s.create(h5py.h5s.SCALAR)
-        h5py.h5d.create(f.id, b"secret", text, scalar, dcpl=dcpl)
+        h5py.h5d.create(f.id, b"label", text, scalar, dcpl=dcpl)
         f.create_dataset("frames", shape=(8,), dtype="u1", external=[(str(raw), 0, 8)])
     opened = Opened(raw)
     x, _ = extracted(collection_tests, tree, "external.h5")
     assert "SECRET42" not in json.dumps(x.values)
     assert original(x) == {
-        "secret.shape": [],
-        "secret.dtype": "|S8",
+        "label.shape": [],
+        "label.dtype": "|S8",
         "frames.shape": [8],
         "frames.dtype": "|u1",
     }
