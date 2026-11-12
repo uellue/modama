@@ -76,18 +76,27 @@ def keys(conn: psycopg.Connection) -> Keys | None:
     return Keys(oai_prefix, url[: len(url) - len(quoted)])
 
 
-def dataset_of(conn: psycopg.Connection, path: str) -> tuple[str, bool] | None:
-    """(anchor, is a member of another dataset) of the dataset holding path, or None."""
+@dataclass(frozen=True)
+class Holding:
+    """The dataset that holds a path, as the crawler stored it."""
+
+    anchor: str
+    member: bool  # path is a member of the dataset, not its anchor
+    basis: str  # why the crawler recognised it, with the notes of dropped name types
+
+
+def dataset_of(conn: psycopg.Connection, path: str) -> Holding | None:
+    """The dataset holding path, or None."""
     row = conn.execute(
-        "SELECT anchor FROM datasets WHERE anchor = %s", (path,)
+        "SELECT anchor, basis FROM datasets WHERE anchor = %s", (path,)
     ).fetchone()
     if row:
-        return row[0], False
+        return Holding(row[0], False, row[1])
     row = conn.execute(
-        "SELECT d.anchor FROM members m JOIN datasets d USING (dataset_id) WHERE m.path = %s",
+        "SELECT d.anchor, d.basis FROM members m JOIN datasets d USING (dataset_id) WHERE m.path = %s",
         (path,),
     ).fetchone()
-    return (row[0], True) if row else None
+    return Holding(row[0], True, row[1]) if row else None
 
 
 def record(conn: psycopg.Connection, identifier: str) -> Record | None:

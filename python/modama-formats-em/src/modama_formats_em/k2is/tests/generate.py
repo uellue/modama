@@ -60,6 +60,35 @@ def upper_case(target: Path) -> None:
     capture(target, "mixed_", 8, bin=".BIN")
 
 
+def text_tags(target: Path) -> None:
+    """A text file named like a tag file, without sector files."""
+    target.mkdir(parents=True)
+    (target / "notes.gtg").write_text("hello\n")
+
+
+def empty_tags(target: Path) -> None:
+    """An empty file named like a tag file, without sector files."""
+    target.mkdir(parents=True)
+    (target / "empty.gtg").write_bytes(b"")
+
+
+def empty_capture(target: Path) -> None:
+    """A capture whose tag file an interrupted copy left empty, next to its 8 sector files."""
+    target.mkdir(parents=True)
+    (target / "Capture7_.gtg").write_bytes(b"")
+    for n in range(1, 9):
+        sector(target / f"Capture7_{n}.bin")
+
+
+def broken_next_to_complete(target: Path) -> None:
+    """A complete capture scan_ next to scan_2_, whose tag file holds text, each with 8 sector files."""
+    target.mkdir(parents=True)
+    capture(target, "scan_", 8)
+    (target / "scan_2_.gtg").write_text("hello\n")
+    for n in range(1, 9):
+        sector(target / f"scan_2_{n}.bin")
+
+
 def other_bin(target: Path) -> None:
     """A .bin file that is not a K2IS sector, and a sector file under another name."""
     target.mkdir(parents=True)

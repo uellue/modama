@@ -46,6 +46,7 @@ ADDED_FILE = "notes/added-after-the-first-harvest.txt"
 LATE_FILE = "notes/late-arrival.txt"
 RENAMED = ("notes/readme.txt", "notes/readme-renamed.txt")
 LOST_DOCUMENT = "notes/sample-list.csv"
+STRAY_TAGS = "stray/notes.gtg"
 MIXED = Path(core.__file__).parent / "tests" / "fixtures" / "mixed"
 
 
@@ -234,6 +235,9 @@ def tree():
     (DATA / DISTINCT_FILE).write_text("Ferritin lamella, thickness map\n")
     (DATA / "notes" / "readme.txt").write_text("Plain notes\n")
     (DATA / "notes" / "sample-list.csv").write_text("id,name\n1,a\n")
+    # A text file named like a K2IS tag file (change recognition-checks-content)
+    (DATA / "stray").mkdir()
+    (DATA / STRAY_TAGS).write_text("hello\n")
     crawl()
     TREE_CRAWL["started_at"] = latest_crawl_start()
     expected = oracle()
@@ -293,8 +297,22 @@ def test_the_raw_file_of_an_empad_pair(tree):
     (header,) = (DATA / "scan").glob("*.xml")
     stages, first = trace(f"/scan/{raw.name}")
     assert first is None
-    assert stages["crawler"].detail == f"member of /scan/{header.name}"
+    # Then the dataset's basis (spec chain-trace, change recognition-checks-content)
+    assert stages["crawler"].detail.startswith(
+        f"member of /scan/{header.name}; basis: "
+    )
     assert stages["index"].key.endswith(f"/scan/{header.name}")
+
+
+def test_the_crawler_line_shows_the_datasets_basis(tree):
+    # Spec chain-trace, "A text file named like a K2IS tag file" and "A plain file"
+    stages, first = trace("/" + STRAY_TAGS)
+    assert first is None
+    assert stages["crawler"].detail == (
+        "dataset; basis: single file; em/k2is: not application/x.dm-gtg, no DM header"
+    )
+    stages, _ = trace("/" + DISTINCT_FILE)
+    assert stages["crawler"].detail == "dataset; basis: single file"
 
 
 def test_extracted_metadata_reaches_the_search(tree):

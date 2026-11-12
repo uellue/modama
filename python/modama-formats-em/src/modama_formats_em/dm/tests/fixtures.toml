@@ -22,9 +22,50 @@ validity = "a 2x2 image of DataType 23 (RGBA), 15 top-level tag groups; RosettaS
 licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/test-8.dm4, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/digitalmicrograph/2D/test-8.dm4, sha256 289d58cb13b6deb0932b9aaf256aa04d13d5e017fa92c09aa7b01a59ecdd7132, unchanged"
 
-[dmw_file]
+[workspace]
 purpose = "representative"
-validity = "a stand-in, not a real .dmw file, until one is agreed (task 3.3 of dm-containers-and-k2is): the vendor-written DM4 image of cl_image_dm4, unchanged, named conditions_00C.dmw as a staging file is. It holds an image, staging's .dmw files hold none (F15), so it stands for their name only; the name decides the type, the content is not read for it"
+validity = "vendor-written: a DigitalMicrograph workspace saved by Gatan Microscopy Suite on 2026-11-12 (@weber, open item 155), unchanged: the DM4 header and only root tags, no ImageList (File count 2, File name 0 and 1 with Windows paths to two DM4 images in a folder beside it, Frame 0 and 1, Window 0 and 1, Workspace name); read by rosettasciio 0.15.0 on 2026-11-12. The two images it names are not included and need not exist: the description lists the names as the file holds them. A workspace saved with 'only unsaved data' has the same tags, apart from its name"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "@weber's exemplary_workspace.dmw (846 bytes), made for this purpose on 2026-11-12, sha256 33be52abb9ac4f5388db2e731549fe52f40c00260fc1b78150ea03606d6cfa7e, unchanged"
+
+[compressed_workspace]
+purpose = "representative"
+validity = "composed: a ZIP laid out as Gatan Microscopy Suite writes a compressed workspace (structure observed on @weber's exemplary_workspace.dmwx, 2026-11-12, from its first local header and central directory: <name>/<name>.dmw first, then the directory <name>/files/ and the images, all deflated), of two fixtures here: the workspace of fixture workspace, unchanged, and the vendor-written DM4 image of cl_image_dm4, unchanged, as its one image. The workspace names two other images (GMS's own .dmw inside a .dmwx is a different, smaller file); the archive's members are the composed ones"
+licence = "GPL-3.0-or-later for the image, MIT for the workspace (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.dm.tests.generate:compressed_workspace, from the fixtures workspace and cl_image_dm4"
+generator = "modama_formats_em.dm.tests.generate:compressed_workspace"
+
+[text_dmwx]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.dmwx, not a ZIP (spec formats/dm, a text file named like a compressed workspace)"
+licence = "MIT"
+source = "modama_formats_em.dm.tests.generate:text_dmwx"
+generator = "modama_formats_em.dm.tests.generate:text_dmwx"
+
+[zip_without_workspace]
+purpose = "reproducer"
+validity = "invalid-by-design: a ZIP named other.dmwx whose first member is readme.txt, the workspace of fixture workspace second (spec formats/dm, a ZIP without a workspace first)"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.dm.tests.generate:zip_without_workspace, with the workspace of fixture workspace"
+generator = "modama_formats_em.dm.tests.generate:zip_without_workspace"
+
+[dm3_dmw]
+purpose = "reproducer"
+validity = "a stand-in for a DM3 .dmw file, of which none has been seen (decision 174, a file of interest): the vendor-written DM3 image of stem_image_dm3, unchanged, named old_workspace.dmw. It holds an image and its tags, which a real workspace does not (see workspace); its colour table tag is 6,053 characters as a phrase, longer than storage keeps"
 licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
-source = "modama_formats_em.dm.tests.generate:dmw_file, from the file of cl_image_dm4"
-generator = "modama_formats_em.dm.tests.generate:dmw_file"
+source = "modama_formats_em.dm.tests.generate:dm3_dmw, from the file of stem_image_dm3"
+generator = "modama_formats_em.dm.tests.generate:dm3_dmw"
+
+[text_dmw]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.dmw without a Digital Micrograph header (spec formats/dm, a text file named like a workspace)"
+licence = "MIT"
+source = "modama_formats_em.dm.tests.generate:text_dmw"
+generator = "modama_formats_em.dm.tests.generate:text_dmw"
+
+[empty_dmw]
+purpose = "reproducer"
+validity = "invalid-by-design: an empty file named empty.dmw, as an interrupted copy leaves one (spec formats/dm, an empty file named like a workspace)"
+licence = "MIT"
+source = "modama_formats_em.dm.tests.generate:empty_dmw"
+generator = "modama_formats_em.dm.tests.generate:empty_dmw"

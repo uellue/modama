@@ -65,6 +65,55 @@ class Pair(Format):
 Rules: claim only entries of `d` and whole child datasets (`parts=`); never
 open files yourself; keep `recognize` fast, it has a time limit per directory.
 
+### A file that is not of its name's type
+
+A glob decides a type without reading the file, so a text file named like
+your format's files gets your type. Your format can check the file's first
+bytes and say it is not of that type (change `recognition-checks-content`):
+
+```python
+class Workspace(Format):
+    type = "application/x.example-workspace"  # *.exw in the XML, a name rule only
+    priority = 61  # above the formats that are to claim its files' new types
+    reacts_to = frozenset({type})
+
+    def recognize(self, d: Directory):
+        for e in d.of_type(self.type):
+            # The signature only, as a content rule would test it; never parse to decide
+            if d.read(e, 4) != b"EXW1":
+                # The file gets the type it has without its name rule, for the
+                # formats after this one and as a single file; the reason goes
+                # into its dataset's basis
+                d.not_of_type(e, "no EXW1 header")
+                continue
+            yield Dataset(anchor=e.rel, basis="EXW1 header")
+```
+
+- Only a type that one name rule gave is dropped. A file typed by its content
+  keeps its type, and the crawl warns: the content rule is too weak.
+- Decide what is broken by the files around it before you check: K2IS groups
+  a `.gtg` with its 8 sector files whatever the `.gtg` holds (a broken
+  capture, reported at extraction), and checks only a `.gtg` without them.
+- The core finds the new type with a read that does not count against your
+  budget. A read error there keeps the file's type and warns at it
+  (`d.cannot_read`), and the directory is recognised again next crawl; your
+  call goes on. Where one file's read error must not decide the others'
+  outcome, catch `OSError` around your own `d.read` of it and call
+  `d.cannot_read(e, error)` too (`modama_formats_em.dm.header`). An exception
+  out of `recognize` discards all of your datasets of the directory.
+- A file of your type that is odd but kept (a variant nobody has seen yet)
+  can be flagged for a person with `d.note(e, "file of interest: …")`: the
+  note goes into its dataset's basis, its type stays.
+- Drop only types of files you react to: a drop of a file a format that ran
+  earlier claimed is undone, with a warning.
+- Order: a format that runs before yours does not see the new type. Give
+  yours a higher priority than the formats that are to claim the new types.
+  The crawl warns when a format that ran earlier reacts to a dropped file's
+  new type; it cannot tell for formats that react to `DIRECTORY`.
+- A changed priority needs a new recognition `version`: priorities are not
+  part of the rule set's fingerprint, and a directory taken over from the
+  last crawl keeps the outcome of the old order, types included.
+
 ## Extracting metadata
 
 A format may also read metadata from its datasets' files, after recognition:

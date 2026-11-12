@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/other.dmwx",
+      "basis": "single file; em/dmwx: not application/x.dm-dmwx, no .dmw first in a ZIP",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/other.dmwx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/zip",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

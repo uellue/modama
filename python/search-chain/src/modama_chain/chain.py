@@ -113,7 +113,7 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
     with connect(stores.crawler_db, "crawler database") as conn:
         rules = crawler.keys(conn)
         found = crawler.dataset_of(conn, path)
-        anchor = found[0] if found else path
+        anchor = found.anchor if found else path
         identifier = rules.identifier(anchor) if rules else ""
         rec = crawler.record(conn, identifier) if rules else None
     published = rec is not None
@@ -122,20 +122,12 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
             "crawler", MISSING, detail="no records, so no keys to follow downstream"
         )
         return
-    if found and found[1]:
-        detail = f"member of {anchor}"
-    elif found:
-        detail = "dataset" if published else "dataset without a record"
-    else:
-        detail = "keys rebuilt from the path"
-    if published and not in_tree and not (found and found[1]):
-        detail += "; not in the tree, the next crawl drops it"
     yield Stage(
         "crawler",
         OK if published else MISSING,
         identifier,
         when(rec and rec.datestamp),
-        detail,
+        crawler_detail(found, published, in_tree),
     )
 
     oai = oai_datestamp(stores.oai_url, identifier)
@@ -203,6 +195,23 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
     yield search_stage(
         anchor, url, warehouse.search(stores.search_api, anchor), published
     )
+
+
+def crawler_detail(
+    found: crawler.Holding | None, published: bool, in_tree: bool
+) -> str:
+    """The crawler line's detail: the dataset holding the path and its basis (spec chain-trace)."""
+    if found and found.member:
+        detail = f"member of {found.anchor}"
+    elif found:
+        detail = "dataset" if published else "dataset without a record"
+    else:
+        detail = "keys rebuilt from the path"
+    if published and not in_tree and not (found and found.member):
+        detail += "; not in the tree, the next crawl drops it"
+    if found:
+        detail += f"; basis: {found.basis}"
+    return detail
 
 
 def harvest_stage(local: str, datestamp, event, last_closed) -> Stage:

@@ -1,0 +1,27 @@
+{
+  "datasets": [
+    {
+      "anchor": "/Capture7_.gtg",
+      "basis": "8 sector files Capture7_*.bin",
+      "collapsed": false,
+      "format": "em/k2is",
+      "members": [
+        "/Capture7_.gtg",
+        "/Capture7_1.bin",
+        "/Capture7_2.bin",
+        "/Capture7_3.bin",
+        "/Capture7_4.bin",
+        "/Capture7_5.bin",
+        "/Capture7_6.bin",
+        "/Capture7_7.bin",
+        "/Capture7_8.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

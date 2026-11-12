@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/old_workspace.dmw",
+      "basis": "Digital Micrograph header; file of interest: DM3, no .dmw in DM3 seen yet",
+      "collapsed": false,
+      "format": "em/dmw",
+      "members": [
+        "/old_workspace.dmw"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm-dmw",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
