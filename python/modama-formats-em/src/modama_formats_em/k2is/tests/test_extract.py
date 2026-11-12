@@ -15,7 +15,7 @@ from modama_crawler.testing import recognise
 from modama_crawler.walk import walk
 
 from modama_formats_em import k2is
-from modama_formats_em.testing import described
+from modama_formats_em.testing import described, stale
 
 
 def test_a_capture_with_its_8_sectors(collection_tests, tmp_path):
@@ -134,6 +134,31 @@ def test_records_comments_a_single_file_whose_name_type_was_dropped(tmp_path):
     )
     assert out.split(comment, 1)[1].lstrip().startswith("<record>")
     assert "<!-- 1 records (1 single files by type), 0 warnings, 0 skipped -->" in out
+
+
+@pytest.mark.parametrize("module", ["format's read", "new type's detection"])
+def test_a_lone_tag_file_that_cannot_be_read(
+    collection_tests, tmp_path, monkeypatch, module
+):
+    # Code review finding 1: a stray notes.gtg that cannot be read (stale handle, or
+    # moved away after the listing) keeps its type, and the capture next to it stands
+    from modama_crawler import formats, mime
+
+    tree = collection_tests.materialise("capture52", tmp_path)
+    (tree / "notes.gtg").write_text("hello\n")
+    where = formats if module == "format's read" else mime
+    monkeypatch.setattr(where, "open", stale("notes.gtg"), raising=False)
+    result = walk(tree, collection_tests.collection.formats)
+    datasets = {d.anchor: d for d in result.datasets}
+    assert set(datasets) == {"/Capture52_.gtg", "/notes.gtg"}
+    capture = datasets["/Capture52_.gtg"]
+    assert (capture.format, len(capture.members)) == ("em/k2is", 9)
+    notes = datasets["/notes.gtg"]
+    assert (notes.type, notes.basis) == ("application/x.dm-gtg", "single file")
+    assert result.all_warnings() == [
+        ("/notes.gtg", "em/k2is: cannot read notes.gtg: Stale file handle; type kept")
+    ]
+    assert result.listings["/"].retry  # recognised again next crawl
 
 
 def test_an_empty_tag_file_with_its_8_sectors(collection_tests, tmp_path):

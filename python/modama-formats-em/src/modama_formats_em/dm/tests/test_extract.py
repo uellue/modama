@@ -7,11 +7,13 @@ import errno
 import os
 
 import pytest
+from modama_crawler import extraction
 from modama_crawler.records import description
 from modama_crawler.testing import recognise
+from modama_crawler.walk import walk
 
 from modama_formats_em.dm import first_image, parsed, version
-from modama_formats_em.testing import described
+from modama_formats_em.testing import described, stale
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -40,9 +42,10 @@ def test_a_dmw_file_with_the_dm4_header(collection_tests, tmp_path):
     # Its record names the .dmw type, not a DM image, and its extraction does not fail
     (dmw,) = described(collection_tests, "dmw_file", tmp_path / "x")
     assert dmw.description.endswith(
-        "; Gatan Digital Micrograph .dmw file, 1 file, 611.4 kB, in /"
+        "; Gatan Digital Micrograph workspace, 1 file, 611.4 kB, in /"
     )
     assert "Digital Micrograph (DM" not in dmw.description
+    # One name for the type, in the subject as in the description (code review finding 7)
     assert dmw.subjects == ["Gatan Digital Micrograph workspace"]
 
 
@@ -56,6 +59,45 @@ def test_a_representative_dmw_file(collection_tests, tmp_path):
     assert "ImageList.TagGroup1.ImageTags.DataBar.Device Name DigiScan" in summary
     # The tags, not the image data, in reads of at most 64 KiB (as for DM images)
     assert_tags_read(dmw, "/conditions_00C.dmw")
+
+
+def test_the_stored_dmw_description(collection_tests, tmp_path):
+    # What the extraction stores, as a crawl runs it (code review finding 5): every
+    # tag, each phrase cut to 4,096 characters (extraction.MAX_STRING)
+    tree = collection_tests.materialise("dmw_file", tmp_path)
+    result = walk(tree, collection_tests.collection.formats)
+    formats = collection_tests.collection.formats
+    extraction.extract(result, formats, str(tree), workers=1)
+    (d,) = result.datasets
+    stored = d.extraction.extracted.summary
+    assert len(stored) == 298 <= extraction.MAX_ITEMS
+    (cut,) = [p for p in stored if len(p) == extraction.MAX_STRING]
+    clut = "DocumentObjectList.TagGroup0.ImageDisplayInfo.CLUT [(0, 0, 0), "
+    assert cut.startswith(clut)
+    assert max(len(p) for p in stored) == extraction.MAX_STRING
+    assert result.all_warnings() == []
+
+
+def test_a_dmw_file_that_cannot_be_read(collection_tests, tmp_path, monkeypatch):
+    # Code review finding 1: one unreadable .dmw keeps its type, and the other's dataset stands
+    from modama_crawler import formats
+
+    tree = collection_tests.materialise("dmw_file", tmp_path)
+    (tree / "broken.dmw").write_text("hello\n")
+    monkeypatch.setattr(formats, "open", stale("broken.dmw"), raising=False)
+    result = walk(tree, collection_tests.collection.formats)
+    datasets = {d.anchor: d for d in result.datasets}
+    assert datasets["/conditions_00C.dmw"].format == "em/dmw"
+    broken = datasets["/broken.dmw"]
+    assert (broken.type, broken.format, broken.basis) == (
+        "application/x.dm-dmw",
+        "",
+        "single file",
+    )
+    assert result.all_warnings() == [
+        ("/broken.dmw", "em/dmw: cannot read broken.dmw: Stale file handle; type kept")
+    ]
+    assert result.listings["/"].retry
 
 
 def test_a_dmw_file_with_the_dm3_header(collection_tests, tmp_path):

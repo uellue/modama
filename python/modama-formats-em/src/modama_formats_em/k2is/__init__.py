@@ -14,7 +14,7 @@ from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
-from ..dm import HEADER, parsed, tag_paths, version
+from ..dm import header, parsed, tag_paths, version
 
 HERE = Path(__file__).parent
 ACQUISITION = "application/x.k2is"
@@ -74,8 +74,9 @@ class K2is(Format):
                     f"{tags.name}: {len(mine)} sector files {stem}*.bin, "
                     f"a K2IS acquisition has {SECTORS}",
                 )
-            elif version(d.read(tags, HEADER)) != 4:
-                # A lone .gtg: of the type only with the DM4 header (decision 147)
+            # A lone .gtg: of the type only with the DM4 header (decision 147);
+            # one that cannot be read keeps its type (dm.header)
+            elif (data := header(d, tags)) is not None and version(data) != 4:
                 d.not_of_type(tags, "no DM4 header")
         orphans = sorted(s.name for s in sectors if s.rel not in taken)
         if orphans:

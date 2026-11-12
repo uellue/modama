@@ -12,7 +12,14 @@ from contextlib import suppress
 from copy import deepcopy
 from pathlib import Path
 
-from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
+from modama_crawler.formats import (
+    Collection,
+    Dataset,
+    Directory,
+    Entry,
+    Extracted,
+    Format,
+)
 
 HERE = Path(__file__).parent
 # Python sizes a file's buffer from st_blksize, 1 MiB on NFS: every seek in the tag
@@ -32,6 +39,17 @@ def version(data: bytes) -> int | None:
     v = int.from_bytes(data[:4], "big") if len(data) >= 4 else None
     flag = {3: data[8:12], 4: data[12:16]}.get(v)
     return v if flag in (bytes(4), b"\0\0\0\1") else None
+
+
+def header(d: Directory, e: Entry) -> bytes | None:
+    """The first HEADER bytes of e, or None if it cannot be read: then it keeps its type, the crawl warns
+    at it, and the directory is recognised again next crawl (Directory.cannot_read), while the format's
+    other datasets stand (change recognition-checks-content, code review finding 1)."""
+    try:
+        return d.read(e, HEADER)
+    except OSError as error:
+        d.cannot_read(e, error)
+        return None
 
 
 def tag_paths(
@@ -183,12 +201,12 @@ class Dmw(Format):
 
     The name decides the type without reading the file; recognition reads its
     header, and a file without one gets the type it has without the name rule
-    (Directory.not_of_type). Gatan's own name for these files is to be
-    confirmed with fresh ones (open item 155).
+    (Directory.not_of_type). Its name, in the subject and the description,
+    is the type's comment in dm.xml, one name in both (Gatan's own name is to
+    be confirmed with fresh files, open items 155 and 184).
     """
 
     type = DMW
-    display_name = "Gatan Digital Micrograph workspace"
     # Before em/dm3 and em/dm4 (60), which may claim a dropped file (decision 165)
     priority = 61
     reacts_to = frozenset({type})
@@ -196,7 +214,9 @@ class Dmw(Format):
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         # By type, not by name: the glob matches any case (Up.DMW)
         for e in d.of_type(self.type):
-            match version(d.read(e, HEADER)):
+            if (data := header(d, e)) is None:
+                continue
+            match version(data):
                 case 4:
                     yield Dataset(anchor=e.rel, basis="Digital Micrograph header")
                 case 3:

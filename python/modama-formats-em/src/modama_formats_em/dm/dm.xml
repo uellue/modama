@@ -35,7 +35,7 @@
        verified. The .gtg tag files of K2IS captures are typed the same way, in
        k2is/. -->
   <mime-type type="application/x.dm-dmw">
-    <comment>Gatan Digital Micrograph .dmw file</comment>
+    <comment>Gatan Digital Micrograph workspace</comment>
     <sub-class-of type="application/x.dm4"/>
     <glob pattern="*.dmw"/>
   </mime-type>
