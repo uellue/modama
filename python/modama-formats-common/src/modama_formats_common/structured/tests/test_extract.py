@@ -6,6 +6,7 @@ import os
 import time
 
 import pytest
+import yaml
 
 from modama_formats_common.structured import LIMIT
 from modama_formats_common.structured.entries import MAX_ENTRIES
@@ -128,6 +129,24 @@ def test_a_yaml_timestamp(collection_tests, tmp_path):
     assert d.original == {"started": "2026-11-12 21:04:05.5 +01:00"}
 
 
+def test_yaml_keys_as_written(collection_tests, tmp_path):
+    # YAML 1.1 reads these keys as True, None and 1.0 (GitHub Actions' on:)
+    d = one(
+        collection_tests,
+        tmp_path,
+        "keys.yaml",
+        "on:\n  push: {}\nyes: 1\nnull: 2\n~: 3\n1.0: f\n2026-11-12: d\n",
+    )
+    assert d.original == {
+        "on.push": {},
+        "yes": 1,
+        "null": 2,
+        "~": 3,
+        "1.0": "f",
+        "2026-11-12": "d",
+    }
+
+
 def test_a_yaml_tag_of_an_application(collection_tests, tmp_path):
     # As in deploy/docker-compose.override.yml: Compose's own tags, which
     # PyYAML's safe loader refuses (ConstructorError)
@@ -151,7 +170,56 @@ def test_a_yaml_tag_of_an_application(collection_tests, tmp_path):
 
 def test_not_a_number(collection_tests, tmp_path):
     d = one(collection_tests, tmp_path, "nan.json", '{"a": NaN, "b": 1e999}')
-    assert d.original == {"a": "NaN", "b": "inf"}
+    assert d.original == {"a": "NaN", "b": "1e999"}
+    y = one(collection_tests, tmp_path / "y", "inf.yaml", "a: .inf\nb: .NaN\n")
+    assert y.original == {"a": ".inf", "b": ".NaN"}
+
+
+def test_json_numbers_as_written(collection_tests, tmp_path):
+    d = one(
+        collection_tests,
+        tmp_path,
+        "n.json",
+        '{"a": 1.0E-3, "b": 0.00001, "c": 1.5, "d": 1.0, "e": 12, "f": -0}',
+    )
+    # A number where it prints as written, else its text
+    assert d.original == {
+        "a": "1.0E-3",
+        "b": "0.00001",
+        "c": 1.5,
+        "d": 1.0,
+        "e": 12,
+        "f": 0,
+    }
+    toml = one(collection_tests, tmp_path / "t", "n.toml", "a = 1.0E-3\nb = 2.5\n")
+    assert toml.original == {"a": "1.0E-3", "b": 2.5}
+
+
+def test_yaml_values_as_written(collection_tests, tmp_path):
+    # YAML 1.1 reads these as 630, 1.1, 10, False, 31, 1e-05 and None
+    d = one(
+        collection_tests,
+        tmp_path,
+        "v.yaml",
+        "time: 10:30\nversion: 1.10\ncode: 012\ncountry: NO\nmask: 0x1F\n"
+        "small: 0.00001\ntilde: ~\nempty:\n"
+        "n: 12\nx: 1.5\nok: true\nnothing: null\nquoted: '012'\n",
+    )
+    assert d.original == {
+        "time": "10:30",
+        "version": "1.10",
+        "code": "012",
+        "country": "NO",
+        "mask": "0x1F",
+        "small": "0.00001",
+        "tilde": "~",
+        "empty": "",
+        "n": 12,
+        "x": 1.5,
+        "ok": True,
+        "nothing": None,
+        "quoted": "012",
+    }
 
 
 # Every element and attribute of an XML document is kept
@@ -297,6 +365,22 @@ def test_a_yaml_alias_bomb(collection_tests, tmp_path):
         assert d.mapped["cut_at_entries"] == kept
 
 
+def test_a_yaml_merge_key_bomb(collection_tests, tmp_path):
+    # 10 pairs, then levels merging 10 copies of the level before: 10^9 pairs at
+    # level 9, which the safe loader would flatten (the review's merge_bomb)
+    lines = ["l0: &l0 {" + ", ".join(f"k{i}: {i}" for i in range(10)) + "}"]
+    for n in range(1, 10):
+        lines.append(f"l{n}: &l{n} {{<<: [" + ", ".join([f"*l{n - 1}"] * 10) + "]}")
+    fmt = next(f for f in collection_tests.collection.formats if f.id == "common/yaml")
+    start = time.monotonic()
+    with pytest.raises(yaml.constructor.ConstructorError, match="merge keys give"):
+        fmt.describe("\n".join(lines).encode(), "/bomb.yaml")
+    assert time.monotonic() - start < 1.0
+    # A merge as YAML files use it stays
+    d = one(collection_tests, tmp_path, "m.yaml", "b: &b {x: 1}\nd: {<<: *b, y: 2}\n")
+    assert d.original == {"b.x": 1, "d.x": 1, "d.y": 2}
+
+
 # The summary line
 
 
@@ -337,10 +421,26 @@ def test_a_value_whose_name_says_it_is_secret(collection_tests, tmp_path):
     d = one(collection_tests, tmp_path, "config.json", json.dumps(document))
     # credentials.id too: any part of the path counts
     assert d.original == {"db.user": "u"}
+    assert d.mapped["credentials_left_out"] == 7
     ini = one(
         collection_tests, tmp_path / "ini", "a.ini", "[db]\npassword = p\nhost = h\n"
     )
     assert ini.original == {"db.host": "h"}
+    assert ini.mapped["credentials_left_out"] == 1
+
+
+def test_a_credential_in_a_value(collection_tests, tmp_path):
+    # The review's cases (values.credential, python/crawler/tests/test_values.py)
+    compose = (
+        b"services:\n  db:\n    environment:\n      - POSTGRES_PASSWORD=hunter2\n"
+        b"      - POSTGRES_USER=u\n    command: --requirepass hunter2\n"
+        b"    image: redis\n"
+        b"  web:\n    url: postgres://admin:hunter2@db/x\n    auth: Basic aHVudGVyMg==\n"
+    )
+    d = one(collection_tests, tmp_path, "compose.yml", compose)
+    assert d.original == {"services.db.image": "redis"}
+    assert d.mapped["credentials_left_out"] == 4
+    assert "hunter2" not in d.description
 
 
 def test_a_long_text_and_a_long_list(collection_tests, tmp_path):

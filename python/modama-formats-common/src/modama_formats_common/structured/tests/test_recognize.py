@@ -1,6 +1,11 @@
 """Recognition (spec formats/structured, "Structured files are datasets of their type", "A name that lies falls back to the content's type")."""
 
+import pytest
+from modama_crawler import mime, mimedb
 from modama_crawler.testing import recognise
+from modama_crawler.walk import walk
+
+from modama_formats_common.structured import COLLECTION
 
 TYPES = {
     "conda_index": {"/index.json": ("common/json", "application/json")},
@@ -63,21 +68,60 @@ def test_an_empty_json(collection_tests, tmp_path):
     )
 
 
-def test_text_named_xml(collection_tests, tmp_path):
-    notes = by_anchor(collection_tests, "not_of_their_name", tmp_path)["/notes.xml"]
-    assert (notes.format, notes.type) == ("", "text/plain")
-    assert "common/xml: not application/xml, no < first" in notes.basis
+def test_text_named_xml(collection_tests, mime_database, tmp_path):
+    # As deployed, modama-formats-em installed: EMPAD's *.xml glob ties with
+    # application/xml's, so the type is kept with a warning (BACKLOG, "A name type
+    # that a glob tie resolves to cannot be dropped")
+    if "em" not in mime_database:
+        pytest.fail("modama-formats-em is not installed: it is in every deployment")
+    own = mime.database
+    try:
+        mimedb.build(mime_database.values(), tmp_path / "mime-all")
+        tree = collection_tests.materialise("not_of_their_name", tmp_path)
+        result = walk(tree, COLLECTION.formats)
+    finally:
+        mimedb.activate(own)
+    notes = next(d for d in result.datasets if d.anchor == "/notes.xml")
+    assert (notes.format, notes.type) == ("", "application/xml")
+    assert (
+        "/notes.xml",
+        (
+            "common/xml: notes.xml is not application/xml (no < first), "
+            "but that type does not come from its name alone; type kept"
+        ),
+    ) in result.warnings
+    # Without EMPAD's glob the core drops the type: the content's type
+    own_only = by_anchor(collection_tests, "not_of_their_name", tmp_path / "own")
+    assert own_only["/notes.xml"].type == "text/plain"
+    assert "common/xml: not application/xml, no < first" in own_only["/notes.xml"].basis
 
 
 def test_a_cfg_that_is_not_ini(collection_tests, tmp_path):
     found = by_anchor(collection_tests, "not_of_their_name", tmp_path)
-    for name, fmt, mime in (
+    for name, fmt, named in (
         ("turtle.cfg", "common/cfg", "text/x-config"),
         ("keys.ini", "common/ini", "text/x-ini"),
     ):
         d = found[f"/{name}"]
         assert (d.format, d.type) == ("", "text/plain")
-        assert f"{fmt}: not {mime}, no [section] first" in d.basis
+        assert f"{fmt}: not {named}, no [section] first" in d.basis
+
+
+def test_formats_that_drop_types_run_before_text(mime_database):
+    """A file these formats give text/plain is claimed by a format of text/plain
+    only if that runs after them (recognition-checks-content D3): every installed
+    format that reacts to text/plain has a lower priority. Holds trivially until
+    the text area is merged."""
+    ours = [f for f in COLLECTION.formats if f.head]
+    text = [
+        f
+        for c in mime_database.values()
+        for f in c.formats
+        if "text/plain" in f.reacts_to
+    ]
+    for theirs in text:
+        for mine in ours:
+            assert mine.priority > theirs.priority, (mine.id, theirs.id)
 
 
 def test_an_empty_cfg(collection_tests, tmp_path):

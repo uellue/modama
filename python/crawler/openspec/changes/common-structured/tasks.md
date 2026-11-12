@@ -10,6 +10,6 @@
 
 ## 2. Checks and review
 
-- [ ] 2.1 `pytest src` of `modama-formats-common`, the crawler's suite, `uvx ruff format --check --diff` and `uvx ruff check` from the repository root. Verify: their output in the hand-over.
-- [ ] 2.2 Review by an agent that did not write the code (main starts it); findings verified and applied. Verify: the review's findings and the fixes, listed in the hand-over.
+- [x] 2.1 `pytest src` of `modama-formats-common`, the crawler's suite, `uvx ruff format --check --diff` and `uvx ruff check` from the repository root. Verify: their output in the hand-over.
+- [x] 2.2 Review by an agent that did not write the code (main starts it); findings verified and applied. Verify: the review's findings and the fixes, listed in the hand-over. Done 2026-11-12: priority 21 with an order test; the glob tie and one XML flattener to BACKLOG; YAML keys and values as written in one loader (`yamldoc.py`) with the merge-key bound; JSON and TOML floats as written; the shared credential check in `formats/values.py` with tests; README.
 - [ ] 2.3 @weber looks at real files with `modama-chain browse` on staging (after main's combined e2e and an image rebuild). Verify: his remarks.

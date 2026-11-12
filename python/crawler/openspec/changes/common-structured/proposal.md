@@ -24,6 +24,14 @@ The tree holds structured data files that today become single-file datasets with
 - **The walk's bound** is 10,000 values, not 100,000: a bomb's 100,000 took 0.85 s.
 - **The summary line** writes a text's whitespace as single spaces (INI and YAML values over several lines, XML text around a value).
 
+## After the review of 2026-11-12 (main's decisions)
+
+- **Priority 21**, not 10: after the domain formats, before the text area (20), which claims the `text/plain` these formats give a misnamed file (recognition-checks-content D3); a test checks the order against every installed format of `text/plain`.
+- **The glob tie** stays as it is tonight; BACKLOG has the reviewer's two-step fix of the core. The scenario "Text named .xml" says what a deployment (with `modama-formats-em`) does.
+- **Credentials** are one shared check, `modama_crawler.formats.values.credential`, next to `textual`, for every collection (TEMPLATE.md's checklist): by name and by value (`POSTGRES_PASSWORD=…`, `--requirepass …`, a URL with a password, `Basic …`); left out, counted in `mapped_metadata`.
+- **Values as written** (main, after the text area's review): one YAML loader for the package, `modama_formats_common/yamldoc.py`, used by this area and the text area: keys as written, plain values as written wherever YAML 1.1's value prints differently (`10:30`, `1.10`, `012`, `NO`, `0x1F`), unknown tags as plain values, merge keys bounded at 10,000 pairs. JSON and TOML floats as written where Python prints them differently (`1.0E-3`); TOML integers as tomllib gives them (no hook).
+- **One XML flattener** with EMPAD's: BACKLOG.
+
 ## What Changes
 
 - New area `structured` of `modama-formats-common` (`src/modama_formats_common/structured/`): formats `common/json`, `common/jsonschema`, `common/yaml`, `common/toml`, `common/csv`, `common/xml`, `common/ini`, `common/cfg`, each a single-file dataset with an extractor; `structured.xml` with the `.ini` and `.cfg` types; fixtures (generated, and public samples from qeschema and toml-lang, MIT) and tests.

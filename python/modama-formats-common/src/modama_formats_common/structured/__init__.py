@@ -1,10 +1,11 @@
 """Structured data files: JSON, YAML, TOML, CSV, XML, INI and .cfg, each a single-file dataset described by what it says.
 
 Read with the established readers (json, tomllib, csv, configparser from the
-standard library; PyYAML's safe loader; defusedxml), whole documents of at most
-LIMIT bytes, and kept as flat entries (entries.py) but one skip list; spec
-formats/structured. These formats run last and claim only the generic types:
-a subtype (EMPAD's header, SVG, a notebook) keeps its own.
+standard library; PyYAML's safe loader as ..yamldoc changes it; defusedxml), whole
+documents of at most LIMIT bytes, and kept as flat entries (entries.py) but one
+skip list; spec formats/structured. These formats run after the domain formats
+and claim only the generic types: a subtype (EMPAD's header, SVG, a notebook)
+keeps its own.
 """
 
 import configparser
@@ -17,7 +18,6 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
-import yaml
 from modama_crawler.formats import (
     Collection,
     Dataset,
@@ -27,6 +27,7 @@ from modama_crawler.formats import (
     Format,
 )
 
+from .. import yamldoc
 from .entries import headline, kept, of_data, of_documents, of_xml
 
 HERE = Path(__file__).parent
@@ -75,10 +76,12 @@ def bounded(path: str) -> bytes | None:
 def described(
     pairs: Iterable[tuple[str, object]], where: str, mapped: dict, skip=None
 ) -> tuple[list[str], dict]:
-    """The summary line and the values of a document's pairs, with the cut said in mapped."""
-    original, cut = kept(pairs, where)
+    """The summary line and the values of a document's pairs, with the cut and the credentials left out said in mapped."""
+    original, cut, secrets = kept(pairs, where)
     if cut:
         mapped["cut_at_entries"] = len(original)
+    if secrets:
+        mapped["credentials_left_out"] = secrets
     line = headline(original, skip) if skip else headline(original)
     return line, {"original_metadata": original, "mapped_metadata": mapped}
 
@@ -86,7 +89,11 @@ def described(
 class Document(Format):
     """A file of `type` as one dataset; `lies` may say from its first `head` bytes that it is not of that type."""
 
-    priority = 10  # last: every other format may claim these files first
+    # After the domain formats (image 50, EM 60 and up), which may claim these
+    # files first, and before the text area (20), which claims the text/plain
+    # these formats give a file whose content is not of its name's type
+    # (recognition-checks-content D3: a format that drops types runs first)
+    priority = 21
     head = 0  # bytes recognition reads for `lies`; 0: no check
     basis = "single file"
 
@@ -144,16 +151,24 @@ class JsonSchema(Json):
     reacts_to = frozenset({type})
 
 
+def as_written(text: str) -> float | str:
+    """A JSON or TOML float as a number where it prints as written, else its text
+    (`1.0E-3`, `0.00001`, `1e999`): what the file says (spec "Values as the file writes them")."""
+    value = float(text)
+    return value if repr(value) == text else text
+
+
 def json_documents(data: bytes) -> list:
     """The JSON document, or the lines of a JSON Lines file; NaN and the infinities as these words."""
+    options = {"parse_constant": str, "parse_float": as_written}
     try:
-        return [json.loads(data, parse_constant=str)]
+        return [json.loads(data, **options)]
     except json.JSONDecodeError as error:
         if error.msg != "Extra data":
             raise
         try:
             return [
-                json.loads(line, parse_constant=str)
+                json.loads(line, **options)
                 for line in data.decode("utf-8-sig").splitlines()
                 if line.strip()
             ]
@@ -161,38 +176,12 @@ def json_documents(data: bytes) -> list:
             raise error from None
 
 
-class YamlLoader(getattr(yaml, "CSafeLoader", yaml.SafeLoader)):
-    """PyYAML's safe loader (libyaml's where the wheel has it), timestamps kept as their text,
-    a value of an application's own tag as the plain value it tags."""
-
-
-def untagged(loader: YamlLoader, node: yaml.Node):
-    """A node of a tag the safe loader has no constructor for (Docker Compose's `!override`,
-    CloudFormation's `!Ref`) as its plain text, list or mapping; the tag is not kept.
-
-    The safe loader refuses such a document as a whole (ConstructorError), which
-    is right for a loader of objects and too strict for describing a file.
-    """
-    if isinstance(node, yaml.ScalarNode):
-        return loader.construct_scalar(node)
-    if isinstance(node, yaml.SequenceNode):
-        return loader.construct_sequence(node)
-    return loader.construct_mapping(node)
-
-
-YamlLoader.add_constructor(
-    "tag:yaml.org,2002:timestamp", yaml.constructor.SafeConstructor.construct_scalar
-)
-YamlLoader.add_constructor(None, untagged)
-
-
 class Yaml(Document):
     type = "application/yaml"
     reacts_to = frozenset({type})
 
     def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
-        # A safe loader: no object of Python's but the plain ones (never the full loader)
-        documents = list(yaml.load_all(data, Loader=YamlLoader))
+        documents = yamldoc.documents(data)
         return described(of_documents(documents), where, {"documents": len(documents)})
 
 
@@ -201,7 +190,9 @@ class Toml(Document):
     reacts_to = frozenset({type})
 
     def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
-        return described(of_data(tomllib.loads(data.decode("utf-8-sig"))), where, {})
+        # tomllib has no hook for integers: 0x1F and 1_000 come as 31 and 1000
+        document = tomllib.loads(data.decode("utf-8-sig"), parse_float=as_written)
+        return described(of_data(document), where, {})
 
 
 class Xml(Document):

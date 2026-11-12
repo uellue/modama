@@ -11,7 +11,7 @@ Common file formats for the modama crawler (`python/crawler/`), as the format co
 | `common/xml` | `application/xml` (`*.xml`, `<` first), not its subtypes | every attribute and text, names with the file's prefixes |
 | `common/ini`, `common/cfg` | `text/x-ini` (`*.ini`), `text/x-config` (`*.cfg`), a `[section]` first | every `section.key` |
 
-None yet: each area (`image`, `pydata`, `office`, `text`, `structured`) is a subpackage added by its own change, with one import and one entry in `PARTS` in `src/modama_formats_common/__init__.py`, and its rows here.
+The YAML loader of every area is `src/modama_formats_common/yamldoc.py`: PyYAML's safe loader, with keys and plain values as the file writes them.
 
 ## Values and units: what the file says
 

@@ -13,7 +13,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from datetime import date, time
 
-from modama_crawler.formats.values import textual
+from modama_crawler.formats.values import credential, textual
 
 log = logging.getLogger(__name__)
 
@@ -28,13 +28,6 @@ MAX_VISITS = 10 * MAX_ENTRIES
 SUMMARY = 8
 # The path of a document that is a plain value, JSONPath's root (RFC 9535)
 ROOT = "$"
-# Configuration files hold credentials, and a record is seen by more people
-# than the file: a value whose path has one of these words is not kept
-# (`credentials.id` too). Erring on the side of leaving out (max_tokens too)
-SECRET = re.compile(
-    r"passw(or)?d|secret|token|api[-_]?key|private[-_]?key|credential",
-    re.IGNORECASE,
-)
 
 Pairs = Iterable[tuple[str, object]]
 
@@ -112,22 +105,26 @@ def of_xml(root) -> Iterator[tuple[str, str]]:
     yield from visit(root, "")
 
 
-def kept(pairs: Pairs, where: str) -> tuple[dict, bool]:
-    """The pairs but the skip list, as a dict, and whether the bounds cut it.
+def kept(pairs: Pairs, where: str) -> tuple[dict, bool, int]:
+    """The pairs but the skip list, as a dict; whether the bounds cut it; how many credentials were left out.
 
     The skip list: a value not suitable for text (values.textual); a value
-    whose name says it is secret (SECRET); entries after MAX_ENTRIES kept or
-    MAX_VISITS walked. A path met twice keeps both, the second as `<path>#2`,
-    with a warning naming where.
+    that may be a credential (values.credential); entries after MAX_ENTRIES
+    kept or MAX_VISITS walked. A path met twice keeps both, the second as
+    `<path>#2`, with a warning naming where.
     """
     found = {}
+    secrets = 0
     for n, (key, value) in enumerate(pairs):
         if n == MAX_VISITS:
-            return found, True
-        if not textual(value) or SECRET.search(key):
+            return found, True, secrets
+        if not textual(value):
+            continue
+        if credential(key, value):
+            secrets += 1
             continue
         if len(found) == MAX_ENTRIES:
-            return found, True
+            return found, True, secrets
         if key in found:
             i = 2
             while f"{key}#{i}" in found:
@@ -135,7 +132,7 @@ def kept(pairs: Pairs, where: str) -> tuple[dict, bool]:
             log.warning("%s: %s twice, the second kept as %s#%d", where, key, key, i)
             key = f"{key}#{i}"
         found[key] = value
-    return found, False
+    return found, False, secrets
 
 
 def _is_number_or_boolean(text: str) -> bool:
