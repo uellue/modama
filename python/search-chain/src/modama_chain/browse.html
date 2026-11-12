@@ -28,6 +28,8 @@ button { font: inherit; padding: 2px 8px; border: 1px solid var(--line); border-
 textarea.message { display: block; width: 100%; max-width: 60em; margin: 4px 0; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; resize: vertical; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
 .cell { border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.cell[hidden] { display: none; }
+.fold { grid-column: 1 / -1; font-size: 13px; font-weight: 600; padding: 4px 8px; background: #f6f8fa; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; user-select: none; }
 .cell h2 { font-size: 13px; margin: 0; padding: 4px 8px; background: #f6f8fa; border-bottom: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
 .tag { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 10px; color: #fff; }
 .tag.stored { background: var(--stored); } .tag.actual { background: var(--actual); } .tag.emulated { background: var(--emulated); }
@@ -68,8 +70,11 @@ pre { margin: 0; padding: 6px 8px; font: 12px/1.35 ui-monospace, monospace; whit
 "use strict";
 const S = /*SETTINGS*/{};
 const ROW = 22;
-const ORDER = [["dataset", "Dataset"], ["record", "OAI-PMH record"], ["datacite", "DataCite (harvester)"],
-  ["document", "Warehouse index document"], ["hit", "Search API hit"], ["entry", "Matchmaker: cited dataset, expanded"]];
+// Matchmaker's entry first (compact, what users see) and the dataset open; the stages between fold away (@weber, 2026-11-12)
+const ORDER = [["entry", "Matchmaker: cited dataset, expanded"], ["dataset", "Dataset"], ["record", "OAI-PMH record"],
+  ["datacite", "DataCite (harvester)"], ["document", "Warehouse index document"], ["hit", "Search API hit"]];
+const ALWAYS_OPEN = new Set(["entry", "dataset"]);
+const unfolded = new Set();  // rows opened by a click; kept while moving from file to file
 let dir = "/", entries = [], shown = [], sel = -1, timer = null, controllers = [];
 const $ = id => document.getElementById(id);
 
@@ -198,10 +203,27 @@ function views(path) {
     ...(S.snapshots && file ? [message, el("div", {class: "bar"}, save, saved)] : []));
   const cells = {};
   const grid = el("div", {class: "grid"}, el("strong", {}, "Stored (what the chain holds now)"), el("strong", {}, "Live (the checkout's code, now)"));
-  for (const [key] of ORDER) for (const side of ["stored", "live"]) {
-    const waiting = side === "stored" ? "loading…" : file ? "computing…" : "a folder: no live views";
-    cells[side + key] = el("div", {class: "cell"}, el("div", {class: "empty"}, waiting));
-    grid.append(cells[side + key]);
+  for (const [key, title] of ORDER) {
+    const pair = [];
+    for (const side of ["stored", "live"]) {
+      const waiting = side === "stored" ? "loading…" : file ? "computing…" : "a folder: no live views";
+      cells[side + key] = el("div", {class: "cell"}, el("div", {class: "empty"}, waiting));
+      pair.push(cells[side + key]);
+    }
+    if (!ALWAYS_OPEN.has(key)) {
+      const fold = el("div", {class: "fold"});
+      const show = open => {
+        fold.textContent = (open ? "▾ " : "▸ ") + title;
+        for (const c of pair) c.hidden = !open;
+      };
+      fold.onclick = () => {
+        if (unfolded.has(key)) unfolded.delete(key); else unfolded.add(key);
+        show(unfolded.has(key));
+      };
+      show(unfolded.has(key));
+      grid.append(fold);
+    }
+    grid.append(...pair);
   }
   $("views").replaceChildren(grid);
   const fill = (side, list) => {
