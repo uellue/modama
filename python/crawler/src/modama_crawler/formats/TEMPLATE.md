@@ -118,6 +118,8 @@ class Workspace(Format):
 
 To see what a format makes of real files while you write it: `modama-chain browse` in the search stack (`python/search-chain/README.md`, "browse"). Pick a file, and the page shows its dataset, the record and how the warehouse and Matchmaker will show it, computed by the checkout's code; an edit to the format shows on the next reload, without a build or a crawl. "Save for Claude" keeps a view, with a message, for a chat about it.
 
+What to keep (@weber, decisions 129 and 230): what the file says, without editorializing. With a reader that maps metadata to standard names (RosettaSciIO), take its original metadata first, complete but for GUI settings and large arrays, and the mapped metadata as a second, labelled section; where they disagree, the original wins. Interpreting metadata across vendors is out of scope: the user makes their own sense of what the file says (`python/modama-formats-em/README.md`, "Values and units").
+
 A format may also read metadata from its datasets' files, after recognition:
 
 ```python
