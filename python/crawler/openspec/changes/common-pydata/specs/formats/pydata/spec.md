@@ -58,7 +58,7 @@ A file named `*.nxs` SHALL be typed `application/x.nexus` when it starts with th
 - **THEN** it is a dataset of type `application/vnd.hdfgroup.hdf5` of the format `common/hdf5`, and its basis says it has no HyperSpy
 
 ### Requirement: An HDF5 file is described by a walk of its objects
-The extractor of the HDF5 types SHALL walk the file's objects with h5py, depth first in name order, and give as `original_metadata`, with dotted names: every attribute (`group.dataset.name`); each dataset's `shape` and `dtype` (NumPy's descr: `<i4`); each scalar dataset's value (`entry.title`). Values as found, text bytes as UTF-8, an empty attribute as `""`; left out: what h5py cannot read and what `textual` refuses.
+The extractor of the HDF5 types SHALL walk the file's objects with h5py, depth first in stored order (name order in HDF5's default group format), and give as `original_metadata`, with dotted names: every attribute (`group.dataset.name`); each dataset's `shape` and `dtype` (NumPy's descr: `<i4`); each scalar dataset's value (`entry.title`). Values as found, text bytes as UTF-8, an empty attribute as `""`; left out: what h5py cannot read and what `textual` refuses.
 
 #### Scenario: A NeXus file's attributes and datasets
 - **WHEN** the NeXus example file `simple_example_basic.nexus.hdf5` is extracted

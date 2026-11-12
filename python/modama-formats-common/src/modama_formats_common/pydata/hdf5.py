@@ -18,6 +18,7 @@ from numpy.lib.format import dtype_to_descr
 from .values import (
     MAX_ENTRIES,
     MAX_ITEMS,
+    MAX_OBJECTS,
     Walk,
     headline,
     matches,
@@ -101,7 +102,7 @@ def outside(dataset: h5py.Dataset) -> str | None:
 
 
 def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
-    """original_metadata and the mapped note of a cut, from the file's objects in name order.
+    """original_metadata and the mapped note of a cut, from the file's objects in stored order.
 
     Depth first, each object once (by its address), hard links only: an
     external link (another file) and a soft link (another name) are not
@@ -167,14 +168,33 @@ def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
         add(f"{dotted}.shape", list(obj.shape or ()))
         add(f"{dotted}.dtype", dtype_name(obj.dtype))
 
+    def hard_links(group: h5py.Group) -> list[bytes]:
+        """The names of group's hard links in the order the file stores them, no
+        more than objects can still be walked and one to tell that there are more.
+
+        The stored order is the names' order in the groups most writers write
+        (h5py's default, HDF5's symbol tables), another in groups of the newer
+        format with many links. Name order there means a sorted table of all
+        links first: on a group of 200,000 links, 393 MB read of a 32 MB file,
+        against 69 kB for the first 5,000 in stored order."""
+        names: list[bytes] = []
+        room = MAX_OBJECTS - walk.objects
+
+        def listed(name: bytes, info) -> bool | None:
+            if info.type == h5py.h5l.TYPE_HARD:
+                names.append(name)
+            return True if len(names) > room else None
+
+        group.id.links.iterate(listed, info=True, order=h5py.h5.ITER_NATIVE)
+        return names
+
     def members(group: h5py.Group, prefix: str) -> bool:
         """Walks the members of group; False when a limit stopped the walk."""
-        for name in group:
+        for raw in hard_links(group):
             if walk.over():
                 return False
-            if not isinstance(group.get(name, getlink=True), h5py.HardLink):
-                continue
-            obj = group[name]
+            name = raw.decode("utf-8", "replace")
+            obj = group[raw]
             address = h5py.h5o.get_info(obj.id).addr
             if address in seen:
                 continue  # another name of an object already walked
