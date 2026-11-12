@@ -217,9 +217,9 @@ def test_only_the_property_parts_are_read(collection_tests, tmp_path):
     big = tmp_path / "tree" / "big.pptx"
     repacked(src, big, "", bytes)
     with zipfile.ZipFile(big, "a") as z:
-        z.writestr("ppt/media/image9.png", os.urandom(20_000_000))
+        z.writestr("ppt/media/image9.png", os.urandom(5_000_000))
     (pptx,) = crawled(collection_tests, tmp_path / "tree")
-    assert pptx.dataset.size > 20_000_000
+    assert pptx.dataset.size > 5_000_000
     assert pptx.mapped == {"slides": 1}
     assert pptx.bytes_read < 1_000_000
 
@@ -352,14 +352,14 @@ def test_an_encrypted_pdf_that_needs_a_password(collection_tests, tmp_path):
 
 
 def large_pdf(path: Path) -> bytes:
-    """A one-page PDF of 20 MB, nearly all of it an attached file; its bytes."""
+    """A one-page PDF of 5 MB, nearly all of it an attached file; its bytes (small: /tmp is shared)."""
     from pypdf import PdfWriter
 
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = PdfWriter()
     writer.add_blank_page(width=200, height=200)
     writer.add_metadata({"/Title": "Large"})
-    writer.add_attachment("data.bin", os.urandom(20_000_000))
+    writer.add_attachment("data.bin", os.urandom(5_000_000))
     with open(path, "wb") as f:
         writer.write(f)
     return path.read_bytes()
@@ -368,7 +368,7 @@ def large_pdf(path: Path) -> bytes:
 def test_only_the_metadata_is_read(collection_tests, tmp_path):
     large_pdf(tmp_path / "tree" / "large.pdf")
     (described_pdf,) = crawled(collection_tests, tmp_path / "tree")
-    assert described_pdf.dataset.size > 20_000_000
+    assert described_pdf.dataset.size > 5_000_000
     assert described_pdf.original["Info.Title"] == "Large"
     assert described_pdf.bytes_read < 1_000_000
 
@@ -399,10 +399,10 @@ def test_a_pdf_whose_recovery_would_read_all_of_it(tmp_path, monkeypatch):
     end = data.index(b"\n", offset)
     broken = tmp_path / "broken.pdf"
     broken.write_bytes(data[:offset] + b"12345" + data[end:])
-    monkeypatch.setattr(pdf, "BUDGET", 4 * 1024 * 1024)
+    monkeypatch.setattr(pdf, "BUDGET", 1024 * 1024)
     error, read = extracted_reading(broken)
     assert isinstance(error, OverBudget), error
-    assert read < 5 * 1024 * 1024
+    assert read < 2 * 1024 * 1024
 
 
 def test_a_header_after_other_bytes(collection_tests, tmp_path):

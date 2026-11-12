@@ -64,8 +64,8 @@ For a `.docx`, `.docm`, `.pptx`, `.xlsx` or `.xlsm` dataset, the extractor SHALL
 - **THEN** openpyxl is not called, `mapped_metadata` holds `sheets not read` with the part and its size, the property parts are kept, and the extractor reads less than 1 MB of it
 
 #### Scenario: Only the property parts are read
-- **WHEN** a presentation of 20 MB, nearly all of it one picture, is extracted
-- **THEN** the extractor reads less than 1 MB of it (measured: 68,830 bytes)
+- **WHEN** a presentation of 5 MB, nearly all of it one picture, is extracted
+- **THEN** the extractor reads less than 1 MB of it (measured with 20 MB: 68,830 bytes)
 
 #### Scenario: A broken package
 - **WHEN** a `.docx` starts with a ZIP header but is cut off (`truncated_docx`, Apache Tika's `testWORD_truncated.docx`)
@@ -114,16 +114,16 @@ For a PDF dataset, the extractor SHALL read with pypdf the document information 
 - **THEN** the extraction succeeds with `mapped_metadata` `{"header": "%PDF-1.4", "encrypted": true}`, an empty `original_metadata` and an empty summary line
 
 #### Scenario: Only the metadata is read
-- **WHEN** a PDF of 20 MB, nearly all of it one attached file, is extracted
-- **THEN** the extractor reads less than 1 MB of it (measured: 918,554 bytes by `/proc/self/io` rchar; pypdf reads the last 128 KiB backwards once for each of the trailer's last lines, from the page cache after the first time)
+- **WHEN** a PDF of 5 MB, nearly all of it one attached file, is extracted
+- **THEN** the extractor reads less than 1 MB of it (measured with 20 MB: 918,554 bytes by `/proc/self/io` rchar; pypdf reads the last 128 KiB backwards once for each of the trailer's last lines, from the page cache after the first time)
 
 #### Scenario: A cut-off PDF
-- **WHEN** the PDF of 20 MB is cut off by 3,000 bytes, as an interrupted copy leaves it
+- **WHEN** the PDF of 5 MB is cut off by 3,000 bytes, as an interrupted copy leaves it
 - **THEN** the extraction fails with `no %%EOF in the last 1,024 bytes`, having read less than 1 MB
 
 #### Scenario: A PDF whose recovery would read all of it
-- **WHEN** the PDF of 20 MB has a wrong `startxref` offset, and the budget is 4 MiB
-- **THEN** the extraction fails with `OverBudget`, having read less than 5 MiB
+- **WHEN** the PDF of 5 MB has a wrong `startxref` offset, and the budget is 1 MiB
+- **THEN** the extraction fails with `OverBudget`, having read less than 2 MiB
 
 #### Scenario: A header after other bytes
 - **WHEN** a PDF has 101 bytes before `%PDF-1.3`
