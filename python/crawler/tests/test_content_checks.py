@@ -28,6 +28,18 @@ XML = """<?xml version="1.0"?>
     <comment>Test tags file</comment>
     <glob pattern="*.tags"/>
   </mime-type>
+  <mime-type type="application/x.test-pair">
+    <comment>Test pair file</comment>
+    <glob pattern="*.pair" weight="60"/>
+  </mime-type>
+  <mime-type type="application/x.test-a">
+    <comment>Test type a</comment>
+    <glob pattern="*.pair" weight="50"/>
+  </mime-type>
+  <mime-type type="application/x.test-b">
+    <comment>Test type b</comment>
+    <glob pattern="*.pair" weight="50"/>
+  </mime-type>
   <mime-type type="application/x.example-workspace">
     <comment>Example workspace</comment>
     <glob pattern="*.exw"/>
@@ -226,12 +238,127 @@ def test_a_read_error_while_finding_the_new_type(tmp_path, monkeypatch):
     monkeypatch.setattr(mime, "open", fail, raising=False)
     result = recognised(tmp_path, {"notes.tags": b"hello\n"}, Tags())
     (d,) = result.datasets
+    # The file keeps its type, and the format's call is not discarded
+    assert (d.type, d.basis) == (TAGS, "single file")
+    assert result.all_warnings() == [
+        (
+            "/notes.tags",
+            "test/tags: cannot read notes.tags: Input/output error; type kept",
+        )
+    ]
+    assert result.listings["/"].retry  # recognised again next crawl
+
+
+def test_a_read_error_on_one_file_leaves_the_others(tmp_path, monkeypatch):
+    # The other file's drop stands, and test/png claims its new type
+    real = open
+
+    def fail_for_notes(path, *args, **kwargs):
+        if os.path.basename(path) == "notes.tags":
+            raise OSError(errno.ESTALE, "Stale file handle")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(mime, "open", fail_for_notes, raising=False)
+    result = recognised(
+        tmp_path, {"notes.tags": b"hello\n", "picture.tags": PNG}, Tags(), Png()
+    )
+    datasets = by_anchor(result)
+    assert datasets["/notes.tags"].type == TAGS
+    assert (datasets["/picture.tags"].format, datasets["/picture.tags"].basis) == (
+        "test/png",
+        f"PNG signature; {NOTE}",
+    )
+    assert result.all_warnings() == [
+        (
+            "/notes.tags",
+            "test/tags: cannot read notes.tags: Stale file handle; type kept",
+        )
+    ]
+    assert result.listings["/"].retry
+
+
+def test_a_format_over_budget_after_a_drop(tmp_path):
+    # Code review finding 6: the budget is the third way a call is discarded
+    class ThenHungry(Tags):
+        name = "tags"
+
+        def drop(self, d, e):
+            d.not_of_type(e, "no TAGS header")
+            d.read(d.entry(e.name), 1 << 30)
+
+    result = recognised(tmp_path, {"notes.tags": b"hello\n"}, ThenHungry())
+    (d,) = result.datasets
     assert (d.type, d.basis) == (TAGS, "single file")
     ((where, text),) = result.all_warnings()
-    assert where == "/" and re.fullmatch(
-        r"test/tags failed: OSError\(5, 'Input/output error'\)", text
-    )
-    assert result.listings["/"].retry  # recognised again next crawl
+    assert where == "/"
+    assert text.startswith("test/tags skipped: reading 1073741824 bytes")
+
+
+def test_warnings_of_a_discarded_call_go_with_it(tmp_path):
+    # Code review finding 8: the "type kept" warning was about a call whose result is thrown away
+    class ContradictsThenFails(Contradicts):
+        name = "contradicts"
+
+        def recognize(self, d):
+            super().recognize(d)
+            raise RuntimeError("boom")
+
+    result = recognised(tmp_path, {"blob": PNG}, ContradictsThenFails())
+    assert result.all_warnings() == [
+        ("/", "test/contradicts failed: RuntimeError('boom')")
+    ]
+
+
+# A claimed file keeps its type
+
+
+def test_a_file_an_earlier_format_claimed(tmp_path):
+    class Claim(Format):
+        """test/claim: claims every file of type application/x.test-tags, before test/tags."""
+
+        type = TAGS
+        priority = 70
+        reacts_to = frozenset({TAGS})
+
+        def recognize(self, d):
+            for e in d.of_type(TAGS):
+                yield Dataset(anchor=e.rel, basis="claimed")
+
+    result = recognised(tmp_path, {"x.tags": b"hello\n"}, Claim(), Tags())
+    (d,) = result.datasets
+    assert (d.type, d.format, d.basis) == (TAGS, "test/claim", "claimed")
+    assert result.all_warnings() == [
+        ("/x.tags", "test/tags: x.tags is claimed by test/claim; type kept")
+    ]
+
+
+# A tie among the rest is warned about as the walk warns about one
+
+
+def test_a_tie_in_the_new_types_detection(tmp_path):
+    class Pair(Format):
+        """test/pair: *.pair files (weight 60) start with PAIR; two other types have *.pair at weight 50."""
+
+        type = "application/x.test-pair"
+        reacts_to = frozenset({type})
+
+        def recognize(self, d):
+            for e in d.of_type(self.type):
+                d.not_of_type(e, "no PAIR header")
+            return []
+
+    result = recognised(tmp_path, {"notes.pair": b"hello\n"}, Pair())
+    (d,) = result.datasets
+    assert d.type == "application/octet-stream"
+    assert result.all_warnings() == [
+        (
+            "/notes.pair",
+            (
+                "type is ambiguous between application/x.test-a, "
+                "application/x.test-b; using application/octet-stream"
+            ),
+        )
+    ]
 
 
 # Plain data in, no reach outside the directory: the budget

@@ -194,7 +194,8 @@ class Directory:
         Only a type from the one best name rule is dropped; any other stays,
         with a warning (spec recognition, recognition-checks-content D1, D2).
         Finding the new type is not charged to the byte budget (decision 166);
-        a read error raises.
+        a read error keeps the type (cannot_read), so that one unreadable file
+        does not change the rest of the directory's result.
         """
         if self.phase != "post":
             raise ValueError(f"{entry.rel}: no types in the pre-order call")
@@ -207,9 +208,13 @@ class Directory:
                 "type does not come from its name alone; type kept",
             )
             return entry
-        new, tie = mime.detect_with_tie(
-            entry.path, exclude=frozenset({entry.mime}), strict=True
-        )
+        try:
+            new, tie = mime.detect_with_tie(
+                entry.path, exclude=frozenset({entry.mime}), strict=True
+            )
+        except OSError as e:
+            self.cannot_read(entry, e)
+            return entry
         if tie:  # as the walk reports a tie
             self.warn(
                 entry.rel, f"type is ambiguous between {', '.join(tie)}; using {new}"
@@ -219,6 +224,25 @@ class Directory:
         self._by_name[entry.name] = replaced
         self.notes[entry.rel] = f"{self._format}: not {entry.mime}, {reason}"
         return replaced
+
+    def cannot_read(self, entry: Entry, error: OSError) -> None:
+        """A file a format could not check: it keeps its type, the crawl warns at it, and the directory is recognised again next crawl.
+
+        For a read error on one file while checking it, so that the rest of the
+        format's result stands (spec recognition, "A read error on one file").
+        """
+        self.warn(
+            entry.rel,
+            f"{self._format}: cannot read {entry.name}: {error.strerror or error}; "
+            "type kept",
+        )
+        self.retry = True
+
+    def _undrop(self, entry: Entry) -> None:
+        """Put back the entry of a file whose type a format dropped, and its note."""
+        self.entries = [entry if e.name == entry.name else e for e in self.entries]
+        self._by_name[entry.name] = entry
+        del self.notes[entry.rel]
 
     def warn(self, rel: str, text: str) -> None:
         self.warnings.append((rel, text))
@@ -279,15 +303,17 @@ def ordered(formats: Iterable[Format]) -> list[Format]:
 def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Dataset]:
     d._budget = byte_budget
     d._format = fmt.id
-    # A discarded call leaves every type as it was (D3): not_of_type replaces
-    # the list, so the old one is the state before the call
-    entries, notes = d.entries, dict(d.notes)
+    # A discarded call leaves every type as it was, and its warnings go with
+    # its result (D3): not_of_type replaces the list, so the old one is the
+    # state before the call
+    entries, notes, warned = d.entries, dict(d.notes), len(d.warnings)
     start = time.monotonic()
     try:
         datasets = list(fmt.recognize(d))
     except Exception as e:  # noqa: BLE001  a failing format must not stop the crawl
         d.entries, d.notes = entries, notes
         d._by_name = {x.name: x for x in entries}
+        del d.warnings[warned:]
         if isinstance(e, BudgetExceeded):
             d.warn(d.rel, f"{fmt.id} skipped: {e}")
         else:
@@ -361,7 +387,15 @@ def run_post(
             continue
         before = set(d.notes)
         datasets = _call(fmt, d, slow, byte_budget)
-        _check_order(d, order[:i], fmt, set(d.notes) - before)
+        dropped = set(d.notes) - before
+        for rel in sorted(dropped & claimed_by.keys()):  # claimed earlier: kept
+            d._undrop(files[rel])
+            d.warn(
+                rel,
+                f"{fmt.id}: {files[rel].name} is claimed by {claimed_by[rel]}; "
+                "type kept",
+            )
+        _check_order(d, order[:i], fmt, dropped - claimed_by.keys())
         for ds in datasets:
             members = set(ds.members) | ({ds.anchor} if ds.anchor in files else set())
             parts = set(ds.parts) | ({ds.anchor} if ds.anchor in children else set())
