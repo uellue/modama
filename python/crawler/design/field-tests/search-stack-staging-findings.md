@@ -124,7 +124,15 @@ on 24: `transform` 42 %, warehouse `postgres` 58 to 60 %, the harvest worker 21 
 crawler's OAI-PMH server near idle. At 22:08 UTC (3 h in) still open, the same CPU, while
 the warehouse database's writes per 16.5 minutes grew from 2.5 GB (19:27) to 4.3 GB
 (21:56): more bytes per interval at the same CPU, not explained yet (no record count:
-the monitor does not reach the warehouse). Reproduced in the VM's test deployment (8 CPUs,
+the monitor does not reach the warehouse). The harvest closed at 00:20 UTC: 5 h 14 min,
+77 records/s if all 1,451,848 arrived (not counted). Indexing started at once. The
+probe (`indexing-probe.log`) saw 91 batch subprocesses (PythonVirtualenvOperator,
+2.3 to 4.4 GB each) by 02:08: until 01:05 four at a time, about 3 minutes each, the
+machine full (the transform worker 24 cores on average, load 56 on 48); from 01:10 one
+at a time, 70 to 80 s each, with gaps of up to 8 minutes in which nothing of the
+warehouse ran: busy 35 to 86 % of each 10 minutes. What holds the batches back after
+01:10 (Airflow's scheduling, the DAG's task order, the queue) is not known from here:
+needs the indexing DAG run's task list. Reproduced in the VM's test deployment (8 CPUs,
 16,000 synthetic records, `prototypes/search-stack/perf/`, untracked; raw data in the
 session's scratchpad `indexing-perf/`):
 - **Harvest:** 68 records/s, serial: one task, one record per `POST /harvest_event`
