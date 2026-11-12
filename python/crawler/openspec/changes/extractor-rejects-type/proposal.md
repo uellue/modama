@@ -1,20 +1,46 @@
 # Proposal
 
+## In short
+
+A file whose name says one type but whose content says another should not be published under the name's type. Example: a text file `notes.gtg` is published today as "Gatan Digital Micrograph .gtg tag file", because the name `*.gtg` decides without the file being read.
+
+With this change, the format that knows the type checks the file's first bytes while it recognises the directory, and can say "this file is not of my type". The file then gets the type it would have had without that name rule, in the same pass: `notes.gtg` becomes a plain text file, with no warning. The other formats see the new type: a DM3 image misnamed `conditions.dmw` is recognised and extracted as a DM3 image.
+
+This separates "not actually K2IS" from "something is broken" (@weber, 2026-11-12). A text `X_.gtg` next to 8 sector files is not a K2IS capture: K2IS checks the tag file before it groups. A `.gtg` with the right header whose tags cannot be read is still a broken capture: its extraction fails and is reported as today.
+
+A file typed by its content, not by its name, keeps its type. Nothing new is stored. The reason ("em/k2is: not application/x.dm-gtg, no DM4 header") shows in `records --verbose` and in `modama-chain trace`.
+
 ## Why
 
-A file that only one name rule matches is typed by its name alone: detection returns before it reads the file (`mime.py:179-184`). With `dm-containers-and-k2is`, a text or empty `notes.gtg` or `x.dmw` is therefore described as "Gatan Digital Micrograph .gtg tag file" (review M1 of that change). That is a false statement to a searcher, the problem F15 set out to fix. The review proposed adding the globs to `application/octet-stream`, so that the content always decides. @weber (2026-11-12) prefers another mechanism: the extractor says "this is not, in fact, a Gatan gtg file". The file then falls back to another type. This works even for name collisions nobody knows about, and the name keeps its fast match. It applies to a stray file only. A dataset recognised as a group (a K2IS capture: `X_.gtg` plus 8 `.bin` sectors) whose anchor does not read is a broken dataset, a broken extractor or a variant we don't understand. It stays the group, and its extraction fails as today. Serves R25 (honest types), R30 (records that don't mislead a searcher), R23/R8 (a failure stays a reported failure), R10 (a re-crawl does no work for an unchanged file).
+A file that only one name rule matches is typed by its name alone. Detection returns before it reads the file (`mime.py:179-184`). With `dm-containers-and-k2is`, a text or empty `notes.gtg` or `x.dmw` is therefore described as a Gatan file (that change's review, finding 1). That is a false statement to a searcher, the problem staging finding F15 set out to fix. The review proposed giving these names a second rule (the globs on `application/octet-stream`), so that the content always decides. @weber prefers that the format says "this is not, in fact, a Gatan gtg file". This works for name collisions nobody knows about yet, and the name keeps its fast match for every other format.
+
+The first version of this change rejected the file at extraction. @weber's follow-up (2026-11-12, question 149, "149 sounds sensible!"): decide it during recognition. Recognition can already read a file's first bytes (`Directory.read`, `formats/__init__.py:175-184`, 1 MiB per format call), and EMPAD uses that in its `recognize`. What is missing is a way for a format to say, while recognising, "this file is not of the type its name gave it".
+
+Serves R25 (honest types), R30 (records that don't mislead a searcher), R23/R8 (a failure stays a reported failure), R10 (a re-crawl does no work for an unchanged file).
 
 ## What Changes
 
-- An extractor can **reject** a dataset: "these files are not of my type", distinct from failing on them. The format author raises a dedicated exception with a reason (TEMPLATE).
-- For a **single file typed by its name alone**, a rejection makes the dataset fall back. Its type becomes what detection gives without the rejected type: another name rule, else the content, else `text/plain` or `application/octet-stream`. Its record describes it as that type, and the crawl reports no warning. The fallback type's own extractor does not run.
-- For **any other dataset** (several members, a directory, a collapsed tree, or a file typed by its content), a rejection is an extraction failure, reported as today. It is never re-recognised.
-- A rejection is a **stored result**, tied to the extractor, its version and the dataset's stamp, like a failure on the file's content. The next crawl of unchanged data gives the same type without running the extractor.
-- **In `modama-formats-em`**, this amends `dm-containers-and-k2is` and replaces the review's octet-stream globs. `.dmw` and `.gtg` keep their name rules. Two single-file formats check the DM4 header and reject files without it: one for `.dmw`, one for a `.gtg` that the K2IS grouping does not take. A lone `.gtg` therefore gets a format of its own, which it does not have today.
+- While recognising a directory, a format can say that one of its files is **not of the type the file's name gave it**, with a reason.
+- **Only a file typed by its name alone qualifies**: exactly one best name rule gave it the type. Its type becomes what detection gives without that rule: another name rule, else the content, else `text/plain` or `application/octet-stream`. This takes effect at once, for the formats that run after it in the same directory and for the file as a single file. A format for the new type can claim it if it runs later. A format that drops types must therefore run before the formats of the types its files may fall back to. The format's priority says that.
+- A file typed by its content keeps its type. The crawl warns, naming the format and the reason: a content match that a format contradicts points at a weak content rule (decision 145, flow D).
+- The reason goes into the **basis** of the dataset that holds the file ("single file; em/k2is: not application/x.dm-gtg, no DM4 header"). `records --verbose` shows it, also for a single file, and the crawler line of `modama-chain trace` shows every dataset's basis. No warning, and no count in the crawl report (decision 148).
+- **Nothing new is stored.** The type and basis are stored with the dataset as they are today. An unchanged directory keeps them on the next crawl without reading a file. A changed file is checked again.
+- **In `modama-formats-em`** (to be folded into `dm-containers-and-k2is`, decision 144): a small format `em/dmw` checks each `.dmw` file's 16-byte DM4 header. K2IS checks each `.gtg` file's header before it groups a capture. Both run before the DM3 and DM4 formats. Files without the header lose the name's type. The section "To fold into dm-containers-and-k2is" in design.md and tasks.md holds this part.
 
-Behaviour towards the user: a searcher or harvester sees a stray `notes.gtg` holding text as `dc:format` `text/plain`, described as a plain text document. Today it is described as a Gatan tag file. An empty `x.dmw` becomes `text/plain`, as an empty file without a name rule is today. Their datestamps move once. A K2IS capture whose `.gtg` does not read stays one K2IS record, and the crawl reports its extraction failure as today. An admin sees no new warning or count. The `records` command's verbose note names the rejecting format (`notes.gtg: text/plain by em/gtg 1, …`). `.dmw` and lone `.gtg` files count as extractions run (2,036 and 1 on staging run 3, F15). Schema change: one new column, so the database is recreated.
+Behaviour towards the user:
+- A searcher or harvester sees a stray `notes.gtg` holding text as `dc:format` `text/plain`, described as a plain text document. An empty `x.dmw` becomes `text/plain`, as an empty file without a name rule is today. A DM3 image named `conditions.dmw` becomes a DM3 record with its image metadata. Their datestamps move once.
+- A text `X_.gtg` next to 8 sector files gives 9 single files and the existing warning about sector files without a tag file. Today it gives a K2IS record and an extraction failure.
+- An admin sees the reason in `records --verbose` (a comment before that file's record) and in `modama-chain trace` (the crawler line's basis). The crawl report has no new warning or count.
+- No schema change, and no database recreation for this part.
 
-Out of scope: running the fallback type's extractor, or recognising the directory again after a rejection. Rejecting files typed by their content. A count of rejections in the crawl report. Metadata from `.dmw` files. Generic extractors on subtypes (Q15).
+Out of scope:
+- Rejecting files typed by their content.
+- Checking the fallback type again: one drop per file per crawl.
+- Calling formats that already ran on a directory again after a drop.
+- A count of rejections in the crawl report.
+- Metadata from `.dmw` files.
+- The DM3 header for `.dmw` and `.gtg` (decision 147).
+- Generic extractors on subtypes (Q15).
 
 ## Capabilities
 
@@ -24,20 +50,28 @@ None.
 
 ### Modified Capabilities
 
-- `extraction`: an extractor may reject a dataset. A single file typed by its name alone then falls back to another type. Any other dataset keeps its type and its extraction fails. `extraction` is introduced by `em-formats-and-extraction`, which is archived first.
+- `recognition`: a format can say that a file is not of the type its name gave it. The file then gets the type detection gives without it, at once. A file typed by its content keeps its type, with a warning. A failed or over-budget format call leaves every type as it was.
+- `records-cli`: a single file whose name type a format dropped gets a recognition comment with its basis.
+- `chain-trace`: the crawler line shows the basis of the dataset that holds the item.
 
 ## Impact
 
-- Crawler: `formats/__init__.py` (the exception, `Extraction.rejected`), `mime.py` (the type a name alone gives, and detection without a type), `extraction.py` (fallback or failure, reuse), `store.py` (column `extract_rejected`; recreate the database), `formats/TEMPLATE.md`, `README.md` (Extract), `BACKLOG.md`.
-- `modama-formats-em` on branch `dm-containers`: formats `em/dmw` and `em/gtg`, reproducer fixtures (`notes.gtg` holding text, an empty `empty.dmw`), and that change's D1, its spec requirement "Tag files and workspaces are not DM images", the comments in `dm.xml`/`k2is.xml` and the outcome of review M1.
-- No new dependency.
+- Crawler:
+  - `formats/__init__.py`: `Directory.not_of_type`, and `run_post` reading the entries' current types.
+  - `mime.py`: `by_name`, the type a name alone gives, and detection with a type excluded.
+  - `cli.py`: the `records` comment.
+  - Docs: `formats/TEMPLATE.md`, `README.md` (Walk and recognise), `BACKLOG.md`.
+- `python/search-chain`: the trace's crawler line reads `datasets.basis`. Its README, "What it reads", says so.
+- `modama-formats-em` on branch `dm-containers`: the format `em/dmw`, the header check in K2IS, and the priority 61 for both. Fixtures and that change's D1, spec requirements and XML comments (design.md, "To fold into dm-containers-and-k2is").
+- No new dependency. No schema change.
 
-## Decisions by @weber, 2026-11-12 (questions 144 to 148, answered on the open-items page)
+## Decisions by @weber, 2026-11-12 (questions 144 to 149, answered on the open-items page)
 
-- **144, where the `em` part goes:** "yes let's group the changes together": folded into `dm-containers-and-k2is` as its fix for M1; the two land together.
-- **145, content-typed files:** asked for a concrete example; given in design.md, "Flows of events"; open.
-- **146, the fallback type's own extractor:** "let's clarify the flow of events for that"; the flows are in design.md, "Flows of events", together with the alternative of the check during recognition (question 149); open.
-- **147, the DM3 header:** "that depends on what we find in the wild. DMW should/could also exist as DM3, I think." @weber makes fresh `.dmw` files with a current GMS (his TODO, open item 155); until then DM4 only, revisited with those files.
-- **148, showing rejections:** "a normal rejection is business as usual. It should go into the per-item tracing / observability that we worked on in the crawling and recognition oracle before": no count in the crawl report; the rejection and its reason appear in the per-item diagnostics of `records --verbose` (spec `records-cli`) and in `modama-chain trace`. This replaces the risk note "Naming the rejection there needs a request".
-- **D2's undecided case** (a single file in a subdirectory that a collection format adopted as a part): "Let's go with your lean until we find a specific example where that is wrong": it falls back, and the parent keeps it.
+- **144, where the `em` part goes:** "yes let's group the changes together". It is folded into `dm-containers-and-k2is` as its fix for review finding 1, and the two land together. Until it is moved, the em part is written here in a marked section.
+- **145, files typed by their content:** they do not fall back (flow D in design.md). A format that says such a file is not of its type gets a warning, not a new type.
+- **146, the fallback type's own extractor:** resolved by 149. The new type is set during recognition, so a format of that type that runs later claims the file, and its extractor runs as for any of its files (flow C). The order rule is in design.md, D3.
+- **147, the DM3 header:** "that depends on what we find in the wild. DMW should/could also exist as DM3, I think." @weber makes fresh `.dmw` files with a current GMS (his TODO, open item 155). Until then the checks accept the DM4 header only, to be revisited with those files.
+- **148, showing rejections:** "a normal rejection is business as usual. It should go into the per-item tracing / observability". So: no count in the crawl report, and no warning. The reason is in the dataset's basis, shown by `records --verbose` (spec `records-cli`) and by `modama-chain trace` (spec `chain-trace`).
+- **149, check during recognition instead of at extraction:** "149 sounds sensible!" This revision of the change.
+- **D2's case of the first version** (a single file in a subdirectory that a collection format adopted as a part): "Let's go with your lean until we find a specific example where that is wrong". It holds without a rule of its own. The subdirectory is recognised before its parent, so the file already has its new type when the parent adopts it.
 - Also from @weber, for later (backlog): "it would be good to be able to scan a real world crawl result for 'suspicious' results. Maybe the crawling, recognition and extraction logic could tag 'interesting' results for manual follow-up?"
