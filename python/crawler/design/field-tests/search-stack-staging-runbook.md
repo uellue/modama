@@ -233,6 +233,13 @@ dc exec crawler modama-crawler runs | head -3; dc exec crawler modama-chain stat
 dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*), max(datestamp) FROM records"
 ```
 
+On staging, U3 and U4 are left out (@weber, 2026-11-12: "we don't need to worry about a
+backup of the crawler + warehouse. We just need to be able to reproduce any failure in a test
+case, and bring up a fresh staging."): its state is recreated from the data tree, and an
+upgrade there is a rehearsal for production. On failure: keep `dc ps -a` and `dc logs`, then
+`./downstaging.sh --reset && ./upstaging.sh --build`. The schema comparison of U4 stays, run
+after U5 against a fresh database. For production, U3 and U4 stand.
+
 **U3.** The dump, to the location agreed with @weber (not in the checkout, never under
 `/storage`), and that it is readable:
 
