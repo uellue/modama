@@ -1,0 +1,63 @@
+{
+  "datasets": [
+    {
+      "anchor": "/stack.tif",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/tiff",
+      "members": [
+        "/stack.tif"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/tiff",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/stack.tif": {
+      "subjects": [],
+      "summary": [
+        "ImageWidth 64",
+        "ImageLength 48",
+        "BitsPerSample 16",
+        "tifffile.py",
+        "2026:11:12 18:00:00"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "axes": "YX",
+          "dtype": "uint16",
+          "first_page_shape": [
+            48,
+            64
+          ]
+        },
+        "original_metadata": {
+          "65500": "new value",
+          "BitsPerSample": 16,
+          "Compression": "NONE",
+          "DateTime": "2026:11:12 18:00:00",
+          "ImageDescription": "{\"shape\": [3, 48, 64]}",
+          "ImageLength": 48,
+          "ImageWidth": 64,
+          "PhotometricInterpretation": "MINISBLACK",
+          "ResolutionUnit": "INCH",
+          "RowsPerStrip": 48,
+          "SamplesPerPixel": 1,
+          "Software": "tifffile.py",
+          "XResolution": [
+            10,
+            1
+          ],
+          "YResolution": [
+            10,
+            1
+          ]
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
