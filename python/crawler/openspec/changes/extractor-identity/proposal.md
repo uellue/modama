@@ -63,6 +63,8 @@ The answers are quoted in full in the design's "Evidence".
 
 ### Open after the review
 
+**Decided by @weber, 2026-11-12 (question 192 in the conversation): "yes, replace, please!"** The new success replaces the stored result; the record gets a new datestamp and is harvested; both values stay in the run; a new failure never replaces a stored success. The design's D10 and the spec scenario "A spot-check difference is reported, not spread" follow this when the change is applied.
+
 - **What happens to the record of a dataset whose spot check differs?** Say the spot check re-extracts `adhoc/x/a.dm4` and its date now reads `2021-05-12` instead of the stored `2021-05-11`. *Lean:* the new result replaces the stored one, because it is what the installed code gives ("the search reflects the desired state", S3); the record gets a new datestamp and is harvested, and the old and new value stay in the run for whoever looks into it. A new failure (say a time-out under load) does not replace a stored success. *Against:* a value that changes on every extraction, such as a date completed from the day of the crawl, then changes the record each time its dataset is sampled. *Alternative:* keep the stored result and only report; the record then stays stale until the next new identity.
 
 ## Capabilities
