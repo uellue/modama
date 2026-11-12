@@ -1,5 +1,6 @@
 """Helpers for the extraction tests of this collection's formats."""
 
+import errno
 import io
 import os
 from contextlib import contextmanager
@@ -11,6 +12,18 @@ from modama_crawler.formats import Dataset, Extraction
 from modama_crawler.records import description, format_names, subjects
 from modama_crawler.testing import CollectionTests
 from modama_crawler.walk import walk
+
+
+def stale(name: str):
+    """An open() that fails for files of that name, as on a stale NFS handle, for monkeypatching a module's open."""
+    real = open
+
+    def fake(path, *args, **kwargs):
+        if os.path.basename(path) == name:
+            raise OSError(errno.ESTALE, "Stale file handle")
+        return real(path, *args, **kwargs)
+
+    return fake
 
 
 def rchar() -> int:

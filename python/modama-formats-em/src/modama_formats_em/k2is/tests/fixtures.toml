@@ -39,6 +39,34 @@ licence = "MIT (LICENSE.fixtures beside this file)"
 source = "modama_formats_em.k2is.tests.generate:upper_case, from capture52's Capture52_.gtg"
 generator = "modama_formats_em.k2is.tests.generate:upper_case"
 
+[text_tags]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.gtg without the DM4 header and without sector files (spec formats/k2is, a text file named like a tag file)"
+licence = "MIT"
+source = "modama_formats_em.k2is.tests.generate:text_tags"
+generator = "modama_formats_em.k2is.tests.generate:text_tags"
+
+[empty_tags]
+purpose = "reproducer"
+validity = "invalid-by-design: an empty file named empty.gtg without sector files (spec formats/k2is, an empty file named like a tag file)"
+licence = "MIT"
+source = "modama_formats_em.k2is.tests.generate:empty_tags"
+generator = "modama_formats_em.k2is.tests.generate:empty_tags"
+
+[empty_capture]
+purpose = "reproducer"
+validity = "invalid-by-design: an empty Capture7_.gtg, as an interrupted copy leaves one, with 8 synthetic sector blocks Capture7_1.bin to Capture7_8.bin; a broken capture (decision 172)"
+licence = "MIT"
+source = "modama_formats_em.k2is.tests.generate:empty_capture"
+generator = "modama_formats_em.k2is.tests.generate:empty_capture"
+
+[broken_next_to_complete]
+purpose = "reproducer"
+validity = "invalid-by-design: capture52's tag file as scan_.gtg with 8 synthetic sector blocks scan_1.bin to scan_8.bin, next to scan_2_.gtg holding text with 8 synthetic sector blocks scan_2_1.bin to scan_2_8.bin, whose names start with scan_ too (review finding 3 of recognition-checks-content)"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.k2is.tests.generate:broken_next_to_complete, from capture52's Capture52_.gtg"
+generator = "modama_formats_em.k2is.tests.generate:broken_next_to_complete"
+
 [other_bin]
 purpose = "reproducer"
 validity = "synthetic: a data.bin that is no K2IS sector, and one sector block named sector.dat"

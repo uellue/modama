@@ -3,14 +3,19 @@
 Run with -s to see each description, its subjects and the bytes the extractor read.
 """
 
+import subprocess
+import sys
 from types import SimpleNamespace
 
+import pytest
+from modama_crawler import extraction
 from modama_crawler.formats import Dataset
 from modama_crawler.records import description
 from modama_crawler.testing import recognise
+from modama_crawler.walk import walk
 
 from modama_formats_em import k2is
-from modama_formats_em.testing import described
+from modama_formats_em.testing import described, stale
 
 
 def test_a_capture_with_its_8_sectors(collection_tests, tmp_path):
@@ -90,6 +95,93 @@ def test_a_tag_file_without_sectors(collection_tests, tmp_path):
         == "Gatan Digital Micrograph .gtg tag file, 1 file, 26.9 kB, in /"
     )
     assert result.warnings == []
+
+
+def crawled(ct, fixture, tmp_path):
+    """Recognise and extract a fixture as a crawl does; the result carries the extraction failures as warnings."""
+    tree = ct.materialise(fixture, tmp_path)
+    result = walk(tree, ct.collection.formats)
+    extraction.extract(result, ct.collection.formats, str(tree), workers=1)
+    return result
+
+
+@pytest.mark.parametrize(
+    "fixture, name", [("text_tags", "notes"), ("empty_tags", "empty")]
+)
+def test_a_file_named_like_a_tag_file(collection_tests, tmp_path, fixture, name):
+    # A lone .gtg without the DM4 header is not a tag file (decision 172)
+    result = recognise(collection_tests, fixture, tmp_path)
+    (d,) = result.datasets
+    assert (d.anchor, d.type, d.format) == (f"/{name}.gtg", "text/plain", "")
+    assert d.basis == "single file; em/k2is: not application/x.dm-gtg, no DM header"
+    assert description(d).startswith("Plain text document, 1 file, ")
+    assert result.all_warnings() == []
+
+
+def test_records_comments_a_single_file_whose_name_type_was_dropped(tmp_path):
+    # Spec records-cli, "A single file whose name type was dropped": the command as typed
+    (tmp_path / "notes.gtg").write_text("hello\n")
+    run = subprocess.run(
+        [sys.executable, "-m", "modama_crawler", "records", "--verbose", str(tmp_path)],
+        capture_output=True,
+        check=True,
+        timeout=120,
+    )
+    out = run.stdout.decode()
+    comment = (
+        "<!-- /notes.gtg: text/plain, basis: single file; "
+        "em/k2is: not application/x.dm-gtg, no DM header -->"
+    )
+    assert out.split(comment, 1)[1].lstrip().startswith("<record>")
+    assert "<!-- 1 records (1 single files by type), 0 warnings, 0 skipped -->" in out
+
+
+@pytest.mark.parametrize("module", ["format's read", "new type's detection"])
+def test_a_lone_tag_file_that_cannot_be_read(
+    collection_tests, tmp_path, monkeypatch, module
+):
+    # Code review finding 1: a stray notes.gtg that cannot be read (stale handle, or
+    # moved away after the listing) keeps its type, and the capture next to it stands
+    from modama_crawler import formats, mime
+
+    tree = collection_tests.materialise("capture52", tmp_path)
+    (tree / "notes.gtg").write_text("hello\n")
+    where = formats if module == "format's read" else mime
+    monkeypatch.setattr(where, "open", stale("notes.gtg"), raising=False)
+    result = walk(tree, collection_tests.collection.formats)
+    datasets = {d.anchor: d for d in result.datasets}
+    assert set(datasets) == {"/Capture52_.gtg", "/notes.gtg"}
+    capture = datasets["/Capture52_.gtg"]
+    assert (capture.format, len(capture.members)) == ("em/k2is", 9)
+    notes = datasets["/notes.gtg"]
+    assert (notes.type, notes.basis) == ("application/x.dm-gtg", "single file")
+    assert result.all_warnings() == [
+        ("/notes.gtg", "em/k2is: cannot read notes.gtg: Stale file handle; type kept")
+    ]
+    assert result.listings["/"].retry  # recognised again next crawl
+
+
+def test_an_empty_tag_file_with_its_8_sectors(collection_tests, tmp_path):
+    # A broken capture, not 9 single files (decision 172): reported at extraction
+    result = crawled(collection_tests, "empty_capture", tmp_path)
+    (d,) = result.datasets
+    assert (d.format, d.anchor, len(d.members)) == ("em/k2is", "/Capture7_.gtg", 9)
+    ((where, text),) = result.all_warnings()
+    assert where == "/Capture7_.gtg"
+    assert text.startswith("em/k2is extraction failed: ")
+
+
+def test_a_broken_capture_next_to_a_complete_one(collection_tests, tmp_path):
+    result = crawled(collection_tests, "broken_next_to_complete", tmp_path)
+    captures = {d.anchor: d for d in result.datasets}
+    assert sorted((a, d.format, len(d.members)) for a, d in captures.items()) == [
+        ("/scan_.gtg", "em/k2is", 9),
+        ("/scan_2_.gtg", "em/k2is", 9),
+    ]
+    assert captures["/scan_.gtg"].extraction.extracted is not None
+    ((where, text),) = result.all_warnings()
+    assert where == "/scan_2_.gtg"
+    assert text.startswith("em/k2is extraction failed: ")
 
 
 def test_another_bin_file(collection_tests, tmp_path):

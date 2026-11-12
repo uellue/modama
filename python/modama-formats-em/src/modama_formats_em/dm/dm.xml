@@ -26,14 +26,27 @@
     </magic>
   </mime-type>
   <!-- Files with the DM4 header that hold tags and no image (no ImageList tag;
-       staging run 3, finding F15: 2,036 .dmw files). The name decides: a name
-       match that is a subclass of the sniffed type wins, so the DM4 format,
-       which reacts to application/x.dm4 only, does not take them. Gatan's own
-       name for them is to be confirmed; the comment says what is verified. The
-       .gtg tag files of K2IS captures are typed the same way, in k2is/. -->
+       staging run 3, finding F15: 2,036 .dmw files). The name decides the type
+       without reading the file, so the DM4 format, which reacts to
+       application/x.dm4 only, does not take them. The format em/dmw checks the
+       header: it claims a file with the DM3 or DM4 header, and one without
+       gets the type it has without this glob (change recognition-checks-content).
+       Gatan's own name for them is to be confirmed; the comment says what is
+       verified. The .gtg tag files of K2IS captures are typed the same way, in
+       k2is/. -->
   <mime-type type="application/x.dm-dmw">
-    <comment>Gatan Digital Micrograph .dmw file</comment>
+    <comment>Gatan Digital Micrograph workspace</comment>
     <sub-class-of type="application/x.dm4"/>
     <glob pattern="*.dmw"/>
+  </mime-type>
+  <!-- A compressed workspace as Gatan Microscopy Suite writes it (observed
+       2026-11-12): a ZIP whose first member is the workspace
+       <name>/<name>.dmw, then <name>/files/ with the images it names, all
+       deflated. The name decides; the format em/dmwx checks that the first
+       member is a .dmw (change recognition-checks-content, decision 190). -->
+  <mime-type type="application/x.dm-dmwx">
+    <comment>Gatan Digital Micrograph workspace (compressed)</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.dmwx"/>
   </mime-type>
 </mime-info>

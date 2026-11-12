@@ -610,6 +610,9 @@ def cmd_records(args) -> int:
         identifier, metadata = build(d, names)
         if d.format:
             note = f"{d.anchor}: {d.type} by {d.format} {d.version}, basis: {d.basis}"
+        elif d.basis != "single file":  # a format dropped its name type (records-cli)
+            note = f"{d.anchor}: {d.type}, basis: {d.basis}"
+            plain += 1
         else:  # a single file by its MIME type: routine, counted, not commented
             note = None
             plain += 1
