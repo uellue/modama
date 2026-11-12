@@ -1,0 +1,63 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testEXCEL.xlsx",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/xlsx",
+      "members": [
+        "/testEXCEL.xlsx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testEXCEL.xlsx": {
+      "subjects": [],
+      "summary": [
+        "Simple Excel document",
+        "Keith Bennett",
+        "2007-10-01T16:13:56Z",
+        "Microsoft Excel"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "sheets": {
+            "Feuil1": "A1:D22",
+            "Feuil2": "A1:A1",
+            "Feuil3": "A1:A1"
+          }
+        },
+        "original_metadata": {
+          "app.AppVersion": "12.0000",
+          "app.Application": "Microsoft Excel",
+          "app.Company": "",
+          "app.DocSecurity": "0",
+          "app.HeadingPairs": [
+            "Worksheets",
+            "3"
+          ],
+          "app.HyperlinksChanged": "false",
+          "app.LinksUpToDate": "false",
+          "app.ScaleCrop": "false",
+          "app.SharedDoc": "false",
+          "app.TitlesOfParts": [
+            "Feuil1",
+            "Feuil2",
+            "Feuil3"
+          ],
+          "core.created": "2007-10-01T16:13:56Z",
+          "core.creator": "Keith Bennett",
+          "core.lastModifiedBy": "garribas",
+          "core.modified": "2008-12-11T16:02:17Z",
+          "core.title": "Simple Excel document"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

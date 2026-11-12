@@ -1,0 +1,31 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testODTEncrypted.odt",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/odt",
+      "members": [
+        "/testODTEncrypted.odt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.oasis.opendocument.text",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testODTEncrypted.odt": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": true
+        },
+        "original_metadata": {}
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

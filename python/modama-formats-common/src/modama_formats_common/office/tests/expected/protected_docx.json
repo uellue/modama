@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testWORD_protected_passtika.docx",
+      "basis": "single file; common/docx: not application/vnd.openxmlformats-officedocument.wordprocessingml.document, no ZIP header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/testWORD_protected_passtika.docx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-ole-storage",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

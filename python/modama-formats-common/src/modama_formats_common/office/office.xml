@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- Lock files that office programs write beside a document they have open
+       (spec formats/office, "Lock files are recognised by name"). The core
+       types them by their extension as the document they lock: a
+       ~$name.pptx would be a PowerPoint presentation. -->
+  <mime-type type="application/x-ms-owner">
+    <!-- Apache Tika's name (tika-mimetypes.xml), PRONOM fmt/473. The weight
+         puts the prefix above the extension's glob (50) of every type -->
+    <comment>Microsoft Office owner file</comment>
+    <glob pattern="~$*" weight="60"/>
+  </mime-type>
+  <mime-type type="application/x.libreoffice-lock">
+    <!-- No type in the wild found (freedesktop.org, Apache Tika): an unofficial one -->
+    <comment>LibreOffice lock file</comment>
+    <glob pattern=".~lock.*#"/>
+  </mime-type>
+</mime-info>

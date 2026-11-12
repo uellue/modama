@@ -1,0 +1,46 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testFooter.ods",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/ods",
+      "members": [
+        "/testFooter.ods"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.oasis.opendocument.spreadsheet",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testFooter.ods": {
+      "subjects": [],
+      "summary": [
+        "Michael McCandless",
+        "2011-10-26T10:59:49",
+        "OpenOffice.org/3.3$Unix OpenOffice.org_project/330m20$Build-9567"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": false
+        },
+        "original_metadata": {
+          "creation-date": "2011-10-26T10:59:49",
+          "creator": "Michael McCandless",
+          "date": "2011-10-26T11:13:57",
+          "document-statistic.@cell-count": "4",
+          "document-statistic.@object-count": "0",
+          "document-statistic.@table-count": "3",
+          "editing-cycles": "2",
+          "editing-duration": "PT14M8S",
+          "generator": "OpenOffice.org/3.3$Unix OpenOffice.org_project/330m20$Build-9567",
+          "initial-creator": "Michael McCandless"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
