@@ -1,0 +1,363 @@
+{
+  "datasets": [
+    {
+      "anchor": "/test_tiff_Zeiss_SEM_512pix.tif",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/tiff",
+      "members": [
+        "/test_tiff_Zeiss_SEM_512pix.tif"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/tiff",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/test_tiff_Zeiss_SEM_512pix.tif": {
+      "subjects": [],
+      "summary": [
+        "ULTRA 55-36-06",
+        "InLens",
+        "EHT 5.0 kV",
+        "50.00 K X",
+        "Pixel Size 5.825 nm",
+        "ImageWidth 512",
+        "ImageLength 384",
+        "BitsPerSample 8",
+        "25 Sep 2018",
+        "8:20:42"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "axes": "YX",
+          "dtype": "uint8",
+          "first_page_shape": [
+            384,
+            512
+          ]
+        },
+        "original_metadata": {
+          "BitsPerSample": 8,
+          "CZ_SEM.ap_actualcurrent": [
+            "Fil I",
+            2.309,
+            "A"
+          ],
+          "CZ_SEM.ap_actualkv": [
+            "EHT",
+            5.0,
+            "kV"
+          ],
+          "CZ_SEM.ap_alias_wd": [
+            "Focus",
+            3.9,
+            "mm"
+          ],
+          "CZ_SEM.ap_beamshift_x": [
+            "Beam Shift X",
+            1.1,
+            "%"
+          ],
+          "CZ_SEM.ap_beamshift_y": [
+            "Beam Shift Y",
+            19.0,
+            "%"
+          ],
+          "CZ_SEM.ap_brightness": [
+            "Brightness",
+            47.5,
+            "%"
+          ],
+          "CZ_SEM.ap_collector_bias": [
+            "Collector Bias",
+            300,
+            "V"
+          ],
+          "CZ_SEM.ap_column_vac": [
+            "Gun Vacuum",
+            2.11e-09,
+            "mbar"
+          ],
+          "CZ_SEM.ap_contrast": [
+            "Contrast",
+            28.0,
+            "%"
+          ],
+          "CZ_SEM.ap_date": [
+            "Date",
+            "25 Sep 2018"
+          ],
+          "CZ_SEM.ap_file_number": [
+            "File No",
+            49870
+          ],
+          "CZ_SEM.ap_frame_average_count": [
+            "Frames to average",
+            1
+          ],
+          "CZ_SEM.ap_gamma": [
+            "Gamma",
+            1.0
+          ],
+          "CZ_SEM.ap_hcstage_temp": [
+            "Peltier Temp",
+            20.0,
+            "\u00b0C"
+          ],
+          "CZ_SEM.ap_height": [
+            "Height",
+            4.474,
+            "\u00b5m"
+          ],
+          "CZ_SEM.ap_laser_finder_illum": [
+            "Laser Illumination",
+            0.0,
+            "%"
+          ],
+          "CZ_SEM.ap_mag": [
+            "Mag",
+            "50.00 K X"
+          ],
+          "CZ_SEM.ap_manualkv": [
+            "EHT Target",
+            5.0,
+            "kV"
+          ],
+          "CZ_SEM.ap_photo_number": [
+            "Photo No.",
+            4838
+          ],
+          "CZ_SEM.ap_pixel_size": [
+            "Pixel Size",
+            5.825,
+            "nm"
+          ],
+          "CZ_SEM.ap_print_number": [
+            "Print No.",
+            1
+          ],
+          "CZ_SEM.ap_stage_at_field_x": [
+            "Stage at field X",
+            1
+          ],
+          "CZ_SEM.ap_stage_at_field_y": [
+            "Stage at field Y",
+            1
+          ],
+          "CZ_SEM.ap_stage_at_m": [
+            "Stage at M",
+            0.0,
+            "mm"
+          ],
+          "CZ_SEM.ap_stage_at_r": [
+            "Stage at R",
+            245.8,
+            "\u00b0"
+          ],
+          "CZ_SEM.ap_stage_at_t": [
+            "Stage at T",
+            0.0,
+            "\u00b0"
+          ],
+          "CZ_SEM.ap_stage_at_x": [
+            "Stage at X",
+            62.9961,
+            "mm"
+          ],
+          "CZ_SEM.ap_stage_at_y": [
+            "Stage at Y",
+            65.3168,
+            "mm"
+          ],
+          "CZ_SEM.ap_stage_at_z": [
+            "Stage at Z",
+            44.678,
+            "mm"
+          ],
+          "CZ_SEM.ap_stage_goto_field_x": [
+            "Stage goto field X",
+            1
+          ],
+          "CZ_SEM.ap_stage_goto_field_y": [
+            "Stage goto field Y",
+            1
+          ],
+          "CZ_SEM.ap_stage_goto_m": [
+            "Stage goto M",
+            0.0,
+            "mm"
+          ],
+          "CZ_SEM.ap_stage_goto_r": [
+            "Stage goto R",
+            245.8,
+            "\u00b0"
+          ],
+          "CZ_SEM.ap_stage_goto_t": [
+            "Stage goto T",
+            0.0,
+            "\u00b0"
+          ],
+          "CZ_SEM.ap_stage_goto_x": [
+            "Stage goto X",
+            62.996,
+            "mm"
+          ],
+          "CZ_SEM.ap_stage_goto_y": [
+            "Stage goto Y",
+            65.317,
+            "mm"
+          ],
+          "CZ_SEM.ap_stage_goto_z": [
+            "Stage goto Z",
+            44.678,
+            "mm"
+          ],
+          "CZ_SEM.ap_system_vac": [
+            "System Vacuum",
+            4.48e-06,
+            "mbar"
+          ],
+          "CZ_SEM.ap_tilt_angle": [
+            "Tilt Angle",
+            0.0,
+            "\u00b0"
+          ],
+          "CZ_SEM.ap_time": [
+            "Time",
+            "8:20:42"
+          ],
+          "CZ_SEM.ap_wd": [
+            "WD",
+            3.9,
+            "mm"
+          ],
+          "CZ_SEM.ap_width": [
+            "Width",
+            5.965,
+            "\u00b5m"
+          ],
+          "CZ_SEM.dp_crosshairs": [
+            "Crosshairs",
+            false
+          ],
+          "CZ_SEM.dp_detector_channel": [
+            "Signal A",
+            "InLens"
+          ],
+          "CZ_SEM.dp_freeze_on": [
+            "Freeze on",
+            "End Frame"
+          ],
+          "CZ_SEM.dp_frozen": [
+            "Image",
+            "Frozen"
+          ],
+          "CZ_SEM.dp_left_frozen": [
+            "All Frozen",
+            true
+          ],
+          "CZ_SEM.dp_noise_reduction": [
+            "Noise Reduction",
+            "Line Int. Done"
+          ],
+          "CZ_SEM.dp_operating_mode": [
+            "Operating Mode",
+            "Normal"
+          ],
+          "CZ_SEM.dp_out_dev": [
+            "Output dev",
+            "19/21 inch display"
+          ],
+          "CZ_SEM.dp_out_type": [
+            "Output To",
+            "Display/File"
+          ],
+          "CZ_SEM.dp_runupstate": [
+            "Beam State",
+            "Beam On"
+          ],
+          "CZ_SEM.dp_scanrate": [
+            "Scan Speed",
+            6
+          ],
+          "CZ_SEM.dp_user_align": [
+            "User Align",
+            true
+          ],
+          "CZ_SEM.dp_user_level": [
+            "User Level",
+            "Novice"
+          ],
+          "CZ_SEM.dp_vacstatus": [
+            "Vac Status",
+            "Ready"
+          ],
+          "CZ_SEM.dp_vent_inhibited": [
+            "Venting inhibited",
+            true
+          ],
+          "CZ_SEM.dp_vent_invalid_reason": [
+            "Vent inhibit",
+            "Beam Present"
+          ],
+          "CZ_SEM.dp_zoom": [
+            "Zoom",
+            false
+          ],
+          "CZ_SEM.sv_file_name": [
+            "File Name",
+            "A600_04.tif"
+          ],
+          "CZ_SEM.sv_image_path": [
+            "Images",
+            "D:\\2016\\Liberato\\Eric\\"
+          ],
+          "CZ_SEM.sv_operator": [
+            "Operator",
+            ""
+          ],
+          "CZ_SEM.sv_sample_id": [
+            "Sample ID",
+            ""
+          ],
+          "CZ_SEM.sv_serial_number": [
+            "Serial No.",
+            "ULTRA 55-36-06"
+          ],
+          "CZ_SEM.sv_user_name": [
+            "User Name",
+            "LIBERATO"
+          ],
+          "CZ_SEM.sv_user_text": [
+            "User Text",
+            ""
+          ],
+          "CZ_SEM.sv_version": [
+            "Version",
+            "V05.04.03.00 : 16-Apr-10"
+          ],
+          "Compression": "NONE",
+          "ImageLength": 384,
+          "ImageWidth": 512,
+          "NewSubfileType": "UNDEFINED",
+          "PhotometricInterpretation": "PALETTE",
+          "ResolutionUnit": "NONE",
+          "RowsPerStrip": 4294967295,
+          "SamplesPerPixel": 1,
+          "XResolution": [
+            1,
+            1
+          ],
+          "YResolution": [
+            1,
+            1
+          ]
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

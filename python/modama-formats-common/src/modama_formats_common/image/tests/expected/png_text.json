@@ -1,0 +1,48 @@
+{
+  "datasets": [
+    {
+      "anchor": "/pattern.png",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/png",
+      "members": [
+        "/pattern.png"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/png",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/pattern.png": {
+      "subjects": [],
+      "summary": [
+        "A test pattern",
+        "width 64",
+        "height 48",
+        "Pillow"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "dpi": [
+            299.9994,
+            299.9994
+          ],
+          "height": 48,
+          "mode": "L",
+          "width": 64
+        },
+        "original_metadata": {
+          "Author": "J\u00fclich",
+          "Comment": "",
+          "Description": "Written for the crawler's tests",
+          "Software": "Pillow",
+          "Title": "A test pattern"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -11,6 +11,12 @@ version = "0.0.1.dev0"
 dependencies = [
     # Each part adds the libraries it reads its formats with
     "modama-crawler",
+    # image: TIFF tags and vendor blocks (2026.11.8 of 2026-11-08, BSD-3-Clause; brings NumPy)
+    "tifffile==2026.11.8",
+    # image: PNG, JPEG, BMP, GIF, WEBP headers and EXIF (13.0.0 of 2026-10-16, MIT-CMU)
+    "pillow==13.0.0",
+    # image: SVG, XML from anyone (0.7.1, PSF-2.0)
+    "defusedxml==0.7.1",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},
