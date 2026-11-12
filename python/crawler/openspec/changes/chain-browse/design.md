@@ -48,7 +48,7 @@ The cost per click is then the folder's listing and sniffing plus one extraction
 
 `live.py` is run as `python -m modama_chain.live [--config TOML] --root ROOT PATH` with no shell, and a minimal environment (`PATH`, `HOME`, `LANG`; no database, HTTP or Airflow setting; R2). It prints one JSON document: the crawler's configuration as the crawler's commands make it (the crawler's `cli.configure`, made public from `_configure` for this, R8b), `walk(root, formats, top=<the file's folder>, threads=4, processes=0)` (D5), `extraction.extract` of the one dataset holding the path (`workers=1`) inside `cpus.set_num_threads_env(1)`, `records.build`, and the record rendered by `render` as the server's `GetRecord` renders it (R8a), with the datestamp the parent passes (D6). A fresh interpreter per file imports the checkout's current code, so an edit to a format, an extractor, `records.py` or `render.py` shows on the next reload, without a rebuild, a re-crawl or a restart. Edits to `upstream` code (pinned submodules) or `modama_chain` itself need `docker compose restart browse` (seconds). A new format's entry point needs the image rebuilt (`pip install -e` writes entry points at build time).
 
-Code edited in the shared checkout, by @weber or by an agent, runs on staging at the next reload, as `STAGING_USER`, with read access to the data tree and the stack's network (R2; whether that is wanted is open item 216 with @weber). The safeguards: the child's minimal environment, the read-only container, read-only mounts, 127.0.0.1 only.
+Code edited in the shared checkout, by @weber or by an agent, runs on staging at the next reload, as `STAGING_USER`, with read access to the data tree and the stack's network (R2). Decided by @weber, 2026-11-12, item 216: "good points, sounds good!" (the runbook's "Safety" section says so). The safeguards: the child's minimal environment, the read-only container, read-only mounts, 127.0.0.1 only.
 
 ### D5. `walk(top=…)`: one folder recognised as the crawl recognises it, without its subfolders (R1)
 
@@ -100,7 +100,7 @@ Read-only mounts, a read-only container (D2); no shell (child processes with arg
 
 What "read-only" rests on (R3): `crawler-db` trusts any connection as `postgres` (`docker-compose.yml`, `POSTGRES_HOST_AUTH_METHOD: trust`) and OpenSearch has no security plugin, so in this stack the only guard against a write is the tool's own code: read-only transactions (`default_transaction_read_only`) and GET requests only. The warehouse database is read with its read-only role. Other local accounts on the shared server can reach ports on 127.0.0.1: the runbook's acceptance of that ("ports on localhost, trusted users") is extended to this tool explicitly (R7); no start token (not asked).
 
-### D15. Dependencies (decided by the main session, provisional until @weber confirms item 215)
+### D15. Dependencies (@weber, 2026-11-12, item 215: "yes go with your lean, sounds sensible")
 
 `xmltodict` 1.0.4 and `jsonschema` 4.26.0 (both the current release on PyPI, checked 2026-11-12), pinned exactly, with jsonschema's dependencies pinned as the warehouse's `uv.lock` (v1.10.0) has them (`attrs`, `jsonschema-specifications`, `referencing`, `rpds-py`), in an extra `browse` of `modama-chain`, installed only in the browse image. MIT each. No `git` (R4).
 
@@ -109,7 +109,7 @@ What "read-only" rests on (R3): `crawler-db` trusts any connection as `postgres`
 - **Version skew:** the live views run the checkout's code, the stored ones what the deployed images ran. That is the point (stored vs live), but a staging checkout ahead of the images shows differences that a re-crawl would bring.
 - **Emulations drift** from upstream (D7 call, D8 loop, D9, D10). Mitigation: file and line references in the code and the page; the e2e test compares D7, D8 and D9 with what the stack stored; D10 is checked by eye against matchmaker.
 - **Large folders:** the live views of a file in a folder of 67,600 files may take a minute or more on NFS (D3); measured by @weber on staging.
-- **Code from the checkout on staging** (D4; open item 216).
+- **Code from the checkout on staging** (D4; accepted by @weber, item 216).
 
 ## Not now
 
