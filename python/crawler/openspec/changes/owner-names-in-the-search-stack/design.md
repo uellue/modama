@@ -2,7 +2,7 @@
 
 ## Context
 
-`records.user_name(uid)` is `pwd.getpwuid(uid).pw_name`, cached per process, with `str(uid)` when the lookup raises `KeyError`. A crawl runs as its own process (`modama-crawler crawl`, started by the timer), so one crawl asks once per owner. The crawler's image knows only the users of `python:3.14-slim-trixie`.
+`records.user_name(uid)` is `pwd.getpwuid(uid).pw_name`, cached per process, with `str(uid)` when the lookup raises `KeyError`; this change replaces it with `records.owner` (D10, D11). A crawl runs as its own process (`modama-crawler crawl`, started by the timer), so one crawl asks once per owner. The crawler's image knows only the users of `python:3.14-slim-trixie`.
 
 `deploy/` gives its services the institute's users with one `sssd` container (`deploy/sssd`: Debian 13, `sssd` 2.10.1 with `libnss-sss`) whose sockets are in a volume `ssspipes`, mounted at `/var/lib/sss/pipes/` into every service that looks users up; those services have `libnss-sss`, so `getpwuid` asks sssd through the socket. Production mounts `/var/local/data-mgmt/sssd.conf` directly; the test deployment (`docker-compose.override.yml`) copies the file with `install -m 600` at start, because sssd accepts only a root-owned file not readable by others, and waits for its test directory (`deploy/ldap`) to be healthy, because sssd goes offline for a while when it asks too early.
 
@@ -58,20 +58,30 @@ What remains: an owner that sssd has never seen, during an outage of the directo
 
 ### D8. What the first crawl with names does on staging
 
-Nearly every record's creator changes from the number to the login name, so its content and datestamp change ("The datestamp moves when the record changes"). The harvest after that crawl takes nearly every record again (incremental by datestamp), and the indexing embeds nearly every record again: about as long as the first full harvest and indexing on staging. Records of owners the directory does not know keep the number and their datestamp. The README and the runbook say so, with the check afterwards (`modama-chain status`, a search that shows a login name).
+Nearly every record's creator changes from the number to the full name, and its description gains the group, so its content and datestamp change ("The datestamp moves when the record changes"). The harvest after that crawl takes nearly every record again (incremental by datestamp), and the indexing embeds nearly every record again: about as long as the first full harvest and indexing on staging. Records of owners the directory does not know keep the number and their datestamp. The README and the runbook say so, with the check afterwards (`modama-chain status`, a search that shows a login name).
 
 ### D9. Tests
 
-- `tests/test_records.py`: one test per scenario of "Dublin Core mapping": Single file (the existing test, with the creator asserted, the current user's name), An owner without a name (`pwd.getpwuid` patched to raise `KeyError` for 4242, `user_name`'s cache cleared).
-- `test_e2e.py`, `test_a_changed_record_replaces_the_old_one`: the file's owner changes from root to 10001, and its record's, the warehouse's and the index's creator become `alice` (scenario An owner from the directory). Today it changes to 4242 and checks `4242`; the fallback moves to the unit test above, and the e2e test checks the path through sssd, which nothing else checks.
+- `tests/test_records.py`: one test per scenario of "Dublin Core mapping" and of the description's group: Single file (`pwd.getpwuid` and `grp.getgrgid` patched to give `alice`, `Alice Anderson`, `erc-1`), An owner without a full name (GECOS empty and `,,,`), An owner without a name (`KeyError` for 4242), A file without an extractor (the description with `, group erc-1`), An owner without a known group (uid unknown; gid without a name); `owner`'s cache cleared around each. The existing tests that compare a whole description (`test_records.py`, `test_server.py`, and three in `modama-formats-em`) expect the group of the user running them, from `records.owner(os.getuid())`, so that they hold in the VM (`dev`) and in CI alike.
+- `test_e2e.py`, `test_a_changed_record_replaces_the_old_one`: the file's owner changes from root to 10001, and its record's, the warehouse's and the index's creator become `Alice Anderson`, and the description ends in `, group iff` (scenario An owner from the directory). Today it changes to 4242 and checks `4242`; the fallback moves to the unit test above, and the e2e test checks the path through sssd, which nothing else checks. Before the change the creator is `root` (root's GECOS in the image is `root`).
 - `runtest.sh`: `sssd` and `ldap` in the list of services, and one check, "the crawler names uid 10001 alice (through sssd)", with `getent passwd 10001` in `crawler`.
+
+### D10. The creator: GECOS up to its first comma, else the login name, else the number (201)
+
+`records.owner(uid)` (cached per process, as `user_name` was) returns the creator and the group name. The creator is `pw_gecos.split(",")[0].strip()`, else `pw_name`, else `str(uid)`. Up to the first comma because that is the GECOS field's convention (passwd(5): the full name, then office, phones; `chfn` writes it so), and Debian's `adduser` writes `,,,` for a user without a name, which would otherwise be the creator. Evidence for sssd: it fills GECOS from `cn` when the entry has no `gecos` attribute (@weber's entry, and the smoke test: `pwd.getpwuid(10001).pw_gecos` is `'Alice Anderson'` from `cn: Alice Anderson`, the entry has no `gecos`; `mallory` gives `'Mallory Miller'`). Against: a directory whose `cn` holds a comma ("Weber, Dieter") would lose the given name. Accepted for now: FreeIPA's `cn` is "Given Family", and the alternative, the whole field, puts `,,,` and phone numbers into records.
+
+### D11. The group in the description (202)
+
+`description` appends `group <name>` after the folder, as one more comma-separated part: `Plain text document, 1 file, 1.2 kB, in notes/, group erc-1`; with extracted values first as before. The group is the owner's primary group (`grp.getgrgid(pw.pw_gid).gr_name`), not the file's group: it names the people the owner belongs to, which the file's group, often a project group or the user's own, does not. Smoke test: 10001 → gid 10000 → `iff`, 10004 → 10100 → `outsiders`. Left out when `getpwuid` or `getgrgid` raises `KeyError`. The search's keyword leg searches the description, so a search for the group finds the group's records (not tested; the e2e test checks the description in the crawler's record only).
 
 ## Risks
 
 - **The real configuration does not work in our container** (a CA file, a host name the stack's network cannot resolve, a firewall rule for the dev server's Docker network): sssd stays unhealthy, `./upstaging.sh` fails after its timeout, and the crawler services do not start, so tonight's crawl would not run. Mitigation: the runbook's check of the option names before the start, and `dc logs sssd` names the failing step; rollback is to start the previous commit, which has no sssd.
 - **The bind password reaches a second container** on staging (our sssd, besides deploy's). Same file, same host, same admin; the file is mounted read-only and copied with mode 600 inside the container.
 - **Mallory** (`outsiders`) is named too: the access filter of deploy's configuration is a PAM matter, and a name lookup is not access. The record shows whose file it is, as with a number.
+- **Full names are more personal than login names.** Within what the decision log (2026-11-04, records stay inside the institute) and 200 (Blablador) accept; 201 is @weber's decision.
+- **Outside the search stack** (a developer's machine, CI) the creator changes from the login name to the full name where the user database has one, and every description gains a group: the crawler's own tests expect the running user's values (D9).
 
 ## Not now
 
-The full name and the group in the records (199); StartTLS in the test stack (D4 made it unnecessary); `sssd-tools` in deploy's image for a `sssctl` health check; a guard in the crawler for an unavailable name service (D7).
+Other directory attributes (`ou`, `departmentNumber`, mail) and secondary groups (201, 202 take the full name and the primary group only); StartTLS in the test stack (D4 made it unnecessary); `sssd-tools` in deploy's image for a `sssctl` health check; a guard in the crawler for an unavailable name service (D7).
