@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Every crawl is recorded as a run
-The crawl SHALL record a run in the index before it starts walking, with the time it started, the data root and, for a subtree crawl, its path, and SHALL record when it ends the end time, the outcome `finished`, and the numbers of datasets, warnings and changed records. The start time SHALL be taken before the first directory is listed.
+The crawl SHALL record a run in the index before it starts walking, with the time it started, the data root and, for a subtree crawl, its path, and SHALL record when it ends the end time, the outcome `finished`, and the numbers of datasets, warnings and changed records. The start time SHALL be taken before the walk lists its first directory; a subtree crawl's checks of the directories down to its path come before it.
 
 #### Scenario: A finished crawl
 - **WHEN** `modama-crawler crawl` walks a test tree with three files and ends normally
@@ -15,10 +15,10 @@ The crawl SHALL record a run in the index before it starts walking, with the tim
 
 #### Scenario: A subtree crawl records its path
 - **WHEN** `modama-crawler crawl --path /adhoc/libertem/libertem-test-data` ends normally
-- **THEN** its run holds the data root and the path `adhoc/libertem/libertem-test-data`, and a crawl of the whole tree holds no path
+- **THEN** its run holds the data root and the path `/adhoc/libertem/libertem-test-data`, in the form of the anchors, and a crawl of the whole tree holds no path
 
 ### Requirement: The runs command shows recent runs
-`modama-crawler runs` SHALL print the most recent runs, newest first, one per line on stdout: start, end or state, outcome, counts, progress for a running crawl, and the path of a subtree crawl after the data root. Diagnostics SHALL go to stderr; a closed output pipe and Ctrl-C SHALL end the command without a traceback.
+`modama-crawler runs` SHALL print the most recent runs, newest first, one per line on stdout: start, end or state, outcome, counts, progress for a running crawl, and the path of a subtree crawl after the data root, as a canonical path (without a leading `/`). Diagnostics SHALL go to stderr; a closed output pipe and Ctrl-C SHALL end the command without a traceback.
 
 #### Scenario: No crawl yet
 - **WHEN** `modama-crawler runs` is run against an index without runs

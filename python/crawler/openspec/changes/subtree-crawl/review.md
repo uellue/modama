@@ -2,6 +2,8 @@
 
 Scope: the planning artifacts of `openspec/changes/subtree-crawl/` (proposal, design, tasks, four spec deltas) at e5e670d, before any code. Reviewed by an agent that did not write them, against @weber's request of 2026-11-12, `design/requirements.md`, the decision log, the main specs, the open changes `em-formats-and-extraction` and `parallel-walk`, and the code the change touches (`cli.py`, `walk.py`, `store.py`, `extraction.py`, `records.py`, `selection.py`, `python/search-chain`, the warehouse's DAG and `db_methods.py`, the search stack's compose files). D7 (request 2) is open and is reviewed for facts only. Nothing in the other artifacts has been changed; the *Decision* column is for @weber.
 
+**Status, 2026-11-12 (after the review).** @weber: "I have no idea what any of that means. Go with your leans, and where there is no obvious answer, please provide clearer examples." Every finding with a clear fix was checked against the code again and fixed in the other artifacts with the reviewer's fix or the lean named below; each finding says where, under **Addressed**. Open: H3 (waits for the walk-through of the extractor's identity; design D3, "Reverting an experiment") and M4 (a question in the proposal, with examples). The *Decision* column now says what became of each.
+
 Each finding was checked against the code. **CONFIRMED** means read in the code (or run, where marked "ran"); **PLAUSIBLE** means it follows from the code and from documented behaviour of a tool that I did not run here (Docker, Airflow).
 
 Severity: **H** deletes or corrupts index data, or breaks a stated contract with data consequences; **M** a reachable defect, or a contradiction between artifacts that an implementer would have to resolve by guessing; **L** cleanliness, wording, small risks.
@@ -10,22 +12,22 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 
 | # | Finding | Sev | Verdict | Decision |
 |---|---|---|---|---|
-| H1 | The subtree delete as written matches siblings (`a/b` also matches `a/bc`) | H | CONFIRMED (ran) | |
-| H2 | PATH that cannot be listed during the walk gives an empty result, and the store deletes everything under PATH | H | CONFIRMED | |
-| H3 | A forced re-extraction is stored under an unchanged extractor identity and reused by every later crawl | H | CONFIRMED | |
-| M1 | Spec and design disagree on a collapsed PATH | M | CONFIRMED | |
-| M2 | The open change's `extraction` requirements say SHALL take over / reuse; no delta exempts subtree crawls | M | CONFIRMED | |
-| M3 | The data root as PATH is undefined, and the agreed rule "a file stands for its directory" reaches it | M | CONFIRMED | |
-| M4 | Other rules (`--select`, `--ignore`, `--config`) make records that a full crawl would not make, the case D2 exists to prevent | M | CONFIRMED | |
-| M5 | Fast turn-around through the warehouse: the harvest waits behind a running DAG run, and F17 can block it | M | CONFIRMED | |
-| M6 | A PATH that is not UTF-8 crashes the store instead of exiting with 2; the design says it is already handled | M | CONFIRMED (ran) | |
-| M7 | Missing scenarios for the data-safety cases | M | CONFIRMED | |
-| M8 | On staging, a code change needs an image rebuild that recreates `crawl-timer` | M | PLAUSIBLE | |
-| L1 | The start time of a run is no longer taken before the first listing (crawl-runs spec) | L | CONFIRMED | |
-| L2 | `ADD COLUMN IF NOT EXISTS` takes an ACCESS EXCLUSIVE lock on every call | L | CONFIRMED (ran) | |
-| L3 | `--path` with a `--root` other than the last full crawl's | L | CONFIRMED | |
-| L4 | Rollback understates the effect on T | L | CONFIRMED | |
-| L5 | Small points (tests cited, path forms, per-path ignores, docs) | L | CONFIRMED | |
+| H1 | The subtree delete as written matches siblings (`a/b` also matches `a/bc`) | H | CONFIRMED (ran) | addressed: the predicate with `/` (D4), scenario "A sibling with the same prefix stays", task 2.4 |
+| H2 | PATH that cannot be listed during the walk gives an empty result, and the store deletes everything under PATH | H | CONFIRMED | addressed: the start directory raises like the root (D3), requirement "A subtree crawl fails when its path cannot be listed", task 2.1 |
+| H3 | A forced re-extraction is stored under an unchanged extractor identity and reused by every later crawl | H | CONFIRMED | open: waits for the extractor's identity; D3 "Reverting an experiment" (a code hash, step by step), proposal question, interim undo step in task 4.2 |
+| M1 | Spec and design disagree on a collapsed PATH | M | CONFIRMED | addressed: a collapsed PATH is crawled (D2), scenario "A collapsed directory as path" |
+| M2 | The open change's `extraction` requirements say SHALL take over / reuse; no delta exempts subtree crawls | M | CONFIRMED | addressed: `specs/extraction/spec.md`, archive after `em-formats-and-extraction` (tasks) |
+| M3 | The data root as PATH is undefined, and the agreed rule "a file stands for its directory" reaches it | M | CONFIRMED | addressed, lean: status 2 (D2), scenario "The data root as path" |
+| M4 | Other rules (`--select`, `--ignore`, `--config`) make records that a full crawl would not make, the case D2 exists to prevent | M | CONFIRMED | open: two questions in the proposal, with examples; Risks reworded |
+| M5 | Fast turn-around through the warehouse: the harvest waits behind a running DAG run, and F17 can block it | M | CONFIRMED | addressed: F17 fixed since; the precondition in D6, the proposal and the staging measurement |
+| M6 | A PATH that is not UTF-8 crashes the store instead of exiting with 2; the design says it is already handled | M | CONFIRMED (ran) | addressed: status 2 (D2), scenario "A path that is not UTF-8", Risks corrected |
+| M7 | Missing scenarios for the data-safety cases | M | CONFIRMED | addressed except two that wait for H3 and M4 |
+| M8 | On staging, a code change needs an image rebuild that recreates `crawl-timer` | M | PLAUSIBLE | addressed: `docker compose run --rm crawl-timer` (D6), checked by task 4.2 |
+| L1 | The start time of a run is no longer taken before the first listing (crawl-runs spec) | L | CONFIRMED | addressed: reworded in the crawl-runs delta |
+| L2 | `ADD COLUMN IF NOT EXISTS` takes an ACCESS EXCLUSIVE lock on every call | L | CONFIRMED (ran) | addressed: migration 0002, or the `ALTER` only when the column is missing (D5, task 3.1) |
+| L3 | `--path` with a `--root` other than the last full crawl's | L | CONFIRMED | addressed, lean: status 2 (D2), requirement "A subtree crawl uses the data root of the full crawls" |
+| L4 | Rollback understates the effect on T | L | CONFIRMED | addressed: Migration Plan, README step (task 4.2) |
+| L5 | Small points (tests cited, path forms, per-path ignores, docs) | L | CONFIRMED | addressed, each below |
 
 ## H. Data safety
 
@@ -36,6 +38,7 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 - **Scenario.** The index holds `/adhoc/libertem/libertem-test-data/…` and `/adhoc/libertem/libertem-test-data-old/…`. `crawl --path adhoc/libertem/libertem-test-data` deletes every dataset of `…-old` (not in the result) and, by D4's second bullet, their records. The `…-old` records are re-created by the next full crawl with new datestamps; meanwhile the warehouse still has them, so no harm shows in the search, which hides the defect from the e2e test. It breaks "the index SHALL be unchanged outside it" (spec `crawl:6`, `:19`).
 - **Verdict.** CONFIRMED: ran `SELECT starts_with('/adhoc/a/bc','/adhoc/a/b')` on PostgreSQL 17, which returns true. The design text allows the faulty reading. Task 2.4 tests `%` and `_`, not a sibling.
 - **Fix.** Write the predicate in the design: `directory = PATH OR starts_with(directory, PATH || '/')`, with PATH normalised to a leading `/` and no trailing `/`. Use the same predicate for `directories.path`. Add a spec scenario "A sibling with the same prefix stays" (`a/b` and `a/bc`, also `a/b_` and `a/b%`) and cite it in task 2.4. The root needs its own rule (M3).
+- **Addressed** (2026-11-12). Checked again: directory values are built as `rel.rstrip("/") + "/" + name` (`walk.py:214`), and a collapsed dataset's `directory` is the directory itself (`formats/__init__.py:273`), so the predicate also covers a collapsed PATH. Ran on PostgreSQL 17.11: `starts_with('/adhoc/a/bc','/adhoc/a/b')` is `t`, the predicate with `'/adhoc/a/b' || '/'` is `f` for `/adhoc/a/bc` and `t` for `/adhoc/a/b/x`, and `starts_with('/adhoc/a/b%/w','/adhoc/a/b_/')` is `f`. Design D4 (the predicate, for `datasets.directory` and `directories.path`), spec `crawl` requirement "A subtree crawl changes only its subtree" (definition of "under") with the scenario "A sibling with the same prefix stays" (`a/b` against `a/bc`, `a/b_`, `a/b%`), task 2.4. Example: `crawl --path adhoc/a/b` leaves the records of `adhoc/a/bc/y.txt` as they are.
 
 ### H2. A PATH that cannot be listed during the walk empties the subtree
 
@@ -44,6 +47,7 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 - **Scenario.** D2 lists PATH successfully. Seconds later the walk's `scandir` of PATH fails (`ESTALE` after an NFS server failover, `EACCES` after an ACL change, `EIO`). The run finishes, `records_changed` equals the subtree's record count, and every record under PATH is gone from the endpoint. The deletions do not reach the warehouse (`deletedRecord=no`), so the search looks fine while the crawler's index lost the subtree until the next full crawl.
 - **Verdict.** CONFIRMED by reading `walk.py:242-256`. Tasks 2.1 and 2.2 do not mention it, and D2's check before the run does not close the window.
 - **Fix.** Make the walk's start directory behave like the root: `if rel == start: raise`. The crawl then fails, the store is never reached, and the exit status is 2 as for an unreadable root (`cli.py:317-319`). Add a scenario "PATH cannot be listed when the walk reaches it" (simulate with a listing hook or permissions) to the requirement "A subtree crawl only covers what a full crawl enters".
+- **Addressed** (2026-11-12). Checked again: `walk.py:248` raises only for `rel == "/"`; `cli.py:296-319` records the run as `failed` and returns 2 for an `OSError`. So the run *is* recorded (as `failed`), unlike the refusals before the run; hence a requirement of its own rather than a scenario of "…only covers what a full crawl enters". Design D3 ("PATH cannot be listed when the walk reaches it"), spec `crawl` requirement "A subtree crawl fails when its path cannot be listed" with the scenario "The path cannot be listed when the walk reaches it", task 2.1. Example: `adhoc/libertem/libertem-test-data` gives `ESTALE` after the checks: status 2, run `failed`, every record under it still there.
 
 ### H3. A forced re-extraction is stored under an unchanged extractor identity
 
@@ -55,6 +59,7 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 - **Scenario.** Staging: the DM extractor is edited in the image and `crawl --path adhoc/libertem/libertem-test-data` runs. The edit is reverted and the image rebuilt. The 19:00 crawl recognises the subtree again (no listings) and reuses the reverted-away extractions, because `(em/dm4, "2", stamp)` matches. The search keeps the experimental descriptions indefinitely.
 - **Verdict.** CONFIRMED by reading. This is a fact about D3, which was agreed, not an objection to doing request 1 from scratch.
 - **Fix (options for @weber).** (a) Keep D3 and document the consequence and the undo step (`crawl --path X` again after reverting) in the README procedure of task 4.2. (b) Store the subtree's forced extractions with `extract_retry = true`, so that the next full crawl runs them again with the deployment's code. That is cheap (one flag in `store`), but it replaces the scenario "The next full crawl takes over the extractions" with "…extracts them again". (c) Settle the extractor identity first (@weber's D7 remark: a hash unique to the code). With a code-derived identity, reuse never crosses a code change, so the forced run of D3 is no longer needed for correctness. In any case, add a scenario for the revert case.
+- **Open** (2026-11-12): waits for the walk-through of the extractor's identity with @weber (his idea: a hash of the code instead of a hand-raised version, valid within one deployment). Checked again: the identity compared is `(fmt.id, fmt.extractor_version, d.stamp)` (`extraction.py:114-121`), stored at `:135-140`. Design D3, "Reverting an experiment": the sequence change, `crawl --path`, revert, `crawl --path` again, with what is stored at each step today and with a code hash, and what a full crawl in between does. A plain question with an example in the proposal. Interim: the README names the undo step (task 4.2, option (a) as documentation only). The revert scenario is written once the identity is decided.
 
 ## M. Contradictions, gaps and reachable defects
 
@@ -63,12 +68,14 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 - **What.** D2: "PATH itself may be collapsed: it then becomes one dataset, as in a full crawl" (`design.md:24`). Spec: status 2 "when … it or a directory above it is a symlink, is excluded …, cannot be listed, or is a directory that a format collapses" (`specs/crawl/spec.md:49`). Read literally, the spec refuses `crawl --path some/store.zarr`. That is request 1 for a Zarr store, a `.git` or an environment. There is no scenario for a collapsed PATH.
 - **Verdict.** CONFIRMED by reading.
 - **Fix.** Reword the spec to "a directory above it is collapsed", and add the scenario "A collapsed directory as PATH" (one dataset, the same as in a full crawl).
+- **Addressed** (2026-11-12). Design D2 ("On the way down"), spec `crawl` requirement "A subtree crawl only covers what a full crawl enters" (collapsed *above* PATH refuses; a collapsed PATH becomes one dataset) with the scenario "A collapsed directory as path" (`adhoc/project/data.zarr`).
 
 ### M2. The `extraction` requirements of the open change still say every crawl takes over and reuses
 
 - **What.** `em-formats-and-extraction/specs/extraction/spec.md:27-28` says "A crawl SHALL take over the stored datasets of a directory … when … unchanged", and `:38-…` says "otherwise its stored result SHALL be reused". A subtree crawl is a crawl (D1) and does neither. This change has no delta for the `extraction` capability, so after both changes are archived the main specs contradict each other. Tasks only say "Archive … together with or after `em-formats-and-extraction`" (`tasks.md:41`).
 - **Verdict.** CONFIRMED by reading.
 - **Fix.** Add `specs/extraction/spec.md` with the two requirements MODIFIED to "a crawl of the whole tree", and point to "A subtree crawl recognises and extracts its subtree again". Settle the archive order in tasks.
+- **Addressed** (2026-11-12). `specs/extraction/spec.md`: "Unchanged directories are not recognised or extracted again" and "Extraction follows the identified extractor" MODIFIED to a crawl of the whole tree, each naming the subtree crawl as the exception, scenarios kept whole. Proposal, Capabilities. Tasks, Workflow follow-up: archive after `em-formats-and-extraction`; `openspec validate --strict` reports (INFO) that archive refuses the delta until that change's `extraction` spec exists.
 
 ### M3. The data root as PATH is undefined
 
@@ -76,6 +83,7 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 - **Where.** `design.md:24`, `:67`; `proposal.md:21-22`; spec `crawl:19`, `:29-31`, `:49`.
 - **Verdict.** CONFIRMED by reading.
 - **Fix.** Decide and specify one behaviour: either status 2 with "the data root is crawled by `crawl` without `--path`", or a full crawl (scope NULL, rule set recorded, nothing deleted from the listings). Add a scenario for it, including the file at the top level.
+- **Addressed** (2026-11-12), lean: refuse with status 2, since a crawl of the root is `crawl` without `--path` and the other reading costs a special case. Design D2 ("The data root itself"), spec `crawl` requirement "A subtree crawl's path lies below the data root" with the scenario "The data root as path" (`--path /`, `--path .`, `--path README.txt` at the top level).
 
 ### M4. Other rules make exactly the records that D2 is there to prevent
 
@@ -83,6 +91,7 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 - **Where.** `design.md:22`, `:24`, `:45`, `:60` ("Not now": a warning); `selection.py:138-166` (the fingerprint covers selection, exclusions and per-path ignores, and also format versions and distributions); `store.py:391-396`.
 - **Verdict.** CONFIRMED by reading.
 - **Fix (options).** (a) Refuse `--select`/`--ignore` with `--path`, and refuse a subtree crawl whose configuration (selection, exclusions, per-path ignores) differs from the last full crawl's. That needs the configuration stored apart from the code part of the fingerprint: comparing the whole fingerprint would also refuse the legitimate case of a bumped format version. (b) At least the warning from "Not now", now, with the consequence for the warehouse stated in the README. (a) costs a second digest column or a JSON of the configuration on the run.
+- **Open** (2026-11-12): no obvious answer. Two questions in the proposal, each with a command and what option A and B do: `--select em/dm4` on `adhoc/libertem/libertem-test-data` (an EMPAD scan falls apart into two records, one with a new identifier that stays in the search), and a forgotten `--config` where the deployment excludes `.snapshot/`. Leans stated there (refuse, in both). Design D1 and Risks point to them; the Risks line no longer claims consistency beyond the crawler's own state.
 
 ### M5. The turn-around through the warehouse is not "one incremental harvest" while the warehouse is busy
 
@@ -90,12 +99,14 @@ Tally: 16 findings: 3 H, 8 M, 5 L (L5 collects several small points). 15 confirm
 - **Facts for D7 (open).** D7's own estimate, about 40 minutes of harvest and one to two hours of indexing for about 170,000 DM records (`design.md:18`), is above F17's 30 minutes for both the harvest task and the wait for indexing. The format-wide procedure would therefore meet F17 on staging until F17 is fixed. At F16's 62 records/s the indexing is about 46 minutes, at 26 records/s about 1 h 50 min, so "45 minutes to two hours".
 - **Verdict.** CONFIRMED by reading the DAG and F17. The e2e test (task 4.1) cannot show it: in the VM, harvests and indexing take minutes (F17: "Not seen in the VM").
 - **Fix.** State the precondition in the proposal's behaviour paragraph and in D6 (no harvest DAG run active, the default worker alive). Make the staging measurement in "Workflow follow-up" check it first (Airflow's DAG runs, or `modama-chain status`), and list F17's fix as a prerequisite for the turn-around on staging. No crawler change is needed.
+- **Update and addressed** (2026-11-12). F17 is fixed on the `crawler` branch (b58caac "Search stack: the broker waits 48 h for an acknowledgement", merged in 05341ef; kept by decision 126, c525232): `consumer_timeout = 172800000` in `prototypes/search-stack/broker.conf`, in the test deployment and on staging (`design/field-tests/search-stack-staging-findings.md`, F17, option (a)). So the harvest after a subtree crawl no longer blocks the default worker, and a queued DAG run is taken when the active one ends; the F17 half of this finding and of the "Facts for D7" is resolved. What remains is the wait behind an active DAG run (`max_active_runs=1` with the indexing wait): stated as the precondition in design D6 ("How soon") and in the proposal's behaviour paragraph; the staging measurement (tasks, Workflow follow-up) first checks that no harvest DAG run is active. F17 is no longer a prerequisite.
 
 ### M6. A PATH that is not UTF-8 crashes the store
 
 - **What.** The design says that names which are not valid UTF-8 are "already skipped by the walk (R35). PATH comes from the command line as text" (`design.md:47`). Python decodes `argv` with `surrogateescape`, so such a PATH arrives as a string with lone surrogates. The walk checks only the names of entries it lists (`walk.py:199-206`), never the start directory or the directories above it. Every anchor under such a PATH contains the surrogate, and `oai_identifier` raises in the store.
 - **Verdict.** CONFIRMED: ran `oai_identifier(os.fsdecode(b'/adhoc/caf\xe9/x'))`, which raises `UnicodeEncodeError: … surrogates not allowed` (`records.py:43`). The result is a failed run with a traceback. The transaction rolls back, so no data is lost, but the spec's "status 2 … no run recorded" for a path that a full crawl does not enter is not met (a full crawl skips that name with a warning).
 - **Fix.** Refuse a PATH that does not encode as UTF-8 in the D2 checks, with status 2, naming it with `!r`. Add it to the requirement's list and a scenario. Correct the Risks line.
+- **Addressed** (2026-11-12). Checked again (ran): `oai_identifier(os.fsdecode(b'/adhoc/caf\xe9/x'))` raises `UnicodeEncodeError: 'utf-8' codec can't encode character '\udce9' … surrogates not allowed`, and `os.fsdecode(b'adhoc/caf\xe9').encode()` raises the same, which is the check the walk uses for names (`walk.py:199-206`). Design D2 ("Not valid UTF-8"), spec `crawl` requirement "A subtree crawl's path lies below the data root" with the scenario "A path that is not UTF-8", Risks line corrected. Example: `crawl --path $'adhoc/caf\xe9'` ends with status 2 and names the path, no traceback.
 
 ### M7. Missing scenarios for the data-safety cases
 
@@ -112,29 +123,32 @@ Every scenario in the deltas is testable and is cited by a task (2.2 to 2.5, 3.1
 
 **Fix.** Add them to the deltas and cite them in tasks 2.1 to 2.4.
 
+**Addressed** (2026-11-12), in spec `crawl` and cited in tasks 2.1 to 2.4: "A sibling with the same prefix stays", "The path cannot be listed when the walk reaches it", "A collapsed directory as path", "The data root as path", "A symlink on the way", "A directory on the way that cannot be listed", "A path that is not UTF-8", "A path in another spelling" (`..` inside the root and a trailing `/`), and, from L3 and L5, "Another data root" and "A path typed as the container's path". Waiting: the reverted extractor change (H3) and a subtree crawl under other rules followed by a full crawl (M4), whose outcome depends on the answers.
+
 ### M8. On staging, a code change needs an image rebuild that recreates `crawl-timer`
 
 - **What.** The image copies the sources and installs them editable from the copy (`crawler.Dockerfile`: `COPY . /src`, `pip install -e /src`). Every extractor edit for request 1 therefore needs a rebuild. `docker compose up --build` recreates `crawl-timer`. A crawl the timer is running gets SIGTERM and is recorded as `failed`. The new timer checks for catch-up at its start (`cli.py:401-403`). If the last full crawl ended more than a day ago, for example after the accepted skipped night (`design.md:43`, `:69`), it crawls the whole tree at once. Every `crawl --path` is then refused with status 1 for the length of a full crawl (1 h 17 min in run 3). D6 sends subtree crawls through `docker compose exec crawl-timer`, which ties them to that container's lifecycle. A process started with `docker compose exec` is also not the one that `docker stop` signals, so on a stop it is killed without a chance to record `failed`, and its run shows as stale (data safe: the transaction rolls back).
 - **Verdict.** PLAUSIBLE: the Dockerfile and the timer's start are read in the code; Compose's recreate on `--build` and the way exec'd processes are stopped are documented Docker behaviour that I did not run here.
 - **Fix.** Describe the development loop in task 4.2 and in the search stack's README: build the image, then run the subtree crawl as a one-off container of the same service, `docker compose run --rm crawl-timer modama-crawler --config … crawl --path …`. It gets the service's environment, including the Airflow account, the user and the mounts, from the new image, without recreating the timer, and `run` forwards signals to the crawl. Check that command in the e2e stack as task 4.2 asks.
+- **Addressed** (2026-11-12), still plausible until task 4.2 runs it. Checked again: `crawl-timer` uses the image `search-stack-crawler`, built by the `crawler` service (`pull_policy: never`, `init: true`, `prototypes/search-stack/docker-compose.yml:108-120`), so the loop is `docker compose build crawler`, then `docker compose run --rm crawl-timer modama-crawler --config … crawl --path …`. Design D6 ("Where it runs"), proposal What Changes, tasks 4.1, 4.2 (with the two checks: the timer not recreated, SIGTERM to the one-off container records `failed`) and the staging measurement.
 
 ## L. Small risks and cleanliness
 
 ### L1. The run's start time is no longer taken before the first listing
 
-The crawl-runs delta keeps "The start time SHALL be taken before the first directory is listed" (`specs/crawl-runs/spec.md:6`). D2 lists the directories from the root down to PATH, and runs pre-order format calls on them, before any run is recorded (`design.md:24`). The run and its time are inserted together (`store.py:160-173`). For T this does not matter, since subtree crawls do not count for it, but the requirement as written is broken. **Fix:** "before the walk lists its first directory", or take the time before the checks and insert the run after them. CONFIRMED.
+The crawl-runs delta keeps "The start time SHALL be taken before the first directory is listed" (`specs/crawl-runs/spec.md:6`). D2 lists the directories from the root down to PATH, and runs pre-order format calls on them, before any run is recorded (`design.md:24`). The run and its time are inserted together (`store.py:160-173`). For T this does not matter, since subtree crawls do not count for it, but the requirement as written is broken. **Fix:** "before the walk lists its first directory", or take the time before the checks and insert the run after them. CONFIRMED. **Addressed** (2026-11-12): the crawl-runs delta now says "before the walk lists its first directory; a subtree crawl's checks of the directories down to its path come before it".
 
 ### L2. `ALTER TABLE … ADD COLUMN IF NOT EXISTS` locks the table on every call
 
-Ran on PostgreSQL 17: the statement takes an ACCESS EXCLUSIVE lock on the table even when the column exists (NOTICE "already exists, skipping"). `ensure_tables` runs at every `crawl` (also a refused one), every `runs`, and at the start of `timer` and `serve` (`cli.py:270`, `:402`, `:454`, `:484`). While the lock is queued behind an open transaction on `crawl_runs`, the heartbeat's updates queue behind it. It stays short as long as the statement is the last one before the commit. Side observation, existing and not this change's: `CREATE INDEX IF NOT EXISTS` takes a SHARE lock on its table even when the index exists (ran), so `modama-crawler runs` already waits for a crawl's store transaction. **Fix:** check `information_schema.columns` first, or put the `ALTER` last; update the `ensure_tables` docstring ("There are no migrations: recreate the database after a change", `store.py:63`), which this step makes untrue. Recording the start of migrations (task 6.1) is right.
+Ran on PostgreSQL 17: the statement takes an ACCESS EXCLUSIVE lock on the table even when the column exists (NOTICE "already exists, skipping"). `ensure_tables` runs at every `crawl` (also a refused one), every `runs`, and at the start of `timer` and `serve` (`cli.py:270`, `:402`, `:454`, `:484`). While the lock is queued behind an open transaction on `crawl_runs`, the heartbeat's updates queue behind it. It stays short as long as the statement is the last one before the commit. Side observation, existing and not this change's: `CREATE INDEX IF NOT EXISTS` takes a SHARE lock on its table even when the index exists (ran), so `modama-crawler runs` already waits for a crawl's store transaction. **Fix:** check `information_schema.columns` first, or put the `ALTER` last; update the `ensure_tables` docstring ("There are no migrations: recreate the database after a change", `store.py:63`), which this step makes untrue. Recording the start of migrations (task 6.1) is right. **Addressed** (2026-11-12): schema migrations are now planned with Alembic (open change `schema-migrations`, its assumption A6: `scope` becomes migration 0002 whichever change ships first). Design D5 and task 3.1: if that change ships first, the column is its migration and `ensure_tables` is untouched; otherwise the `ALTER` runs only when `information_schema.columns` lacks the column, and the docstring is corrected. Task 6.1 no longer carries the migration note.
 
 ### L3. `--path` with a different `--root`
 
-`--root` stays, and `--path` is relative to it. `crawl --root /data/adhoc --path libertem` on an index whose full crawls used `/data` makes anchors `/libertem/…`. The delete finds nothing to remove, the new records get identifiers of another root, they are harvested, and the next full crawl deletes them in the crawler only. **Fix:** refuse `--path` when the root differs from the last full crawl's `crawl_runs.root`, or document it with the `--root` help text of task 2.6. CONFIRMED (`cli.py:267`, `walk.py:354`).
+`--root` stays, and `--path` is relative to it. `crawl --root /data/adhoc --path libertem` on an index whose full crawls used `/data` makes anchors `/libertem/…`. The delete finds nothing to remove, the new records get identifiers of another root, they are harvested, and the next full crawl deletes them in the crawler only. **Fix:** refuse `--path` when the root differs from the last full crawl's `crawl_runs.root`, or document it with the `--root` help text of task 2.6. CONFIRMED (`cli.py:267`, `walk.py:354`). **Addressed** (2026-11-12), lean: refuse with status 2, naming both roots, when a crawl of the whole tree has finished under another root (a fresh index accepts any root). Design D2 ("Another data root"), spec `crawl` requirement "A subtree crawl uses the data root of the full crawls" with the scenario "Another data root", task 2.2; the help text of task 2.6 also says that `--path` is relative to `--root`.
 
 ### L4. Rollback understates the effect on T
 
-"Its `runs` and `modama-chain` would count earlier subtree runs as full crawls, which only affects the timer's catch-up and T" (`design.md:51`). For T this is a false freshness claim: T jumps to a subtree crawl's start and states that every file older than that is in the search. **Fix:** say so, or delete the subtree runs' rows (or set their outcome aside) before a rollback. CONFIRMED (`search-chain/src/modama_chain/chain.py:299`).
+"Its `runs` and `modama-chain` would count earlier subtree runs as full crawls, which only affects the timer's catch-up and T" (`design.md:51`). For T this is a false freshness claim: T jumps to a subtree crawl's start and states that every file older than that is in the search. **Fix:** say so, or delete the subtree runs' rows (or set their outcome aside) before a rollback. CONFIRMED (`search-chain/src/modama_chain/chain.py:299`). **Addressed** (2026-11-12): the design's Migration Plan says that T would make a false claim, and names the step before a rollback (`DELETE FROM crawl_runs WHERE scope IS NOT NULL`); the README gets it (task 4.2).
 
 ### L5. Small points
 
@@ -145,11 +159,13 @@ Ran on PostgreSQL 17: the statement takes an ACCESS EXCLUSIVE lock on the table 
 - `docker-compose.staging.yml:11-12` says "a first crawl of a subtree uses exclusions". Add it to task 4.2's documentation list, with the runbook.
 - "Parents are set only by formats that adopt …, and none does today (`collection = True` nowhere)" (`design.md:33`): adoption is guarded by `parts`, not by `collection` (`formats/__init__.py:346-349`). It only warns when a non-collection format adopts. The fact holds today (no format returns `parts`), but the guard to name is "no dataset with parts".
 
+**Addressed** (2026-11-12), point by point: the subtree crawl's scenarios go to a new `tests/test_subtree.py`, the lock scenario to `test_locks.py`, the runs scenarios to `test_runs.py` (`test_cli.py` tests the `records` command; tasks 2.1 to 3.1, proposal Impact). `scope` stores P with its leading `/`, as the other path columns, and `runs` prints it without (lean; D5, both crawl-runs scenarios). The pre-order check uses the formats active at each directory after per-path ignores (D2, requirement "A subtree crawl only covers what a full crawl enters"). A path not found names the data root (D2, scenario "A path typed as the container's path"). `docker-compose.staging.yml`'s header joins the runbook in task 4.2. D4 names "no format returns parts" (`formats/__init__.py:346-349`).
+
 ## D7, facts only
 
 - The references hold: `extraction.py:118` (reuse by extractor id, version and stamp), `modama_formats_em/dm/__init__.py:19` (`Dm.extractor_version`, shared by `Dm3` and `Dm4`, lines 83 and 89), and the 2026-10-16 decision "re-crawl rather than invalidate selectively" (`design/architecture.md:58`).
 - The objection to (a) applies to D3 as well (H3). A code-derived extractor identity, as in @weber's remark, would also remove the need for D3's forced run for correctness. This is a fact about how the two interact, not a recommendation.
-- The warehouse numbers meet F17 (M5): a harvest of about 40 minutes and an indexing wait of 45 minutes or more both exceed RabbitMQ's 30-minute `consumer_timeout`.
+- The warehouse numbers meet F17 (M5): a harvest of about 40 minutes and an indexing wait of 45 minutes or more both exceed RabbitMQ's 30-minute `consumer_timeout` (resolved since: 48 hours, M5 update).
 - `design/architecture.md:19` (2026-10-16) asks that "re-running recognition … for a path subset … must stay possible without a re-walk" (stage 3 from the index alone). This bears on alternative (b), and nothing in this change works against it.
 
 ## Right, and should stay
@@ -167,7 +183,7 @@ Ran on PostgreSQL 17: the statement takes an ACCESS EXCLUSIVE lock on the table 
 
 ## Not verified
 
-- F17 is read from `design/field-tests/search-stack-staging-findings.md` on the `crawler` branch (commit b18a40a2), which is newer than this change's base and not in this worktree.
+- F17 is read from `design/field-tests/search-stack-staging-findings.md` on the `crawler` branch (commit b18a40a2), which is newer than this change's base and not in this worktree. Since then (2026-11-12) read again in the main checkout: fixed by the 48-hour acknowledgement timeout (M5, update).
 - That Airflow starts a triggered DAG run beyond `max_active_runs` once the active one ends (queued, not rejected): documented Airflow behaviour, not run here.
 - Docker Compose's recreate on `up --build` and the signals that `exec`'d processes get (M8): documented behaviour, not run here.
 - The count of about 170,000 DM records (D7, Non-Goals) is the design's own. Run 3 reports 177,166 extractions over all formats.
