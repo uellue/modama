@@ -118,13 +118,13 @@ Run again, it says `INFO schema up to date at 0001_baseline` at once, also while
 | `INFO waiting for the crawl lock (a crawl or another migration holds it)`, from `migrate` | wait until the crawl ends, then it migrates; Ctrl-C ends the wait and changes nothing |
 | `ERROR migration 0002_… failed, the database is unchanged at 0001_baseline: …`, exit status 1 | the database's error follows the colon; nothing was changed. Ending in `another transaction held a table for more than 10 s: run migrate again`: run `migrate` again. Otherwise, report the error to the developers |
 | `ERROR migration 0001_baseline failed, the database is unchanged at none: the existing tables lack directories.retry or have them with another type: they were made by a crawler older than e35e4b4; recreate the database (README)` | a development database made before e35e4b4 cannot be taken over: drop it, create it empty, `migrate`, crawl again |
-| `NotImplementedError: no downgrade from 0001_baseline: restore the dump taken before the upgrade (README, Upgrade)`, from `alembic downgrade` | restore the dump ("Upgrade" below); nothing was changed |
+| `NotImplementedError: no downgrade from 0001_baseline: start from an empty database and crawl again (README, Upgrade)`, from `alembic downgrade` | an empty database and a crawl ("Upgrade" below); nothing was changed |
 
 A migration that has something to do holds the crawl lock, so it never runs during a crawl or next to another migration: a crawl started meanwhile exits with `another crawl is running on this database`.
 
 ### Upgrade
 
-Before an upgrade whose code brings a new file in `migrations/versions/`, take a dump of the database: `pg_dump -Fc`. Restoring it is the way back from anything a downgrade cannot undo. Then upgrade the code and run `migrate`. In the search stack, `/prototypes/search-stack/README.md`, section "Upgrade", has the commands.
+Upgrade the code and run `migrate`. In the search stack, `/prototypes/search-stack/README.md`, section "Upgrade", has the commands.
 
 Every revision has a `downgrade()`. Where the older code reads the result correctly, it undoes the revision; otherwise it refuses with the message above and changes nothing. A downgrade needs the newer code, so run it before going back to the older one, with Alembic's command line and this directory's `alembic.ini`; from the repository root:
 
@@ -134,6 +134,8 @@ alembic -c python/crawler/alembic.ini downgrade 0001_baseline
 ```
 
 Alembic's command line reads the connection as the crawler does, from the environment or `python/crawler/.env`.
+
+Where a downgrade refuses, or the database is damaged, the way back is an empty database and a crawl: everything in it is made again from the data tree (@weber, 2026-11-12). Keep what shows the failure first, so that it can become a test case (in the search stack, `docker compose ps -a` and `docker compose logs`). Then drop the database and create it empty (`dropdb`, `createdb`; in the search stack, `./downtest.sh --reset` empties all its stores), run `migrate` with the code you go back to, and crawl. In the search stack, the harvest and the indexing that follow take as long as a first full run. A dump taken before the upgrade (`pg_dump -Fc`) is not needed; whoever has one can restore it into the empty database instead of crawling.
 
 ### Adding a migration
 
@@ -147,7 +149,7 @@ This writes `src/modama_crawler/migrations/versions/0002_crawl_runs_scope.py`. T
 
 - Write `upgrade()` with Alembic's operations (`op.add_column("crawl_runs", sa.Column("scope", sa.Text()))`) or `op.execute` with SQL text, whichever fits. There are no models.
 - No `IF NOT EXISTS` after `0002`: on a database that drifted from the chain, a migration should fail loudly.
-- Write `downgrade()` to undo `upgrade()` where the older code then reads the database correctly. Otherwise keep the generated body, which refuses with the step to restore the dump. Think of the rows, not only the columns: dropping a column that tells two kinds of rows apart makes the older code misread them, so delete those rows first or refuse.
+- Write `downgrade()` to undo `upgrade()` where the older code then reads the database correctly. Otherwise keep the generated body, which refuses and points to an empty database and a crawl. Think of the rows, not only the columns: dropping a column that tells two kinds of rows apart makes the older code misread them, so delete those rows first or refuse.
 - Set `HEAD` in `src/modama_crawler/schema.py` to the new id. `tests/test_migrations.py` fails until you do.
 - `uvx ruff format` and `uvx ruff check --fix` on the new file, from the repository root.
 

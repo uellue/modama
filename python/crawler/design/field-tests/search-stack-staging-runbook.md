@@ -215,7 +215,7 @@ crawl if it can be helped: `--build` stops a running crawl, which is then record
 failed, and the timer catches up at once.
 
 **U1.** Before pulling, note the deployed commit; after pulling, see whether the new code
-brings a migration (a file listed means: the dump first):
+brings a migration (a file listed means: one comes):
 
 ```bash
 deployed=$(git rev-parse HEAD); echo "$deployed"
@@ -233,15 +233,12 @@ dc exec crawler modama-crawler runs | head -3; dc exec crawler modama-chain stat
 dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*), max(datestamp) FROM records"
 ```
 
-On staging, U3 and U4 are left out (@weber, 2026-11-12: "we don't need to worry about a
+**U3.** Optional, on staging as in production: a dump. The way back is an empty database
+and a crawl ("The way back" below; @weber, 2026-11-12: "we don't need to worry about a
 backup of the crawler + warehouse. We just need to be able to reproduce any failure in a test
-case, and bring up a fresh staging."): its state is recreated from the data tree, and an
-upgrade there is a rehearsal for production. On failure: keep `dc ps -a` and `dc logs`, then
-`./downstaging.sh --reset && ./upstaging.sh --build`. The schema comparison of U4 stays, run
-after U5 against a fresh database. For production, U3 and U4 stand.
-
-**U3.** The dump, to the location agreed with @weber (not in the checkout, never under
-`/storage`), and that it is readable:
+case, and bring up a fresh staging", and "The same goes for production"); a dump only saves
+that crawl. If you take one, to the location agreed with @weber (not in the checkout, never
+under `/storage`), and check that it is readable:
 
 ```bash
 DUMP=<location agreed>/crawler-db-$(date +%F).dump
@@ -253,62 +250,7 @@ dc exec -T crawler-db pg_dump -U postgres -Fc modama_crawler > "$DUMP"; ls -l "$
 dc exec -T crawler-db pg_restore --list < "$DUMP" | head -5
 ```
 
-**U4.** A dry run on a copy, once for the first upgrade to migrations (design D5 of
-`schema-migrations`: a database that differs from `0001_baseline` would be taken over
-too): restore the dump into a scratch database, build the new image, migrate the copy
-and a fresh database with it, and compare their schemas. `--no-deps` keeps compose from
-migrating the real database on the way:
-
-```bash
-dc exec -T crawler-db createdb -U postgres modama_crawler_copy
-```
-```bash
-dc exec -T crawler-db pg_restore -U postgres -d modama_crawler_copy < "$DUMP"
-```
-```bash
-dc exec -T crawler-db createdb -U postgres modama_crawler_fresh
-```
-```bash
-dc build crawler
-```
-```bash
-time dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_copy crawler-migrate
-```
-```bash
-dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_fresh crawler-migrate
-```
-```bash
-schema() { dc exec -T crawler-db psql -U postgres -d "$1" -At -c "SELECT table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = 'public' UNION ALL SELECT tablename, indexname, indexdef, '', '' FROM pg_indexes WHERE schemaname = 'public' UNION ALL SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid), '', '' FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1, 2, 3"; }
-```
-```bash
-diff <(schema modama_crawler_copy) <(schema modama_crawler_fresh) && echo "same schema"
-```
-```bash
-dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_copy crawler modama-crawler runs | head -3
-```
-
-Expected: `crawler-migrate` on the copy logs `tables made before migrations found:
-adopted as 0001_baseline` and `schema migrated from none to 0001_baseline`; `diff`
-prints nothing and `same schema`; `runs` on the copy shows the lines of U2. Anything
-else: stop here, keep the logs, and build the deployed code again, since `dc build`
-replaced the image and the next `./upstaging.sh` would start it and migrate the real
-database (review 2.7 of `schema-migrations`, finding 3):
-
-```bash
-git checkout "$deployed" && dc build crawler
-```
-
-Then, in either case, remove the two scratch databases (the real one is
-`modama_crawler`, without a suffix):
-
-```bash
-dc exec -T crawler-db dropdb -U postgres modama_crawler_copy
-```
-```bash
-dc exec -T crawler-db dropdb -U postgres modama_crawler_fresh
-```
-
-**U5.** The upgrade:
+**U4.** The upgrade:
 
 ```bash
 ./upstaging.sh --build
@@ -317,12 +259,13 @@ dc exec -T crawler-db dropdb -U postgres modama_crawler_fresh
 dc logs -t crawler-migrate
 ```
 
-Expected: the same two lines as on the copy, then `crawler` and `crawl-timer` running.
-If `up` fails with `service "crawler-migrate" didn't complete successfully`, the log
-names the reason and the step (`python/crawler/README.md`, "The database schema"); the
-database is unchanged then.
+Expected: `schema migrated from … to …` (on the first upgrade to migrations, after
+`tables made before migrations found: adopted as 0001_baseline`), then `crawler` and
+`crawl-timer` running. If `up` fails with `service "crawler-migrate" didn't complete
+successfully`, the log names the reason and the step (`python/crawler/README.md`, "The
+database schema"); the database is unchanged then.
 
-**U6.** The state after, compared with U2: the same runs (plus the stopped crawl, if
+**U5.** The state after, compared with U2: the same runs (plus the stopped crawl, if
 one ran), the same count of records and newest datestamp, `modama-chain status` as
 before:
 
@@ -332,6 +275,24 @@ dc exec crawler modama-crawler runs | head -3; dc exec crawler modama-chain stat
 ```bash
 dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*), max(datestamp) FROM records"
 ```
+
+**U6.** The migrated schema equals a fresh one (design D5 of `schema-migrations`: a
+database that differs from `0001_baseline` would be taken over too). It replaces the dry
+run on a copy that this runbook had before 2026-11-12. About a minute; `diff` prints
+nothing and `same schema`, and the scratch database is removed at the end (the real one is
+`modama_crawler`, without a suffix). `--no-deps` keeps compose to the scratch database:
+
+```bash
+dc exec -T crawler-db createdb -U postgres modama_crawler_fresh && dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_fresh crawler-migrate
+```
+```bash
+schema() { dc exec -T crawler-db psql -U postgres -d "$1" -At -c "SELECT table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = 'public' UNION ALL SELECT tablename, indexname, indexdef, '', '' FROM pg_indexes WHERE schemaname = 'public' UNION ALL SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid), '', '' FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1, 2, 3"; }
+```
+```bash
+diff <(schema modama_crawler) <(schema modama_crawler_fresh) && echo "same schema"; dc exec -T crawler-db dropdb -U postgres modama_crawler_fresh
+```
+
+A difference is a failure: "The way back" below.
 
 **The way back** from the first upgrade: the code before migrations ignores Alembic's
 table and finds its own tables unchanged, so checking it out and building is enough:
@@ -353,10 +314,17 @@ dc run --rm crawler-migrate alembic -c /src/alembic.ini downgrade <revision befo
 git checkout "$deployed" && ./upstaging.sh --build
 ```
 
-Where the downgrade refuses (`restore the dump taken before the upgrade`), or the
-database is damaged: restore the dump of U3 into an empty database, then the older
-code. Check first that `$DUMP` is the file of U3 (`ls -l "$DUMP"`, `pg_restore --list`
-as in U3):
+Where the downgrade refuses (`start from an empty database and crawl again`), or the
+database is damaged: first keep what shows the failure, so that it can become a test
+case, in this run's folder:
+
+```bash
+dc ps -a > ../../.claude/field-tests/run-<n>/upgrade-failure.txt; dc logs -t >> ../../.claude/field-tests/run-<n>/upgrade-failure.txt
+```
+
+Then an empty crawler database and the older code, as production would do it;
+`crawl-timer` crawls at once, since it finds no finished crawl, and the harvest and the
+indexing that follow take as long as a first full run:
 
 ```bash
 dc stop crawler crawl-timer
@@ -368,11 +336,13 @@ dc exec -T crawler-db dropdb -U postgres modama_crawler
 dc exec -T crawler-db createdb -U postgres modama_crawler
 ```
 ```bash
-dc exec -T crawler-db pg_restore -U postgres -d modama_crawler < "$DUMP"
-```
-```bash
 git checkout "$deployed" && ./upstaging.sh --build
 ```
+
+Or a fresh staging, all its stores emptied: `./downstaging.sh --reset`, then
+`git checkout "$deployed" && ./upstaging.sh --build`. With a dump of U3, restore it into
+the empty database before `git checkout` instead of crawling
+(`dc exec -T crawler-db pg_restore -U postgres -d modama_crawler < "$DUMP"`).
 
 ## Owners' names, 2026-11-12
 
@@ -405,8 +375,8 @@ than a day old at the start (then again at 19:00), otherwise it waits for 19:00:
 dc exec crawler modama-crawler runs | head -3
 ```
 
-**N4.** U1 to U4 of "Upgrade" (the deployed commit, the state, the dump, the dry run), then
-U5, which builds and starts everything, sssd included:
+**N4.** U1 to U3 of "Upgrade" (the deployed commit, the state, the optional dump), then
+U4, which builds and starts everything, sssd included:
 
 ```bash
 ./upstaging.sh --build
@@ -424,7 +394,7 @@ dc exec crawler python -c "from modama_crawler.records import creator; print(cre
 If `./upstaging.sh` fails waiting for sssd, or `dc ps sssd` does not say `healthy`,
 `dc logs sssd` names the failing step; the way back is "The way back" above.
 
-**N6.** U6 of "Upgrade".
+**N6.** U5 and U6 of "Upgrade".
 
 **N7.** After the crawl (from 19:00, about 1 h 20 min): its end, and the records whose
 creator is still a number (owners the directory does not know):

@@ -114,8 +114,8 @@ A new version of the crawler may bring a schema migration (a new file in `python
    git diff --stat <deployed commit> HEAD -- ../../python/crawler/src/modama_crawler/migrations/versions/
    ```
 
-   To ask the database instead, the new image must be built first (`docker compose build crawler`; from then on, any `up` starts it and migrates). Then `docker compose run --rm --no-deps crawler modama-crawler runs` refuses with `… run modama-crawler migrate` when a migration is pending. Keep `--no-deps`: without it, compose runs `crawler-migrate` first, and the database is migrated before you have the dump.
-2. If a migration comes, take a dump of the crawler's database first, outside the checkout (it holds the paths and owners of the data). It is the way back from anything a downgrade cannot undo:
+   To ask the database instead, the new image must be built first (`docker compose build crawler`; from then on, any `up` starts it and migrates). Then `docker compose run --rm --no-deps crawler modama-crawler runs` refuses with `… run modama-crawler migrate` when a migration is pending. Keep `--no-deps`: without it, compose runs `crawler-migrate` first, and the database is migrated by the check.
+2. Optional: a dump of the crawler's database, outside the checkout (it holds the paths and owners of the data). It is not needed: the way back is an empty database and a crawl (below; @weber, 2026-11-12). A dump only saves that crawl:
 
    ```bash
    docker compose exec -T crawler-db pg_dump -U postgres -Fc modama_crawler > ~/crawler-db.dump
@@ -140,15 +140,22 @@ Only if that ended with exit status 0, the older code:
 git checkout <deployed commit> && ./uptest.sh --build
 ```
 
-Where a revision cannot be undone, the downgrade refuses with `NotImplementedError: no downgrade from …: restore the dump taken before the upgrade (README, Upgrade)` and changes nothing. Then restore the dump into an empty database, and start the older code:
+Where a revision cannot be undone, the downgrade refuses with `NotImplementedError: no downgrade from …: start from an empty database and crawl again (README, Upgrade)` and changes nothing. There, and where the database is damaged, the way back is an empty database and a crawl. First keep what shows the failure, so that it can become a test case:
+
+```bash
+docker compose ps -a > ~/upgrade-failure.txt; docker compose logs -t >> ~/upgrade-failure.txt
+```
+
+Then empty the crawler's database and start the older code:
 
 ```bash
 docker compose stop crawler crawl-timer
 docker compose exec -T crawler-db dropdb -U postgres modama_crawler
 docker compose exec -T crawler-db createdb -U postgres modama_crawler
-docker compose exec -T crawler-db pg_restore -U postgres -d modama_crawler < ~/crawler-db.dump
 git checkout <deployed commit> && ./uptest.sh --build
 ```
+
+`crawler-migrate` builds the schema in the empty database, and `crawl-timer` crawls at once, since it finds no finished crawl; the harvest and the indexing that follow take as long as a first full run. Instead of the three commands before `git checkout`, `./downtest.sh --reset` empties all the stack's stores, the warehouse and the index too. Whoever took the dump of step 2 can restore it into the empty database instead (`docker compose exec -T crawler-db pg_restore -U postgres -d modama_crawler < ~/crawler-db.dump`, before `git checkout`).
 
 ## AI Mode without login
 
