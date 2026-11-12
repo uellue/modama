@@ -1,0 +1,84 @@
+{
+  "datasets": [
+    {
+      "anchor": "/compressed.npz",
+      "basis": "ZIP named .npz",
+      "collapsed": false,
+      "format": "common/npz",
+      "members": [
+        "/compressed.npz"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.npz",
+      "warnings": []
+    },
+    {
+      "anchor": "/stored.npz",
+      "basis": "ZIP named .npz",
+      "collapsed": false,
+      "format": "common/npz",
+      "members": [
+        "/stored.npz"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.npz",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/compressed.npz": {
+      "subjects": [],
+      "summary": [
+        "image.shape [8, 8]",
+        "energy.shape [16]"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "energy.descr": "<f4",
+          "energy.fortran_order": false,
+          "energy.shape": [
+            16
+          ],
+          "energy.version": "1.0",
+          "image.descr": "<u2",
+          "image.fortran_order": false,
+          "image.shape": [
+            8,
+            8
+          ],
+          "image.version": "1.0"
+        }
+      }
+    },
+    "/stored.npz": {
+      "subjects": [],
+      "summary": [
+        "image.shape [8, 8]",
+        "energy.shape [16]"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "energy.descr": "<f4",
+          "energy.fortran_order": false,
+          "energy.shape": [
+            16
+          ],
+          "energy.version": "1.0",
+          "image.descr": "<u2",
+          "image.fortran_order": false,
+          "image.shape": [
+            8,
+            8
+          ],
+          "image.version": "1.0"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

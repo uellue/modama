@@ -1,0 +1,160 @@
+{
+  "datasets": [
+    {
+      "anchor": "/example2_v3.1.hspy",
+      "basis": "HDF5 signature, named .hspy",
+      "collapsed": false,
+      "format": "common/hspy",
+      "members": [
+        "/example2_v3.1.hspy"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.hspy",
+      "warnings": []
+    },
+    {
+      "anchor": "/with_lists_etc.hdf5",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/with_lists_etc.hdf5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/example2_v3.1.hspy": {
+      "subjects": [],
+      "summary": [
+        "test_diffraction_pattern",
+        "shape [16, 16]"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "Experiments.test_diffraction_pattern.axis-0.is_binned": false,
+          "Experiments.test_diffraction_pattern.axis-0.name": "y",
+          "Experiments.test_diffraction_pattern.axis-0.navigate": false,
+          "Experiments.test_diffraction_pattern.axis-0.offset": 131.87124127149582,
+          "Experiments.test_diffraction_pattern.axis-0.scale": 0.17443285882472992,
+          "Experiments.test_diffraction_pattern.axis-0.size": 16,
+          "Experiments.test_diffraction_pattern.axis-0.units": "1/nm",
+          "Experiments.test_diffraction_pattern.axis-1.is_binned": false,
+          "Experiments.test_diffraction_pattern.axis-1.name": "x",
+          "Experiments.test_diffraction_pattern.axis-1.navigate": false,
+          "Experiments.test_diffraction_pattern.axis-1.offset": 137.10422703623772,
+          "Experiments.test_diffraction_pattern.axis-1.scale": 0.17443285882472992,
+          "Experiments.test_diffraction_pattern.axis-1.size": 16,
+          "Experiments.test_diffraction_pattern.axis-1.units": "1/nm",
+          "Experiments.test_diffraction_pattern.data.dtype": "int32",
+          "Experiments.test_diffraction_pattern.data.shape": [
+            16,
+            16
+          ],
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.SEM.Stage.tilt_alpha": 5.0,
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.TEM.Detector.Camera.exposure": 0.2,
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.TEM.Stage.tilt_alpha": 10.0,
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.TEM.acquisition_mode": "TEM",
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.TEM.beam_current": 0.0,
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.TEM.beam_energy": 200.0,
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.TEM.camera_length": 320.00000000000006,
+          "Experiments.test_diffraction_pattern.metadata.Acquisition_instrument.TEM.microscope": "FEI Tecnai",
+          "Experiments.test_diffraction_pattern.metadata.General.date": "2014-07-09",
+          "Experiments.test_diffraction_pattern.metadata.General.original_filename": "test_diffraction_pattern.dm3",
+          "Experiments.test_diffraction_pattern.metadata.General.time": "18:56:37",
+          "Experiments.test_diffraction_pattern.metadata.General.title": "test_diffraction_pattern",
+          "Experiments.test_diffraction_pattern.metadata.Signal.Noise_properties.Variance_linear_model.gain_factor": 1.0,
+          "Experiments.test_diffraction_pattern.metadata.Signal.Noise_properties.Variance_linear_model.gain_offset": 0.0,
+          "Experiments.test_diffraction_pattern.metadata.Signal.quantity": "Intensity",
+          "Experiments.test_diffraction_pattern.metadata.Signal.record_by": "image",
+          "Experiments.test_diffraction_pattern.metadata.Signal.signal_type": "",
+          "Experiments.test_diffraction_pattern.package": "hyperspy",
+          "Experiments.test_diffraction_pattern.package_version": "1.7.0.dev0",
+          "file_format": "HyperSpy",
+          "file_format_version": "3.1"
+        }
+      }
+    },
+    "/with_lists_etc.hdf5": {
+      "subjects": [],
+      "summary": [
+        "shape [10]"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "Experiments.__unnamed__.axis-0.is_binned": false,
+          "Experiments.__unnamed__.axis-0.navigate": false,
+          "Experiments.__unnamed__.axis-0.offset": 0.0,
+          "Experiments.__unnamed__.axis-0.scale": 1.0,
+          "Experiments.__unnamed__.axis-0.size": 10,
+          "Experiments.__unnamed__.data.dtype": "int64",
+          "Experiments.__unnamed__.data.shape": [
+            10
+          ],
+          "Experiments.__unnamed__.metadata.General.title": "",
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties.Variance_linear_model.correlation_factor": 1,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties.Variance_linear_model.gain_factor": 1,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties.Variance_linear_model.gain_offset": 0,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance._list_1_axes.0.is_binned": false,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance._list_1_axes.0.navigate": false,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance._list_1_axes.0.offset": 0.0,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance._list_1_axes.0.scale": 1.0,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance._list_1_axes.0.size": 10,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.attributes._lazy": false,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data.dtype": "int64",
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data.shape": [
+            10
+          ],
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.metadata.General.title": "",
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.metadata.Signal.binned": false,
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.metadata.Signal.signal_origin": "",
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.metadata.Signal.signal_type": "",
+          "Experiments.__unnamed__.metadata.Signal.record_by": "spectrum",
+          "Experiments.__unnamed__.metadata.Signal.signal_origin": "",
+          "Experiments.__unnamed__.metadata.Signal.signal_type": "",
+          "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list.0": 137,
+          "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list._tuple_1.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list._tuple_1.shape": [
+            2
+          ],
+          "Experiments.__unnamed__.metadata.test._list_3_list_inside_list.0": 42,
+          "Experiments.__unnamed__.metadata.test._list_3_list_inside_list.1": 137,
+          "Experiments.__unnamed__.metadata.test._list_3_list_inside_list._list_2.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._list_3_list_inside_list._list_2.shape": [
+            2
+          ],
+          "Experiments.__unnamed__.metadata.test._list_list.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._list_list.shape": [
+            1
+          ],
+          "Experiments.__unnamed__.metadata.test._tuple_2_list_inside_tuple.0": 137,
+          "Experiments.__unnamed__.metadata.test._tuple_2_list_inside_tuple._list_1.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._tuple_2_list_inside_tuple._list_1.shape": [
+            2
+          ],
+          "Experiments.__unnamed__.metadata.test._tuple_2_tuple_inside_tuple.0": 137,
+          "Experiments.__unnamed__.metadata.test._tuple_2_tuple_inside_tuple._tuple_1.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._tuple_2_tuple_inside_tuple._tuple_1.shape": [
+            2
+          ],
+          "Experiments.__unnamed__.metadata.test._tuple_tuple.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._tuple_tuple.shape": [
+            2
+          ],
+          "Experiments.__unnamed__.package": "hyperspy",
+          "Experiments.__unnamed__.package_version": "1.7.0.dev0",
+          "file_format": "HyperSpy",
+          "file_format_version": "3.1"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -1,0 +1,61 @@
+{
+  "datasets": [
+    {
+      "anchor": "/example.nxs",
+      "basis": "HDF5 signature, named .nxs",
+      "collapsed": false,
+      "format": "common/nexus",
+      "members": [
+        "/example.nxs"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.nexus",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/example.nxs": {
+      "subjects": [],
+      "summary": [
+        "1-D scan of I00 v. mr"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "HDF5_Version": "1.12.1",
+          "NeXus_version": "4.3.0",
+          "creator": "simple_example_basic_write.py",
+          "default": "entry",
+          "entry.NX_class": "NXentry",
+          "entry.default": "mr_scan",
+          "entry.mr_scan.I00.dtype": "int32",
+          "entry.mr_scan.I00.long_name": "USAXS I00 (counts)",
+          "entry.mr_scan.I00.shape": [
+            31
+          ],
+          "entry.mr_scan.I00.units": "counts",
+          "entry.mr_scan.NX_class": "NXdata",
+          "entry.mr_scan.axes": "mr",
+          "entry.mr_scan.mr.dtype": "float64",
+          "entry.mr_scan.mr.long_name": "USAXS mr (degrees)",
+          "entry.mr_scan.mr.shape": [
+            31
+          ],
+          "entry.mr_scan.mr.units": "degrees",
+          "entry.mr_scan.mr_indices": [
+            0
+          ],
+          "entry.mr_scan.signal": "I00",
+          "entry.title": "1-D scan of I00 v. mr",
+          "file_name": "simple_example_basic.nexus.hdf5",
+          "file_time": "2022-06-15T14:31:39.410075+02:00",
+          "h5py_version": "3.6.0",
+          "instrument": "APS USAXS at 32ID-B"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

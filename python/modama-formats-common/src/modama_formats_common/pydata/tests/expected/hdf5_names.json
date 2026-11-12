@@ -1,0 +1,120 @@
+{
+  "datasets": [
+    {
+      "anchor": "/blocked.h5",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/blocked.h5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    },
+    {
+      "anchor": "/old.hdf",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/old.hdf"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan.h5",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/scan.h5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    },
+    {
+      "anchor": "/velox.emd",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/velox.emd"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/blocked.h5": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "creator": "generate.py",
+          "data.dtype": "uint16",
+          "data.shape": [
+            2,
+            3
+          ]
+        }
+      }
+    },
+    "/old.hdf": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "creator": "generate.py",
+          "data.dtype": "uint16",
+          "data.shape": [
+            2,
+            3
+          ]
+        }
+      }
+    },
+    "/scan.h5": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "creator": "generate.py",
+          "data.dtype": "uint16",
+          "data.shape": [
+            2,
+            3
+          ]
+        }
+      }
+    },
+    "/velox.emd": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "creator": "generate.py",
+          "data.dtype": "uint16",
+          "data.shape": [
+            2,
+            3
+          ]
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

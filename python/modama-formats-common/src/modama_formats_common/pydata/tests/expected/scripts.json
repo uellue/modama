@@ -1,0 +1,77 @@
+{
+  "datasets": [
+    {
+      "anchor": "/calibrate.py",
+      "basis": "",
+      "collapsed": false,
+      "format": "common/python",
+      "members": [
+        "/calibrate.py"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-python",
+      "warnings": []
+    },
+    {
+      "anchor": "/sum-frames",
+      "basis": "",
+      "collapsed": false,
+      "format": "common/python3",
+      "members": [
+        "/sum-frames"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-python3",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/calibrate.py": {
+      "subjects": [],
+      "summary": [
+        "Calibrate the camera length from a diffraction pattern of a gold standard."
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "__all__": [
+            "calibrate"
+          ],
+          "__author__": "Example Author",
+          "__version__": "0.3.1",
+          "docstring": "Calibrate the camera length from a diffraction pattern of a gold standard.\n\nReads the pattern, fits the ring radii and writes the camera length.\n",
+          "imports": [
+            "json",
+            "sys",
+            "pathlib",
+            "numpy",
+            ".rings",
+            "scipy"
+          ],
+          "shebang": "#!/usr/bin/env python3"
+        }
+      }
+    },
+    "/sum-frames": {
+      "subjects": [],
+      "summary": [
+        "Sum the frames of a stack and save the sum beside it."
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "docstring": "Sum the frames of a stack and save the sum beside it.",
+          "imports": [
+            "sys",
+            "numpy"
+          ],
+          "shebang": "#!/usr/bin/python3"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

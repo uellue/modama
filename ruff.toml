@@ -3,4 +3,6 @@ exclude = [
     "python/PyInotify",
     # third-party submodules
     "prototypes/EOSC-Data-Commons",
+    # format collections' test files: wild files, kept as found
+    "**/tests/fixtures",
 ]

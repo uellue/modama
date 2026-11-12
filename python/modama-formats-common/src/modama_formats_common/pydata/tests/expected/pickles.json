@@ -1,0 +1,133 @@
+{
+  "datasets": [
+    {
+      "anchor": "/state.pickle",
+      "basis": "pickle protocol 2 to 5",
+      "collapsed": false,
+      "format": "common/pickle",
+      "members": [
+        "/state.pickle"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-python-pickle",
+      "warnings": []
+    },
+    {
+      "anchor": "/state2.pkl",
+      "basis": "pickle protocol 2 to 5",
+      "collapsed": false,
+      "format": "common/pickle",
+      "members": [
+        "/state2.pkl"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-python-pickle",
+      "warnings": []
+    },
+    {
+      "anchor": "/state3.pkl",
+      "basis": "pickle protocol 2 to 5",
+      "collapsed": false,
+      "format": "common/pickle",
+      "members": [
+        "/state3.pkl"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-python-pickle",
+      "warnings": []
+    },
+    {
+      "anchor": "/state4.pkl",
+      "basis": "pickle protocol 2 to 5",
+      "collapsed": false,
+      "format": "common/pickle",
+      "members": [
+        "/state4.pkl"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-python-pickle",
+      "warnings": []
+    },
+    {
+      "anchor": "/state5.pkl",
+      "basis": "pickle protocol 2 to 5",
+      "collapsed": false,
+      "format": "common/pickle",
+      "members": [
+        "/state5.pkl"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-python-pickle",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/state.pickle": {
+      "subjects": [],
+      "summary": [
+        "protocol 4"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "protocol": 4
+        }
+      }
+    },
+    "/state2.pkl": {
+      "subjects": [],
+      "summary": [
+        "protocol 2"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "protocol": 2
+        }
+      }
+    },
+    "/state3.pkl": {
+      "subjects": [],
+      "summary": [
+        "protocol 3"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "protocol": 3
+        }
+      }
+    },
+    "/state4.pkl": {
+      "subjects": [],
+      "summary": [
+        "protocol 4"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "protocol": 4
+        }
+      }
+    },
+    "/state5.pkl": {
+      "subjects": [],
+      "summary": [
+        "protocol 5"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "protocol": 5
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -11,6 +11,14 @@ version = "0.0.1.dev0"
 dependencies = [
     # Each part adds the libraries it reads its formats with
     "modama-crawler",
+    # pydata: h5py for HDF5, NeXus, HyperSpy and MATLAB 7.3; nbformat for
+    # notebooks; SciPy for MATLAB 4 and 5 (matfile_version, whosmat); NumPy
+    # pinned exactly for its private numpy.lib._format_impl._read_array_header,
+    # the one reader of all three .npy header versions
+    "h5py==3.16.0",
+    "nbformat==5.11.1",
+    "numpy==2.5.4",
+    "scipy==1.18.1",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},
