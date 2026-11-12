@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import posixpath
 import pwd
 from collections.abc import Iterable, Mapping
@@ -96,6 +97,24 @@ def description(dataset: Dataset) -> str:
     return text
 
 
+def tags(dataset: Dataset) -> str:
+    """The file's own tags as found, `values["original_metadata"]`, one `name: value` line each (decision 234).
+
+    Sorted by name: the stored values (JSONB) do not keep the file's order, and
+    a record must not change between a fresh and a reused extraction. Strings
+    as they are, any other value as its JSON text; empty values left out.
+    """
+    extracted = dataset.extraction.extracted if dataset.extraction else None
+    found = extracted.values.get("original_metadata") if extracted else None
+    if not found:
+        return ""
+    return "\n".join(
+        f"{name}: {value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)}"
+        for name, value in sorted(found.items())
+        if value not in ("", [])
+    )
+
+
 def format_names(formats: Iterable[Format]) -> dict[str, str]:
     """Display name by format id: the format's own, else its MIME type's comment, else its id."""
     names = {}
@@ -133,6 +152,8 @@ def dc_metadata(dataset: Dataset, names: Mapping[str, str]) -> dict[str, list[st
         "identifier": [browse_url(dataset.anchor)],
         "publisher": [PUBLISHER],
     }
+    if lines := tags(dataset):
+        metadata["description"].append(lines)
     if terms := subjects(dataset, names):
         metadata["subject"] = terms
     if relations:
