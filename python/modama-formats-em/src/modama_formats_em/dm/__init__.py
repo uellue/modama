@@ -6,6 +6,7 @@ image data by seeking past it (D7; bytes read per file in the tests).
 
 import os
 from collections.abc import Iterable
+from contextlib import suppress
 from copy import deepcopy
 from pathlib import Path
 
@@ -28,7 +29,11 @@ def parsed(path: str):
     )
 
     with open(path, "rb", buffering=BUFFER) as f:
-        os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
+        # The advice is an optimisation: a file system that refuses it, or a
+        # platform without it, still reads the file (as mime.py)
+        if hasattr(os, "posix_fadvise"):
+            with suppress(OSError):
+                os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
         dm = DigitalMicrographReader(f)
         dm.parse_file()
     return dm

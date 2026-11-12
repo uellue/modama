@@ -3,9 +3,16 @@
 Run with -s to see each description, its subjects and the bytes the extractor read.
 """
 
+import errno
+import os
+
+import pytest
 from modama_crawler.testing import recognise
 
+from modama_formats_em.dm import parsed
 from modama_formats_em.testing import described
+
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
 
 def test_a_dm4_file_from_an_instrument(collection_tests, tmp_path):
@@ -60,3 +67,19 @@ def test_an_rgba_image(collection_tests, tmp_path):
     (image,) = described(collection_tests, "rgba_image_dm4", tmp_path)
     assert image.description.startswith("2×2; Gatan Digital Micrograph file, version 4")
     assert image.subjects == ["Gatan Digital Micrograph (DM4)"]
+
+
+@pytest.mark.parametrize("advice", ["refused", "missing"])
+def test_without_the_readahead_advice(monkeypatch, advice):
+    # posix_fadvise is an optimisation: refused by the file system, or missing
+    # on the platform, the tags are read all the same
+    if advice == "refused":
+
+        def refuse(*args):
+            raise OSError(errno.EINVAL, "refused")
+
+        monkeypatch.setattr(os, "posix_fadvise", refuse)
+    else:
+        monkeypatch.delattr(os, "posix_fadvise")
+    dm = parsed(os.path.join(FIXTURES, "cl_image_dm4", "test-MonarcCL_mono-image.dm4"))
+    assert "ImageList" in dm.tags_dict
