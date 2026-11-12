@@ -1,0 +1,49 @@
+# Reproducer of staging finding F17 (python/crawler/design/field-tests/
+# search-stack-staging-findings.md): the default worker stops consuming after a task
+# that runs longer than RabbitMQ's consumer_timeout. The stack's broker image and its
+# default worker (image, command, concurrency, health check), Airflow's own Celery
+# configuration, a task that only sleeps; no scheduler, no DAG, no published ports.
+# Run with ./run.sh, which uses its own project name.
+services:
+  broker:
+    image: rabbitmq:3-management-alpine
+    volumes:
+      # the timeout under test: 60 s for the failure, the stack's own file for the fix
+      - ${REPRO_BROKER_CONF:-./consumer-timeout-60s.conf}:/etc/rabbitmq/conf.d/90-consumer-timeout.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # as the stack's airflow-worker, with a shorter health check interval
+  worker:
+    image: search-stack-airflow:3.3.2
+    pull_policy: never  # built by the stack
+    command: celery worker --queues default
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CELERY__WORKER_CONCURRENCY: "4"
+      # the image's guest account, open to the network (its 10-defaults.conf); throwaway
+      AIRFLOW__CELERY__BROKER_URL: amqp://guest:guest@broker:5672//
+      AIRFLOW__CELERY__RESULT_BACKEND: db+sqlite:////tmp/celery-results.sqlite
+      AIRFLOW__CELERY__CELERY_CONFIG_OPTIONS: repro_config.CONFIG
+      REPRO_CELERY: ${REPRO_CELERY:-}
+      PYTHONPATH: /repro
+      DUMB_INIT_SETSID: "0"
+    volumes:
+      - ./repro_config.py:/repro/repro_config.py:ro
+      - ./repro_tasks.py:/repro/repro_tasks.py:ro
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      broker:
+        condition: service_healthy

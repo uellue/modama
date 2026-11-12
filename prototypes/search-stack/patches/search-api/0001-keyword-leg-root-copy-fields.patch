@@ -1,0 +1,31 @@
+Keyword leg: query the root copies of the nested text fields
+
+The hybrid search's keyword leg is a plain multi_match on titles.title,
+descriptions.description and subjects.subject. In the metadata warehouse's
+OpenSearch mapping these are nested, so the query never matches and ranking
+comes from the kNN leg alone. The mapping copies each of them (copy_to) into
+a root text field, _title, _description and _subject; query those, as the
+creator filter already does with _creator.
+
+Applies to data-commons-search v0.10.2 (6c07bdc33a29c91cde58082c068c107872b75733);
+main has the same code.
+
+--- a/src/data_commons_search/mcp_server.py
++++ b/src/data_commons_search/mcp_server.py
+@@ -283,11 +283,13 @@ async def _search_data_one(
+     keyword_query: dict[str, Any] = {
+         "multi_match": {
+             "query": search_input,
++            # titles, descriptions and subjects are nested, which a plain multi_match never
++            # matches: query their root copies (copy_to in the warehouse's mapping), as _creator
+             "fields": [
+                 # "titles.title^2",
+-                "titles.title",
+-                "descriptions.description",
+-                "subjects.subject",
++                "_title",
++                "_description",
++                "_subject",
+                 # "subjects.subject^1.5",
+                 # TODO: add more fields?
+             ],

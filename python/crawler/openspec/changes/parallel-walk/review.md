@@ -1,0 +1,17 @@
+# Review
+
+Task 3.2, 2026-11-11: an agent that did not write the code, given the code, this change, the `crawl` spec and `design/requirements.md`, on `crawler-integration` at a116012. Demonstrations in the session's scratchpad (`review-parallel-walk/`); findings 1 to 3 re-run by the main session with the same result.
+
+| # | Finding | Severity | Verified | Status |
+|---|---|---|---|---|
+| 1 | SIGTERM during the walk is mostly swallowed: `cli.Terminated` is an `Exception` raised from the signal handler, which runs in asyncio's `_read_from_self` callback; the loop logs and drops it, the crawl goes on into extraction and storing. 23 of 30 walks completed after the signal (re-run: 9 of 10). `test_trigger.py` sends SIGTERM during `store()`, not the walk | high | yes | fixed, 00ab735, 5378aa6, d3158c8 (see below) |
+| 2 | The 5 s time limit per format call is wall time; under 32 threads format calls share the GIL, so CPU-heavy calls exceed it and are dropped with `retry`: 40 of 40 datasets with 1 or 4 threads, 8 with 32 (re-run identical). Breaks "the result does not depend on the number of threads"; with `retry` the directories may never settle | high | yes | fixed at the root (D8): a slow call keeps its result and is logged; 40 of 40 with any thread count |
+| 3 | A matching process that dies (OOM killer, segfault) aborts the whole walk with `BrokenProcessPool`; `records` exits 1 with a traceback. Extraction recreates its pool in the same case | medium | yes | fixed, 4760924 (matching goes on in the walk's threads, with a warning) |
+| 4 | Ctrl-C: every spawned matching process prints a `KeyboardInterrupt` traceback (7 blocks); the main process exits 130 cleanly | low | reviewer only | fixed, a2951d0, 085201f (extraction's processes too; one of them starting up at the moment can still print one) |
+| 5 | One future per entry: on one directory of 50,000 files 4.1 kB per file against 1.2 kB serial, and about 6× the CPU on a local disk (7.3 s against 1.2 s); not visible on NFS at 500 files/s, but for warm or listing-only crawls | low | reviewer only | open |
+| 6 | Test gaps: the stored-state comparison runs the first crawl with 16 threads only; the collapsed-directory test does not assert on listings; no comparison test has slow format calls (would have caught 2) | low | reviewer only | fixed: first two 7801f9a; slow format calls with 2 |
+| 7 | Nits: `_threads()` uses `str.isdigit()` (accepts `²`, then `int()` raises); exceptions returned by hand where `gather(return_exceptions=True)` would do; the `UNLISTABLE` comment placement | low | reviewer only | `_threads()` fixed, cdb2a28; the other two open |
+
+Finding 1, follow-up (2026-11-11): a raise from the handler was also lost in a weakref callback (2 of 40 early signals) and once left a futures lock held, so the walk hung. Since d3158c8 the handler only sets a flag, for the whole crawl, on @weber's principle that the same data gives the same result or a failure: checked at every directory, at least every second during extraction (its processes killed) and the store lock wait, between the phases and before the commit. Tests in `test_trigger.py` for the walk, extraction and the store lock, each also with the signal inside a weakref callback.
+
+Found sound: post-order and collapsed directories (nothing below one is listed or opened), shared state only on the loop thread, determinism by sorting, the stored state's queries (psycopg serialises the shared connection), files closed and pools shut down, pyxdg lookups, the thread limit.

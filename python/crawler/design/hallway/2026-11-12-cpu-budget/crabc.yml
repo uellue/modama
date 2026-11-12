@@ -1,0 +1,3 @@
+services:
+  crawler:
+    environment: {MODAMA_CRAWLER_EXTRACT_WORKERS: "abc"}

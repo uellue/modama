@@ -1,0 +1,31 @@
+{
+    "name": "modama crawler",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "dev",
+    "workspaceFolder": "/workspaces/data-management-system",
+    "remoteUser": "vscode",
+    "remoteEnv": {
+        "PATH": "/home/vscode/.venv/bin:${containerEnv:PATH}"
+    },
+    "postCreateCommand": "bash .devcontainer/post-create.sh",
+    "features": {
+        // Node for the OpenSpec CLI (spec-driven change workflow, dev-only)
+        "ghcr.io/devcontainers/features/node:1": {"version": "lts"}
+    },
+    "forwardPorts": [7654],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/home/vscode/.venv/bin/python",
+                "python.testing.pytestEnabled": true,
+                "python.testing.cwd": "${workspaceFolder}/python/crawler",
+                "python.testing.pytestArgs": ["python/crawler/tests"]
+            }
+        }
+    }
+}

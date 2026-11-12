@@ -1,0 +1,5 @@
+# Crawl only adhoc/libertem of the data tree: the quick first run of the staging field
+# test (2026-11-10), to catch show stoppers before the full tree. Gitignore syntax, last
+# match wins; excluded directories are not entered.
+[crawl]
+exclude = ["/*", "!/adhoc/", "/adhoc/*", "!/adhoc/libertem/"]

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema targetNamespace="http://www.openarchives.org/OAI/2.0/"
+        xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" 
+        xmlns:dc="http://purl.org/dc/elements/1.1/" 
+        xmlns="http://www.w3.org/2001/XMLSchema"
+        xmlns:oai="http://www.openarchives.org/OAI/2.0/"
+        elementFormDefault="qualified"
+        attributeFormDefault="unqualified">
+
+  <annotation>
+    <documentation>
+      Combined OAI-PMH schema with oai_dc support for cross-namespace validation.
+      This schema imports both OAI-PMH.xsd and oai_dc.xsd to enable full document
+      validation of OAI-PMH responses containing Dublin Core metadata.
+    </documentation>
+  </annotation>
+
+  <!-- Import the OAI-PMH base schema -->
+  <include schemaLocation="OAI-PMH.xsd"/>
+  
+  <!-- Import oai_dc namespace definitions - this provides the global element declaration for dc:dc -->
+  <import namespace="http://www.openarchives.org/OAI/2.0/oai_dc/"
+          schemaLocation="oai_dc.xsd"/>
+
+</schema>

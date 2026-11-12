@@ -1,0 +1,5 @@
+services:
+  search-api:
+    environment: {EMBEDDING_THREADS: "1.5"}
+  airflow-worker-transform:
+    environment: {EMBEDDING_THREADS: " 4"}

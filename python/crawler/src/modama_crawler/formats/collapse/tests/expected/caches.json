@@ -1,0 +1,63 @@
+{
+  "datasets": [
+    {
+      "anchor": "/.ipynb_checkpoints",
+      "basis": "directory is named .ipynb_checkpoints",
+      "collapsed": true,
+      "format": "collapse/ipynbcheckpoints",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.ipynb-checkpoints",
+      "warnings": []
+    },
+    {
+      "anchor": "/__pycache__",
+      "basis": "directory is named __pycache__",
+      "collapsed": true,
+      "format": "collapse/pycache",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.python-cache",
+      "warnings": []
+    },
+    {
+      "anchor": "/conda",
+      "basis": "contains conda-meta/",
+      "collapsed": true,
+      "format": "collapse/conda",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.conda-env",
+      "warnings": []
+    },
+    {
+      "anchor": "/module.py",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/module.py"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-python",
+      "warnings": []
+    },
+    {
+      "anchor": "/node_modules",
+      "basis": "directory is named node_modules",
+      "collapsed": true,
+      "format": "collapse/nodemodules",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.node-modules",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

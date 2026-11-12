@@ -1,0 +1,12 @@
+freedesktop.org.xml is the shared-mime-info database, version 2.4,
+copied unchanged from the Debian package shared-mime-info
+(https://freedesktop.org/wiki/Software/shared-mime-info).
+
+Copyright (C) 2002, 2003 Thomas Leonard and contributors.
+
+It is free software; you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version. See https://www.gnu.org/licenses/old-licenses/gpl-2.0.html.
+
+The rest of modama-crawler is MIT-licensed; see ../../../../LICENSE.

@@ -1,0 +1,30 @@
+{
+  "datasets": [
+    {
+      "anchor": "/.git",
+      "basis": "directory is named .git",
+      "collapsed": true,
+      "format": "collapse/git",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.git",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

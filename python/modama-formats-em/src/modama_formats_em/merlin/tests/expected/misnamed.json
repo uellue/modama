@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/acq.hdr",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/acq.hdr"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

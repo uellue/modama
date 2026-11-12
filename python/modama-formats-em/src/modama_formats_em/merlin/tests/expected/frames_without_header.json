@@ -1,0 +1,37 @@
+{
+  "datasets": [
+    {
+      "anchor": "/acq_1.mib",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/acq_1.mib"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.merlin-mib",
+      "warnings": []
+    },
+    {
+      "anchor": "/acq_2.mib",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/acq_2.mib"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.merlin-mib",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": [
+    [
+      "/",
+      "2 .mib file(s) without a Merlin header (.hdr), for example acq_1.mib"
+    ]
+  ]
+}

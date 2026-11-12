@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/exemplary_workspace.dmw",
+      "basis": "Digital Micrograph header",
+      "collapsed": false,
+      "format": "em/dmw",
+      "members": [
+        "/exemplary_workspace.dmw"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm-dmw",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

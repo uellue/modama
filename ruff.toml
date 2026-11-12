@@ -1,4 +1,6 @@
 exclude = [
     "deploy/wsgidav",
     "python/PyInotify",
+    # third-party submodules
+    "prototypes/EOSC-Data-Commons",
 ]

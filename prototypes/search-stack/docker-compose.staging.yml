@@ -1,0 +1,126 @@
+# Staging: the search stack on real data, on a development server (field test of
+# 2026-11-10, python/crawler/design/field-tests/search-stack-staging-runbook.md).
+# Loaded instead of docker-compose.override.yml by ./upstaging.sh, as the project
+# search-staging, with the settings of staging.env (gitignored):
+#
+#   STAGING_DATA          the data tree, mounted read-only at /data (the data root)
+#   STAGING_USER          uid:gid the crawler reads the tree as (`id -u`:`id -g`), so that
+#                         it sees exactly what that user sees; NFS squashes root
+#   STAGING_GROUP         one more group of that user, needed for parts of the tree
+#   STAGING_CRAWL_CONFIG  the crawl's TOML file (formats, exclusions), in stagingconf/
+#   AIRFLOW_TASK_LIMIT    Airflow's task limits, read by docker-compose.yml (16 here)
+#
+# sssd reads /var/local/data-mgmt/sssd.conf, the file for testing deploy/ against the real
+# directory (docs/guide/src/development.md), with "services = nss"; never changed on the host.
+#
+# The tree is always mounted whole, and a first crawl of a subtree uses exclusions,
+# so that identifiers (relative to the data root) stay the same for the full crawl.
+# Ports on 127.0.0.1 only, offset from the test deployment's and deploy/'s by 10000.
+x-check-user: &check-user
+  # sssd's health check and the crawl's check before it stores: the user the crawler reads
+  # the tree as must be known (change owner-names-in-the-search-stack)
+  SSSD_CHECK_USER: ${STAGING_USER:?see staging.env in the runbook}
+
+x-staging-crawler: &staging-crawler
+  user: ${STAGING_USER:?see staging.env in the runbook}
+  environment: *check-user
+  group_add:
+    - ${STAGING_GROUP:?see staging.env in the runbook}
+  volumes:
+    # Never create the data path (a typo or an unmounted NFS share fails instead of
+    # creating a directory on /storage), and read-only for nested mounts too;
+    # review 2026-11-11, findings R1 and R3 (python/crawler/design/field-tests/)
+    - type: bind
+      source: ${STAGING_DATA:?see staging.env in the runbook}
+      target: /data
+      read_only: true
+      bind:
+        create_host_path: false
+        recursive: readonly
+    - ./stagingconf:/stagingconf:ro
+
+services:
+  crawler:
+    <<: *staging-crawler
+    ports:
+      - "127.0.0.1:17654:7654"
+
+  crawl-timer:
+    <<: *staging-crawler
+    command:
+      - modama-crawler
+      - --config
+      - /stagingconf/${STAGING_CRAWL_CONFIG:?see staging.env in the runbook}
+      - timer
+      - --at
+      - "19:00"
+
+  # modama-chain browse (change chain-browse), as the user the crawler reads the tree as, with
+  # the crawl's formats and exclusions; the path on the server is STAGING_DATA + the path.
+  # Snapshots go into the checkout's .claude/field-tests/browse/ (gitignored), which must exist
+  # (the runbook creates it, so that Docker does not create it as root). Started alone, never
+  # by ./upstaging.sh (profile browse): `dc --profile browse up -d --no-deps browse` (the
+  # runbook, "Browse").
+  browse:
+    profiles: [browse]
+    user: ${STAGING_USER:?see staging.env in the runbook}
+    group_add:
+      - ${STAGING_GROUP:?see staging.env in the runbook}
+    command:
+      - modama-chain
+      - browse
+      - --bind
+      - 0.0.0.0
+      - --config
+      - /stagingconf/${STAGING_CRAWL_CONFIG:?see staging.env in the runbook}
+    environment:
+      MODAMA_BROWSE_HOST_ROOT: ${STAGING_DATA:?see staging.env in the runbook}
+    volumes:
+      - type: bind
+        source: ${STAGING_DATA:?see staging.env in the runbook}
+        target: /data
+        read_only: true
+        bind:
+          create_host_path: false
+          recursive: readonly
+      - ./stagingconf:/stagingconf:ro
+      - type: bind
+        source: ../../.claude/field-tests/browse
+        target: /field-tests/browse
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:17655:7655"
+
+  # Owners' names from the real directory, no test directory here; a missing file stops
+  # the start instead of creating a directory. Healthy once it names the user the crawler
+  # reads the tree as, which a crawl checks too before it stores.
+  sssd:
+    environment: *check-user
+    volumes:
+      - type: bind
+        source: /var/local/data-mgmt/sssd.conf
+        target: /sssd.conf.in
+        read_only: true
+        bind:
+          create_host_path: false
+
+  # The transform worker's processes come from its CPU budget (README, "CPU budget"), capped
+  # on this shared machine by AIRFLOW_TASK_LIMIT in staging.env (16, @weber 2026-11-12); the
+  # --concurrency 4 of 2026-11-10 (finding F9) is gone.
+
+  airflow-api-server:
+    ports:
+      - "127.0.0.1:18081:8080"
+
+  search-api:
+    ports:
+      - "127.0.0.1:18000:8000"
+
+  matchmaker:
+    ports:
+      - "127.0.0.1:13000:3000"
+
+  opensearch:
+    ports:
+      - "127.0.0.1:19200:9200"

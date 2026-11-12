@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/empty.gtg",
+      "basis": "single file; em/k2is: not application/x.dm-gtg, no DM header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/empty.gtg"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

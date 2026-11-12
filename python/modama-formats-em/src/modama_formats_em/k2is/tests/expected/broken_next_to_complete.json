@@ -1,0 +1,48 @@
+{
+  "datasets": [
+    {
+      "anchor": "/scan_.gtg",
+      "basis": "8 sector files scan_*.bin",
+      "collapsed": false,
+      "format": "em/k2is",
+      "members": [
+        "/scan_.gtg",
+        "/scan_1.bin",
+        "/scan_2.bin",
+        "/scan_3.bin",
+        "/scan_4.bin",
+        "/scan_5.bin",
+        "/scan_6.bin",
+        "/scan_7.bin",
+        "/scan_8.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_.gtg",
+      "basis": "8 sector files scan_2_*.bin",
+      "collapsed": false,
+      "format": "em/k2is",
+      "members": [
+        "/scan_2_.gtg",
+        "/scan_2_1.bin",
+        "/scan_2_2.bin",
+        "/scan_2_3.bin",
+        "/scan_2_4.bin",
+        "/scan_2_5.bin",
+        "/scan_2_6.bin",
+        "/scan_2_7.bin",
+        "/scan_2_8.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

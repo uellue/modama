@@ -1,0 +1,7 @@
+# Provenance of this collection's fixtures. Every fixture directory needs an entry.
+
+[mixed]
+purpose = "representative"
+validity = "parser-only: the generic single-file path only; a zip written by Python's zipfile, hand-written JSON, Python and XML text, and 64 zero bytes as .raw (the er-c.xml tie against Panasonic)"
+licence = "MIT"
+source = "shipped under fixtures/mixed; a.zip from zipfile, the rest typed"

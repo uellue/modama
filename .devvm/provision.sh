@@ -15,3 +15,14 @@ curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
 # pre-commit; a uv tool install rather than uvx, since the hook that pre-commit writes
 # points at a persistent interpreter. The Debian package is too old for the config.
 ~/.local/bin/uv tool install pre-commit
+
+# The OpenSpec CLI, which the crawler's /opsx:* skills call (python/crawler/AGENTS.md);
+# pinned to the version in use, into ~/.local, with its telemetry off for login shells
+sudo apt-get install -y --no-install-recommends nodejs npm
+npm install -g --prefix ~/.local @fission-ai/openspec@1.16.0
+echo 'export OPENSPEC_TELEMETRY=0' >> ~/.profile
+
+# Rust for modama-rs and the crawl I/O playground (modama-rs/crawl-io-playground/):
+# rustup into ~/.cargo, pinned to the toolchain in use, and a C linker
+sudo apt-get install -y --no-install-recommends gcc libc6-dev
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.99.1

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>modama-chain browse</title>
+<style>
+:root { --line: #d0d7de; --muted: #57606a; --bg: #fff; --sel: #ddf4ff; --stored: #6e7781; --actual: #1a7f37; --emulated: #9a6700; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #1f2328; background: var(--bg); display: grid; grid-template-columns: minmax(260px, 28%) 1fr; height: 100vh; }
+#left { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+#crumbs { padding: 6px 8px; border-bottom: 1px solid var(--line); word-break: break-all; }
+#crumbs a { color: #0969da; text-decoration: none; cursor: pointer; }
+#filter { margin: 6px 8px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; }
+#count { padding: 0 8px 4px; color: var(--muted); font-size: 12px; }
+#list { flex: 1; overflow-y: auto; position: relative; outline: none; }
+.row { position: absolute; left: 0; right: 0; height: 22px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+.row.folder::before { content: "\1F4C1 "; }
+.row.symlink, .row.other { color: var(--muted); }
+.row.symlink::after { content: "  (symlink, not followed)"; }
+.row.sel { background: var(--sel); }
+#right { overflow-y: auto; padding: 10px 14px; min-width: 0; }
+#head h1 { font-size: 16px; margin: 0 0 4px; word-break: break-all; }
+#head .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+#head code { background: #f6f8fa; padding: 2px 4px; border-radius: 4px; word-break: break-all; }
+button { font: inherit; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: #f6f8fa; cursor: pointer; }
+.muted { color: var(--muted); }
+textarea.message { display: block; width: 100%; max-width: 60em; margin: 4px 0; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; resize: vertical; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.cell { border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.cell h2 { font-size: 13px; margin: 0; padding: 4px 8px; background: #f6f8fa; border-bottom: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 10px; color: #fff; }
+.tag.stored { background: var(--stored); } .tag.actual { background: var(--actual); } .tag.emulated { background: var(--emulated); }
+.origin { font-size: 11px; color: var(--muted); padding: 2px 8px; }
+.note { font-size: 12px; padding: 2px 8px; color: #9a6700; white-space: pre-wrap; }
+pre { margin: 0; padding: 6px 8px; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; }
+.empty { padding: 6px 8px; color: var(--muted); }
+/* matchmaker's cited dataset row, expanded (CitedDatasets.tsx:69-115, SearchResultItem.tsx:51-152) */
+.mm { margin: 8px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; font-family: system-ui, sans-serif; }
+.mm-row { display: grid; grid-template-columns: 36px 96px minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; padding: 10px 12px; }
+.mm-num { font-size: 13px; font-weight: 600; color: #1d4ed8; }
+.mm-repo { font-size: 14px; color: #4b5563; }
+.mm-title { font-size: 14px; font-weight: 600; color: #111827; word-break: break-word; }
+.mm-meta { font-size: 12px; color: #6b7280; }
+.mm-btn { display: inline-block; font-size: 12px; font-weight: 500; color: #fff; border-radius: 6px; padding: 4px 10px; margin-right: 6px; text-decoration: none; }
+.mm-details { grid-column: 1 / -1; padding-left: 160px; font-size: 14px; }
+.mm-desc { color: #374151; margin-bottom: 16px; word-break: break-word; }
+.mm-more { color: #1d4ed8; font-size: 14px; font-weight: 500; margin-left: 8px; cursor: pointer; background: none; border: 0; padding: 0; }
+.mm-line { display: flex; gap: 8px; color: #4b5563; font-size: 14px; margin-bottom: 8px; align-items: flex-start; }
+.mm-subj { display: inline-block; background: #eff6ff; color: #1d4ed8; font-size: 12px; padding: 4px 8px; border-radius: 999px; margin: 0 4px 4px 0; }
+.mm-badge { display: inline-block; background: #fefce8; color: #a16207; font-size: 14px; font-weight: 500; padding: 4px 8px; border-radius: 999px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div id="left">
+  <div id="crumbs"></div>
+  <input id="filter" placeholder="filter (/)" autocomplete="off" spellcheck="false">
+  <div id="count"></div>
+  <div id="list" tabindex="0"><div id="spacer"></div></div>
+</div>
+<div id="right">
+  <div id="head"></div>
+  <div id="views"></div>
+  <p class="muted">Click a folder to open it, a file to see its views; the path above goes up. Keys: ↑ ↓ move, Enter or → open a folder, ← or Backspace up, / filter, Esc leave the filter.</p>
+</div>
+<script>
+"use strict";
+const S = /*SETTINGS*/{};
+const ROW = 22;
+const ORDER = [["dataset", "Dataset"], ["record", "OAI-PMH record"], ["datacite", "DataCite (harvester)"],
+  ["document", "Warehouse index document"], ["hit", "Search API hit"], ["entry", "Matchmaker: cited dataset, expanded"]];
+let dir = "/", entries = [], shown = [], sel = -1, timer = null, controllers = [];
+const $ = id => document.getElementById(id);
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e[k] = v; else e.setAttribute(k, v);
+  }
+  for (const c of children) if (c !== null && c !== undefined) e.append(c);
+  return e;
+}
+
+function api(path, what, options) {
+  const c = new AbortController();
+  controllers.push(c);
+  return fetch(`/api/${what}?path=${encodeURIComponent(path)}`, {signal: c.signal, ...options}).then(async r => {
+    if (!r.ok) throw new Error(`${r.status} ${(await r.text()).replace(/<[^>]*>/g, " ").trim()}`);
+    return r.json();
+  });
+}
+
+function fromUrl() {
+  const p = new URLSearchParams(location.search).get("path") || "/";
+  if (p.endsWith("/")) return {dir: p, name: null};
+  const i = p.lastIndexOf("/");
+  return {dir: p.slice(0, i + 1) || "/", name: p.slice(i + 1)};
+}
+
+function selectedPath() {
+  return sel >= 0 ? dir + shown[sel][0] + (isFolder(shown[sel]) ? "/" : "") : dir;
+}
+
+function isFolder(entry) {
+  return entry[1] === "folder";
+}
+
+async function openDir(path, name, push) {
+  if (push) history.pushState(null, "", `?path=${encodeURIComponent(path)}`);
+  dir = path; $("filter").value = "";
+  crumbs();
+  $("count").textContent = "listing…";
+  let data;
+  try { data = await fetch(`/api/list?path=${encodeURIComponent(path)}`).then(r => r.ok ? r.json() : r.text().then(t => {throw new Error(t)})); }
+  catch (e) { entries = []; filter(); $("count").textContent = String(e.message).replace(/<[^>]*>/g, " "); return; }
+  entries = data.entries;
+  filter(name);
+  if (data.error) $("count").textContent = data.error;
+  if (sel < 0) views(dir);
+}
+
+function crumbs() {
+  const c = $("crumbs"); c.replaceChildren();
+  let acc = "/";
+  c.append(el("a", {onclick: () => openDir("/", null, true)}, "/"));
+  for (const part of dir.split("/").filter(Boolean)) {
+    acc += part + "/";
+    const target = acc;
+    c.append(el("a", {onclick: () => openDir(target, null, true)}, part), "/");
+  }
+}
+
+function filter(name) {
+  const f = $("filter").value.toLowerCase();
+  shown = f ? entries.filter(e => e[0].toLowerCase().includes(f)) : entries;
+  $("count").textContent = `${shown.length} of ${entries.length} entries`;
+  $("spacer").style.height = `${shown.length * ROW}px`;
+  sel = name ? shown.findIndex(e => e[0] === name) : -1;
+  $("list").scrollTop = sel > 0 ? sel * ROW - 100 : 0;
+  draw();
+  if (name && sel >= 0) views(selectedPath());
+}
+
+function draw() {
+  const list = $("list"), first = Math.floor(list.scrollTop / ROW), last = first + Math.ceil(list.clientHeight / ROW) + 1;
+  for (const r of list.querySelectorAll(".row")) r.remove();
+  for (let i = first; i < Math.min(last, shown.length); i++) {
+    const [name, kind] = shown[i];
+    list.append(el("div", {class: `row ${kind}${i === sel ? " sel" : ""}`, style: `top:${i * ROW}px`, title: name,
+      onclick: () => kind === "folder" ? openDir(dir + name + "/", null, true) : select(i)}, name));
+  }
+}
+
+function select(i) {
+  if (i < 0 || i >= shown.length) return;
+  sel = i;
+  const list = $("list");
+  if (i * ROW < list.scrollTop) list.scrollTop = i * ROW;
+  else if ((i + 1) * ROW > list.scrollTop + list.clientHeight) list.scrollTop = (i + 1) * ROW - list.clientHeight;
+  draw();
+  const p = dir + shown[i][0];
+  history.replaceState(null, "", `?path=${encodeURIComponent(isFolder(shown[i]) ? dir : p)}`);
+  clearTimeout(timer);
+  timer = setTimeout(() => views(selectedPath()), 300);
+}
+
+function up() {
+  if (dir === "/") return;
+  const parent = dir.slice(0, dir.slice(0, -1).lastIndexOf("/") + 1);
+  const name = dir.slice(parent.length, -1);
+  history.pushState(null, "", `?path=${encodeURIComponent(parent + name)}`);
+  openDir(parent, name, false);
+}
+
+document.addEventListener("keydown", e => {
+  if (e.target === $("filter")) {
+    if (e.key === "Escape" || e.key === "Enter" || e.key === "ArrowDown") { $("list").focus(); if (e.key !== "Escape") select(0); e.preventDefault(); }
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const page = Math.floor($("list").clientHeight / ROW);
+  const keys = {ArrowDown: () => select(sel + 1), ArrowUp: () => select(Math.max(0, sel - 1)), PageDown: () => select(Math.min(shown.length - 1, sel + page)),
+    PageUp: () => select(Math.max(0, sel - page)), Home: () => select(0), End: () => select(shown.length - 1),
+    ArrowLeft: up, Backspace: up, "/": () => $("filter").focus(),
+    ArrowRight: () => sel >= 0 && isFolder(shown[sel]) && openDir(dir + shown[sel][0] + "/", null, true)};
+  keys.Enter = keys.ArrowRight;
+  if (keys[e.key]) { keys[e.key](); e.preventDefault(); }
+});
+$("filter").addEventListener("input", () => filter(null));
+$("list").addEventListener("scroll", draw);
+window.addEventListener("resize", draw);
+window.addEventListener("popstate", () => { const u = fromUrl(); openDir(u.dir, u.name, false); });
+
+function copy(text, button) {
+  navigator.clipboard.writeText(text).then(() => { button.textContent = "copied"; setTimeout(() => button.textContent = "copy", 1200); });
+}
+
+function views(path) {
+  for (const c of controllers) c.abort();
+  controllers = [];
+  const host = S.hostRoot.replace(/\/$/, "") + path.replace(/\/$/, "");
+  const file = !path.endsWith("/");  // a folder lists and shows its stored views, no live ones (D3)
+  const saved = el("span", {class: "muted"});
+  const message = el("textarea", {class: "message", rows: "2", placeholder: "A message for Claude (optional), saved at the top of the snapshot"});
+  const save = el("button", {onclick: () => {
+    save.disabled = true; saved.textContent = "saving…";
+    api(path, "snapshot", {method: "POST", headers: {"X-Modama-Browse": "1", "Content-Type": "application/json"},
+                           body: JSON.stringify({message: message.value})}).then(r => {
+      const b = el("button", {onclick: () => copy(r.name, b)}, "copy");
+      saved.replaceChildren(el("code", {}, r.name), " ", b);
+      message.value = "";
+    }).catch(e => saved.textContent = e.message).finally(() => save.disabled = false);
+  }}, "Save for Claude");
+  const hostCopy = el("button", {onclick: () => copy(host, hostCopy)}, "copy");
+  const info = el("span", {class: "muted"});
+  $("head").replaceChildren(el("h1", {}, path),
+    el("div", {class: "bar"}, "Path on the server:", el("code", {}, host), hostCopy),
+    el("div", {class: "bar"}, info),
+    ...(S.snapshots && file ? [message, el("div", {class: "bar"}, save, saved)] : []));
+  const cells = {};
+  const grid = el("div", {class: "grid"}, el("strong", {}, "Stored (what the chain holds now)"), el("strong", {}, "Live (the checkout's code, now)"));
+  for (const [key] of ORDER) for (const side of ["stored", "live"]) {
+    const waiting = side === "stored" ? "loading…" : file ? "computing…" : "a folder: no live views";
+    cells[side + key] = el("div", {class: "cell"}, el("div", {class: "empty"}, waiting));
+    grid.append(cells[side + key]);
+  }
+  $("views").replaceChildren(grid);
+  const fill = (side, list) => {
+    const got = new Set();
+    for (const v of list) { got.add(v.key); cells[side + v.key].replaceChildren(...cell(v)); }
+    for (const [key, title] of ORDER) if (!got.has(key)) cells[side + key].replaceChildren(el("h2", {}, title), el("div", {class: "empty"}, "—"));
+  };
+  const fail = (side, e) => { if (e.name !== "AbortError") for (const [key, title] of ORDER) cells[side + key].replaceChildren(el("h2", {}, title), el("div", {class: "note"}, e.message)); };
+  api(path, "stored").then(r => {
+    const i = r.info;
+    info.textContent = i.error ? i.error : `${i.size} bytes, mtime ${i.mtime}, ctime ${i.ctime}${i.readable ? "" : ", not readable"}`;
+    fill("stored", r.views);
+    return file ? api(path, "live", {headers: {"X-Modama-Browse": "1"}}).then(r => fill("live", r.views)) : null;
+  }).catch(e => { fail("stored", e); if (file) fail("live", e); });
+}
+
+function cell(v) {
+  const cls = {"stored": "stored", "actual code": "actual", "emulated": "emulated"}[v.source];
+  const out = [el("h2", {}, v.title, el("span", {class: `tag ${cls}`}, v.source)), el("div", {class: "origin"}, v.origin)];
+  if (v.note) out.push(el("div", {class: "note"}, v.note));
+  if (v.entry) out.push(entry(v.entry));
+  else if (v.text) out.push(el("pre", {}, v.text));
+  return out;
+}
+
+function entry(m) {
+  const desc = el("span", {}, m.description);
+  let full = false;
+  const more = m.description_full.length > m.description.length
+    ? el("button", {class: "mm-more", onclick: () => { full = !full; desc.textContent = full ? m.description_full : m.description; more.textContent = full ? "Show less" : "Show more"; }}, "Show more")
+    : null;
+  const details = el("div", {class: "mm-details"});
+  if (m.relevance !== null) details.append(el("div", {}, el("span", {class: "mm-badge"}, `★ ${m.relevance}%`)));
+  details.append(el("div", {class: "mm-desc"}, desc, more));
+  if (m.creators_all.length) details.append(el("div", {class: "mm-line"}, "👤", el("span", {}, m.creators.join(", ") + (m.creators_more ? `, +${m.creators_more} more` : ""))));
+  if (m.date) details.append(el("div", {class: "mm-line"}, "📅", el("span", {}, m.date)));
+  if (m.subjects.length) details.append(el("div", {class: "mm-line"}, "🏷", el("div", {}, ...m.subjects.map(s => el("span", {class: "mm-subj"}, s)),
+    m.subjects_more ? el("span", {class: "mm-meta"}, `+${m.subjects_more} more`) : null)));
+  return el("div", {class: "mm"}, el("div", {class: "mm-row"},
+    el("span", {class: "mm-num"}, `[${m.number}]`),
+    el("span", {class: "mm-repo"}, m.repository || ""),
+    el("div", {}, el("div", {class: "mm-title"}, m.title || ""), m.meta ? el("div", {class: "mm-meta"}, m.meta) : null),
+    el("div", {}, el("span", {class: "mm-btn", style: "background:#16a34a;opacity:.6"}, "Play"),
+      m.source ? el("a", {class: "mm-btn", style: "background:#2563eb", href: m.source, target: "_blank", rel: "noopener noreferrer"}, "Source") : null,
+      el("span", {class: "mm-btn", style: "background:#6b7280"}, "Cite"), "⌃"),
+    details));
+}
+
+const start = fromUrl();
+openDir(start.dir, start.name, false);
+</script>
+</body>
+</html>

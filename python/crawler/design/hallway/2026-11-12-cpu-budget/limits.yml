@@ -1,0 +1,7 @@
+services:
+  crawler:
+    cpus: 2
+  search-api:
+    cpus: 2
+  airflow-worker-transform:
+    cpus: 2

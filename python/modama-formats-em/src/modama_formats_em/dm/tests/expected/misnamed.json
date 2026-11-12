@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/image.dm4",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/image.dm4"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
