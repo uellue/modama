@@ -12,5 +12,5 @@
 
 ## 3. Real data
 
-- [ ] 3.1 Representative fixtures from staging with @weber's agreement per file (a K2IS `.gtg` and the first blocks of its sectors, a `.dmw`), replacing or adding to the reproducers. Verify: the fixture tests and the extractor's description on them.
+- [ ] 3.1 Representative fixtures from staging with @weber's agreement per file (a K2IS `.gtg` and the first blocks of its sectors, a `.dmw`), replacing or adding to the reproducers. Agreed 2026-11-12 (73, 79) for `libertem-test-data/Capture52`, @weber's own test data: metadata only (the `.gtg` and each sector's 40-byte block header, no pixel data, cut by `.claude/field-tests/k2is-fixture.sh`), under the package's MIT licence with no copyright line of its own; `LICENSE.fixtures` says where the files come from and what was cut. Verify: the fixture tests and the extractor's description on them.
 - [ ] 3.2 Staging: the next crawl's warnings no longer list `.dmw`/`.gtg` extraction failures; K2IS captures are one record each. Verify: the findings file, with counts.
