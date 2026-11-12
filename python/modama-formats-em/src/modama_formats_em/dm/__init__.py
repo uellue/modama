@@ -1,22 +1,79 @@
 """Gatan Digital Micrograph files (DM3, DM4): single-file datasets, recognised by their header (dm.xml).
 
-Extraction goes through RosettaSciIO's reader, lazily: it parses the tags and
-skips the image data by seeking past it (D7; bytes read per file in the tests).
+Extraction goes through RosettaSciIO's reader: it parses the tags and skips the
+image data by seeking past it (D7; bytes read per file in the tests).
 """
 
+import os
 from collections.abc import Iterable
+from contextlib import suppress
+from copy import deepcopy
 from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
 HERE = Path(__file__).parent
+# Python sizes a file's buffer from st_blksize, 1 MiB on NFS: every seek in the tag
+# tree then refills up to 1 MiB (staging run 3, F14: 1,168 kB per file). 64 KiB is
+# NFS's read size; smaller buffers read less but need more round trips.
+BUFFER = 64 * 1024
+
+
+def parsed(path: str):
+    """RosettaSciIO's DM reader with the file's tag tree parsed, from our own handle.
+
+    A small buffer and readahead off (F14); the image data is never read.
+    """
+    from rsciio.digitalmicrograph._api import (  # imports dask: in the worker only
+        DigitalMicrographReader,
+    )
+
+    with open(path, "rb", buffering=BUFFER) as f:
+        # The advice is an optimisation: a file system that refuses it, or a
+        # platform without it, still reads the file (as mime.py)
+        if hasattr(os, "posix_fadvise"):
+            with suppress(OSError):
+                os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
+        dm = DigitalMicrographReader(f)
+        dm.parse_file()
+    return dm
+
+
+def first_image(path: str) -> dict:
+    """What RosettaSciIO's `file_reader(path)[0]` gives, except the data, from our own handle.
+
+    The same steps as `rsciio.digitalmicrograph.file_reader` (0.15.0) on a file
+    opened with a small buffer and readahead off, without `get_data`, which
+    maps the image (and refuses RGBA images when lazy). Identical results on
+    RosettaSciIO's 98 DM test files that `file_reader` reads (F14); a test
+    compares the two on this part's fixtures.
+    """
+    from rsciio.digitalmicrograph._api import ImageObject
+
+    dm = parsed(path)
+    image = ImageObject(dm.get_image_dictionaries()[0], dm.f, order=None)
+    image.filename = path
+    # As file_reader: ImageList moves to the end of the tags
+    del dm.tags_dict["ImageList"]
+    dm.tags_dict["ImageList"] = {"TagGroup0": image.imdict.to_dict()}
+    metadata = image.get_metadata()
+    metadata["General"]["original_filename"] = os.path.basename(path)
+    return {
+        "axes": image.get_axes_dict(),
+        "metadata": deepcopy(metadata),
+        "original_metadata": deepcopy(dm.tags_dict),
+        "mapping": image.get_mapping(),
+    }
 
 
 class Dm(Format):
     """A DM file of the version its `type` names, as one dataset."""
 
     priority = 60
-    extractor_version = "2"  # 2: the reader's names and numbers, no units added
+    # 2: the reader's names and numbers, no units added; 3: our own handle (F14),
+    # so RGBA images, which file_reader refused when lazy, are extracted again;
+    # 4: numbers as the reader gives them, not rounded
+    extractor_version = "4"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for e in d.of_type(self.type):
@@ -24,11 +81,7 @@ class Dm(Format):
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
         """The acquisition values the tags hold (spec formats/dm, "DM metadata is extracted from the tags")."""
-        from rsciio.digitalmicrograph import (
-            file_reader,  # imports dask: in the worker only
-        )
-
-        image = file_reader(root + dataset.anchor, lazy=True)[0]
+        image = first_image(root + dataset.anchor)
         tags = mapped(image["original_metadata"], image["mapping"])
         instrument = {
             k.split(".", 2)[2]: v
@@ -38,15 +91,16 @@ class Dm(Format):
             )
         }
         summary, subjects = [], []
-        # The reader's names and numbers as it gives them, no unit added (README,
-        # "Values and units"). TODO: units and meaning (BACKLOG, "Units and meaning")
+        # The reader's names and numbers as it gives them, not rounded, no unit
+        # added (README, "Values and units"). TODO: units and meaning (BACKLOG,
+        # "Units and meaning")
         for name in ("beam_energy", "magnification", "camera_length"):
             if (value := instrument.get(name)) is not None:
-                summary.append(f"{name} {value:g}")
+                summary.append(f"{name} {value}")
         axes = image["axes"]
         x = next((a for a in axes if a["name"] == "x"), None)
         if x is not None and x["units"] and x["units"] != "<undefined>":
-            summary.append(f"{x['scale']:.3g} {x['units']}/pixel")
+            summary.append(f"{float(x['scale'])} {x['units']}/pixel")
         summary.append("×".join(str(a["size"]) for a in reversed(axes)))
         databar = image["original_metadata"]["ImageList"]["TagGroup0"]["ImageTags"].get(
             "DataBar", {}

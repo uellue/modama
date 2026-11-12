@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/test-8.dm4",
+      "basis": "Digital Micrograph header",
+      "collapsed": false,
+      "format": "em/dm4",
+      "members": [
+        "/test-8.dm4"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm4",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

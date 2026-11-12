@@ -15,3 +15,16 @@ purpose = "representative"
 validity = "vendor-written: a 2x2 cathodoluminescence image saved by Gatan Microscopy Suite 3.40 (GMS Version tag), Microscope Info of a Zeiss SEM, 274 tags; read by rosettasciio 0.15.0 on 2026-11-11"
 licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/test-MonarcCL_mono-image.dm4, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/digitalmicrograph/2D/test-MonarcCL_mono-image.dm4, sha256 4ea04a10ad46595de79a20c283555f299dd07b4667f6112b44db1699f28993b6, unchanged"
+
+[rgba_image_dm4]
+purpose = "reproducer"
+validity = "a 2x2 image of DataType 23 (RGBA), 15 top-level tag groups; RosettaSciIO 0.15.0's file_reader(lazy=True) refuses it ('Lazy loading of RGBA images is not supported'), its reader classes read its tags (staging finding F14)"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/test-8.dm4, https://github.com/hyperspy/rosettasciio/raw/v0.15.0/rsciio/tests/data/digitalmicrograph/2D/test-8.dm4, sha256 289d58cb13b6deb0932b9aaf256aa04d13d5e017fa92c09aa7b01a59ecdd7132, unchanged"
+
+[dmw_file]
+purpose = "representative"
+validity = "a stand-in, not a real .dmw file, until one is agreed (task 3.3 of dm-containers-and-k2is): the vendor-written DM4 image of cl_image_dm4, unchanged, named conditions_00C.dmw as a staging file is. It holds an image, staging's .dmw files hold none (F15), so it stands for their name only; the name decides the type, the content is not read for it"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.dm.tests.generate:dmw_file, from the file of cl_image_dm4"
+generator = "modama_formats_em.dm.tests.generate:dmw_file"

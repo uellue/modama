@@ -1,0 +1,170 @@
+"""K2IS recognition and extraction (spec formats/k2is), one test per scenario.
+
+Run with -s to see each description, its subjects and the bytes the extractor read.
+"""
+
+from types import SimpleNamespace
+
+from modama_crawler.formats import Dataset
+from modama_crawler.records import description
+from modama_crawler.testing import recognise
+
+from modama_formats_em import k2is
+from modama_formats_em.testing import described
+
+
+def test_a_capture_with_its_8_sectors(collection_tests, tmp_path):
+    result = recognise(collection_tests, "capture52", tmp_path)
+    (d,) = result.datasets
+    assert (d.type, d.format, d.anchor) == (
+        "application/x.k2is",
+        "em/k2is",
+        "/Capture52_.gtg",
+    )
+    assert d.members == (
+        "/Capture52_.gtg",
+        *(f"/Capture52_{n}.bin" for n in range(1, 9)),
+    )
+    assert result.warnings == []
+
+
+def test_sector_files_without_their_tag_file(collection_tests, tmp_path):
+    result = recognise(collection_tests, "sectors_without_tags", tmp_path)
+    assert [d.format for d in result.datasets] == [""] * 8
+    ((where, text),) = result.warnings
+    assert where == "/" and "8 K2IS sector file(s) without a .gtg file" in text
+
+
+def test_a_tag_file_with_7_or_9_sector_files(collection_tests, tmp_path):
+    result = recognise(collection_tests, "wrong_count", tmp_path)
+    assert {d.format for d in result.datasets} == {""}
+    assert len(result.datasets) == 2 + 7 + 9
+    # Said at the .gtg, with what is wrong; no warning that the .gtg is missing
+    assert sorted(result.warnings) == [
+        (
+            "/Capture7_.gtg",
+            "Capture7_.gtg: 7 sector files Capture7_*.bin, a K2IS acquisition has 8",
+        ),
+        (
+            "/Capture9_.gtg",
+            "Capture9_.gtg: 9 sector files Capture9_*.bin, a K2IS acquisition has 8",
+        ),
+    ]
+
+
+def test_an_incomplete_capture_next_to_a_complete_one(collection_tests, tmp_path):
+    result = recognise(collection_tests, "nested_incomplete", tmp_path)
+    (capture,) = [d for d in result.datasets if d.format == "em/k2is"]
+    assert capture.members == (
+        "/scan_.gtg",
+        *(f"/scan_{n}.bin" for n in range(1, 9)),
+    )
+    assert len(result.datasets) == 1 + 1 + 7
+    assert result.warnings == [
+        (
+            "/scan_2_.gtg",
+            "scan_2_.gtg: 7 sector files scan_2_*.bin, a K2IS acquisition has 8",
+        )
+    ]
+
+
+def test_extensions_in_upper_case(collection_tests, tmp_path):
+    result = recognise(collection_tests, "upper_case", tmp_path)
+    assert sorted((d.anchor, len(d.members)) for d in result.datasets) == [
+        ("/UPPER_.GTG", 9),
+        ("/mixed_.gtg", 9),
+    ]
+    assert result.warnings == []
+
+
+def test_a_tag_file_without_sectors(collection_tests, tmp_path):
+    result = recognise(collection_tests, "lone_tags", tmp_path)
+    (d,) = result.datasets
+    assert (d.type, d.format, d.members) == (
+        "application/x.dm-gtg",
+        "",
+        ("/IDES_DMS_Config.gtg",),
+    )
+    assert (
+        description(d)
+        == "Gatan Digital Micrograph .gtg tag file, 1 file, 26.9 kB, in /"
+    )
+    assert result.warnings == []
+
+
+def test_another_bin_file(collection_tests, tmp_path):
+    types = {
+        d.anchor: d.type
+        for d in recognise(collection_tests, "other_bin", tmp_path).datasets
+    }
+    assert types["/data.bin"] != "application/x.k2is-sector"
+    assert types["/sector.dat"] == "application/x.k2is-sector"
+
+
+def test_a_representative_capture(collection_tests, tmp_path):
+    (capture,) = described(collection_tests, "capture52", tmp_path)
+    # The scan shape and the microscope first, then the other tags in the
+    # reader's order, under their paths, the values not rounded (decision 129)
+    assert capture.description.startswith(
+        "SI Dimensions.Size X 35, SI Dimensions.Size Y 34, Microscope Info.Cs(mm) 0.0, "
+    )
+    for phrase in (
+        "Microscope Info.Voltage 300000.0, Acquisition.Device.Active Size (pixels) (1920, 1792), ",
+        "Microscope Info.Stage Position.Stage Alpha -2.4043772802208405, ",
+        "DataBar.Acquisition Date 3/29/2018, DataBar.Acquisition Time 1:28:03 PM, ",
+        "DataBar.Device Name K2-IS-0001, ",
+        "SI Image Tags.SI.Acquisition.Pixel time (s) 0.0025, ",
+    ):
+        assert phrase in capture.description
+    assert capture.description.endswith("; K2IS acquisition, 9 files, 27.3 kB, in /")
+    # 359 tags: 52 of them user-interface settings, 11 without a value
+    assert len(capture.dataset.extraction.extracted.summary) == 296
+    assert capture.subjects == ["Gatan K2 IS", "FEI Tecnai Remote"]
+    # The .gtg read whole (26,931 bytes, tags only), and no sector file
+    assert capture.bytes_read < 28_000
+    assert set(capture.reads) == {"/Capture52_.gtg"}
+
+
+def test_user_interface_settings_are_left_out(collection_tests, tmp_path):
+    (capture,) = described(collection_tests, "capture52", tmp_path)
+    summary = capture.dataset.extraction.extracted.summary
+    # The image viewer (Acquisition.Parameters.Objects.TagGroup1, and the
+    # same under SI Image Tags) and the definition of the Session Info form
+    for setting in (
+        "cm_stdviewerimagedisplayer",
+        "Window Relative Position",
+        "Screen Relative Position",
+        ".Zoom 1.0",
+        "Do Auto Zoom",
+        "View Name",
+        "Viewer Class",
+        "Objects.TagGroup1.",
+        "Session Info.Items",
+    ):
+        assert not [p for p in summary if setting in p], setting
+    # The acquisition's processing objects next to the viewer stay, and so does
+    # DigiScan's zoom factor, a scan setting
+    assert (
+        "Acquisition.Parameters.Objects.TagGroup0.Frame Combine Style Copy" in summary
+        and "SI Image Tags.DigiScan.Zoom factor 0.06730239987373351" in summary
+    )
+    # and no tag without a value (the reader gives [] for an empty string)
+    assert not [p for p in summary if p.endswith(" []")]
+
+
+def test_the_groups_at_the_root_whatever_the_tag_order(monkeypatch):
+    # Groups of the same names deeper down and earlier in the tree are not the
+    # scan shape or the microscope: LiberTEM reads the root (.SI Dimensions)
+    tags = {
+        "Acquisition": {
+            "Microscope Info": {"Name": "nested"},
+            "SI Dimensions": {"Size X": 1},
+        },
+        "Microscope Info": {"Name": "FEI Tecnai Remote"},
+        "SI Dimensions": {"Size X": 35},
+    }
+    monkeypatch.setattr(k2is, "parsed", lambda path: SimpleNamespace(tags_dict=tags))
+    extracted = k2is.K2is().extract(Dataset(anchor="/X_.gtg"), "/nowhere")
+    assert extracted.subjects == ["FEI Tecnai Remote"]
+    assert "SI Dimensions.Size X 35" in extracted.summary
+    assert "SI Dimensions.Size X 1" not in extracted.summary

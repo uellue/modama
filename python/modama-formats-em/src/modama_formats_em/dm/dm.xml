@@ -25,4 +25,15 @@
       </match>
     </magic>
   </mime-type>
+  <!-- Files with the DM4 header that hold tags and no image (no ImageList tag;
+       staging run 3, finding F15: 2,036 .dmw files). The name decides: a name
+       match that is a subclass of the sniffed type wins, so the DM4 format,
+       which reacts to application/x.dm4 only, does not take them. Gatan's own
+       name for them is to be confirmed; the comment says what is verified. The
+       .gtg tag files of K2IS captures are typed the same way, in k2is/. -->
+  <mime-type type="application/x.dm-dmw">
+    <comment>Gatan Digital Micrograph .dmw file</comment>
+    <sub-class-of type="application/x.dm4"/>
+    <glob pattern="*.dmw"/>
+  </mime-type>
 </mime-info>

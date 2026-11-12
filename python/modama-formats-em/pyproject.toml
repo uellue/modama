@@ -11,8 +11,11 @@ version = "0.0.1.dev0"
 dependencies = [
     "defusedxml",
     "modama-crawler",
-    # Pinned exactly: merlin imports a private module (rsciio.quantumdetector._api:
-    # parse_hdr_file, MIBProperties), which may change in any release
+    # Pinned exactly: private modules, which may change in any release. merlin
+    # imports rsciio.quantumdetector._api (parse_hdr_file, MIBProperties); dm and
+    # k2is import rsciio.digitalmicrograph._api (DigitalMicrographReader,
+    # ImageObject), and dm.first_image repeats file_reader's steps (0.15.0), as
+    # test_first_image_is_what_file_reader_gives checks
     "rosettasciio==0.15.0",
 ]
 authors = [

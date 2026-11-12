@@ -27,3 +27,11 @@ For a DM3 or DM4 dataset, the extractor SHALL yield, where the file's tags hold 
 #### Scenario: A representative DM4 image
 - **WHEN** a representative DM4 file with known tags is crawled
 - **THEN** its record's description and subjects carry the voltage, magnification, pixel size, dimensions and instrument that the file's tags hold
+
+#### Scenario: The tags, not the image data
+- **WHEN** a DM file's metadata is extracted
+- **THEN** the extractor reads its tags and skips the image data, in reads no larger than NFS's read size, so that a file on NFS costs about its tags and not a buffer of up to 1 MiB per seek
+
+#### Scenario: An RGBA image
+- **WHEN** a DM4 file holds an RGBA image, which RosettaSciIO does not load lazily
+- **THEN** its tags are extracted as for any other image

@@ -1,0 +1,48 @@
+{
+  "datasets": [
+    {
+      "anchor": "/UPPER_.GTG",
+      "basis": "8 sector files UPPER_*.bin",
+      "collapsed": false,
+      "format": "em/k2is",
+      "members": [
+        "/UPPER_.GTG",
+        "/UPPER_1.BIN",
+        "/UPPER_2.BIN",
+        "/UPPER_3.BIN",
+        "/UPPER_4.BIN",
+        "/UPPER_5.BIN",
+        "/UPPER_6.BIN",
+        "/UPPER_7.BIN",
+        "/UPPER_8.BIN"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is",
+      "warnings": []
+    },
+    {
+      "anchor": "/mixed_.gtg",
+      "basis": "8 sector files mixed_*.bin",
+      "collapsed": false,
+      "format": "em/k2is",
+      "members": [
+        "/mixed_.gtg",
+        "/mixed_1.BIN",
+        "/mixed_2.BIN",
+        "/mixed_3.BIN",
+        "/mixed_4.BIN",
+        "/mixed_5.BIN",
+        "/mixed_6.BIN",
+        "/mixed_7.BIN",
+        "/mixed_8.BIN"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
