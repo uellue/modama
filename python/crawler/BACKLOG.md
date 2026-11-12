@@ -103,6 +103,7 @@ Issues and fixes for the projects we build on, with their state (@weber, 2026-11
   - Matomo tracking to egi.matomo.cloud is off only for localhost names (`src/lib/analytics.ts`); to settle between @weber and riwtik (decision 81; the search stack's README, "Open").
   - The FAIR check and the Data Player call outside services by default; decide before production (decision 82).
   - `pm2-runtime -i max` starts one Node process per logical CPU (in the VM 8 processes of 11 threads and about 110 MB each; on the dev server 48, about 5 GB). *Worked around here* (decision 112): our compose starts 2. Upstream: a setting for the process count, fire and forget.
+  - The chat page names the model `cesnet/agentic` in every request (`src/lib/api.ts`, `sendChatMessage`), and the search API takes it over its own `DEFAULT_LLM_MODEL`, so a deployment without a CESNET key cannot chat (staging 2026-11-12; @weber: likely a prototyping shortcut that stayed). *Worked around here*: `patches/matchmaker/0002-chat-model-from-the-search-api.patch` sends a model only when the model selector is on (decision 194). Upstream: the same change, with its two tests; not yet offered.
 - **RosettaSciIO** (0.15.0, staging finding F14):
   - `file_reader(lazy=True)` refuses RGBA DM images ("Lazy loading of RGBA images is not supported"); its reader classes read their tags. *Worked around here* (our `dm.first_image`, branch `dm-containers`).
   - Merlin: `MIBProperties` from bytes fails for Quad detectors, because it then opens `self.path`, which is `None`. *Found.*

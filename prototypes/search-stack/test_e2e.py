@@ -347,6 +347,23 @@ def test_the_chat_page_needs_no_login(tree):
     assert "Conversations are kept only with an account" in code
 
 
+def test_the_chat_page_leaves_the_model_to_the_search_api(tree):
+    # patches/matchmaker/0002: the chat page's request names no model, so that the
+    # search API's DEFAULT_LLM_MODEL applies (keys.env); upstream's page sent
+    # "cesnet/agentic", which failed without a CESNET key (staging 2026-11-12). The
+    # chat test below sends what the page sends, so this check keeps the two alike.
+    with urllib.request.urlopen(FRONTEND + "/chat", timeout=30) as response:
+        page = response.read().decode()
+    requests = []
+    for path in sorted(set(re.findall(r"/assets/[\w-]+\.js", page))):
+        with urllib.request.urlopen(FRONTEND + path, timeout=30) as response:
+            code = response.read().decode()
+        # the request body, minified: `{items:messages.filter(…).map(…)}` up to its `;`
+        requests += re.findall(r"=\{items:[^;]*\};\w+&&\(\w+\.thread_id=", code)
+    assert len(requests) == 1, requests
+    assert "model" not in requests[0], requests[0]
+
+
 def test_the_frontend_finds_the_file(tree):
     # the route the frontend's search page calls (matchmaker's src/lib/api.ts), which its
     # server proxies to the search API
