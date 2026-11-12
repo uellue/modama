@@ -2,6 +2,7 @@
 (the `database-schema` spec), run as a subprocess like a user would."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -82,7 +83,12 @@ def test_verbose_diagnostics_travel_with_the_records(store):
     assert warning < text.index(oai_identifier("/broken/broken.zarr"))
     # A single file by its MIME type gets no comment of its own
     assert "<!-- /store/notes.txt" not in text
-    assert "<!-- 3 records (1 single files by type), 1 warnings, 0 skipped -->" in text
+    # (the identity: the em collection, which has extractors, is installed)
+    assert re.search(
+        r"<!-- 3 records \(1 single files by type\), 1 warnings, 0 skipped"
+        r"; extraction identity [0-9a-f]{12} -->",
+        text,
+    )
     # Nothing to look for on standard error
     assert b"INFO" not in run.stderr and b"WARNING" not in run.stderr
     # Also accepted before the subcommand
@@ -291,8 +297,8 @@ def test_dataset_warnings_are_reported_without_verbose(tmp_path):
 # The crawler with one more revision than the code has, standing in for a newer crawler
 NEWER_CRAWLER = (
     f"{sys.executable} -c 'import sys; from modama_crawler import cli, schema; "
-    'schema.HEAD = "0002_crawl_runs_scope"; '
-    'schema.known = lambda: {"0001_baseline", "0002_crawl_runs_scope"}; '
+    'schema.HEAD = "0099_crawl_runs_scope"; '
+    'schema.known = lambda: {"0001_baseline", "0002_extractor_identity", "0099_crawl_runs_scope"}; '
     "sys.exit(cli.main())'"
 )
 
@@ -307,7 +313,7 @@ def test_one_migration_missing(conn, env, tree):
     run = typed(f"{NEWER_CRAWLER} crawl --root {tree}", env)
     assert run.returncode == 2
     assert run.stderr.endswith(
-        "ERROR the database schema is at 0001_baseline, this crawler needs 0002_crawl_runs_scope: "
+        f"ERROR the database schema is at {schema.HEAD}, this crawler needs 0099_crawl_runs_scope: "
         "run modama-crawler migrate\n"
     )
     assert conn.execute("SELECT count(*) FROM crawl_runs").fetchall() == [(0,)]

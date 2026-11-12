@@ -145,10 +145,6 @@ class Dm(Format):
     """A DM file of the version its `type` names, as one dataset."""
 
     priority = 60
-    # 2: the reader's names and numbers, no units added; 3: our own handle (F14),
-    # so RGBA images, which file_reader refused when lazy, are extracted again;
-    # 4: numbers as the reader gives them, not rounded
-    extractor_version = "4"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for e in d.of_type(self.type):

@@ -22,7 +22,6 @@ class Empad(Format):
     display_name = "EMPAD"
     priority = 60
     reacts_to = frozenset({HEADER})
-    extractor_version = "2"  # 2: exposure time without a unit
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for header in d.of_type(HEADER):

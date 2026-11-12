@@ -22,6 +22,11 @@
       "warnings": []
     }
   ],
+  "extractions": {
+    "/Capture7_.gtg": {
+      "error": "error"
+    }
+  },
   "skipped": [],
   "warnings": []
 }

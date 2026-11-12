@@ -24,7 +24,6 @@ class Merlin(Format):
     display_name = "Quantum Detectors Merlin"
     priority = 60
     reacts_to = frozenset({HEADER, FRAMES})
-    extractor_version = "1"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         frames = d.of_type(FRAMES)

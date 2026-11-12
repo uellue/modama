@@ -134,3 +134,54 @@ def test_uncovered_glob_fails_naming_it(pytester):
 def test_covered_rules_pass(pytester, collection):
     # The glob fires on a.thr (whose content matches nothing) and the magic rule on noext
     run(pytester, test="test_coverage").assert_outcomes(passed=1)
+
+
+# "Extraction results are recorded and compared" (change extractor-identity)
+
+EXTRACTOR = """
+import os
+from pathlib import Path
+
+from modama_crawler.formats import Collection, Dataset, Extracted, Format
+
+
+class Thr(Format):
+    type = "application/x.thr"
+    reacts_to = frozenset({"application/x.thr"})
+
+    def recognize(self, d):
+        for e in d.of_type(self.type):
+            yield Dataset(anchor=e.rel, basis="*.thr")
+
+    def extract(self, dataset, root):
+        text = Path(root + dataset.anchor).read_bytes()[:12].decode(errors="replace")
+        # THR_READER stands in for the version of a reader the format uses
+        return Extracted([f"start {text!r}"], [], {"reader": os.environ.get("THR_READER", "1")})
+
+
+COLLECTION = Collection("thr", [Thr()], mime_files=(Path(__file__).parent / "thr.xml",))
+"""
+
+
+@pytest.fixture
+def extracting(pytester):
+    pkg = write_collection(Path(pytester.path))
+    (pkg / "__init__.py").write_text(EXTRACTOR)
+    return pkg
+
+
+def test_first_run_records_the_extraction(pytester, extracting):
+    result = run(pytester, test="test_fixture")
+    result.assert_outcomes(failed=1)
+    assert "recorded a new result in" in result.stdout.str()
+    recorded = (extracting / "tests" / "expected" / "good.json").read_text()
+    assert '"extractions"' in recorded and '"reader": "1"' in recorded
+    run(pytester, test="test_fixture").assert_outcomes(passed=1)
+
+
+def test_a_dependency_changes_a_fixtures_output(pytester, extracting, monkeypatch):
+    run(pytester, test="test_fixture")  # records
+    monkeypatch.setenv("THR_READER", "2")
+    result = run(pytester, test="test_fixture")
+    result.assert_outcomes(failed=1)
+    assert "/noext extraction (values.reader '1' -> '2')" in result.stdout.str()

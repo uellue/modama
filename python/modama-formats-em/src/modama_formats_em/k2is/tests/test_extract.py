@@ -101,7 +101,9 @@ def crawled(ct, fixture, tmp_path):
     """Recognise and extract a fixture as a crawl does; the result carries the extraction failures as warnings."""
     tree = ct.materialise(fixture, tmp_path)
     result = walk(tree, ct.collection.formats)
-    extraction.extract(result, ct.collection.formats, str(tree), workers=1)
+    extraction.extract(
+        result, ct.collection.formats, str(tree), identity="test", workers=1
+    )
     return result
 
 
@@ -133,7 +135,7 @@ def test_records_comments_a_single_file_whose_name_type_was_dropped(tmp_path):
         "em/k2is: not application/x.dm-gtg, no DM header -->"
     )
     assert out.split(comment, 1)[1].lstrip().startswith("<record>")
-    assert "<!-- 1 records (1 single files by type), 0 warnings, 0 skipped -->" in out
+    assert "<!-- 1 records (1 single files by type), 0 warnings, 0 skipped; " in out
 
 
 @pytest.mark.parametrize("module", ["format's read", "new type's detection"])

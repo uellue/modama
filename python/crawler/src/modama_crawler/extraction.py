@@ -1,20 +1,23 @@
 """Running the formats' extractors after the walk, in worker processes, with a time limit per dataset (D1).
 
 The walk only recognises; this module runs `Format.extract` on every dataset
-whose format has one, unless an earlier extraction of the same extractor and
-version on the same state of the files can be reused (D3). An extractor that
+whose format has one, unless an earlier successful extraction by the same
+extractor under the same extractor identity on the same state of the files
+can be reused (D3; change `extractor-identity`, D3). An extractor that
 raises, kills its process, runs out of its memory budget or runs over the
 time limit leaves its dataset with an error and the crawl with a warning;
-the crawl goes on (R23). A failure that comes from the environment rather
-than from the file (the time limit, a dead process, an OS or import error) is
-not reused: the next crawl runs the extractor again.
+the crawl goes on (R23). A failure is never reused, whatever its cause: the
+next crawl runs the extractor again (D9). Each crawl also extracts a random
+sample of what it reuses again and compares (the spot check, D10).
 Provisional: the I/O study may change how this runs, not the interface (D2).
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import multiprocessing
+import random
 import re
 import resource
 import signal
@@ -23,10 +26,13 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 
 from . import cpus
 from .formats import Dataset, Extracted, Extraction, Format, Result
+from .identity import short
+
+log = logging.getLogger(__name__)
 
 TIME_LIMIT = 60.0  # seconds per dataset
 CHECK_INTERVAL = 1.0  # seconds between calls of extract's check (SIGTERM)
@@ -43,13 +49,87 @@ TASKS_PER_WORKER = 100  # then the worker is replaced, so that leaks don't add u
 # returns a whole array as a list must not bloat the database.
 MAX_STRING = 4096  # characters per string
 MAX_ITEMS = 1000  # entries per list or dict
-# Failures that come from the environment, not from the file's content: not reused
-ENVIRONMENT = (OSError, ImportError)
+SAMPLE = 20  # datasets per format that the spot check extracts again (D10)
+MAX_NAMED = 5  # differences named per format, then "and N more" (R36)
 
 
 def default_workers() -> int:
     """The CPUs this process may use, at most MAX_WORKERS (R43)."""
     return min(cpus.usable().cpus, MAX_WORKERS)
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+@dataclass
+class Difference:
+    """A dataset whose spot check gave another result than the stored one (D10)."""
+
+    anchor: str
+    fields: list[
+        tuple[str, object, object]
+    ]  # (field, stored, new); empty when it now fails
+    error: str | None = (
+        None  # the new failure, which did not replace the stored success
+    )
+
+    def __str__(self) -> str:
+        if self.error is not None:
+            return f"{self.anchor} (now fails: {self.error})"
+        plain = [f for f, _, _ in self.fields if not f.startswith("values.")]
+        values = [
+            f.removeprefix("values.") for f, _, _ in self.fields if f not in plain
+        ]
+        parts = plain + ([f"values: {', '.join(values)}"] if values else [])
+        return f"{self.anchor} ({'; '.join(parts)})"
+
+    def to_json(self) -> dict:
+        return {
+            "dataset": self.anchor,
+            "error": self.error,
+            "fields": [[f, old, new] for f, old, new in self.fields],
+        }
+
+
+@dataclass
+class SpotCheck:
+    """The spot check's outcome: per format the datasets compared, and those that differ (D10)."""
+
+    seed: int
+    checked: dict[str, int] = field(default_factory=dict)
+    differ: dict[str, list[Difference]] = field(default_factory=dict)
+
+    @property
+    def differences(self) -> int:
+        return sum(len(d) for d in self.differ.values())
+
+    def __str__(self) -> str:
+        if not self.checked:
+            return "spot check: nothing reused"
+        counts = []
+        for i, (fid, n) in enumerate(sorted(self.checked.items())):
+            same = n - len(self.differ.get(fid, ()))
+            counts.append(f"{fid} {same} of {n}" + (" as stored" if i == 0 else ""))
+        named = []
+        for fid in sorted(self.differ):
+            found = self.differ[fid]
+            named += [str(d) for d in found[:MAX_NAMED]]
+            if len(found) > MAX_NAMED:
+                named.append(f"and {len(found) - MAX_NAMED} more")
+        line = f"spot check (seed {self.seed:016x}): {', '.join(counts)}"
+        return f"{line}; differs: {', '.join(named)}" if named else line
+
+    def to_json(self) -> dict:
+        return {
+            "seed": f"{self.seed:016x}",
+            "checked": dict(sorted(self.checked.items())),
+            "differ": {
+                fid: [d.to_json() for d in found[:MAX_NAMED]]
+                for fid, found in sorted(self.differ.items())
+            },
+            "differences": self.differences,
+        }
 
 
 @dataclass
@@ -63,13 +143,53 @@ class Report:
     seconds: dict[str, float] = field(
         default_factory=dict
     )  # per format id, of the runs
+    identity: str = ""  # the crawl's extractor identity
+    # (format id, stored identity) -> [extracted again for a new identity, results changed] (D6)
+    reextracted: dict[tuple[str, str], list[int]] = field(default_factory=dict)
+    # format id -> [failures tried again, now succeed] (D9)
+    retried: dict[str, list[int]] = field(default_factory=dict)
+    spot: SpotCheck | None = None  # None: no spot check (no seed given)
+    # stored identity -> what differs from the crawl's, set by the caller (identity.differences)
+    causes: dict[str, list[str]] = field(default_factory=dict)
 
     def __str__(self) -> str:
         times = ", ".join(f"{f} {s:.1f} s" for f, s in sorted(self.seconds.items()))
-        return (
+        line = (
             f"extraction: {self.run} run, {self.reused} reused, {self.failed} failed; "
             f"{self.unchanged} directories unchanged; time per format: {times or 'none'}"
         )
+        return f"{line}; identity {short(self.identity)}" if self.identity else line
+
+    def lines(self) -> list[str]:
+        """The report: its first line, one per format and stored identity extracted again, one per format with failures tried again, the spot check."""
+        out = [str(self)]
+        for (fid, before), (n, changed) in sorted(self.reextracted.items()):
+            causes = ", ".join(self.causes.get(before, [f"from {short(before)}"]))
+            out.append(
+                f"{fid}: {n} extracted again for a new identity ({causes}), "
+                f"{_plural(changed, 'result', 'results')} changed"
+            )
+        for fid, (n, succeed) in sorted(self.retried.items()):
+            out.append(
+                f"{fid}: {n} tried again after a failure, "
+                f"{succeed} now {'succeeds' if succeed == 1 else 'succeed'}"
+            )
+        if self.spot is not None:
+            out.append(str(self.spot))
+        return out
+
+    def reextracted_json(self) -> list[dict]:
+        """The re-extraction for a new identity as the run keeps it (D8)."""
+        return [
+            {
+                "format": fid,
+                "from": before,
+                "datasets": n,
+                "changed": changed,
+                "differences": self.causes.get(before, []),
+            }
+            for (fid, before), (n, changed) in sorted(self.reextracted.items())
+        ]
 
 
 Stored = Callable[[list[str]], dict[str, Extraction]]
@@ -79,28 +199,83 @@ def _no_stored(anchors: list[str]) -> dict[str, Extraction]:
     return {}
 
 
+def _stored_form(x: Extraction) -> tuple[dict | None, str | None]:
+    """An extraction's outcome as the database gives it back (JSONB), for comparing a stored one with a new one."""
+    extracted = json.loads(json.dumps(asdict(x.extracted))) if x.extracted else None
+    return extracted, x.error
+
+
+def fields_of(old, new, prefix: str) -> list[tuple[str, object, object]]:
+    """(field, old, new) for each field that differs between two parts of results in stored form, dotted below `values`."""
+    if isinstance(old, dict) and isinstance(new, dict) and prefix.startswith("values"):
+        out = []
+        for key in sorted(old.keys() | new.keys(), key=str):
+            out += fields_of(old.get(key), new.get(key), f"{prefix}.{key}")
+        return out
+    return [] if old == new else [(prefix, old, new)]
+
+
+def _differences(
+    before: Extraction, after: Extraction
+) -> list[tuple[str, object, object]]:
+    (old, _), (new, _) = _stored_form(before), _stored_form(after)
+    old, new = old or {}, new or {}
+    return [
+        d
+        for key in ("summary", "subjects", "values")
+        for d in fields_of(old.get(key), new.get(key), key)
+    ]
+
+
+def sample(
+    seed: int, reused: dict[str, list[str]], size: int = SAMPLE
+) -> dict[str, list[str]]:
+    """The spot check's sample: per format id, `size` of its reused anchors, or all when fewer (D10).
+
+    Drawn with one random.Random(seed) over the formats in the order of their
+    ids and each format's anchors sorted, so that the same seed over the same
+    stored datasets gives the same sample.
+    """
+    rng = random.Random(seed)
+    out = {}
+    for fid in sorted(reused):
+        anchors = sorted(reused[fid])
+        out[fid] = (
+            anchors if len(anchors) <= size else sorted(rng.sample(anchors, size))
+        )
+    return out
+
+
 def extract(
     result: Result,
     formats: Iterable[Format],
     root: str,
     *,
+    identity: str,
     stored: Stored = _no_stored,
     workers: int | None = None,
     time_limit: float = TIME_LIMIT,
     memory: int | None = MEMORY,
     check: Callable[[], None] | None = None,
+    seed: int | None = None,
+    sample_size: int = SAMPLE,
 ) -> Report:
     """Set the extraction of every dataset of the result whose format has an extractor; returns the report.
 
-    `stored` gives the extractions of the last crawl by anchor, for the
-    datasets that were recognised again; datasets taken over from it carry
-    theirs already. A failure, new or reused, becomes a warning of the result.
+    `identity` is the installation's extractor identity (identity.digest):
+    a stored success is reused only under the same one, a stored failure
+    never. `stored` gives the extractions of the last crawl by anchor, for
+    the datasets that were recognised again; datasets taken over from it
+    carry theirs already. A failure, new or rerun, becomes a warning of the
+    result. With a `seed`, `sample_size` datasets per format of those
+    reused are extracted again and compared (the spot check, D10); a new
+    success replaces the stored result, a new failure does not.
     `memory` is each worker's address space in bytes, None for no limit.
     `check` is called at least every second while extractors run; what it
     raises ends the extraction, the workers killed (SIGTERM).
     """
     by_id = {f.id: f for f in formats if f.has_extractor}
-    report = Report(unchanged=result.unchanged)
+    report = Report(unchanged=result.unchanged, identity=identity)
     wanted = [i for i, d in enumerate(result.datasets) if d.format in by_id]
     earlier = stored(
         [
@@ -110,38 +285,84 @@ def extract(
         ]
     )
     tasks: list[int] = []
+    befores: dict[int, Extraction] = {}  # what was stored for the tasks with one
+    reused: dict[str, list[str]] = {}
     for i in wanted:
         d = result.datasets[i]
         fmt = by_id[d.format]
         before = d.extraction or earlier.get(d.anchor)
-        if (
-            before is not None
-            and not before.retry
-            and (before.extractor, before.version, before.stamp)
-            == (fmt.id, fmt.extractor_version, d.stamp)
-        ):
+        if before is None or (before.extractor, before.stamp) != (fmt.id, d.stamp):
+            tasks.append(i)  # new or changed files
+            continue
+        if before.error is None and before.identity == identity:
             result.datasets[i] = replace(d, extraction=before)
             report.reused += 1
-        else:
-            tasks.append(i)
+            reused.setdefault(fmt.id, []).append(d.anchor)
+            continue
+        befores[i] = before  # a failure (D9), or another identity (D3)
+        tasks.append(i)
+    spots: list[int] = []
+    if seed is not None:
+        report.spot = SpotCheck(seed)
+        picked = sample(seed, reused, sample_size)
+        index = {result.datasets[i].anchor: i for i in wanted}
+        spots = [index[a] for fid in sorted(picked) for a in picked[fid]]
     outcomes = _run(
-        [(by_id[result.datasets[i].format], result.datasets[i], root) for i in tasks],
+        [
+            (by_id[result.datasets[i].format], result.datasets[i], root)
+            for i in tasks + spots
+        ],
         workers or default_workers(),
         time_limit,
         memory,
         check,
     )
-    for i, (extracted, error, seconds, retry) in zip(tasks, outcomes, strict=True):
+    for i, (extracted, error, seconds) in zip(tasks, outcomes, strict=False):
         d = result.datasets[i]
         fmt = by_id[d.format]
-        result.datasets[i] = replace(
-            d,
-            extraction=Extraction(
-                fmt.id, fmt.extractor_version, d.stamp, extracted, error, seconds, retry
-            ),
-        )
+        new = Extraction(fmt.id, identity, d.stamp, extracted, error, seconds)
+        result.datasets[i] = replace(d, extraction=new)
         report.run += 1
         report.seconds[fmt.id] = report.seconds.get(fmt.id, 0.0) + seconds
+        before = befores.get(i)
+        if before is None:
+            continue
+        if before.error is not None:
+            counts = report.retried.setdefault(fmt.id, [0, 0])
+            counts[0] += 1
+            counts[1] += error is None
+        else:
+            counts = report.reextracted.setdefault((fmt.id, before.identity), [0, 0])
+            counts[0] += 1
+            counts[1] += _stored_form(before) != _stored_form(new)
+    for i, (extracted, error, seconds) in zip(
+        spots, outcomes[len(tasks) :], strict=True
+    ):
+        d = result.datasets[i]
+        fmt = by_id[d.format]
+        spot = report.spot
+        spot.checked[fmt.id] = spot.checked.get(fmt.id, 0) + 1
+        new = Extraction(fmt.id, identity, d.stamp, extracted, error, seconds)
+        if error is not None:
+            found = Difference(d.anchor, [], error)
+        else:
+            fields = _differences(d.extraction, new)
+            if not fields:
+                continue
+            found = Difference(d.anchor, fields)
+            result.datasets[i] = replace(
+                d, extraction=new
+            )  # what the installed code gives (192)
+        spot.differ.setdefault(fmt.id, []).append(found)
+        log.warning(
+            "spot check: %s differs from the stored result: %s",
+            d.anchor,
+            f"now fails: {error}"
+            if error is not None
+            else "; ".join(
+                f"{f}: stored {old!r}, now {now!r}" for f, old, now in fields
+            ),
+        )
     # Datasets of formats without an extractor (any more) carry none
     for i, d in enumerate(result.datasets):
         if d.format not in by_id and d.extraction is not None:
@@ -200,8 +421,8 @@ def _limit_memory(memory: int | None) -> None:
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
 
 
-# extracted, error, seconds, and whether the failure came from the environment
-Outcome = tuple[Extracted | None, str | None, float, bool]
+# extracted, error, seconds
+Outcome = tuple[Extracted | None, str | None, float]
 
 
 def _run(
@@ -265,17 +486,12 @@ def _run(
             for future in done:
                 i, start = running.pop(future)
                 try:
-                    out[i] = (future.result(), None, time.monotonic() - start, False)
+                    out[i] = (future.result(), None, time.monotonic() - start)
                 except BrokenProcessPool:
                     broken = True
                     running[future] = (i, start)  # handled with the others below
                 except Exception as e:  # noqa: BLE001  a failing extractor must not stop the crawl
-                    out[i] = (
-                        None,
-                        repr(e),
-                        time.monotonic() - start,
-                        isinstance(e, ENVIRONMENT),
-                    )
+                    out[i] = (None, repr(e), time.monotonic() - start)
             if broken:
                 lost = [i for i, _ in running.values()]
                 if len(lost) == 1:
@@ -283,7 +499,6 @@ def _run(
                         None,
                         "the extractor's process died",
                         time.monotonic() - next(iter(running.values()))[1],
-                        True,
                     )
                 else:
                     suspected.update(lost)
@@ -296,12 +511,7 @@ def _run(
             late = [i for i, start in running.values() if now - start >= time_limit]
             if late:
                 for i in late:
-                    out[i] = (
-                        None,
-                        f"timed out after {time_limit:g} s",
-                        time_limit,
-                        True,
-                    )
+                    out[i] = (None, f"timed out after {time_limit:g} s", time_limit)
                 requeue(i for i, _ in running.values() if i not in late)
                 running.clear()
                 pool.kill_workers()

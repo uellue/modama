@@ -1,15 +1,16 @@
 """Running extractors after recognition (the `extraction` spec), with the stand-in formats of `standin.py`."""
 
 import os
+import re
 import sys
 
 import pytest
 import standin
 from conftest import interrupted
-from modama_crawler import extraction, mime, selection
+from modama_crawler import cli, extraction, identity, mime, selection, store
 from modama_crawler.cli import crawl_tree
 from modama_crawler.records import build
-from modama_crawler.store import start_run
+from modama_crawler.store import end_run, recent_runs, start_run
 from modama_crawler.walk import walk
 
 
@@ -17,7 +18,7 @@ def extract(root, calls, **kwargs):
     """Walk and extract, as a crawl does before storing; returns the result, the report and the datasets by anchor."""
     formats = standin.collection(calls).formats
     result = walk(root, formats)
-    report = extraction.extract(result, formats, str(root), **kwargs)
+    report = extraction.extract(result, formats, str(root), identity="h", **kwargs)
     return result, report, {d.anchor: d for d in result.datasets}
 
 
@@ -72,7 +73,7 @@ mimedb.build(selection.discover().values(), Path(mime))
 formats = standin.collection(calls).formats
 threading.Thread(target=ready, daemon=True).start()
 try:
-    extraction.extract(walk(root, formats), formats, root, workers=2)
+    extraction.extract(walk(root, formats), formats, root, identity="h", workers=2)
 except KeyboardInterrupt:
     sys.exit(130)
 """
@@ -168,18 +169,59 @@ def opened():
     OPENED.clear()
 
 
-def crawl(conn, root, calls, rules="r1", version="1"):
+def installation(rosettasciio="0.15.0", dm="a", records="b") -> tuple[str, dict]:
+    """An extractor identity and its ingredients, standing in for an installation (identity.ingredients)."""
+    ingredients = {
+        "python": "cpython 3.14.0",
+        "distributions": {"modama-crawler": "0.0.1.dev0", "rosettasciio": rosettasciio},
+        "source": {
+            "modama_formats_em/dm/__init__.py": dm,
+            "modama_crawler/records.py": records,
+        },
+    }
+    return identity.digest(ingredients), ingredients
+
+
+A = installation()
+
+
+def crawl(conn, root, calls, rules="r1", installed=A, variant="1"):
     """One crawl of root into the database as `modama-crawler crawl` does it; returns the result and the report.
 
-    `version` is the extractor version of `Stand`; `Other`'s stays.
+    `installed` is the extractor identity and its ingredients (None: not
+    stored with the run, as for a label from before identities); `variant`
+    stands in for the installed code of `Stand` (standin.py), `Other`'s stays.
     """
     formats = standin.collection(calls).formats
-    formats[0].extractor_version = version
+    formats[0].variant = variant
     run_id = start_run(conn, str(root))
     result, report, _ = crawl_tree(
-        conn, run_id, str(root), formats, selection.Config(), rules
+        conn, run_id, str(root), formats, selection.Config(), rules, installed=installed
+    )
+    end_run(
+        conn,
+        run_id,
+        "finished",
+        directories=0,
+        files=0,
+        extraction=report,
+        ingredients=installed[1],
     )
     return result, report
+
+
+def extracted(conn) -> dict[str, dict]:
+    return dict(conn.execute("SELECT anchor, extracted FROM datasets").fetchall())
+
+
+def a_day_back(conn) -> None:
+    """Records' datestamps a day back, so that a datestamp written by the next crawl is a new one."""
+    conn.execute("UPDATE records SET datestamp = datestamp - interval '1 day'")
+    conn.commit()
+
+
+def changed_records(first: dict, second: dict) -> list[str]:
+    return sorted(i.rsplit(":", 1)[1] for i in first if first[i] != second[i])
 
 
 def records(conn) -> dict[str, tuple]:
@@ -223,10 +265,11 @@ def test_a_second_crawl_of_an_unchanged_tree(conn, deep, tmp_path, opened):
     result, report = crawl(conn, deep, calls)
     seen = list(opened)
     opened.clear()
-    # No file of the tree opened in this process, no extractor run in a worker
+    # No file of the tree opened in this process; in a worker only the spot check's sample
     assert [p for p in seen if p.startswith(str(deep))] == []
-    assert len(standin.calls(calls)) == 5
+    assert sorted(standin.calls(calls)[5:]) == sorted(standin.calls(calls)[:5])
     assert (report.run, report.reused, report.failed) == (0, 5, 0)
+    assert report.lines()[-1].endswith("t/stand 5 of 5 as stored")
     assert result.unchanged == 4  # /, /a, /a/b, /a/b/c
     assert records(conn) == first
 
@@ -246,8 +289,10 @@ def test_a_change_deep_in_the_tree(conn, deep, tmp_path):
     (deep / "a" / "b" / "c" / "three.stand").write_text("ok three, longer")
     result, report = crawl(conn, deep, calls)
     assert result.unchanged == 0  # its directory and every one above it again
-    assert standin.calls(calls)[5:] == ["/a/b/c/three.stand"]
+    # the changed one, and the other four as the spot check's sample
+    assert sorted(standin.calls(calls)[5:]) == sorted(standin.calls(calls)[:5])
     assert (report.run, report.reused) == (1, 4)
+    assert report.lines()[-1].endswith("t/stand 4 of 4 as stored")
     second = records(conn)
     changed = [i.rsplit(":", 1)[1] for i in first if first[i] != second[i]]
     assert changed == ["/a/b/c/three.stand"]
@@ -271,40 +316,80 @@ def test_a_rewrite_with_the_same_size_and_mtime(conn, tmp_path):
     assert d.extraction.extracted.values == {"word": "bbb"}
 
 
-def test_a_new_extractor_version(conn, deep, tmp_path):
+def test_a_failed_file_in_an_unchanged_directory(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "broken.stand").write_text("raise")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    result, _ = crawl(conn, root, calls)
+    assert result.unchanged == 1  # taken over without recognising
+    assert standin.calls(calls) == ["/broken.stand", "/broken.stand"]
+
+
+# "Extraction follows the identified extractor"
+
+
+def test_a_changed_source_file_of_a_format_package(conn, deep, tmp_path):
     calls = tmp_path / "calls"
     (deep / "a" / "other.other").write_text("ok other")  # another extractor's dataset
     (deep / "a" / "b" / "versioned.stand").write_text("versioned v")
     crawl(conn, deep, calls)
-    # A day back, so that a datestamp written by the next crawl is a new one
-    conn.execute("UPDATE records SET datestamp = datestamp - interval '1 day'")
-    conn.commit()
+    a_day_back(conn)
     first = records(conn)
-    result, report = crawl(conn, deep, calls, version="2")
-    assert result.unchanged == 4 and report.run == 6
-    again = standin.calls(calls)[7:]
-    assert sorted(again) == sorted(c for c in standin.calls(calls)[:7] if "stand" in c)
+    changed = installation(dm="edited")
+    result, report = crawl(conn, deep, calls, installed=changed, variant="2")
+    # every dataset of every format with an extractor
+    assert result.unchanged == 4 and report.run == 7
+    assert sorted(standin.calls(calls)[7:]) == sorted(standin.calls(calls)[:7])
     # Only the record whose content changed has a new datestamp
     second = records(conn)
-    changed = [i.rsplit(":", 1)[1] for i in first if first[i] != second[i]]
-    assert changed == ["/a/b/versioned.stand"]
+    assert changed_records(first, second) == ["/a/b/versioned.stand"]
     key = next(i for i in first if i.endswith(":/a/b/versioned.stand"))
     assert second[key][0] > first[key][0]
-    versions = {d.format: d.extraction.version for d in result.datasets if d.extraction}
-    assert versions == {"t/stand": "2", "t/other": "1"}
+    assert {d.extraction.identity for d in result.datasets if d.extraction} == {
+        changed[0]
+    }
 
 
-def test_a_file_whose_reading_failed_stays_failed_until_something_changes(
-    conn, tmp_path
-):
+def test_a_change_that_alters_no_output(conn, deep, tmp_path):
+    calls = tmp_path / "calls"
+    crawl(conn, deep, calls)
+    a_day_back(conn)
+    first = records(conn)
+    _, report = crawl(conn, deep, calls, installed=installation(dm="a comment"))
+    assert report.run == 5
+    assert records(conn) == first
+
+
+def test_an_upgraded_dependency(conn, deep, tmp_path):
+    calls = tmp_path / "calls"
+    crawl(conn, deep, calls)
+    _, report = crawl(conn, deep, calls, installed=installation(rosettasciio="0.16.0"))
+    assert (report.run, report.reused) == (5, 0)
+
+
+def test_back_to_an_earlier_installation(conn, deep, tmp_path):
+    calls = tmp_path / "calls"
+    (deep / "a" / "b" / "versioned.stand").write_text("versioned v")
+    crawl(conn, deep, calls)
+    first = {i: metadata for i, (_, metadata) in records(conn).items()}
+    crawl(conn, deep, calls, installed=installation(dm="experiment"), variant="2")
+    assert {i: m for i, (_, m) in records(conn).items()} != first
+    _, report = crawl(conn, deep, calls)
+    assert report.run == 6
+    assert {i: m for i, (_, m) in records(conn).items()} == first
+
+
+def test_a_file_whose_reading_failed_is_tried_again_on_every_crawl(conn, tmp_path):
     root = tmp_path / "data"
     root.mkdir()
     (root / "broken.stand").write_text("raise")
     calls = tmp_path / "calls"
     crawl(conn, root, calls)
     result, report = crawl(conn, root, calls)
-    assert standin.calls(calls) == ["/broken.stand"]
-    assert (report.run, report.reused, report.failed) == (0, 1, 1)
+    assert standin.calls(calls) == ["/broken.stand", "/broken.stand"]
+    assert (report.run, report.reused, report.failed) == (1, 0, 1)
     ((path, text),) = result.all_warnings()
     assert path == "/broken.stand" and "truncated file" in text
 
@@ -324,8 +409,8 @@ def test_a_timeout_is_retried_on_the_next_crawl(conn, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("command", ["kill", "oserror", "import"])
-def test_other_failures_of_the_environment_are_retried(conn, tmp_path, command):
-    # Not scenarios of their own: like the timeout, they say nothing about the file
+def test_other_failures_are_retried(conn, tmp_path, command):
+    # Not scenarios of their own: every failure is tried again, whatever its cause (D9)
     root = tmp_path / "data"
     root.mkdir()
     (root / "x.stand").write_text(command)
@@ -334,6 +419,184 @@ def test_other_failures_of_the_environment_are_retried(conn, tmp_path, command):
     _, report = crawl(conn, root, calls)
     assert standin.calls(calls) == ["/x.stand", "/x.stand"]
     assert (report.run, report.reused, report.failed) == (1, 0, 1)
+
+
+def test_a_failure_under_a_lowered_memory_limit(conn, tmp_path, monkeypatch):
+    # Also "The crawl reports failures tried again"
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "big.stand").write_text("eat 1024")
+    (root / "small.stand").write_text("ok small")
+    calls = tmp_path / "calls"
+    monkeypatch.setenv("MODAMA_CRAWLER_EXTRACT_MEMORY", "768")  # MiB
+    first, _ = crawl(conn, root, calls)
+    ((_, text),) = first.all_warnings()
+    assert "MemoryError" in text
+    monkeypatch.setenv("MODAMA_CRAWLER_EXTRACT_MEMORY", "4096")
+    result, report = crawl(conn, root, calls)
+    assert result.all_warnings() == []
+    assert (report.run, report.reused, report.failed) == (1, 1, 0)
+    assert "t/stand: 1 tried again after a failure, 1 now succeeds" in report.lines()
+
+
+# "The crawl reports re-extraction and its cause"
+
+
+def test_a_dependency_upgrade_that_changes_output(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("versioned a")
+    (root / "b.stand").write_text("ok b")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    _, report = crawl(
+        conn, root, calls, installed=installation(rosettasciio="0.16.0"), variant="2"
+    )
+    assert (
+        "t/stand: 2 extracted again for a new identity (rosettasciio 0.15.0 -> 0.16.0), "
+        "1 result changed"
+    ) in report.lines()
+    (latest,) = recent_runs(conn, 1)
+    assert "extracted again: t/stand 2 (1 result changed)" in cli._run_line(latest)
+
+
+def test_a_refactoring_that_changes_no_output(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    (root / "b.stand").write_text("ok b")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    _, report = crawl(conn, root, calls, installed=installation(dm="a comment"))
+    assert (
+        "t/stand: 2 extracted again for a new identity "
+        "(source of modama_formats_em.dm changed), 0 results changed"
+    ) in report.lines()
+
+
+def test_a_change_in_building_records_only(conn, tmp_path, monkeypatch):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    (root / "b.stand").write_text("ok b")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    a_day_back(conn)
+    first = records(conn)
+
+    def fixed_template(d, names):
+        identifier, metadata = build(d, names)
+        return identifier, {**metadata, "description": ["a fixed typo"]}
+
+    monkeypatch.setattr(store, "build", fixed_template)
+    _, report = crawl(conn, root, calls, installed=installation(records="fixed"))
+    assert (
+        "t/stand: 2 extracted again for a new identity "
+        "(source of modama_crawler.records changed), 0 results changed"
+    ) in report.lines()
+    assert changed_records(first, records(conn)) == ["/a.stand", "/b.stand"]
+
+
+def test_an_identity_from_before_this_change(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    (root / "b.stand").write_text("ok b")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls, installed=("4", None))  # a label, no ingredients
+    _, report = crawl(conn, root, calls)
+    assert (
+        't/stand: 2 extracted again for a new identity (earlier identity "4", '
+        "ingredients unknown), 0 results changed"
+    ) in report.lines()
+
+
+# "Each crawl spot-checks a sample of what it reuses"
+
+
+def test_everything_as_stored(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    (root / "b.stand").write_text("ok b")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    a_day_back(conn)
+    first = records(conn)
+    _, report = crawl(conn, root, calls)
+    assert re.fullmatch(
+        r"spot check \(seed [0-9a-f]{16}\): t/stand 2 of 2 as stored",
+        report.lines()[-1],
+    )
+    assert records(conn) == first
+    (latest,) = recent_runs(conn, 1)
+    assert latest.spot_check["seed"] == f"{report.spot.seed:016x}"
+
+
+def test_the_same_seed_gives_the_same_sample():
+    reused = {"em/dm4": [f"/x/{i:02}.dm4" for i in range(30)], "em/k2is": ["/k.gtg"]}
+    one = extraction.sample(0x9F2C41D07A3BE815, reused)
+    assert one == extraction.sample(0x9F2C41D07A3BE815, reused)
+    assert len(one["em/dm4"]) == 20 and one["em/k2is"] == ["/k.gtg"]
+    assert one != extraction.sample(0x1, reused)
+
+
+def test_nothing_reused(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    _, report = crawl(conn, root, calls, installed=installation(dm="edited"))
+    assert report.lines()[-1] == "spot check: nothing reused"
+
+
+# "A spot-check difference is reported, not spread"
+
+
+def test_a_difference_the_identity_missed(conn, tmp_path, caplog):
+    root = tmp_path / "data"
+    root.mkdir()
+    for i in range(30):
+        (root / f"{i:02}.stand").write_text(f"ok w{i:02}")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    original = extracted(conn)
+    # standing in for an influence outside the identity
+    conn.execute(
+        "UPDATE datasets SET extracted = jsonb_set(extracted, '{values,word}', '\"altered\"')"
+    )
+    conn.commit()
+    _, report = crawl(conn, root, calls)
+    line = report.lines()[-1]
+    assert ": t/stand 0 of 20 as stored; differs: " in line
+    assert line.count("(values: word)") == 5 and line.endswith(", and 15 more")
+    after = extracted(conn)
+    checked = [a for a in after if after[a] == original[a]]
+    assert len(checked) == 20  # the new results replace the stored ones (192)
+    assert all(
+        after[a]["values"]["word"] == "altered" for a in after if a not in checked
+    )
+    assert len(standin.calls(calls)) == 50  # the other 10 not extracted
+    (latest,) = recent_runs(conn, 1)
+    assert "spot check: 20 differ" in cli._run_line(latest)
+    assert "values.word: stored 'altered', now 'w" in caplog.text
+
+
+def test_a_new_failure_does_not_replace_a_stored_success(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    calls = tmp_path / "calls"
+    crawl(conn, root, calls)
+    first, stored = records(conn), extracted(conn)
+    result, report = crawl(conn, root, calls, variant="raise")
+    assert report.lines()[-1].endswith(
+        "t/stand 0 of 1 as stored; differs: /a.stand "
+        "(now fails: ValueError('the reader now fails'))"
+    )
+    assert (records(conn), extracted(conn)) == (first, stored)
+    assert result.all_warnings() == []
 
 
 def _unreadable(path, **kw):
@@ -393,7 +656,6 @@ def test_values_the_database_rejects(conn, tmp_path, command):
     x = result.datasets[0].extraction
     if command == "nan":
         assert stored is None and "Out of range float values" in x.error
-        assert not x.retry  # the file's own: reused
     elif command == "nul":
         assert x.error is None
         assert stored == {

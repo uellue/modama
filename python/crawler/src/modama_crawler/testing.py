@@ -9,7 +9,9 @@ generated at test time by a function named in the manifest `tests/fixtures.toml`
 (`generator = "module:function"`, called with the target directory). Every
 fixture has a manifest entry with `purpose`, `validity`, `licence` and `source`.
 
-The recognition result of each fixture is compared with `tests/expected/<name>.json`.
+The recognition result of each fixture, and the extraction of each of its
+datasets whose format has an extractor (run in this process), is compared
+with `tests/expected/<name>.json`.
 A missing result is recorded on the first run, which fails and asks for a review
 (decision T4, the pytest-regressions model); `--regen-expected` rewrites the
 results and fails for every file that changed, naming the datasets, so that the
@@ -27,14 +29,14 @@ import json
 import os
 import shutil
 import tomllib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import pytest
 from lxml import etree
 from xdg import Mime
 
-from . import mimedb, selection
+from . import extraction, mimedb, selection
 from .formats import Collection, Result
 from .walk import walk
 
@@ -163,7 +165,7 @@ def test_manifest(collection_tests: CollectionTests):
 
 
 def _changes(old: dict, new: dict) -> list[str]:
-    """What differs between two recorded results, by dataset anchor."""
+    """What differs between two recorded results, by dataset anchor; for an extraction the fields, old and new."""
     before = {d["anchor"]: d for d in old["datasets"]}
     after = {d["anchor"]: d for d in new["datasets"]}
     changed = [
@@ -172,7 +174,38 @@ def _changes(old: dict, new: dict) -> list[str]:
     for key in ("warnings", "skipped"):
         if old.get(key) != new.get(key):
             changed.append(key)
+    before, after = old.get("extractions", {}), new.get("extractions", {})
+    for anchor in sorted(before.keys() | after.keys()):
+        x, y = before.get(anchor), after.get(anchor)
+        if x == y:
+            continue
+        if x is None or y is None or "error" in x or "error" in y:
+            changed.append(f"{anchor} extraction: {x!r} -> {y!r}")
+            continue
+        fields = [
+            f"{f} {o!r} -> {n!r}"
+            for key in ("summary", "subjects", "values")
+            for f, o, n in extraction.fields_of(x.get(key), y.get(key), key)
+        ]
+        changed.append(f"{anchor} extraction ({'; '.join(fields)})")
     return changed
+
+
+def _extractions(ct: CollectionTests, result: Result, root: Path) -> dict:
+    """Each extracted dataset's result in stored form, or the error's type, by anchor (formats-testing spec)."""
+    formats = {f.id: f for f in ct.collection.formats if f.has_extractor}
+    out = {}
+    for d in result.datasets:
+        fmt = formats.get(d.format)
+        if fmt is None:
+            continue
+        try:
+            extracted = extraction._work(fmt, d, str(root))
+        except Exception as e:  # noqa: BLE001  the error's type is the recorded result
+            out[d.anchor] = {"error": type(e).__name__}
+            continue
+        out[d.anchor] = json.loads(json.dumps(asdict(extracted))) if extracted else None
+    return out
 
 
 def test_fixture(
@@ -182,7 +215,12 @@ def test_fixture(
     request,
 ):
     ct = collection_tests
-    result = recognise(ct, fixture_name, tmp_path).to_json()
+    root = ct.materialise(fixture_name, tmp_path)
+    recognised = walk(root, ct.collection.formats)
+    result = recognised.to_json()
+    extractions = _extractions(ct, recognised, root)
+    if extractions:
+        result["extractions"] = extractions
     expected_file = ct.expected_dir / f"{fixture_name}.json"
     regen = request.config.getoption("--regen-expected")
     if not expected_file.exists():

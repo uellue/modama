@@ -15,9 +15,12 @@ from pathlib import Path
 
 import psycopg
 import pytest
+import standin
 from conftest import CRAWLER, conninfo_of, database_environment, shell
-from modama_crawler import migrate, schema
-from modama_crawler.store import CRAWL_LOCK
+from modama_crawler import identity, migrate, schema
+from modama_crawler.cli import crawl_tree
+from modama_crawler.selection import Config
+from modama_crawler.store import CRAWL_LOCK, end_run, start_run
 from psycopg import sql
 
 BEFORE_MIGRATIONS = Path(__file__).parent / "migrations" / "before_migrations.sql"
@@ -131,6 +134,10 @@ def rows_of(conn) -> dict[str, list[tuple]]:
     }
 
 
+def selected(conn, query: str) -> list[tuple]:
+    return read(lambda c: c.execute(query).fetchall())(conn)
+
+
 @read
 def version_of(conn) -> str | None:
     return schema.current(conn)
@@ -242,7 +249,13 @@ def test_a_database_made_before_migrations(postgresql, fresh):
         f"INFO tables made before migrations found: adopted as 0001_baseline\n"
         f"INFO schema migrated from none to {schema.HEAD}\n"
     )
-    assert rows_of(postgresql) == rows
+    # 0002 drops datasets.extract_retry, the last column, and adds four to crawl_runs
+    after = rows_of(postgresql)
+    assert after.pop("datasets") == [row[:-1] for row in rows.pop("datasets")]
+    assert after.pop("crawl_runs") == [
+        (*row, *[None] * 4) for row in rows.pop("crawl_runs")
+    ]
+    assert after == rows
     assert migrate.upgrade(conninfo_of(fresh)) == 0
     assert schema_of(postgresql) == schema_of(fresh)
 
@@ -268,11 +281,11 @@ def test_a_column_is_added_to_a_filled_database(conn, tmp_path):
     rows = rows_of(conn)
     directory = scripts(
         tmp_path,
-        ("0002_probe", "op.add_column('crawl_runs', sa.Column('probe', sa.Text()))"),
+        ("0099_probe", "op.add_column('crawl_runs', sa.Column('probe', sa.Text()))"),
     )
     run = migrate_with(conn, directory)
     assert run.returncode == 0, run.stderr
-    assert "INFO schema migrated from 0001_baseline to 0002_probe\n" in run.stderr
+    assert f"INFO schema migrated from {schema.HEAD} to 0099_probe\n" in run.stderr
     assert conn.execute("SELECT probe FROM crawl_runs").fetchall() == [(None,)]
     after = rows_of(conn)
     assert after.pop("crawl_runs") == [(*row, None) for row in rows.pop("crawl_runs")]
@@ -299,7 +312,7 @@ def test_two_migrations_start_at_once(postgresql, crawl_lock):
     outputs = [process.communicate(timeout=60)[1] for process in processes]
     assert [process.returncode for process in processes] == [0, 0]
     both = "".join(outputs)
-    assert both.count("Running upgrade") == 1
+    assert both.count("Running upgrade") == len(schema.known())  # by one of the two
     assert both.count(f"INFO schema migrated from none to {schema.HEAD}") == 1
     assert both.count(f"INFO schema up to date at {schema.HEAD}") == 1
     assert version_of(postgresql) == schema.HEAD
@@ -349,7 +362,7 @@ def test_ctrl_c_ends_the_wait_and_changes_nothing(postgresql, crawl_lock):
 
 
 def test_a_crawl_starts_during_a_migration(conn, env, tmp_path, tree):
-    directory = scripts(tmp_path, ("0002_slow", "op.execute('SELECT pg_sleep(30)')"))
+    directory = scripts(tmp_path, ("0099_slow", "op.execute('SELECT pg_sleep(30)')"))
     process = subprocess.Popen(
         [sys.executable, "-c", MIGRATE, conninfo_of(conn), str(directory)],
         stderr=subprocess.PIPE,
@@ -374,24 +387,24 @@ def test_the_second_of_two_migrations_fails(conn, tmp_path):
     before = schema_of(conn)
     directory = scripts(
         tmp_path,
-        ("0002_column", "op.add_column('crawl_runs', sa.Column('probe', sa.Text()))"),
-        ("0003_fails", "op.execute('SELECT no_such_column FROM crawl_runs')"),
+        ("0098_column", "op.add_column('crawl_runs', sa.Column('probe', sa.Text()))"),
+        ("0099_fails", "op.execute('SELECT no_such_column FROM crawl_runs')"),
     )
     run = migrate_with(conn, directory)
     assert run.returncode == 1
     assert (
-        "ERROR migration 0003_fails failed, the database is unchanged at 0001_baseline: "
+        f"ERROR migration 0099_fails failed, the database is unchanged at {schema.HEAD}: "
         'column "no_such_column" does not exist' in run.stderr
     )
     assert schema_of(conn) == before
-    assert version_of(conn) == "0001_baseline"
+    assert version_of(conn) == schema.HEAD
 
 
 def test_a_lock_on_a_table_is_not_granted_in_time(conn, tmp_path):
     before = schema_of(conn)
     directory = scripts(
         tmp_path,
-        ("0002_column", "op.add_column('crawl_runs', sa.Column('probe', sa.Text()))"),
+        ("0099_column", "op.add_column('crawl_runs', sa.Column('probe', sa.Text()))"),
     )
     with psycopg.connect(conninfo_of(conn)) as reader:
         reader.execute("SELECT * FROM crawl_runs").fetchall()  # holds the table
@@ -400,19 +413,75 @@ def test_a_lock_on_a_table_is_not_granted_in_time(conn, tmp_path):
         waited = time.monotonic() - started
     assert run.returncode == 1
     assert run.stderr.rstrip().endswith(
-        "ERROR migration 0002_column failed, the database is unchanged at 0001_baseline: "
+        f"ERROR migration 0099_column failed, the database is unchanged at {schema.HEAD}: "
         f"another transaction held a table for more than {migrate.LOCK_TIMEOUT_SECONDS} s: "
         "run migrate again"
     )
     assert migrate.LOCK_TIMEOUT_SECONDS <= waited < migrate.LOCK_TIMEOUT_SECONDS + 20
     assert schema_of(conn) == before
-    assert version_of(conn) == "0001_baseline"
+    assert version_of(conn) == schema.HEAD
+
+
+# 0002_extractor_identity (change extractor-identity, task 3.2)
+
+
+def stand_crawl(conn, root, calls, installed):
+    """A crawl of stand-in files as test_extraction's; returns the report."""
+    formats = standin.collection(calls).formats
+    run_id = start_run(conn, str(root))
+    _, report, _ = crawl_tree(
+        conn, run_id, str(root), formats, Config(), "r1", installed=installed
+    )
+    end_run(conn, run_id, "finished", directories=0, files=0, extraction=report)
+    return report
+
+
+def test_0002_keeps_the_stored_extractions(conn, tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "a.stand").write_text("ok a")
+    (root / "b.stand").write_text("raise")
+    calls = tmp_path / "calls"
+    installed = (identity.digest({"python": "x"}), {"python": "x"})
+    stand_crawl(conn, root, calls, installed)
+    # As the code before 0002 stored them: its label, the failure not to be retried
+    assert alembic(conn, "downgrade", "0001_baseline").returncode == 0
+    conn.execute("UPDATE datasets SET extractor_version = '4', extract_retry = false")
+    conn.commit()
+    rows = rows_of(conn)
+    assert alembic(conn, "upgrade", "head").returncode == 0
+    upgraded = rows_of(conn)
+    assert upgraded["datasets"] == [row[:-1] for row in rows["datasets"]]
+    assert selected(
+        conn, "SELECT anchor, extractor_identity FROM datasets ORDER BY 1"
+    ) == [
+        ("/a.stand", "4"),
+        ("/b.stand", "4"),
+    ]
+    # Down again: the label back, the failure marked to be tried again by the older code
+    run = alembic(conn, "downgrade", "0001_baseline")
+    assert run.returncode == 0, run.stderr
+    assert selected(
+        conn, "SELECT anchor, extractor_version, extract_retry FROM datasets ORDER BY 1"
+    ) == [("/a.stand", "4", False), ("/b.stand", "4", True)]
+    assert {t: len(r) for t, r in rows_of(conn).items()} == {
+        t: len(r) for t, r in rows.items()
+    }
+    assert alembic(conn, "upgrade", "head").returncode == 0
+    # The first crawl after the upgrade
+    report = stand_crawl(conn, root, calls, installed)
+    assert (
+        't/stand: 1 extracted again for a new identity (earlier identity "4", '
+        "ingredients unknown), 0 results changed"
+    ) in report.lines()
+    assert "t/stand: 1 tried again after a failure, 0 now succeed" in report.lines()
 
 
 # A downgrade with no way back refuses with the step
 
 
 def test_downgrading_below_the_baseline(conn):
+    assert alembic(conn, "downgrade", "0001_baseline").returncode == 0
     fill(conn)
     rows = rows_of(conn)
     run = alembic(conn, "downgrade", "base")

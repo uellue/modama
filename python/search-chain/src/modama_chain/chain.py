@@ -116,6 +116,7 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
         anchor = found.anchor if found else path
         identifier = rules.identifier(anchor) if rules else ""
         rec = crawler.record(conn, identifier) if rules else None
+        last = next((r for r in crawler.runs(conn) if r.outcome == "finished"), None)
     published = rec is not None
     if rules is None:
         yield Stage(
@@ -127,7 +128,7 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
         OK if published else MISSING,
         identifier,
         when(rec and rec.datestamp),
-        crawler_detail(found, published, in_tree),
+        crawler_detail(found, published, in_tree, last and last.identity),
     )
 
     oai = oai_datestamp(stores.oai_url, identifier)
@@ -198,9 +199,15 @@ def trace(stores: Stores, path: str) -> Iterator[Stage]:
 
 
 def crawler_detail(
-    found: crawler.Holding | None, published: bool, in_tree: bool
+    found: crawler.Holding | None,
+    published: bool,
+    in_tree: bool,
+    last_identity: str | None = None,
 ) -> str:
-    """The crawler line's detail: the dataset holding the path and its basis (spec chain-trace)."""
+    """The crawler line's detail: the dataset holding the path, its basis, and the extractor identity behind its description (spec chain-trace).
+
+    `last_identity` is the last finished crawl's extractor identity.
+    """
     if found and found.member:
         detail = f"member of {found.anchor}"
     elif found:
@@ -211,7 +218,36 @@ def crawler_detail(
         detail += "; not in the tree, the next crawl drops it"
     if found:
         detail += f"; basis: {found.basis}"
+    if found and found.extractor:
+        detail += (
+            f"; extracted by {found.extractor} under {crawler.short(found.identity)}"
+        )
+        if found.identity == last_identity:
+            detail += ", the last crawl's (current)"
+        else:
+            detail += (
+                f", the last crawl's is {crawler.short(last_identity)}: they differ"
+            )
     return detail
+
+
+def crawl_line(c: crawler.Run) -> str:
+    """The status's crawl line: state, times, counts, and the run's extractor identity with its re-extraction (spec chain-trace)."""
+    state = crawl_state(c)
+    end = when(c.finished_at) if c.finished_at else f"updated {when(c.updated_at)}"
+    counts = f"{c.directories} directories, {c.files} files"
+    if state == "finished":
+        counts += f", {c.datasets} datasets, {c.records_changed} records changed"
+        if c.identity:
+            counts += f"; identity {crawler.short(c.identity)}"
+        again = sum(r["datasets"] for r in c.reextracted or ())
+        if again:
+            changed = sum(r["changed"] for r in c.reextracted)
+            counts += (
+                f", {again} extracted again, "
+                f"{changed} {'result' if changed == 1 else 'results'} changed"
+            )
+    return f"crawl     {state:<9} started {when(c.started_at)}  {end}  {counts}"
 
 
 def harvest_stage(local: str, datestamp, event, last_closed) -> Stage:
@@ -316,13 +352,7 @@ def status(stores: Stores) -> Iterator[str | tuple[datetime | None, str]]:
     with connect(stores.crawler_db, "crawler database") as conn:
         crawls = crawler.runs(conn)
     if crawls:
-        c = crawls[0]
-        state = crawl_state(c)
-        end = when(c.finished_at) if c.finished_at else f"updated {when(c.updated_at)}"
-        counts = f"{c.directories} directories, {c.files} files"
-        if state == "finished":
-            counts += f", {c.datasets} datasets, {c.records_changed} records changed"
-        yield f"crawl     {state:<9} started {when(c.started_at)}  {end}  {counts}"
+        yield crawl_line(crawls[0])
     else:
         yield "crawl     missing   no crawl run recorded"
 

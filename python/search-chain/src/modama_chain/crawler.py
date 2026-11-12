@@ -59,6 +59,29 @@ class Run:
     records_changed: int | None
     error: str | None
     age: timedelta  # since the last update, by the database's clock
+    # None from a crawler database before the extractor identity (0002_extractor_identity)
+    identity: str | None = None
+    reextracted: list | None = None  # per format and stored identity: datasets, changed
+
+
+def short(identity: str | None) -> str:
+    """The identity's short form, as `modama-crawler runs` shows it: 12 hexadecimal digits, an earlier label quoted."""
+    if identity is None:
+        return "none"
+    if len(identity) == 64 and all(c in "0123456789abcdef" for c in identity):
+        return identity[:12]
+    return f'"{identity}"'
+
+
+def _has_column(conn: psycopg.Connection, table: str, column: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()"
+            " AND table_name = %s AND column_name = %s",
+            (table, column),
+        ).fetchone()
+        is not None
+    )
 
 
 def keys(conn: psycopg.Connection) -> Keys | None:
@@ -83,20 +106,29 @@ class Holding:
     anchor: str
     member: bool  # path is a member of the dataset, not its anchor
     basis: str  # why the crawler recognised it, with the notes of dropped name types
+    extractor: str | None = None  # the format whose extractor produced its description
+    identity: str | None = None  # the extractor identity it was produced under
 
 
 def dataset_of(conn: psycopg.Connection, path: str) -> Holding | None:
     """The dataset holding path, or None."""
+    extraction = (
+        "d.extractor, d.extractor_identity"
+        if _has_column(conn, "datasets", "extractor_identity")
+        else "NULL, NULL"
+    )
     row = conn.execute(
-        "SELECT anchor, basis FROM datasets WHERE anchor = %s", (path,)
-    ).fetchone()
-    if row:
-        return Holding(row[0], False, row[1])
-    row = conn.execute(
-        "SELECT d.anchor, d.basis FROM members m JOIN datasets d USING (dataset_id) WHERE m.path = %s",
+        f"SELECT d.anchor, d.basis, {extraction} FROM datasets d WHERE d.anchor = %s",
         (path,),
     ).fetchone()
-    return Holding(row[0], True, row[1]) if row else None
+    if row:
+        return Holding(row[0], False, row[1], row[2], row[3])
+    row = conn.execute(
+        f"SELECT d.anchor, d.basis, {extraction} FROM members m JOIN datasets d USING (dataset_id)"
+        " WHERE m.path = %s",
+        (path,),
+    ).fetchone()
+    return Holding(row[0], True, row[1], row[2], row[3]) if row else None
 
 
 def record(conn: psycopg.Connection, identifier: str) -> Record | None:
@@ -111,10 +143,15 @@ def runs(conn: psycopg.Connection) -> list[Run]:
     exists = conn.execute("SELECT to_regclass('crawl_runs')").fetchone()[0]
     if exists is None:
         return []
+    identity = (
+        "identity, reextracted"
+        if _has_column(conn, "crawl_runs", "identity")
+        else "NULL, NULL"
+    )
     rows = conn.execute(
-        """
+        f"""
         SELECT started_at, updated_at, finished_at, outcome, directories, files,
-            datasets, records_changed, error, now() - updated_at
+            datasets, records_changed, error, now() - updated_at, {identity}
         FROM crawl_runs ORDER BY started_at DESC, run_id DESC
         """
     ).fetchall()
