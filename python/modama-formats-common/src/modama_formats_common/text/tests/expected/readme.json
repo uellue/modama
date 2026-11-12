@@ -1,0 +1,35 @@
+{
+  "datasets": [
+    {
+      "anchor": "/README",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/readme",
+      "members": [
+        "/README"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-readme",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/README": {
+      "subjects": [],
+      "summary": [
+        "ascii",
+        "lines 3"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "ascii",
+          "lines": 3
+        },
+        "original_metadata": {}
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

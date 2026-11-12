@@ -121,10 +121,12 @@ def test_a_file_named_like_a_tag_file(collection_tests, tmp_path, fixture, name)
 
 
 def test_records_comments_a_single_file_whose_name_type_was_dropped(tmp_path):
-    # Spec records-cli, "A single file whose name type was dropped": the command as typed
+    # Spec records-cli, "A single file whose name type was dropped": the command as
+    # typed, with the em collection enabled (common/text would claim the text file)
     (tmp_path / "notes.gtg").write_text("hello\n")
     run = subprocess.run(
-        [sys.executable, "-m", "modama_crawler", "records", "--verbose", str(tmp_path)],
+        [sys.executable, "-m", "modama_crawler", "records", "--verbose"]
+        + ["--select", "em", str(tmp_path)],
         capture_output=True,
         check=True,
         timeout=120,

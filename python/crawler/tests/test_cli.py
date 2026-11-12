@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import modama_formats_common  # noqa: F401 (installed: common/text claims text files here)
 import modama_formats_em
 import pytest
 from conftest import CRAWLER, database_environment, validate_oai
@@ -71,6 +72,9 @@ def test_default_invocation(tmp_path):
 
 def test_verbose_diagnostics_travel_with_the_records(store):
     zarr_fixtures.corrupt(store / "broken")
+    # A file no format claims: binary, without a name rule (the store's notes.txt
+    # is common/text's, the common collection being installed)
+    (store / "store" / "frames").write_bytes(bytes(16))
     # Typed as the documentation shows it: the flag after the subcommand, through a pipe
     run = shell(f"{sys.executable} -m modama_crawler records --verbose {store} | cat")
     assert run.returncode == 0, run.stderr
@@ -84,10 +88,10 @@ def test_verbose_diagnostics_travel_with_the_records(store):
     warning = text.index("<!-- /broken/broken.zarr: WARNING: ")
     assert warning < text.index(oai_identifier("/broken/broken.zarr"))
     # A single file by its MIME type gets no comment of its own
-    assert "<!-- /store/notes.txt" not in text
+    assert "<!-- /store/frames" not in text
     # (the identity: the em collection, which has extractors, is installed)
     assert re.search(
-        r"<!-- 3 records \(1 single files by type\), 1 warnings, 0 skipped"
+        r"<!-- 4 records \(1 single files by type\), 1 warnings, 0 skipped"
         r"; extraction identity [0-9a-f]{12} -->",
         text,
     )
@@ -96,6 +100,19 @@ def test_verbose_diagnostics_travel_with_the_records(store):
     # Also accepted before the subcommand
     before = records("--verbose", "records", str(store))
     assert before.returncode == 0 and before.stdout.count(b"<!--") == text.count("<!--")
+
+
+def test_a_dropped_type_claimed_by_another_collection(tmp_path):
+    # Both collections: em/k2is drops the name's type of a text notes.gtg, and
+    # common/text, after it, claims the file with em's reason in its basis
+    # (change common-text, design D4)
+    (tmp_path / "notes.gtg").write_text("hello\n")
+    run = records("records", "--verbose", str(tmp_path))
+    assert run.returncode == 0, run.stderr
+    assert (
+        "<!-- /notes.gtg: text/plain by common/text 1, basis: single file, typed by "
+        "its content; em/k2is: not application/x.dm-gtg, no DM header -->"
+    ) in run.stdout.decode()
 
 
 def test_the_records_command_shows_the_tags(tmp_path):
