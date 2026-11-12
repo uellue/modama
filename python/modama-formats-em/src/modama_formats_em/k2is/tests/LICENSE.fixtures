@@ -3,6 +3,8 @@ data (libertem-test-data), published here with its owner's agreement
 (2026-11-12). It holds metadata only: the tag file Capture52_.gtg, unchanged,
 and of each sector file Capture52_1.bin to Capture52_8.bin its first 40 bytes,
 the header of its first block, unchanged. The pixel data is not included.
+cut-capture.sh beside this file did the cut. The generated fixtures (generate.py)
+copy Capture52_.gtg under other names.
 
 It is distributed under the MIT licence of modama-formats-em; see
 ../../../../LICENSE.

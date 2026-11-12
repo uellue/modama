@@ -1,15 +1,15 @@
 [lone_tags]
 purpose = "representative"
-validity = "parser-only: the vendor-written DM4 file of the dm part's cl_image_dm4, unchanged, named IDES_DMS_Config.gtg as staging's one .gtg without sector files is (the name decides the type, the content is not read for it)"
-licence = "GPL-3.0-or-later (../../dm/tests/LICENSE.fixtures)"
-source = "modama_formats_em.k2is.tests.generate:lone_tags, from the file of the dm part's cl_image_dm4"
+validity = "vendor-written: the tag file of capture52, Capture52_.gtg (DM4 header, tags, no image), unchanged, named IDES_DMS_Config.gtg as staging's one .gtg without sector files is; that file's own content is not known here (a configuration file by its name), and the name decides the type"
+licence = "MIT (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.k2is.tests.generate:lone_tags, from capture52's Capture52_.gtg"
 generator = "modama_formats_em.k2is.tests.generate:lone_tags"
 
 [capture52]
 purpose = "representative"
-validity = "vendor-written, metadata only: the tag file Capture52_.gtg as Gatan Microscopy Suite 3.22.1461.0 wrote it (a 35x34 scan, K2-IS-0001 on an FEI Tecnai, 2018-03-29, 359 tags, no image), unchanged; of each sector file Capture52_1.bin to _8.bin only its first 40 bytes, the first block's header (sync word, width 256, height 1860), unchanged; the pixel data is not included (decision 73)"
+validity = "vendor-written, cut: the tag file Capture52_.gtg whole and unchanged, as Gatan Microscopy Suite 3.22.1461.0 wrote it (a 35x34 scan, K2-IS-0001 on an FEI Tecnai, 2018-03-29, 359 tags, no image); of each sector file Capture52_1.bin to _8.bin only its real first 40 bytes, the first block's header (sync word, width 256, height 1860), with the rest of the block and all further blocks cut (decision 73). Representative of what recognition and extraction read (the .gtg and the sector magic), not of the sector data: LiberTEM's reader rejects these sector files (DataBlock.is_valid wants a whole block of 0x5758 bytes)"
 licence = "MIT (LICENSE.fixtures beside this file)"
-source = "libertem-test-data/Capture52 on the ER-C staging data, cut by .claude/field-tests/k2is-fixture.sh on 2026-11-12; Capture52_.gtg sha256 fcbabe3546a70fc0941d4a3ee0a1403b5af9bd9d7ef2b3518de7e02806bef5ff"
+source = "libertem-test-data/Capture52 on the ER-C staging data, cut by cut-capture.sh beside this file on 2026-11-12; Capture52_.gtg sha256 fcbabe3546a70fc0941d4a3ee0a1403b5af9bd9d7ef2b3518de7e02806bef5ff"
 
 [sectors_without_tags]
 purpose = "reproducer"

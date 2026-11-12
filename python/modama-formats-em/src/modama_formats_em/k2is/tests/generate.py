@@ -8,10 +8,6 @@ import struct
 from pathlib import Path
 
 BLOCK_SIZE = 0x5758
-DM4 = (
-    Path(__file__).parents[2]
-    / "dm/tests/fixtures/cl_image_dm4/test-MonarcCL_mono-image.dm4"
-)
 GTG = Path(__file__).parent / "fixtures/capture52/Capture52_.gtg"
 
 
@@ -23,9 +19,9 @@ def capture(target: Path, stem: str, sectors: int, gtg=".gtg", bin=".bin") -> No
 
 
 def lone_tags(target: Path) -> None:
-    """The vendor-written DM4 file of the dm part's cl_image_dm4, named as staging's one .gtg without sector files."""
+    """Capture52's tag file, a real .gtg with no image, named as staging's one .gtg without sector files."""
     target.mkdir(parents=True)
-    shutil.copy(DM4, target / "IDES_DMS_Config.gtg")
+    shutil.copy(GTG, target / "IDES_DMS_Config.gtg")
 
 
 def sector(path: Path, block_count: int = 0) -> None:

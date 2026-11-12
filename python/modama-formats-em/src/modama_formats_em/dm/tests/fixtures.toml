@@ -24,7 +24,7 @@ source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/digitalmicrog
 
 [dmw_file]
 purpose = "representative"
-validity = "parser-only: the vendor-written DM4 file of cl_image_dm4, unchanged, named conditions_00C.dmw as a staging file is; staging's .dmw files hold no image, this one does (the name decides, the content is not read for the type)"
+validity = "a stand-in, not a real .dmw file, until one is agreed (task 3.3 of dm-containers-and-k2is): the vendor-written DM4 image of cl_image_dm4, unchanged, named conditions_00C.dmw as a staging file is. It holds an image, staging's .dmw files hold none (F15), so it stands for their name only; the name decides the type, the content is not read for it"
 licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "modama_formats_em.dm.tests.generate:dmw_file, from the file of cl_image_dm4"
 generator = "modama_formats_em.dm.tests.generate:dmw_file"
