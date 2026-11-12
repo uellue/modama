@@ -14,8 +14,8 @@ For a dataset with a stored extraction, the trace's crawler line SHALL name the 
 - **THEN** the crawler line names both identities and says that they differ, and the stage's state is unchanged
 
 ### Requirement: The status shows the last crawl's re-extraction
-`modama-chain status` SHALL show, on the crawl line, the short form of the last finished crawl's extractor identity and, when that crawl extracted datasets again because the identity changed, their number and the number of records that changed.
+`modama-chain status` SHALL show, on the crawl line, the short form of the last finished crawl's extractor identity and, when that crawl extracted datasets again because the identity changed, their number and how many of their extraction results changed.
 
 #### Scenario: After a crawl that extracted again
-- **WHEN** the last finished crawl extracted two datasets again for a new identity and one of their records changed
-- **THEN** the status's crawl line shows the identity, `2 extracted again` and `1 record changed`
+- **WHEN** the last finished crawl extracted two datasets again for a new identity and one of their results changed
+- **THEN** the status's crawl line shows the identity, `2 extracted again` and `1 result changed`
