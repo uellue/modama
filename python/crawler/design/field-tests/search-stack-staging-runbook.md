@@ -31,8 +31,10 @@ Agreed with @weber, co-admin of the server, 2026-11-10.
   behaviour before production is a goal; 24 cores to use. Disk use of `/` and Docker's
   root is watched (`monitor.sh` warns above 90 %).
 - **Network:** ports on 127.0.0.1 only: 18000 search API, 18081 Airflow, 17654 crawler,
-  19200 OpenSearch. Colleagues reach them with SSH port forwarding. No external
-  interfaces.
+  19200 OpenSearch, 13000 matchmaker (since 2026-11-12). Colleagues reach them with SSH
+  port forwarding. No external interfaces. matchmaker's server calls outside services
+  for its FAIR check and Data Player, and its page EGI's Matomo unless opened as
+  `localhost` (@weber, 2026-11-12).
 - **Stop:** `./downstaging.sh`; a running crawl records itself as failed. Clean-up:
   `./downstaging.sh --reset` deletes the staging volumes, never the data tree.
 - **Never:** a write to `/storage`; deleting or changing anyone's files outside this
@@ -199,10 +201,15 @@ the night (screen or tmux).
 ## For colleagues
 
 ```bash
-ssh -N -L 18000:127.0.0.1:18000 <you>@<server>
+ssh -N -L 13000:127.0.0.1:13000 -L 18000:127.0.0.1:18000 <you>@<server>
 ```
 
-Then http://localhost:18000/search?q=…&resource=datasets.
+Then http://localhost:13000, the search's web frontend (matchmaker; added 2026-11-12,
+started on its own with `dc pull matchmaker` and `dc up -d --no-deps matchmaker`; without
+`--no-deps`, compose runs `warehouse-init` again), or
+http://localhost:18000/search?q=…&resource=datasets. Open it as `localhost`: on any other
+host name its page sends usage statistics to EGI's Matomo
+(`/prototypes/search-stack/README.md`, "Open").
 
 ## Notes during the run
 
