@@ -44,8 +44,12 @@ A file SHALL be typed as a K2IS sector file when it starts with a K2IS block hea
 - **THEN** it is not typed as a K2IS sector file
 
 ### Requirement: K2IS metadata is extracted from the tag file
-For a K2IS dataset, the extractor SHALL yield, where the `.gtg` file's tags hold them, the scan shape tags and the microscope tags under the reader's names and with the reader's values; it SHALL NOT read the sector files. (The number of files and their size are in every record's basic description.)
+For a K2IS dataset, the extractor SHALL yield every tag of the `.gtg` file that has a value, under its path of tag names and with the reader's value, not rounded, the scan shape (`SI Dimensions`) and the microscope (`Microscope Info`) at the root first; it SHALL leave out GMS's user-interface settings, by an explicit list (design D4), and SHALL NOT read the sector files. (The number of files and their size are in every record's basic description.)
 
 #### Scenario: A representative capture
 - **WHEN** a representative K2IS capture is crawled
-- **THEN** its record's description carries the scan shape tags of its `.gtg` file, then the acquisition's type, 9 files and their size, and the extractor reads the `.gtg` file only
+- **THEN** its record's description starts with the scan shape tags of its `.gtg` file (`SI Dimensions.Size X 35`), carries its other tags with their values as the reader gives them (`DataBar.Device Name K2-IS-0001`, `Microscope Info.Stage Position.Stage Alpha -2.4043772802208405`), then the acquisition's type, 9 files and their size, and the extractor reads the `.gtg` file only
+
+#### Scenario: User-interface settings are left out
+- **WHEN** the `.gtg` file holds the image viewer's settings (a tag group of class `cm_stdviewerimagedisplayer`: window and screen position, zoom) and the definition of GMS's Session Info form (`Session Info.Items`)
+- **THEN** neither is in the record's description, and the acquisition's processing objects next to the viewer are
