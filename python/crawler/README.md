@@ -114,6 +114,7 @@ Run again, it says `INFO schema up to date at 0001_baseline` at once, also while
 | `ERROR the database schema is at 0002_…, which this crawler does not know: a newer crawler migrated it; use that crawler, or downgrade with it first (README)` | the newer crawler, or its downgrade ("Upgrade" below) |
 | `INFO waiting for the crawl lock (a crawl or another migration holds it)`, from `migrate` | wait until the crawl ends, then it migrates; Ctrl-C ends the wait and changes nothing |
 | `ERROR migration 0002_… failed, the database is unchanged at 0001_baseline: …`, exit status 1 | the database's error follows the colon; nothing was changed. Ending in `another transaction held a table for more than 10 s: run migrate again`: run `migrate` again. Otherwise, report the error to the developers |
+| `ERROR migration 0001_baseline failed, the database is unchanged at none: the existing tables lack directories.retry or have them with another type: they were made by a crawler older than e35e4b4; recreate the database (README)` | a development database made before e35e4b4 cannot be taken over: drop it, create it empty, `migrate`, crawl again |
 | `NotImplementedError: no downgrade from 0001_baseline: restore the dump taken before the upgrade (README, Upgrade)`, from `alembic downgrade` | restore the dump ("Upgrade" below); nothing was changed |
 
 A migration that has something to do holds the crawl lock, so it never runs during a crawl or next to another migration: a crawl started meanwhile exits with `another crawl is running on this database`.
@@ -122,7 +123,7 @@ A migration that has something to do holds the crawl lock, so it never runs duri
 
 Before an upgrade whose code brings a new file in `migrations/versions/`, take a dump of the database: `pg_dump -Fc`. Restoring it is the way back from anything a downgrade cannot undo. Then upgrade the code and run `migrate`. In the search stack, `/prototypes/search-stack/README.md`, section "Upgrade", has the commands.
 
-Every revision has a `downgrade()`. Where the older code reads the result correctly, it undoes the revision; otherwise it refuses with the message above and changes nothing. A downgrade needs the newer code, so run it before going back to the older one, with Alembic's command line and this directory's `alembic.ini`, from any directory:
+Every revision has a `downgrade()`. Where the older code reads the result correctly, it undoes the revision; otherwise it refuses with the message above and changes nothing. A downgrade needs the newer code, so run it before going back to the older one, with Alembic's command line and this directory's `alembic.ini`; from the repository root:
 
 ```bash
 alembic -c python/crawler/alembic.ini current           # the database's version; takes no lock
@@ -139,7 +140,7 @@ A schema change is a new revision, never an edit of a revision that has shipped 
 alembic revision -m "crawl_runs scope" --rev-id 0002_crawl_runs_scope
 ```
 
-This writes `src/modama_crawler/migrations/versions/0002_crawl_runs_scope.py`. Then:
+This writes `src/modama_crawler/migrations/versions/0002_crawl_runs_scope.py`. The id has at most 32 characters (Alembic's `version_num` column; a test checks it). Then:
 
 - Write `upgrade()` with Alembic's operations (`op.add_column("crawl_runs", sa.Column("scope", sa.Text()))`) or `op.execute` with SQL text, whichever fits. There are no models.
 - No `IF NOT EXISTS` after `0002`: on a database that drifted from the chain, a migration should fail loudly.

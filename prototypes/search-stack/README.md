@@ -66,7 +66,7 @@ A new version of the crawler may bring a schema migration (a new file in `python
    git diff --stat <deployed commit> HEAD -- ../../python/crawler/src/modama_crawler/migrations/versions/
    ```
 
-   To ask the database instead: `docker compose run --rm --no-deps crawler modama-crawler runs` with the new image refuses with `… run modama-crawler migrate` when a migration is pending. Keep `--no-deps`: without it, compose runs `crawler-migrate` first, and the database is migrated before you have the dump.
+   To ask the database instead, the new image must be built first (`docker compose build crawler`; from then on, any `up` starts it and migrates). Then `docker compose run --rm --no-deps crawler modama-crawler runs` refuses with `… run modama-crawler migrate` when a migration is pending. Keep `--no-deps`: without it, compose runs `crawler-migrate` first, and the database is migrated before you have the dump.
 2. If a migration comes, take a dump of the crawler's database first, outside the checkout (it holds the paths and owners of the data). It is the way back from anything a downgrade cannot undo:
 
    ```bash
@@ -81,18 +81,25 @@ The way back, while the newer image is still there (a downgrade needs the newer 
 
 ```bash
 docker compose stop crawl-timer
+```
+```bash
 docker compose run --rm crawler-migrate alembic -c /src/alembic.ini downgrade <revision before the upgrade>
+```
+
+Only if that ended with exit status 0, the older code:
+
+```bash
 git checkout <deployed commit> && ./uptest.sh --build
 ```
 
-Where a revision cannot be undone, the downgrade refuses with `NotImplementedError: no downgrade from …: restore the dump taken before the upgrade (README, Upgrade)` and changes nothing. Then restore the dump into an empty database, with the older code checked out:
+Where a revision cannot be undone, the downgrade refuses with `NotImplementedError: no downgrade from …: restore the dump taken before the upgrade (README, Upgrade)` and changes nothing. Then restore the dump into an empty database, and start the older code:
 
 ```bash
 docker compose stop crawler crawl-timer
 docker compose exec -T crawler-db dropdb -U postgres modama_crawler
 docker compose exec -T crawler-db createdb -U postgres modama_crawler
 docker compose exec -T crawler-db pg_restore -U postgres -d modama_crawler < ~/crawler-db.dump
-./uptest.sh --build
+git checkout <deployed commit> && ./uptest.sh --build
 ```
 
 ## Open

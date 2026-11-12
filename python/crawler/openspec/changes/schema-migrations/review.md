@@ -143,3 +143,21 @@ Facts only, for @weber's answer on whether "follow the warehouse's practice" cov
 - A database made by running the crawler at e35e4b4: the prototype used the statements copied from `store.py`, not the old code (task 4.1 does that).
 - How the warehouse's harvester handles an endpoint that refuses connections for the length of an `up`.
 - Whether `SQLAlchemy>=2.0` in task 1.2 can resolve to a 2.0 release that brings `greenlet` with it; the resolver picked 2.1.8, which needs only `typing-extensions`.
+
+# Review of the code (task 2.7, 2026-11-12)
+
+Scope: the code of the apply at 7ac658a to d567180 (migrations, `schema.py`, `migrate.py`, `cli.py`, `store.py`, the tests, the compose service, the README and runbook sections), reviewed by an agent that did not write it, given the code, the spec delta, R42 and requirement 2.4, not design.md; it read design.md and this file only after writing its findings. It ran the tests (43 passed) and probes against a throwaway PostgreSQL 17. Tally: 0 H, 3 M, 8 L; 9 confirmed by running or reading, 1 plausible (M3). Each finding was checked before it was acted on; outcome:
+
+| # | Finding | Sev | Verdict | Outcome |
+|---|---|---|---|---|
+| 1 | `IF NOT EXISTS` takes over tables of older code (before c2b2afb: no `directories.retry`); `crawl` then fails with `UndefinedColumn` and no step | M | CONFIRMED (ran; known risk of D5) | fixed: 0001 compares the columns with its statements run in a schema `baseline_check` and refuses with the step; spec scenario "Tables made by older code", `test_tables_made_by_older_code_are_refused`, README row, D5 |
+| 2 | Stack README, Upgrade step 1: asking the database "with the new image" before the image is built shows nothing pending | M | CONFIRMED (read) | fixed: build first, and that any `up` then migrates |
+| 3 | Runbook U4 builds the new image; stopping there leaves it for the next `up`, which migrates the real database; the image name is shared by the test deployment and staging | M | PLAUSIBLE (compose recreates on a changed image id) | fixed for U4: on "stop here", build the deployed code again; the shared name: BACKLOG |
+| 4 | A crawl refused during a migration names the last, finished run as the holder | L | CONFIRMED (ran) | BACKLOG (`cli.py`, kept small for the merge with `cpu-budget`) |
+| 5 | A waiting `migrate` of older code, after a newer one migrated past its chain, ends with `ValueError` instead of the "newer crawler" refusal | L | CONFIRMED (ran) | fixed in `migrate.py`; probed: `A: ERROR the database schema is at 0003_b, which this crawler does not know: …`, exit 2 |
+| 6 | SIGTERM during a statement: the session lock on the second connection ends at once while the server still runs the statement | L | CONFIRMED (ran) | fixed: `pg_advisory_xact_lock` on the migration's connection, before the lock timeout (D3); probed: right after SIGTERM the crawl lock is still held (`pg_try_advisory_lock` false), after the statement it is gone, version and columns unchanged |
+| 7 | Stack README: downgrade, checkout and build in one block run on after a refused downgrade | L | CONFIRMED (read) | fixed: separate blocks, "only if exit status 0" |
+| 8 | Runbook points to the README's restore commands, which use plain `docker compose` (the test project) | L | CONFIRMED (read) | fixed: the restore steps with `dc` in the runbook |
+| 9 | "from any directory": only `script_location` is; `-c python/crawler/alembic.ini` works from the root | L | CONFIRMED (read) | fixed: README and `alembic.ini` say "from the repository root" |
+| 10 | A revision id over 32 characters fails with `value too long` | L | CONFIRMED (ran) | fixed: README line, check in `test_a_single_head_equal_to_schema_head` |
+| 11 | `migrate` on an unreachable database prints psycopg's traceback, as the other commands do | L | CONFIRMED (ran) | BACKLOG |

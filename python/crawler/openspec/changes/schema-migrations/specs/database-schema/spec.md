@@ -28,6 +28,10 @@ How the crawler's database gets its schema and keeps it in step with the code, s
 - **WHEN** `migrate` runs on a database made by the crawler before this change, holding a finished run, a dataset with a member, a stored listing and a record
 - **THEN** it logs that it adopted the existing tables as `0001_baseline`, every row and every datestamp is unchanged, and the schema equals that of a fresh database migrated to the same version
 
+#### Scenario: Tables made by older code
+- **WHEN** `migrate` runs on a database without schema version whose tables lack a column of `0001_baseline`, such as `directories.retry`
+- **THEN** it exits with status 1, the error names the column, says that an older crawler made the tables and to recreate the database, and the database is unchanged
+
 #### Scenario: A column is added to a filled database
 - **WHEN** a database at revision 0001 with the rows above is migrated by a revision that adds a nullable column to `crawl_runs`
 - **THEN** the old run has the column with NULL, and every other row and datestamp is unchanged

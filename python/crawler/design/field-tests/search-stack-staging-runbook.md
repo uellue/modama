@@ -278,8 +278,16 @@ dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_copy crawler modama-cr
 Expected: `crawler-migrate` on the copy logs `tables made before migrations found:
 adopted as 0001_baseline` and `schema migrated from none to 0001_baseline`; `diff`
 prints nothing and `same schema`; `runs` on the copy shows the lines of U2. Anything
-else: stop here and keep the logs. Then remove the two scratch databases (the real one
-is `modama_crawler`, without a suffix):
+else: stop here, keep the logs, and build the deployed code again, since `dc build`
+replaced the image and the next `./upstaging.sh` would start it and migrate the real
+database (review 2.7 of `schema-migrations`, finding 3):
+
+```bash
+git checkout "$deployed" && dc build crawler
+```
+
+Then, in either case, remove the two scratch databases (the real one is
+`modama_crawler`, without a suffix):
 
 ```bash
 dc exec -T crawler-db dropdb -U postgres modama_crawler_copy
@@ -320,15 +328,38 @@ table and finds its own tables unchanged, so checking it out and building is eno
 git checkout "$deployed" && ./upstaging.sh --build
 ```
 
-From a later migration: first the downgrade with the image that is still there, then
-the older code; where the downgrade refuses (`restore the dump taken before the
-upgrade`), restore the dump (`/prototypes/search-stack/README.md`, "Upgrade"):
+From a later migration: first the downgrade with the image that is still there, then,
+only if it ended with exit status 0, the older code:
 
 ```bash
 dc stop crawl-timer
 ```
 ```bash
 dc run --rm crawler-migrate alembic -c /src/alembic.ini downgrade <revision before the upgrade>
+```
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
+```
+
+Where the downgrade refuses (`restore the dump taken before the upgrade`), or the
+database is damaged: restore the dump of U3 into an empty database, then the older
+code. Check first that `$DUMP` is the file of U3 (`ls -l "$DUMP"`, `pg_restore --list`
+as in U3):
+
+```bash
+dc stop crawler crawl-timer
+```
+```bash
+dc exec -T crawler-db dropdb -U postgres modama_crawler
+```
+```bash
+dc exec -T crawler-db createdb -U postgres modama_crawler
+```
+```bash
+dc exec -T crawler-db pg_restore -U postgres -d modama_crawler < "$DUMP"
+```
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
 ```
 
 ## For colleagues
