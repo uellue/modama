@@ -1,0 +1,49 @@
+Not applied (indexing benchmark, 2026-11-11): build the JSON schema validator once per process.
+jsonschema.validate() checks the schema against its metaschema on every call; with the warehouse's
+schema that is about 21 ms per record (perf/phase-timer.py: 5.2 s of a 250-record batch), the record
+itself 0.2 ms. Same result: validate() is check_schema + best_match(iter_errors), as here.
+Against metadata-warehouse v1.10.0; apply with `git apply -p1` in the submodule's tree (image build).
+
+--- a/src/transform/transform_core.py
++++ b/src/transform/transform_core.py
+@@ -8,7 +8,9 @@
+ import psycopg
+ import xmltodict
+ from fastembed import TextEmbedding
+-from jsonschema.validators import validate
++from jsonschema.exceptions import best_match
++from jsonschema.protocols import Validator
++from jsonschema.validators import validator_for
+ from lxml import etree as ET
+ from opensearchpy import OpenSearch
+ from opensearchpy.helpers import BulkIndexError, bulk
+@@ -55,6 +57,7 @@
+     embedding_transformer: TextEmbedding
+     client: OpenSearch
+     schema: dict[Any, Any]
++    validator: Validator
+     postgres_config: PostgresConfig
+
+     def __init__(self) -> None:
+@@ -76,6 +79,10 @@
+
+         with open(SCHEMA_PATH) as f:
+             self.schema = json.load(f)
++        # what jsonschema.validate() does on every call, once: checking the schema itself is the slow part
++        cls = validator_for(self.schema)
++        cls.check_schema(self.schema)
++        self.validator = cls(self.schema)
+
+
+ def transform_batch_impl(
+@@ -176,7 +183,9 @@
+                 normalized_record = normalize_datacite_json.normalize_datacite_json(
+                     resource, metadata_namespace_for_access
+                 )
+-                validate(instance=normalized_record, schema=resources.schema)
++                error = best_match(resources.validator.iter_errors(normalized_record))
++                if error is not None:
++                    raise error
+                 normalized.append(
+                     SourceWithEmbeddingText(
+                         src=normalized_record,
