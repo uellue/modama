@@ -1,5 +1,6 @@
 """What the office families share: opening a file for small reads, XML parts of a ZIP package, the summary line."""
 
+import io
 import os
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, suppress
@@ -20,10 +21,54 @@ BUFFER = 64 * 1024
 MAX_PART = 16 * 1024 * 1024
 
 
+class OverBudget(RuntimeError):
+    """A reader read more of a file than its budget allows."""
+
+
+class Budgeted(io.FileIO):
+    """A file that raises OverBudget, without reading, when a read would take the bytes read from it over budget (None: no limit).
+
+    Every read goes through readinto; a read to the end in pieces of BUFFER.
+    `exceeded` keeps the first refusal's message, for a reader that catches
+    the exception and fails elsewhere (pypdf).
+    """
+
+    def __init__(self, path: str, budget: int | None):
+        super().__init__(path, "r")
+        self.budget = budget
+        self.read_so_far = 0
+        self.exceeded: str | None = None
+
+    def readinto(self, buffer):
+        asked = memoryview(buffer).nbytes
+        if self.budget is not None and self.read_so_far + asked > self.budget:
+            self.exceeded = self.exceeded or (
+                f"a read of {asked} bytes after {self.read_so_far}"
+                f" would exceed the budget of {self.budget}"
+            )
+            raise OverBudget(self.exceeded)
+        n = super().readinto(buffer)
+        self.read_so_far += n or 0
+        return n
+
+    def read(self, size=-1):
+        if size is None or size < 0:
+            return self.readall()
+        buffer = bytearray(size)
+        n = self.readinto(buffer)
+        return None if n is None else bytes(buffer[:n])
+
+    def readall(self):
+        chunks = []
+        while chunk := self.read(BUFFER):
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+
 @contextmanager
-def opened(path: str) -> Iterator[BinaryIO]:
-    """The file at path for reading in small pieces: a 64 KiB buffer, readahead off."""
-    with open(path, "rb", buffering=BUFFER) as f:
+def opened(path: str, budget: int | None = None) -> Iterator[BinaryIO]:
+    """The file at path for reading in small pieces: a 64 KiB buffer, readahead off, at most budget bytes read."""
+    with io.BufferedReader(Budgeted(path, budget), BUFFER) as f:
         # The advice is an optimisation: a file system that refuses it, or a
         # platform without it, still reads the file (as mime.py)
         if hasattr(os, "posix_fadvise"):

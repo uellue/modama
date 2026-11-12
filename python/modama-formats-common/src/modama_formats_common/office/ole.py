@@ -2,8 +2,8 @@
 
 Each property under olefile's name for it (`OleMetadata.SUMMARY_ATTRIBS`,
 `DOCSUM_ATTRIBS`), one it has no name for as <stream>.<id>; strings decoded
-with the code page the property set gives; a time as olefile gives it (a
-FILETIME, UTC by the format, without a time zone). Only the first section of
+with the code page the property set gives; a time as olefile gives it, with
+`Z` (a FILETIME is UTC by the format's definition). Only the first section of
 each property set: olefile's `get_userdefined_properties` pairs names and
 values by position, not by property id (BACKLOG, "Sync with upstream").
 
@@ -45,7 +45,9 @@ def plain(value, codepage):
         except (LookupError, UnicodeDecodeError):
             return value
     if isinstance(value, datetime):
-        return value.isoformat()
+        # A FILETIME is UTC by the format's definition: written with Z, as
+        # Office Open XML writes its times, not converted
+        return value.isoformat() + "Z"
     if isinstance(value, list):
         return [plain(v, codepage) for v in value]
     return value
@@ -54,6 +56,11 @@ def plain(value, codepage):
 def entries(ole, stream: str, names: list[str]):
     """The properties of a stream by olefile's names, but the skip list's binary ones."""
     properties = ole.getproperties(stream, convert_time=True, no_conversion=[EDIT_TIME])
+    # The code page is an unsigned 16-bit number (MS-OLEPS; review of
+    # common-office, finding 3), which olefile reads as a signed one (VT_I2):
+    # 65001 (UTF-8) arrives as -535 (BACKLOG, "Sync with upstream")
+    if isinstance(properties.get(1), int):
+        properties[1] &= 0xFFFF
     codepage = properties.get(1)
     for pid, value in properties.items():
         name = names[pid - 1] if 0 < pid <= len(names) else f"{stream[1:]}.{pid}"

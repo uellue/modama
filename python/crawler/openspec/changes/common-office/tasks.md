@@ -18,4 +18,4 @@ Written with the leans of the night brief (2026-11-12) as assumptions; the propo
 ## 3. Checks and hand-over
 
 - [x] 3.1 `uvx ruff format --check --diff` and `uvx ruff check` from the repo root; the crawler's tests. Verify: their output.
-- [ ] 3.2 An independent review (main), its findings applied. Verify: the commits after it.
+- [x] 3.2 An independent review (main) of 60a5f619..7f8a17cd, its findings applied with main's decisions: pypdf only with `%%EOF` at the end and a read budget of 32 MiB, the header from where `%PDF-` is (1); openpyxl only when no part of cell data is over 16 MiB (2); the code page as unsigned (3); references inside an Info value not followed (4); BACKLOG details (5); the brief cited as the coordinator's (6); XMP flattened by our code, said (7); OLE times with `Z` (8). Verify: the tests of the new scenarios, the re-recorded `word_doc`, `powerpoint_ppt`, `excel_xls` (times with `Z` only).

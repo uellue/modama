@@ -1,9 +1,11 @@
 """Office Open XML packages (.docx, .pptx, .xlsx and their macro-enabled variants): the property parts.
 
 The package's relationships (`_rels/.rels`) name the core, extended and
-custom properties and the main document; only these parts are read (and, for
-a workbook, what openpyxl's read-only mode reads), never the document's other
-parts. python-docx and python-pptx are not used: they load every part of the
+custom properties and the main document; only these parts are read, never
+the document's other parts. For a workbook, openpyxl's read-only mode also
+reads the styles, the shared strings (the cells' texts) and each worksheet up
+to its <dimension>, when none of these parts of cell data is larger than
+MAX_PART. python-docx and python-pptx are not used: they load every part of the
 package on open, the pictures too (BACKLOG, "Sync with upstream").
 
 Skip list (spec formats/office, "What is left out"): the attributes of the
@@ -17,7 +19,7 @@ from zipfile import ZipFile
 
 from modama_crawler.formats import Extracted
 
-from .common import headline, kept, local, opened, part, text
+from .common import MAX_PART, headline, kept, local, opened, part, text
 
 RELS = "_rels/.rels"
 # Relationship types by the last segment of their URI, in the transitional
@@ -68,10 +70,34 @@ def slides(z: ZipFile, main: str, f) -> dict:
     return {"slides": len(listed)}
 
 
+def too_large(z: ZipFile, main: str) -> str | None:
+    """Why openpyxl is not to read a workbook, or None: a part of cell data larger than MAX_PART.
+
+    Its read-only mode reads the shared strings (the cells' texts) whole, and
+    a worksheet up to its <dimension>, to its end without one (review of
+    common-office, finding 2; BACKLOG, "Sync with upstream").
+    """
+    folder = main.rpartition("/")[0] + "/"
+    for info in z.infolist():
+        name = info.filename
+        cells = name == f"{folder}sharedStrings.xml" or (
+            name.startswith(f"{folder}worksheets/") and name.endswith(".xml")
+        )
+        if cells and info.file_size > MAX_PART:
+            return f"{name}: {info.file_size} bytes, more than {MAX_PART}"
+    return None
+
+
 def sheets(z: ZipFile, main: str, f) -> dict:
-    """A workbook's sheets with the dimension each worksheet gives (None if it gives none, or for a chart sheet), by openpyxl in read-only mode."""
+    """A workbook's sheets with the dimension each worksheet gives (None if it gives none, or for a chart sheet), by openpyxl in read-only mode.
+
+    Not read when a part of cell data is larger than MAX_PART: then
+    `sheets not read` says which.
+    """
     from openpyxl import load_workbook
 
+    if (reason := too_large(z, main)) is not None:
+        return {"sheets not read": reason}
     f.seek(0)
     workbook = load_workbook(f, read_only=True, keep_links=False)
     try:

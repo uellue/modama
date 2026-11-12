@@ -37,7 +37,7 @@ A file whose name starts with `~$` (Microsoft Office's owner file, written besid
 - **THEN** the first two are `application/x-ms-owner`, the third `application/x.libreoffice-lock`, each a single file without format and extraction
 
 ### Requirement: Office Open XML metadata from the package's property parts
-For a `.docx`, `.docm`, `.pptx`, `.xlsx` or `.xlsm` dataset, the extractor SHALL read the package's relationships (`_rels/.rels`) and the property parts they name, without loading the document's other parts, and keep as `original_metadata` every entry but the skip list: `core.<element>` for each element of the core properties (`docProps/core.xml`), `app.<element>` for each element of the extended properties (`docProps/app.xml`), `custom.<name>` for each custom property (`docProps/custom.xml`); a value as the file writes it (text; a `vt:vector` as the list of its values). As `mapped_metadata`: the slide count of a presentation (`slides`, the slides its `presentation.xml` lists), and a workbook's sheets with their dimension as the sheet writes it (`sheets`, read by openpyxl in read-only mode, which reads no cells).
+For a `.docx`, `.docm`, `.pptx`, `.xlsx` or `.xlsm` dataset, the extractor SHALL read the package's relationships (`_rels/.rels`) and the property parts they name, without loading the document's other parts, and keep as `original_metadata` every entry but the skip list: `core.<element>` for each element of the core properties (`docProps/core.xml`), `app.<element>` for each element of the extended properties (`docProps/app.xml`), `custom.<name>` for each custom property (`docProps/custom.xml`); a value as the file writes it (text; a `vt:vector` as the list of its values). As `mapped_metadata`: the slide count of a presentation (`slides`, the slides its `presentation.xml` lists), and a workbook's sheets with their dimension as the sheet writes it (`sheets`, read by openpyxl in read-only mode, which also reads the styles, the shared strings, that is the cells' texts, and each worksheet up to its `<dimension>`), unless a part of cell data is larger than 16 MiB uncompressed (`common.MAX_PART`).
 
 #### Scenario: A representative Word document
 - **WHEN** `word_docx` is extracted
@@ -58,6 +58,10 @@ For a `.docx`, `.docm`, `.pptx`, `.xlsx` or `.xlsm` dataset, the extractor SHALL
 #### Scenario: A workbook
 - **WHEN** `excel_xlsx` is extracted
 - **THEN** its `mapped_metadata` holds `sheets` `{"Feuil1": "A1:D22", "Feuil2": "A1:A1", "Feuil3": "A1:A1"}`
+
+#### Scenario: A workbook with large cell data
+- **WHEN** a workbook's shared strings (`xl/sharedStrings.xml`) or a worksheet are larger than 16 MiB uncompressed (openpyxl's read-only mode reads the shared strings whole, and a worksheet up to its `<dimension>`, to its end without one: review finding 2 measured 20 MB read and 279 MB of memory for one)
+- **THEN** openpyxl is not called, `mapped_metadata` holds `sheets not read` with the part and its size, the property parts are kept, and the extractor reads less than 1 MB of it
 
 #### Scenario: Only the property parts are read
 - **WHEN** a presentation of 20 MB, nearly all of it one picture, is extracted
@@ -91,7 +95,7 @@ For an `.odt`, `.odp` or `.ods` dataset, the extractor SHALL read `meta.xml` and
 - **THEN** the values hold `setting` `high` and `setting.@level` `7`
 
 ### Requirement: PDF metadata from the Info dictionary and XMP
-For a PDF dataset, the extractor SHALL read with pypdf the document information dictionary, each entry as `Info.<key>` (a text string as text, a number as a number, an array as a list), and the catalog's XMP metadata stream, each property as `XMP.<prefix>:<name>` with the prefix the file declares (an `rdf:Alt`, `rdf:Seq` or `rdf:Bag` as the list of its items, a structure as `.<prefix>:<name>` below it, a list of structures as `[i]`). As `mapped_metadata`: the header as written (`header` `%PDF-1.4`), the catalog's `/Version` where given, the page count the page tree gives (`pages`, its `/Count`), and `encrypted`. An encrypted PDF SHALL be read with the empty user password, as viewers open it; one that needs a password keeps `header` and `encrypted` only. The extractor SHALL NOT read the pages' content.
+For a PDF dataset, the extractor SHALL read with pypdf the document information dictionary, each entry as `Info.<key>` (a text string as text, a number as a number, an array as a list), and the catalog's XMP metadata stream, each property as `XMP.<prefix>:<name>` with the prefix the file declares (an `rdf:Alt`, `rdf:Seq` or `rdf:Bag` as the list of its items, a structure as `.<prefix>:<name>` below it, a list of structures as `[i]`). pypdf's `XmpInformation` gives named properties only, so the packet is flattened by our code. A value's own reference SHALL be followed, a reference inside it written as the file writes it (`12 0 R`). As `mapped_metadata`: the header as written where `%PDF-` is found in the first 1,024 bytes (`header` `%PDF-1.4`), the catalog's `/Version` where given, the page count the page tree gives (`pages`, its `/Count`), and `encrypted`. An encrypted PDF SHALL be read with the empty user password, as viewers open it; one that needs a password keeps `header` and `encrypted` only. The extractor SHALL NOT read the pages' content. A file without `%%EOF` in its last 1,024 bytes SHALL NOT be given to pypdf, and pypdf SHALL read at most 32 MiB of a file (`pdf.BUDGET`): its recovery paths read and hold whole files (review finding 1: 50.8 GB read in 7.7 s for a 50 MB file cut by 3 kB); either fails the extraction with its reason.
 
 #### Scenario: A representative PDF
 - **WHEN** `pdf_info` (written by Mac OS X's Quartz from Firefox) is extracted
@@ -113,16 +117,36 @@ For a PDF dataset, the extractor SHALL read with pypdf the document information 
 - **WHEN** a PDF of 20 MB, nearly all of it one attached file, is extracted
 - **THEN** the extractor reads less than 1 MB of it (measured: 918,554 bytes by `/proc/self/io` rchar; pypdf reads the last 128 KiB backwards once for each of the trailer's last lines, from the page cache after the first time)
 
+#### Scenario: A cut-off PDF
+- **WHEN** the PDF of 20 MB is cut off by 3,000 bytes, as an interrupted copy leaves it
+- **THEN** the extraction fails with `no %%EOF in the last 1,024 bytes`, having read less than 1 MB
+
+#### Scenario: A PDF whose recovery would read all of it
+- **WHEN** the PDF of 20 MB has a wrong `startxref` offset, and the budget is 4 MiB
+- **THEN** the extraction fails with `OverBudget`, having read less than 5 MiB
+
+#### Scenario: A header after other bytes
+- **WHEN** a PDF has 101 bytes before `%PDF-1.3`
+- **THEN** it is a `common/pdf` dataset, and `header` is `%PDF-1.3`, from where the header is
+
+#### Scenario: A reference cycle in the Info dictionary
+- **WHEN** an Info entry `/Foo` refers to the catalog, which refers to the page tree
+- **THEN** `Info.Foo` holds the catalog with its `/Pages` as `<n> 0 R`, and the extraction succeeds with `Info.Title`
+
 ### Requirement: Legacy Word, PowerPoint and Excel metadata from the OLE2 property sets
-For a `.doc`, `.ppt` or `.xls` dataset, the extractor SHALL read with olefile the `SummaryInformation` and `DocumentSummaryInformation` property sets (their first section), each property under olefile's name for it (`title`, `author`, `create_time`, `company`; one it has no name for as `<stream>.<id>`), strings decoded with the code page the property set gives, a time as olefile gives it (UTC by the format, written without a time zone). User-defined properties are not read (BACKLOG, olefile).
+For a `.doc`, `.ppt` or `.xls` dataset, the extractor SHALL read with olefile the `SummaryInformation` and `DocumentSummaryInformation` property sets (their first section), each property under olefile's name for it (`title`, `author`, `create_time`, `company`; one it has no name for as `<stream>.<id>`), strings decoded with the code page the property set gives (an unsigned 16-bit number, which olefile reads as signed), a time as olefile gives it with `Z` (a FILETIME is UTC by the format's definition). User-defined properties are not read (BACKLOG, olefile).
 
 #### Scenario: A representative Word 97 document
 - **WHEN** `word_doc` is extracted
-- **THEN** its description starts with `My Title, EJ04325S, 2010-10-05T09:03:00, Microsoft Office Word, num_pages 1; ` and its values hold `company` `EDF-DIT` and `heading_pairs` `["Titre", 1]`
+- **THEN** its description starts with `My Title, EJ04325S, 2010-10-05T09:03:00Z, Microsoft Office Word, num_pages 1; ` and its values hold `company` `EDF-DIT` and `heading_pairs` `["Titre", 1]`
 
 #### Scenario: A Mac code page
 - **WHEN** `powerpoint_ppt` gives the code page 10000 (Mac Roman)
 - **THEN** its strings are decoded with it: `title` `Sample Powerpoint Slide`, and the summary line ends with `slides 1`
+
+#### Scenario: A UTF-8 code page
+- **WHEN** `word_doc`'s code page is changed to 65001 (UTF-8), which olefile reads as -535
+- **THEN** `codepage` is `65001`, and its strings are decoded as UTF-8 (`title` `My Title`)
 
 #### Scenario: User-defined properties
 - **WHEN** `excel_xls` holds user-defined properties (`MyCustomString` in the second section of DocumentSummaryInformation)

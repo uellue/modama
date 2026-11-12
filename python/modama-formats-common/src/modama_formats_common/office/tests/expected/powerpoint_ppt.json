@@ -20,7 +20,7 @@
       "summary": [
         "Sample Powerpoint Slide",
         "Keith Bennett",
-        "2007-09-14T17:33:12",
+        "2007-09-14T17:33:12Z",
         "Microsoft PowerPoint",
         "slides 1"
       ],
@@ -32,7 +32,7 @@
           "codepage": 10000,
           "codepage_doc": 10000,
           "company": "-",
-          "create_time": "2007-09-14T17:33:12",
+          "create_time": "2007-09-14T17:33:12Z",
           "creating_application": "Microsoft PowerPoint",
           "heading_pairs": [
             "Fonts Used",
@@ -45,7 +45,7 @@
           "hidden_slides": 0,
           "hlinks_changed": false,
           "last_saved_by": "Keith Bennett",
-          "last_saved_time": "2007-09-14T19:16:39",
+          "last_saved_time": "2007-09-14T19:16:39Z",
           "links_dirty": false,
           "mm_clips": 0,
           "notes": 0,

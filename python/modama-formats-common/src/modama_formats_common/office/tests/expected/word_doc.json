@@ -20,7 +20,7 @@
       "summary": [
         "My Title",
         "EJ04325S",
-        "2010-10-05T09:03:00",
+        "2010-10-05T09:03:00Z",
         "Microsoft Office Word",
         "num_pages 1"
       ],
@@ -33,7 +33,7 @@
           "codepage_doc": 1252,
           "comments": "My Comments",
           "company": "EDF-DIT",
-          "create_time": "2010-10-05T09:03:00",
+          "create_time": "2010-10-05T09:03:00Z",
           "creating_application": "Microsoft Office Word",
           "heading_pairs": [
             "Titre",
@@ -42,7 +42,7 @@
           "hlinks_changed": false,
           "keywords": "My Keyword",
           "last_saved_by": "Etienne Jouvin",
-          "last_saved_time": "2012-01-03T22:14:00",
+          "last_saved_time": "2012-01-03T22:14:00Z",
           "lines": 1,
           "links_dirty": false,
           "num_chars": 15,

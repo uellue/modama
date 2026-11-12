@@ -15,6 +15,9 @@ from modama_crawler.records import description
 from modama_crawler.testing import recognise
 from modama_crawler.walk import walk
 
+from modama_formats_common.office import ole, pdf
+from modama_formats_common.office.common import MAX_PART, OverBudget
+
 FIXTURES = Path(__file__).parent / "fixtures"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -221,6 +224,22 @@ def test_only_the_property_parts_are_read(collection_tests, tmp_path):
     assert pptx.bytes_read < 1_000_000
 
 
+def test_a_workbook_with_large_cell_data(collection_tests, tmp_path):
+    src = FIXTURES / "excel_xlsx" / "testEXCEL.xlsx"
+    big = MAX_PART + 1
+
+    def padded(data: bytes) -> bytes:
+        return data.replace(b"</sst>", b" " * (big - len(data)) + b"</sst>")
+
+    repacked(src, tmp_path / "tree" / "big.xlsx", "xl/sharedStrings.xml", padded)
+    (xlsx,) = crawled(collection_tests, tmp_path / "tree")
+    assert xlsx.mapped == {
+        "sheets not read": f"xl/sharedStrings.xml: {big} bytes, more than {MAX_PART}"
+    }
+    assert xlsx.original["core.title"] == "Simple Excel document"
+    assert xlsx.bytes_read < 1_000_000
+
+
 def test_a_broken_package(collection_tests, tmp_path):
     d = only(recognise(collection_tests, "truncated_docx", tmp_path))
     assert d.format == "common/docx"
@@ -332,21 +351,89 @@ def test_an_encrypted_pdf_that_needs_a_password(collection_tests, tmp_path):
     assert pdf.extracted.summary == []
 
 
-def test_only_the_metadata_is_read(collection_tests, tmp_path):
+def large_pdf(path: Path) -> bytes:
+    """A one-page PDF of 20 MB, nearly all of it an attached file; its bytes."""
     from pypdf import PdfWriter
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.add_metadata({"/Title": "Large"})
+    writer.add_attachment("data.bin", os.urandom(20_000_000))
+    with open(path, "wb") as f:
+        writer.write(f)
+    return path.read_bytes()
+
+
+def test_only_the_metadata_is_read(collection_tests, tmp_path):
+    large_pdf(tmp_path / "tree" / "large.pdf")
+    (described_pdf,) = crawled(collection_tests, tmp_path / "tree")
+    assert described_pdf.dataset.size > 20_000_000
+    assert described_pdf.original["Info.Title"] == "Large"
+    assert described_pdf.bytes_read < 1_000_000
+
+
+def extracted_reading(path: Path) -> tuple[object, int]:
+    """What pdf.extract gives or raises for path, and the bytes it read."""
+    before = rchar()
+    try:
+        outcome = pdf.extract(str(path))
+    except Exception as error:  # noqa: BLE001  the error is the outcome tested
+        outcome = error
+    return outcome, rchar() - before
+
+
+def test_a_cut_off_pdf(tmp_path):
+    data = large_pdf(tmp_path / "large.pdf")
+    cut = tmp_path / "cut.pdf"
+    cut.write_bytes(data[:-3000])
+    error, read = extracted_reading(cut)
+    assert isinstance(error, ValueError)
+    assert "no %%EOF in the last 1,024 bytes" in str(error)
+    assert read < 1_000_000
+
+
+def test_a_pdf_whose_recovery_would_read_all_of_it(tmp_path, monkeypatch):
+    data = large_pdf(tmp_path / "large.pdf")
+    offset = data.rindex(b"startxref") + len(b"startxref\n")
+    end = data.index(b"\n", offset)
+    broken = tmp_path / "broken.pdf"
+    broken.write_bytes(data[:offset] + b"12345" + data[end:])
+    monkeypatch.setattr(pdf, "BUDGET", 4 * 1024 * 1024)
+    error, read = extracted_reading(broken)
+    assert isinstance(error, OverBudget), error
+    assert read < 5 * 1024 * 1024
+
+
+def test_a_header_after_other_bytes(collection_tests, tmp_path):
+    src = (FIXTURES / "pdf_info" / "testPDF.pdf").read_bytes()
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "prefixed.pdf").write_bytes(b"X" * 100 + b"\n" + src)
+    (prefixed,) = crawled(collection_tests, tree)
+    assert prefixed.dataset.format == "common/pdf"
+    assert prefixed.mapped["header"] == "%PDF-1.3"
+
+
+def test_a_reference_cycle_in_the_info_dictionary(collection_tests, tmp_path):
+    from pypdf import PdfWriter
+    from pypdf.generic import NameObject
 
     tree = tmp_path / "tree"
     tree.mkdir()
     writer = PdfWriter()
     writer.add_blank_page(width=200, height=200)
-    writer.add_metadata({"/Title": "Large"})
-    writer.add_attachment("data.bin", os.urandom(20_000_000))
-    with open(tree / "large.pdf", "wb") as f:
+    writer.add_metadata({"/Title": "Cycle"})
+    root = writer.root_object.indirect_reference
+    writer._info.get_object()[NameObject("/Foo")] = root
+    with open(tree / "cycle.pdf", "wb") as f:
         writer.write(f)
-    (pdf,) = crawled(collection_tests, tree)
-    assert pdf.dataset.size > 20_000_000
-    assert pdf.original["Info.Title"] == "Large"
-    assert pdf.bytes_read < 1_000_000
+    (cycle,) = crawled(collection_tests, tree)
+    assert cycle.original["Info.Title"] == "Cycle"
+    # The value's own reference is followed (to the catalog), the catalog's not
+    foo = cycle.original["Info.Foo"]
+    assert foo["/Type"] == "/Catalog"
+    assert foo["/Pages"].endswith(" 0 R")
 
 
 # Legacy OLE2
@@ -355,7 +442,7 @@ def test_only_the_metadata_is_read(collection_tests, tmp_path):
 def test_a_representative_word_97_document(collection_tests, tmp_path):
     doc = described(collection_tests, "word_doc", tmp_path)
     assert doc.description.startswith(
-        "My Title, EJ04325S, 2010-10-05T09:03:00, Microsoft Office Word, num_pages 1; "
+        "My Title, EJ04325S, 2010-10-05T09:03:00Z, Microsoft Office Word, num_pages 1; "
     )
     assert doc.original["company"] == "EDF-DIT"
     assert doc.original["heading_pairs"] == ["Titre", 1]
@@ -366,6 +453,19 @@ def test_a_mac_code_page(collection_tests, tmp_path):
     assert ppt.original["codepage"] == 10000
     assert ppt.original["title"] == "Sample Powerpoint Slide"
     assert ppt.extracted.summary[-1] == "slides 1"
+
+
+def test_a_utf_8_code_page(tmp_path):
+    data = (FIXTURES / "word_doc" / "testWORD_custom_props.doc").read_bytes()
+    cp1252 = bytes.fromhex("02000000e404")  # VT_I2, 1252
+    # In each section: SummaryInformation, DocumentSummaryInformation's two
+    assert data.count(cp1252) == 3
+    patched = tmp_path / "utf8.doc"
+    patched.write_bytes(data.replace(cp1252, bytes.fromhex("02000000e9fd")))  # 65001
+    values = ole.extract(str(patched)).values["original_metadata"]
+    assert values["codepage"] == 65001
+    assert values["title"] == "My Title"
+    assert values["company"] == "EDF-DIT"
 
 
 def test_user_defined_properties(collection_tests, tmp_path):
