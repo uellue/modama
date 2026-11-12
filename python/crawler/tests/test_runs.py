@@ -210,11 +210,23 @@ def test_piped_into_head(conn, env):
 def test_following_a_crawl(conn, env, capsys, monkeypatch):
     monkeypatch.setattr(cli, "FOLLOW_POLL", 0.05)
     run_id = start_run(conn, "/data")
+    # The crawl moves on only after --follow printed the previous state, so the
+    # test doesn't depend on how long the command takes to start (the extractor
+    # identity of the installation is computed first)
+    printed = [threading.Event() for _ in range(2)]
+    run_line = cli._run_line
+
+    def counted(run):
+        line = run_line(run)
+        next((e for e in printed if not e.is_set()), threading.Event()).set()
+        return line
+
+    monkeypatch.setattr(cli, "_run_line", counted)
 
     def crawl():
-        time.sleep(0.2)
+        printed[0].wait(30)
         progress_run(conn, run_id, 5, 50)
-        time.sleep(0.2)
+        printed[1].wait(30)
         end_run(
             conn,
             run_id,
