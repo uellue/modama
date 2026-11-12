@@ -1,0 +1,42 @@
+{
+  "datasets": [
+    {
+      "anchor": "/pattern.bmp",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/bmp",
+      "members": [
+        "/pattern.bmp"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/bmp",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/pattern.bmp": {
+      "subjects": [],
+      "summary": [
+        "width 64",
+        "height 48"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "dpi": [
+            96.01194815354799,
+            96.01194815354799
+          ],
+          "height": 48,
+          "mode": "RGB",
+          "width": 64
+        },
+        "original_metadata": {
+          "compression": 0
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
