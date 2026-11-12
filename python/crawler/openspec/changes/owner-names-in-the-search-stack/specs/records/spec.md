@@ -1,0 +1,24 @@
+## MODIFIED Requirements
+
+### Requirement: Dublin Core mapping
+A record's `oai_dc` SHALL carry the anchor path as title, the owner as creator, the newest member mtime as date, `Dataset` as type, the dataset's MIME type as format, the browse URL as identifier, and `ER-C` as publisher. The creator SHALL be the owner's full name, the GECOS field that the system's user database gives for the owner's uid (in the search stack: the directory, through sssd) up to its first comma; the login name when that is empty; the uid as a decimal number when the user database does not know the uid (decision 201).
+
+#### Scenario: Single file
+- **WHEN** a text file owned by user `alice`, whose GECOS field is `Alice Anderson`, is a dataset
+- **THEN** its record has `dc:title` equal to the path, `dc:creator` `Alice Anderson`, `dc:format` `text/plain` and `dc:type` `Dataset`
+
+#### Scenario: An owner without a full name
+- **WHEN** a file's owner has an empty GECOS field, or `,,,`, and the login name `dev`
+- **THEN** its record has `dc:creator` `dev`
+
+#### Scenario: A full name with a comma
+- **WHEN** a file's owner has the GECOS field `Weber, Dieter`
+- **THEN** its record has `dc:creator` `Weber` (the GECOS convention; the loss is accepted, design D10)
+
+#### Scenario: An owner without a name
+- **WHEN** a file owned by uid 4242, which the user database does not know, is a dataset
+- **THEN** its record has `dc:creator` `4242`
+
+#### Scenario: An owner from the directory, in the search stack
+- **WHEN** in the search stack's test deployment a file is owned by uid 10001, which only the test directory knows (as `alice`, `cn: Alice Anderson`), and is crawled
+- **THEN** its record has `dc:creator` `Alice Anderson`, and so do the warehouse's record and the index's `creators`

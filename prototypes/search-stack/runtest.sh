@@ -39,7 +39,7 @@ if [ "${1:-}" = e2e ]; then
     exec docker compose exec -T -e E2E_CHAT="$chat" crawler pytest -v -p no:cacheprovider /e2e/test_e2e.py "${@:2}"
 fi
 
-SERVICES="crawler crawl-timer crawler-db postgres opensearch transform broker search-api
+SERVICES="crawler crawl-timer crawler-db sssd ldap postgres opensearch transform broker search-api
 matchmaker airflow-postgres airflow-api-server airflow-scheduler airflow-dag-processor airflow-worker
 airflow-worker-transform"
 INITS="warehouse-init airflow-init airflow-accounts crawler-migrate"
@@ -121,6 +121,10 @@ check "the init services have finished" inits_done
 check "the broker's consumer_timeout is broker.conf's" broker_consumer_timeout
 check "the crawler answers OAI-PMH Identify" \
     dc exec -T crawler python -c "import urllib.request; urllib.request.urlopen('http://localhost:7654/oai?verb=Identify', timeout=10)"
+check "the crawler names uid 10001 Alice Anderson (through sssd)" \
+    dc exec -T crawler python -c "
+from modama_crawler.records import creator
+assert creator(10001) == 'Alice Anderson', creator(10001)"
 check "the crawler's Airflow account has the role harvest-trigger" crawler_role
 check "the harvest DAG is unpaused (seen with the crawler's account)" harvest_dag_unpaused
 check "the crawler is the only active endpoint" only_our_endpoint_active

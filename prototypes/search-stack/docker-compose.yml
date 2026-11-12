@@ -101,6 +101,9 @@ services:
       # of crawler-airflow.env, which only crawl-timer gets: crawl by hand with
       # `docker compose exec crawl-timer modama-crawler crawl`
       MODAMA_CRAWLER_AIRFLOW_URL: http://airflow-api-server:8080
+    volumes: &sssd-client
+      # owners' names (records' creator) from sssd, below
+      - ssspipes:/var/lib/sss/pipes/:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7654/oai?verb=Identify', timeout=5)"]
       interval: 10s
@@ -111,6 +114,8 @@ services:
         condition: service_healthy
       crawler-migrate:
         condition: service_completed_successfully
+      sssd:
+        condition: service_healthy
     networks: [search]
 
   # Brings crawler-db's schema to the image's, then exits; at once when there is nothing
@@ -142,13 +147,45 @@ services:
     env_file:
       - ${MODAMA_SECRETS_DIR:?see README.md}/crawler-airflow.env
     environment: *crawler-env
+    volumes: *sssd-client
     depends_on:
       crawler:
         condition: service_healthy
       crawler-migrate:
         condition: service_completed_successfully
+      sssd:
+        condition: service_healthy
       airflow-accounts:
         condition: service_completed_successfully
+    networks: [search]
+
+  # The directory's users, for the crawler's records (dc:creator, the owner's full name), as
+  # deploy/ gives them to its services: deploy/sssd's image, its sockets in ssspipes. Name
+  # lookups only: the start copies the configuration, which the deployment mounts at
+  # /sssd.conf.in (the override file the test one, staging the real one), with
+  # "services = nss" (mode 600, owned by root, as sssd demands). Healthy once it names
+  # SSSD_CHECK_USER (uid, or uid:gid), which each deployment sets, for sssd, crawler and
+  # crawl-timer: a crawl that cannot look it up stores nothing and fails.
+  # Change owner-names-in-the-search-stack (python/crawler/openspec/changes/).
+  sssd:
+    build: ../../deploy/sssd
+    image: search-stack-sssd
+    restart: unless-stopped
+    tmpfs:
+      - /run
+    command:
+      - /bin/sh
+      - -c
+      - umask 077 && sed -E 's/^services *=.*/services = nss/' /sssd.conf.in > /etc/sssd/sssd.conf && exec /usr/sbin/sssd --interactive
+    volumes:
+      - ssspipes:/var/lib/sss/pipes/
+    healthcheck:
+      test: ["CMD-SHELL", 'getent passwd "$${SSSD_CHECK_USER%%:*}" > /dev/null']
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      # sssd stays offline for 60 s after a failed first contact
+      start_period: 120s
     networks: [search]
 
   crawler-db:
@@ -507,6 +544,7 @@ services:
         condition: service_healthy
 
 volumes:
+  ssspipes:
   crawler-db-data:
   postgres-data:
   opensearch-data:

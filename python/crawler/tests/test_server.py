@@ -1,8 +1,6 @@
 """OAI-PMH protocol behaviour. Every response is validated against the OAI-PMH and oai_dc schemas."""
 
-import os
-import pwd
-
+import modama_crawler.records
 import pytest
 from conftest import BASE_URL, DC, OAI
 from modama_crawler.records import browse_url, oai_identifier
@@ -85,14 +83,20 @@ def test_list_metadata_formats(oai, records, params):
     assert prefixes == ["oai_dc"]
 
 
-def test_get_record(oai, records):
+@pytest.fixture
+def alice(monkeypatch):
+    """Every owner is Alice Anderson, whatever the user database of the machine says."""
+    monkeypatch.setattr(modama_crawler.records, "creator", lambda uid: "Alice Anderson")
+
+
+def test_get_record(alice, oai, records):
     document = oai(verb="GetRecord", identifier=A, metadataPrefix="oai_dc")
     assert identifiers(document) == [A]
     assert document.findtext(f".//{OAI}datestamp") == "2024-01-01T00:00:00Z"
     dc = {e.tag.removeprefix(DC): e.text for e in document.iter(f"{DC}*")}
     assert dc == {
         "title": "/a.txt",
-        "creator": pwd.getpwuid(os.getuid()).pw_name,
+        "creator": "Alice Anderson",
         "description": "Plain text document, 1 file, 0 B, in /",
         "publisher": "ER-C",
         "date": "1970-01-01T00:00:00Z",

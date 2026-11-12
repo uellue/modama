@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import pwd
 import signal
 import subprocess
 import sys
@@ -178,12 +179,14 @@ def crawl_tree(
     *,
     progress=None,
     threads: int = DEFAULT_THREADS,
+    check_user: int | None = None,
 ) -> tuple[Result, extraction.Report, int]:
     """Walk, extract and store one crawl: the result, the extraction report and the number of records changed.
 
     The last stored crawl's datasets are taken over for unchanged directories
     if it ran under the same rule set, and its extractions are reused where
-    the extractor and the files are the same (D3).
+    the extractor and the files are the same (D3). With `check_user`, the user
+    database must know that uid before the store (crawl-runs spec).
     """
     # The walk and extraction read the stored state for hours: one query at a
     # time, not one transaction left idle all along. Restored on success only:
@@ -225,6 +228,7 @@ def crawl_tree(
     )
     conn.autocommit = autocommit
     _check_terminated()
+    _check_names(check_user)
     changed = store(
         conn, result, format_names(formats), run_id, rules, check=_check_terminated
     )
@@ -307,9 +311,41 @@ def _threads() -> int:
     return threads
 
 
+class NamesUnavailable(SystemExit):
+    """The user database does not know the check user: the crawl stores nothing (crawl-runs spec; decision 207)."""
+
+
+def _check_user() -> int | None:
+    """SSSD_CHECK_USER's uid (the value may be uid:gid), or None if unset; exits with status 2 if it is not a uid."""
+    value = os.environ.get("SSSD_CHECK_USER")
+    if not value:
+        return None
+    uid = value.partition(":")[0]
+    if not uid.isdigit():
+        log.error("SSSD_CHECK_USER must be a uid or uid:gid: %r", value)
+        raise SystemExit(2)
+    return int(uid)
+
+
+def _check_names(uid: int | None) -> None:
+    """Before the store: a crawl whose owners the user database cannot name would turn names into numbers."""
+    if uid is None:
+        return
+    try:
+        pwd.getpwuid(uid)
+    except KeyError:
+        message = (
+            f"the user database does not know SSSD_CHECK_USER {uid}: sssd is not answering"
+            " (check `docker compose ps sssd` and `docker compose logs sssd`); no records stored"
+        )
+        log.error("%s", message)
+        raise NamesUnavailable(message) from None
+
+
 def cmd_crawl(args) -> int:
     _sigterm.clear()  # one crawl per process, but tests run several
     signal.signal(signal.SIGTERM, _terminate)
+    check_user = _check_user()
     threads = _threads()
     config, formats, rules = _configure(args)
     # before the run is recorded: a malformed setting exits here, leaving no run behind
@@ -345,6 +381,7 @@ def cmd_crawl(args) -> int:
                     rules,
                     progress=heartbeat,
                     threads=threads,
+                    check_user=check_user,
                 )
                 warnings = _report(result)
             except (

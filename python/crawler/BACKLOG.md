@@ -9,6 +9,7 @@
   - (a) CPU limits in production, whether and how (slices, per-container quotas). @weber: "I don't think we have any limits beyond what we do with docker at this time."
   - (b) The cgroup version on the dev server and in production (question 152, "let's deal with that later"); `./cpu-budget.sh staging` prints it. Under cgroup v1 the quota is not read (the log lines say so); a v1 branch only if one of them says 1.
   - (c) A slice of the stack's own with a lower `CPUWeight` on the dev server (compose `cgroup_parent`), so that the devvms go before the whole stack, not only its background services (163); an operator option, described in `/prototypes/search-stack/README.md`, "CPU budget".
+- **Owners' names in the search stack** (change [`owner-names-in-the-search-stack`](openspec/changes/owner-names-in-the-search-stack/), F10, decisions 196 to 208, 2026-11-12): an `sssd` service from `deploy/sssd`, the test directory from `deploy/ldap` in the test stack, staging's `/var/local/data-mgmt/sssd.conf`; the creator is the owner's full name (201); a crawl fails instead of storing while `SSSD_CHECK_USER` cannot be looked up (207). For staging tonight: the runbook's "Owners' names, 2026-11-12". Left: archive after @weber's review; the warehouse types a full name without a comma as an organisation (`dc_to_datacite.xsl`, design Risks), with @weber.
 
 Deferred items, roughly in the order they are likely to come up.
 

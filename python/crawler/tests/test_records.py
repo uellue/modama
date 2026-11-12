@@ -1,6 +1,8 @@
 import os
+import pwd
 import re
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from conftest import DC, OAI
@@ -12,6 +14,7 @@ from modama_crawler.records import (
     MAX_LOCAL_ID,
     browse_url,
     build,
+    creator,
     format_names,
     oai_identifier,
 )
@@ -87,6 +90,50 @@ def test_dublin_core_mapping():
     assert metadata["date"] == ["1970-01-01T00:00:00Z"]
     assert metadata["identifier"] == [browse_url("/x.txt")]
     assert "relation" not in metadata
+
+
+@pytest.fixture
+def users(monkeypatch):
+    """A user database of the test's own, {uid: (login name, GECOS)}, to fill."""
+    passwd = {}
+
+    def getpwuid(uid):
+        login, gecos = passwd[uid]  # KeyError for an unknown uid, as pwd's
+        return SimpleNamespace(pw_name=login, pw_gecos=gecos)
+
+    monkeypatch.setattr(pwd, "getpwuid", getpwuid)
+    creator.cache_clear()
+    yield passwd
+    creator.cache_clear()
+
+
+def creator_of_a_file_of(uid: int) -> list[str]:
+    dataset = Dataset(anchor="/x.txt", members=("/x.txt",), type="text/plain", uid=uid)
+    return build(dataset, {})[1]["creator"]
+
+
+# Records spec, "Dublin Core mapping" (decision 201), one test per scenario
+
+
+def test_single_file(users):
+    users[10001] = ("alice", "Alice Anderson")
+    assert creator_of_a_file_of(10001) == ["Alice Anderson"]
+
+
+@pytest.mark.parametrize("gecos", ["", ",,,", " ,room 1"])
+def test_an_owner_without_a_full_name(users, gecos):
+    users[1000] = ("dev", gecos)
+    assert creator_of_a_file_of(1000) == ["dev"]
+
+
+def test_a_full_name_with_a_comma(users):
+    # the GECOS convention cuts it; the loss is accepted (design D10)
+    users[20335] = ("weber", "Weber, Dieter")
+    assert creator_of_a_file_of(20335) == ["Weber"]
+
+
+def test_an_owner_without_a_name(users):
+    assert creator_of_a_file_of(4242) == ["4242"]
 
 
 def extracted(summary, subjects) -> Extraction:
