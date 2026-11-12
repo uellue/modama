@@ -500,7 +500,9 @@ def test_read_only_accounts_suffice(tree):
 def test_a_changed_record_replaces_the_old_one(tree):
     # Same identifier, new content: the owner changes, which records.py maps to
     # dc:creator and the warehouse to creators (it drops dc:format, so a changed
-    # type would not reach the index). Nothing else changes, mtime included.
+    # type would not reach the index). Nothing else changes, mtime included. The new
+    # owner is known only to the test directory, through sssd (records spec, scenario
+    # An owner from the directory).
     path = "/" + DISTINCT_FILE
     url = next(u for t, u in tree.values() if t == path)
     identifier = next(i for i, (t, _) in tree.items() if t == path)
@@ -512,14 +514,14 @@ def test_a_changed_record_replaces_the_old_one(tree):
     assert creator == "root"
     count = opensearch_count()
     time.sleep(2)  # datestamps have seconds granularity
-    os.chown(DATA / DISTINCT_FILE, 4242, -1)  # a uid without a name: creator "4242"
+    os.chown(DATA / DISTINCT_FILE, 10001, -1)  # alice: creator "Alice Anderson"
     crawl()  # starts the harvest and waits for it
     with crawler_db() as conn:
         ((after, creator),) = conn.execute(
             "SELECT datestamp, metadata->'creator'->>0 FROM records WHERE identifier = %s",
             (identifier,),
         ).fetchall()
-    assert (creator, after > before) == ("4242", True)
+    assert (creator, after > before) == ("Alice Anderson", True)
     with warehouse_db() as conn:
         rows = conn.execute(
             "SELECT r.datestamp, r.opensearch_synced FROM records r "
@@ -534,7 +536,7 @@ def test_a_changed_record_replaces_the_old_one(tree):
         "hits"
     ]["hits"]
     assert [[c.get("creatorName") for c in d["_source"]["creators"]] for d in docs] == [
-        ["4242"]
+        ["Alice Anderson"]
     ], docs
     hits = http(f"{SEARCH}/search?q=ferritin&resource=datasets")["hits"]
     assert [h["_source"]["url"] for h in hits].count(url) == 1, hits

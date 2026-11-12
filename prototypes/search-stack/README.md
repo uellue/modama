@@ -5,7 +5,8 @@ The modama search, as one compose project: the crawler serves the data tree over
 ```
 crawl-timer ─▶ crawl ─(after each crawl: start harvest)─▶ Airflow ─▶ harvester ─▶ warehouse ─▶ OpenSearch ◀─ search-api ◀─ matchmaker
 crawler (OAI-PMH) ◀────────────────────────────────────────────────┘       └─ transform, broker, postgres
-  └─ crawler-db
+  ├─ crawler-db
+  └─ sssd (owners' names) ◀─ directory (test: ldap)
 ```
 
 It is our own composition of the upstream images (EOSC metadata-warehouse `v1.10.0` in `../EOSC-Data-Commons/metadata-warehouse`, built from there, its Airflow image with the patches in `patches/warehouse/` applied by `warehouse-airflow.Dockerfile` on top of upstream's image, which the build-only service `airflow-upstream` builds unchanged; data-commons-search `0.10.2`, with the patches in `patches/search-api/` applied by `search-api.Dockerfile`: its keyword search queries the root copies of the nested title, description and subject fields; matchmaker `0.14.0`, built from upstream's source with the patches in `patches/matchmaker/` applied by `matchmaker.Dockerfile`: AI Mode works without login, see "AI Mode without login"), shaped like `deploy/` so that it can move there:
@@ -92,6 +93,16 @@ ssh -N -J <you>@<host> -L 3000:127.0.0.1:3000 -L 8000:127.0.0.1:8000 -L 8081:127
 ```
 
 Then http://localhost:3000, http://localhost:8000/search?q=ferritin&resource=datasets or http://localhost:8081. Open matchmaker as `localhost`, as above: its page sends usage statistics to EGI's Matomo (egi.matomo.cloud) unless the page's host name is `localhost` or `127.0.0.1`. Searching needs no login; its login (EGI Check-in), the FAIR check and the Data Player reach outside services.
+
+## Owners' names
+
+A record's creator is the file owner's full name (`python/crawler/README.md`, "How it works"). The crawler's container learns the names as `deploy/`'s services do: from an `sssd` service, built from `deploy/sssd` as it is (image `search-stack-sssd`), whose sockets the volume `ssspipes` shares, read-only, with `crawler` and `crawl-timer`; the crawler image has `libnss-sss`. sssd answers name lookups only: at its start it copies the configuration mounted at `/sssd.conf.in` with `services = nss` (and mode 600, which sssd demands). Change `owner-names-in-the-search-stack` in `python/crawler/openspec/changes/`.
+
+- **Test deployment:** the test directory of `deploy/` (service `ldap`, image `search-stack-ldap`: `alice` 10001 "Alice Anderson", `bob` 10002, `carol` 10003, `mallory` 10004), and `testconf/secrets/sssd.conf`, mounted by `docker-compose.override.yml` whatever `MODAMA_SECRETS_DIR` says. Plain LDAP inside the stack's network: the file says `ldap_id_use_start_tls = false`, since sssd 2.10 otherwise starts TLS on its own, which the test directory without a certificate refuses (`unsupported extended operation`, and sssd goes offline). Check: `docker compose exec crawler getent passwd 10001`.
+- **Staging:** `/var/local/data-mgmt/sssd.conf`, the file for testing `deploy/` against the real directory (`docs/guide/src/development.md`); no test directory.
+- **The check user:** `SSSD_CHECK_USER` (10001 here, `STAGING_USER` on staging) is a user that must exist. sssd is healthy once it names that user (`start_period` 120 s, since sssd waits 60 s after a failed first contact), and `crawler` and `crawl-timer` start only then. A crawl looks the same user up before it stores its records: if sssd does not answer (stopped, crashed, the directory unreachable before sssd ever saw that user), the crawl stores nothing, logs `the user database does not know SSSD_CHECK_USER …: sssd is not answering (check docker compose ps sssd and docker compose logs sssd); no records stored` and fails; the timer crawls again at the next 19:00. Without the check, a crawl during an outage would turn names into numbers, and the next one back, each a full re-index. Nothing alerts an admin yet ("Moving to deploy/", alerting); `modama-crawler runs` and `modama-chain status` show the failed run.
+- **What a change of the names costs:** every crawl rebuilds every record, so a crawl whose creators differ from the last one (the first with names, or a rollback) changes every such record: the harvest and the indexing that follow take as long as a first full run. On staging (1,451,848 records) that was 5 h 14 min for the harvest and, at the indexing rates of run 3, 8 to 9 h or up to 27 h for the indexing (`python/crawler/openspec/changes/owner-names-in-the-search-stack/design.md`, D8).
+- **What remains:** an owner sssd has never seen, while the directory is unreachable and sssd itself answers, gets the number; the warehouse's conversion to DataCite types a creator without a comma as an organisation (`nameType` `Organizational`, `../EOSC-Data-Commons/metadata-crawlers/harvester/dc_to_datacite.xsl`, template `creators`).
 
 ## Upgrade
 

@@ -367,6 +367,79 @@ dc exec -T crawler-db pg_restore -U postgres -d modama_crawler < "$DUMP"
 git checkout "$deployed" && ./upstaging.sh --build
 ```
 
+## Owners' names, 2026-11-12
+
+Change `owner-names-in-the-search-stack`: an `sssd` service gives the crawler the owners'
+names from the real directory, with `/var/local/data-mgmt/sssd.conf` (the file for testing
+`deploy/` against it; used with `services = nss`, not changed). The creator becomes the
+owner's full name. The same `./upstaging.sh --build` also brings the first upgrade to
+migrations, so the steps U1 to U6 above belong in it. On the server, in the stack's folder,
+with the `dc` shorthand of step 12; before 18:30 UTC, so that the stack is up for the
+crawl at 19:00.
+
+**N1.** The last crawl's harvest and indexing have finished (`--build` recreates `crawler`,
+which the harvest reads); `harvest` and `indexing` show a finished run:
+
+```bash
+dc exec crawler modama-chain status
+```
+
+**N2.** The option names of sssd's file, without their values (a CA file or another file
+it names, for example `ldap_tls_cacert`, would need one more mount: stop here then):
+
+```bash
+sudo grep -o '^[a-z_]*' /var/local/data-mgmt/sssd.conf | sort -u
+```
+
+**N3.** Whether the timer will crawl at once: it does when the last finished crawl is more
+than a day old at the start (then again at 19:00), otherwise it waits for 19:00:
+
+```bash
+dc exec crawler modama-crawler runs | head -3
+```
+
+**N4.** U1 to U4 of "Upgrade" (the deployed commit, the state, the dump, the dry run), then
+U5, which builds and starts everything, sssd included:
+
+```bash
+./upstaging.sh --build
+```
+
+**N5.** sssd healthy, and the crawler names you (your full name, not a number):
+
+```bash
+dc ps sssd
+```
+```bash
+dc exec crawler python -c "from modama_crawler.records import creator; print(creator($(id -u)))"
+```
+
+If `./upstaging.sh` fails waiting for sssd, or `dc ps sssd` does not say `healthy`,
+`dc logs sssd` names the failing step; the way back is "The way back" above.
+
+**N6.** U6 of "Upgrade".
+
+**N7.** After the crawl (from 19:00, about 1 h 20 min): its end, and the records whose
+creator is still a number (owners the directory does not know):
+
+```bash
+dc logs --tail 5 crawl-timer
+```
+```bash
+dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*) FILTER (WHERE metadata->'creator'->>0 ~ '^[0-9]+\$'), count(*) FROM records"
+```
+
+A crawl that logs `the user database does not know SSSD_CHECK_USER …: sssd is not
+answering` stored nothing: check `dc ps sssd` and `dc logs sssd`; the timer crawls again
+at the next 19:00, or crawl by hand with `dc exec crawl-timer modama-crawler crawl`.
+
+What it costs: nearly every record (1,451,848 in run 3) changes its creator, so the
+harvest takes them all again (run 3: 5 h 14 min, to about 01:30) and the indexing embeds
+them all again (726 batches: 8 to 9 h at run 3's rate after the worker's restart, up to
+27 h at its slow rate). So the search shows the full names by mid-morning tomorrow at
+best, and the indexing may still run at tomorrow's 19:00 crawl. A way back after 19:00
+costs another full re-index. Follow it with `dc exec crawler modama-chain status`.
+
 ## For colleagues
 
 ```bash
