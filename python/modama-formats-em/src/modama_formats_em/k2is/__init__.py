@@ -6,7 +6,7 @@ Extraction reads the .gtg's tags through RosettaSciIO's DM reader on our own
 handle (dm.parsed) and describes all of them but GMS's user-interface
 settings; the sector files are not read. A .gtg with its 8 sector files is a
 capture whatever it holds (a broken one fails at extraction); only a .gtg
-without sector files is checked for the DM4 header (decision 172).
+without sector files is checked for a DM header (decisions 172, 183).
 """
 
 from collections.abc import Iterable
@@ -37,10 +37,10 @@ FORM = ("Session Info", "Items")
 class K2is(Format):
     type = ACQUISITION
     display_name = "Gatan K2 IS"
-    # Before em/dm3 (60): a lone .gtg without the DM4 header may be DM3 (decision 165)
+    # Before the formats at 60, which may claim a dropped file (decision 165)
     priority = 61
     reacts_to = frozenset({TAGS, SECTOR})
-    # 2: a lone .gtg without the DM4 header loses the .gtg type (decision 172)
+    # 2: a lone .gtg without a DM header loses the .gtg type (decisions 172, 183)
     version = "2"
     # 2: every tag but the user-interface settings (decision 129), not rounded
     extractor_version = "3"
@@ -74,10 +74,14 @@ class K2is(Format):
                     f"{tags.name}: {len(mine)} sector files {stem}*.bin, "
                     f"a K2IS acquisition has {SECTORS}",
                 )
-            # A lone .gtg: of the type only with the DM4 header (decision 147);
-            # one that cannot be read keeps its type (dm.header)
-            elif (data := header(d, tags)) is not None and version(data) != 4:
-                d.not_of_type(tags, "no DM4 header")
+            # A lone .gtg: of the type with a DM header; a DM3 one is a file of
+            # interest (decision 183); one that cannot be read keeps its type
+            elif (data := header(d, tags)) is not None:
+                match version(data):
+                    case 3:
+                        d.note(tags, "file of interest: DM3 .gtg, review by hand")
+                    case None:
+                        d.not_of_type(tags, "no DM header")
         orphans = sorted(s.name for s in sectors if s.rel not in taken)
         if orphans:
             d.warn(

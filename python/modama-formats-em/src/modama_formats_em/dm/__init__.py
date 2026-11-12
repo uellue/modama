@@ -3,14 +3,19 @@
 Extraction goes through RosettaSciIO's reader: it parses the tags and skips the
 image data by seeking past it (D7; bytes read per file in the tests). `.dmw`
 files, typed by their name, are claimed by `em/dmw` when they have a DM header
-and described by all their tags (change recognition-checks-content, E1).
+and described by all their tags (change recognition-checks-content, E1);
+`.dmwx` files, ZIPs of a workspace and its images, by `em/dmwx` (E4).
 """
 
+import io
 import os
+import struct
+import zipfile
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import suppress
 from copy import deepcopy
 from pathlib import Path
+from typing import BinaryIO
 
 from modama_crawler.formats import (
     Collection,
@@ -28,6 +33,21 @@ HERE = Path(__file__).parent
 BUFFER = 64 * 1024
 HEADER = 16  # bytes version() needs: the DM4 header's byte order flag ends at 16
 DMW = "application/x.dm-dmw"
+DMWX = "application/x.dm-dmwx"
+# A ZIP's local file header (APPNOTE 4.3.7): 30 bytes, then the member's name
+LOCAL = struct.Struct("<4s22xHH")  # signature, ..., name length, extra length
+ZIP_HEAD = LOCAL.size + 1024  # with a first member's name of up to 1,024 bytes
+
+
+def first_member(data: bytes) -> str | None:
+    """The name of a ZIP's first member from its first bytes, None if they are not a ZIP's local header."""
+    if len(data) < LOCAL.size:
+        return None
+    signature, n, _ = LOCAL.unpack_from(data)
+    name = data[LOCAL.size : LOCAL.size + n]
+    if signature != b"PK\3\4" or len(name) < n:
+        return None
+    return name.decode("utf-8", "replace")
 
 
 def version(data: bytes) -> int | None:
@@ -41,12 +61,12 @@ def version(data: bytes) -> int | None:
     return v if flag in (bytes(4), b"\0\0\0\1") else None
 
 
-def header(d: Directory, e: Entry) -> bytes | None:
-    """The first HEADER bytes of e, or None if it cannot be read: then it keeps its type, the crawl warns
+def header(d: Directory, e: Entry, n: int = HEADER) -> bytes | None:
+    """The first n bytes of e, or None if it cannot be read: then it keeps its type, the crawl warns
     at it, and the directory is recognised again next crawl (Directory.cannot_read), while the format's
     other datasets stand (change recognition-checks-content, code review finding 1)."""
     try:
-        return d.read(e, HEADER)
+        return d.read(e, n)
     except OSError as error:
         d.cannot_read(e, error)
         return None
@@ -74,18 +94,23 @@ def parsed(path: str):
 
     A small buffer and readahead off (F14); the image data is never read.
     """
-    from rsciio.digitalmicrograph._api import (  # imports dask: in the worker only
-        DigitalMicrographReader,
-    )
-
     with open(path, "rb", buffering=BUFFER) as f:
         # The advice is an optimisation: a file system that refuses it, or a
         # platform without it, still reads the file (as mime.py)
         if hasattr(os, "posix_fadvise"):
             with suppress(OSError):
                 os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
-        dm = DigitalMicrographReader(f)
-        dm.parse_file()
+        return parsed_from(f)
+
+
+def parsed_from(f: BinaryIO):
+    """RosettaSciIO's DM reader with the tag tree of the open file f parsed (a file, or a ZIP member's bytes)."""
+    from rsciio.digitalmicrograph._api import (  # imports dask: in the worker only
+        DigitalMicrographReader,
+    )
+
+    dm = DigitalMicrographReader(f)
+    dm.parse_file()
     return dm
 
 
@@ -238,6 +263,44 @@ class Dmw(Format):
         return Extracted(summary=[f"{p} {v}" for p, v in found], subjects=[], values={})
 
 
+class Dmwx(Format):
+    """A compressed workspace: a ZIP whose first member is a .dmw, as one dataset (decision 190).
+
+    Described by the inner workspace's tags and the archive's members; the
+    images in it are never read (spec formats/dm, "A compressed workspace is
+    described by its workspace and its members").
+    """
+
+    type = DMWX
+    priority = 61  # as em/dmw (decision 165)
+    reacts_to = frozenset({type})
+
+    def recognize(self, d: Directory) -> Iterable[Dataset]:
+        for e in d.of_type(self.type):
+            if (data := header(d, e, ZIP_HEAD)) is None:
+                continue
+            name = first_member(data)
+            if name is not None and name.lower().endswith(".dmw"):
+                yield Dataset(anchor=e.rel, basis="ZIP, first member a .dmw")
+            else:
+                d.not_of_type(e, "no .dmw first in a ZIP")
+
+    def extract(self, dataset: Dataset, root: str) -> Extracted:
+        """The inner workspace's tags, then each member's name and size: the central directory and the .dmw are read, no image."""
+        # Unbuffered: zipfile then reads what it asks for, the end record, the
+        # central directory and the one member, nothing of the images around it
+        with (
+            open(root + dataset.anchor, "rb", buffering=0) as f,
+            zipfile.ZipFile(f) as z,
+        ):
+            members = z.infolist()
+            inner = next(i for i in members if i.filename.lower().endswith(".dmw"))
+            workspace = parsed_from(io.BytesIO(z.read(inner))).tags_dict
+        summary = [f"{p} {v}" for p, v in tag_paths(workspace)]
+        summary += [f"member {i.filename} {i.file_size} B" for i in members]
+        return Extracted(summary=summary, subjects=[], values={})
+
+
 class Tags(dict):
     """A tag group as HyperSpy's metadata tree hands it to RosettaSciIO's conversions:
     spaces in keys as underscores, `get` by a dotted path."""
@@ -276,4 +339,6 @@ def mapped(original: dict, mapping: dict) -> dict:
 
 
 # This part of the collection, for its tests; the package's COLLECTION joins the parts.
-COLLECTION = Collection("em", [Dm3(), Dm4(), Dmw()], mime_files=(HERE / "dm.xml",))
+COLLECTION = Collection(
+    "em", [Dm3(), Dm4(), Dmw(), Dmwx()], mime_files=(HERE / "dm.xml",)
+)

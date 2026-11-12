@@ -2,9 +2,10 @@ fixtures/stem_image_dm3/test_STEM_image.dm3,
 fixtures/cl_image_dm4/test-MonarcCL_mono-image.dm4 and
 fixtures/rgba_image_dm4/test-8.dm4 are test files of
 RosettaSciIO (https://github.com/hyperspy/rosettasciio), copied unchanged from
-its tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/. The fixtures
-dmw_file and dm3_dmw are copies of the first two under .dmw names, made at
-test time by generate.py.
+its tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/. The fixture
+dm3_dmw is a copy of the first under a .dmw name, and compressed_workspace
+holds the second, compressed, in a ZIP; both are made at test time by
+generate.py.
 
 Copyright 2007-2026 The HyperSpy developers.
 
@@ -12,4 +13,9 @@ They are distributed under the GNU General Public License, version 3 or (at
 your option) any later version, as RosettaSciIO is; the licence text is in
 ../../../../COPYING.rosettasciio, copied from RosettaSciIO's COPYING.txt.
 
-The rest of modama-formats-em is MIT-licensed; see ../../../../LICENSE.
+fixtures/workspace/exemplary_workspace.dmw is a DigitalMicrograph workspace
+that its owner saved with Gatan Microscopy Suite for these tests and agreed to
+publish here (2026-11-12), unchanged. It holds tags only: the names and window
+positions of two images, which are not included. It is distributed under the
+MIT licence of modama-formats-em, as is the rest of modama-formats-em; see
+../../../../LICENSE.

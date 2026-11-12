@@ -39,4 +39,14 @@
     <sub-class-of type="application/x.dm4"/>
     <glob pattern="*.dmw"/>
   </mime-type>
+  <!-- A compressed workspace as Gatan Microscopy Suite writes it (observed
+       2026-11-12): a ZIP whose first member is the workspace
+       <name>/<name>.dmw, then <name>/files/ with the images it names, all
+       deflated. The name decides; the format em/dmwx checks that the first
+       member is a .dmw (change recognition-checks-content, decision 190). -->
+  <mime-type type="application/x.dm-dmwx">
+    <comment>Gatan Digital Micrograph workspace (compressed)</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.dmwx"/>
+  </mime-type>
 </mime-info>

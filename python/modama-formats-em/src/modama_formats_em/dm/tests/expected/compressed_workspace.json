@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/exemplary_workspace.dmwx",
+      "basis": "ZIP, first member a .dmw",
+      "collapsed": false,
+      "format": "em/dmwx",
+      "members": [
+        "/exemplary_workspace.dmwx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm-dmwx",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

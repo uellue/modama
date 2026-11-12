@@ -5,6 +5,7 @@ Run with -s to see each description, its subjects and the bytes the extractor re
 
 import errno
 import os
+import zipfile
 
 import pytest
 from modama_crawler import extraction
@@ -35,59 +36,162 @@ def test_a_misnamed_file(collection_tests, tmp_path):
 def test_a_dmw_file_with_the_dm4_header(collection_tests, tmp_path):
     # The name decides over the DM4 header; the DM4 format does not take it (F15),
     # em/dmw does (decision 173)
-    result = recognise(collection_tests, "dmw_file", tmp_path)
+    result = recognise(collection_tests, "workspace", tmp_path)
     (d,) = result.datasets
     assert (d.type, d.format) == ("application/x.dm-dmw", "em/dmw")
     assert result.all_warnings() == []
     # Its record names the .dmw type, not a DM image, and its extraction does not fail
-    (dmw,) = described(collection_tests, "dmw_file", tmp_path / "x")
+    (dmw,) = described(collection_tests, "workspace", tmp_path / "x")
     assert dmw.description.endswith(
-        "; Gatan Digital Micrograph workspace, 1 file, 611.4 kB, in /"
+        "; Gatan Digital Micrograph workspace, 1 file, 846 B, in /"
     )
     assert "Digital Micrograph (DM" not in dmw.description
     # One name for the type, in the subject as in the description (code review finding 7)
     assert dmw.subjects == ["Gatan Digital Micrograph workspace"]
 
 
+# A workspace as GMS writes it (2026-11-12): root tags only, no ImageList
+WORKSPACE = [
+    "File count 2",
+    "File name 0 .\\exemplary_workspace\\h1.dm4",
+    "File name 1 .\\exemplary_workspace\\100 deg C.dm4",
+    "Frame 0 None",
+    "Frame 1 None",
+    "Window 0 (217, 84, 646, 536)",
+    "Window 1 (641, -17, 835, 207)",
+    "Workspace name exemplary_workspace",
+]
+
+
 def test_a_representative_dmw_file(collection_tests, tmp_path):
-    (dmw,) = described(collection_tests, "dmw_file", tmp_path)
+    (dmw,) = described(collection_tests, "workspace", tmp_path)
     assert dmw.dataset.basis == "Digital Micrograph header"
-    summary = dmw.dataset.extraction.extracted.summary
-    # Every tag, in the reader's order, nothing left out (decision 173)
-    assert dmw.description.startswith("ApplicationBounds (0, 0, 703, 1102), ")
-    assert len(summary) == 298
-    assert "ImageList.TagGroup1.ImageTags.DataBar.Device Name DigiScan" in summary
-    # The tags, not the image data, in reads of at most 64 KiB (as for DM images)
-    assert_tags_read(dmw, "/conditions_00C.dmw")
+    # Every tag as the reader gives it, in its order (decision 173), the Windows
+    # paths with their backslashes; the images it names are not there
+    assert dmw.dataset.extraction.extracted.summary == WORKSPACE
+    assert dmw.description == (
+        ", ".join(WORKSPACE)
+        + "; Gatan Digital Micrograph workspace, 1 file, 846 B, in /"
+    )
+    assert_tags_read(dmw, "/exemplary_workspace.dmw")
+
+
+def stored(ct, fixture, tmp_path):
+    """The dataset of a fixture as a crawl stores it: recognised, then extracted in a worker."""
+    tree = ct.materialise(fixture, tmp_path)
+    result = walk(tree, ct.collection.formats)
+    extraction.extract(result, ct.collection.formats, str(tree), workers=1)
+    assert result.all_warnings() == []
+    (d,) = result.datasets
+    return d
 
 
 def test_the_stored_dmw_description(collection_tests, tmp_path):
-    # What the extraction stores, as a crawl runs it (code review finding 5): every
-    # tag, each phrase cut to 4,096 characters (extraction.MAX_STRING)
-    tree = collection_tests.materialise("dmw_file", tmp_path)
-    result = walk(tree, collection_tests.collection.formats)
-    formats = collection_tests.collection.formats
-    extraction.extract(result, formats, str(tree), workers=1)
-    (d,) = result.datasets
-    stored = d.extraction.extracted.summary
-    assert len(stored) == 298 <= extraction.MAX_ITEMS
-    (cut,) = [p for p in stored if len(p) == extraction.MAX_STRING]
+    # What the extraction stores (code review finding 5): the workspace as it is
+    d = stored(collection_tests, "workspace", tmp_path)
+    assert d.extraction.extracted.summary == WORKSPACE
+
+
+def test_a_tag_longer_than_storage_keeps(collection_tests, tmp_path):
+    # Each phrase cut to 4,096 characters (extraction.MAX_STRING): the DM3
+    # stand-in's colour table, 6,053 characters as the extractor gives it
+    summary = stored(collection_tests, "dm3_dmw", tmp_path).extraction.extracted.summary
+    assert len(summary) == 236 <= extraction.MAX_ITEMS
+    (cut,) = [p for p in summary if len(p) == extraction.MAX_STRING]
     clut = "DocumentObjectList.TagGroup0.ImageDisplayInfo.CLUT [(0, 0, 0), "
     assert cut.startswith(clut)
-    assert max(len(p) for p in stored) == extraction.MAX_STRING
+    assert max(len(p) for p in summary) == extraction.MAX_STRING
+
+
+def test_a_representative_compressed_workspace(collection_tests, tmp_path):
+    # Decision 190: the inner workspace's tags, then the members; no image read
+    (dmwx,) = described(collection_tests, "compressed_workspace", tmp_path)
+    d = dmwx.dataset
+    assert (d.type, d.format, d.basis) == (
+        "application/x.dm-dmwx",
+        "em/dmwx",
+        "ZIP, first member a .dmw",
+    )
+    image = "exemplary_workspace/files/test-MonarcCL_mono-image.dm4"
+    size = os.path.getsize(
+        os.path.join(FIXTURES, "cl_image_dm4", os.path.basename(image))
+    )
+    assert d.extraction.extracted.summary == [
+        *WORKSPACE,
+        "member exemplary_workspace/exemplary_workspace.dmw 846 B",
+        "member exemplary_workspace/files/ 0 B",
+        f"member {image} {size} B",
+    ]
+    assert dmwx.subjects == ["Gatan Digital Micrograph workspace (compressed)"]
+    # The archive's own size depends on zlib's compression
+    assert "; Gatan Digital Micrograph workspace (compressed), 1 file, " in (
+        dmwx.description
+    )
+    # The end record, the central directory and the workspace: less than the image
+    with zipfile.ZipFile(
+        tmp_path / "compressed_workspace/exemplary_workspace.dmwx"
+    ) as z:
+        compressed = z.getinfo(image).compress_size
+        dmw = z.getinfo("exemplary_workspace/exemplary_workspace.dmw").compress_size
+    assert dmwx.bytes_read < compressed
+    assert set(dmwx.reads) == {"/exemplary_workspace.dmwx"}
+    assert max(dmwx.reads["/exemplary_workspace.dmwx"]) <= max(dmw, 4096)
+
+
+@pytest.mark.parametrize(
+    "fixture, name, kept",
+    [
+        ("text_dmwx", "notes", "text/plain"),
+        ("zip_without_workspace", "other", "application/zip"),
+    ],
+)
+def test_a_file_named_like_a_compressed_workspace(
+    collection_tests, tmp_path, fixture, name, kept
+):
+    result = recognise(collection_tests, fixture, tmp_path)
+    (d,) = result.datasets
+    assert (d.anchor, d.type, d.format) == (f"/{name}.dmwx", kept, "")
+    assert d.basis == (
+        "single file; em/dmwx: not application/x.dm-dmwx, no .dmw first in a ZIP"
+    )
     assert result.all_warnings() == []
+
+
+def test_a_compressed_workspace_that_cannot_be_read(
+    collection_tests, tmp_path, monkeypatch
+):
+    # As for .dmw (code review finding 1): it keeps its type, the other stands
+    from modama_crawler import formats
+
+    tree = collection_tests.materialise("compressed_workspace", tmp_path)
+    (tree / "broken.dmwx").write_text("hello\n")
+    monkeypatch.setattr(formats, "open", stale("broken.dmwx"), raising=False)
+    result = walk(tree, collection_tests.collection.formats)
+    datasets = {d.anchor: d for d in result.datasets}
+    assert datasets["/exemplary_workspace.dmwx"].format == "em/dmwx"
+    assert (datasets["/broken.dmwx"].type, datasets["/broken.dmwx"].basis) == (
+        "application/x.dm-dmwx",
+        "single file",
+    )
+    assert result.all_warnings() == [
+        (
+            "/broken.dmwx",
+            "em/dmwx: cannot read broken.dmwx: Stale file handle; type kept",
+        )
+    ]
+    assert result.listings["/"].retry
 
 
 def test_a_dmw_file_that_cannot_be_read(collection_tests, tmp_path, monkeypatch):
     # Code review finding 1: one unreadable .dmw keeps its type, and the other's dataset stands
     from modama_crawler import formats
 
-    tree = collection_tests.materialise("dmw_file", tmp_path)
+    tree = collection_tests.materialise("workspace", tmp_path)
     (tree / "broken.dmw").write_text("hello\n")
     monkeypatch.setattr(formats, "open", stale("broken.dmw"), raising=False)
     result = walk(tree, collection_tests.collection.formats)
     datasets = {d.anchor: d for d in result.datasets}
-    assert datasets["/conditions_00C.dmw"].format == "em/dmw"
+    assert datasets["/exemplary_workspace.dmw"].format == "em/dmw"
     broken = datasets["/broken.dmw"]
     assert (broken.type, broken.format, broken.basis) == (
         "application/x.dm-dmw",

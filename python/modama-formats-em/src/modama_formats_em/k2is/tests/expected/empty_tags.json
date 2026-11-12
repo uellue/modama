@@ -2,7 +2,7 @@
   "datasets": [
     {
       "anchor": "/empty.gtg",
-      "basis": "single file; em/k2is: not application/x.dm-gtg, no DM4 header",
+      "basis": "single file; em/k2is: not application/x.dm-gtg, no DM header",
       "collapsed": false,
       "format": "",
       "members": [

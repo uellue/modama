@@ -113,7 +113,7 @@ def test_a_file_named_like_a_tag_file(collection_tests, tmp_path, fixture, name)
     result = recognise(collection_tests, fixture, tmp_path)
     (d,) = result.datasets
     assert (d.anchor, d.type, d.format) == (f"/{name}.gtg", "text/plain", "")
-    assert d.basis == "single file; em/k2is: not application/x.dm-gtg, no DM4 header"
+    assert d.basis == "single file; em/k2is: not application/x.dm-gtg, no DM header"
     assert description(d).startswith("Plain text document, 1 file, ")
     assert result.all_warnings() == []
 
@@ -130,7 +130,7 @@ def test_records_comments_a_single_file_whose_name_type_was_dropped(tmp_path):
     out = run.stdout.decode()
     comment = (
         "<!-- /notes.gtg: text/plain, basis: single file; "
-        "em/k2is: not application/x.dm-gtg, no DM4 header -->"
+        "em/k2is: not application/x.dm-gtg, no DM header -->"
     )
     assert out.split(comment, 1)[1].lstrip().startswith("<record>")
     assert "<!-- 1 records (1 single files by type), 0 warnings, 0 skipped -->" in out
