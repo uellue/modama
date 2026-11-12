@@ -16,7 +16,7 @@ Written for the search stack (`/prototypes/search-stack/`), where it is installe
 
 ## Output
 
-`trace` prints the path, then the keys the stages hold its dataset under (once, as a header), then one line per stage: stage, state, time and detail, with long details continued on indented lines. The keys: the path in the tree, the OAI identifier in the crawler and OAI-PMH, the identifier after its last `:` in the harvest, `<endpoint uuid>::<path>` in the warehouse, the record URL in the index, the dataset's path as the search query. A member file (the raw file of an EMPAD pair) is traced through the dataset that holds it. `>` marks the first stage that diverges.
+`trace` prints the path, then the keys the stages hold its dataset under (once, as a header), then one line per stage: stage, state, time and detail, with long details continued on indented lines. The keys: the path in the tree, the OAI identifier in the crawler and OAI-PMH, the identifier after its last `:` in the harvest, `<endpoint uuid>::<path>` in the warehouse, the record URL in the index, the dataset's path as the search query. A member file (the raw file of an EMPAD pair) is traced through the dataset that holds it. The crawler line's detail ends with that dataset's basis, for example `basis: single file; em/k2is: not application/x.dm-gtg, no DM4 header` for a text file named `notes.gtg`. `>` marks the first stage that diverges.
 
 States: `ok`; `missing`; `differs` (holds another version than the stage before); `warn` (search: the dataset is a hit, but not the first); and flags in upper case:
 
@@ -42,7 +42,7 @@ Environment variables; the defaults are the e2e stack's service names. Credentia
 
 ## What it reads
 
-From the crawler's database, as an interface (change it only together with this tool): `datasets (anchor)`, `members (dataset_id, path)`, `records (identifier, datestamp, metadata->title, metadata->identifier)`, `crawl_runs (started_at, updated_at, finished_at, outcome, counts)`. A run without `finished_at` whose `updated_at` is more than 120 s old is stale. The key rules (`src/modama_chain/crawler.py`) repeat the crawler's, with the namespace and URL prefix read from a stored record.
+From the crawler's database, as an interface (change it only together with this tool): `datasets (anchor, basis)` (the basis on the crawler line: why the crawler recognised the dataset, with the note of a name type a format dropped), `members (dataset_id, path)`, `records (identifier, datestamp, metadata->title, metadata->identifier)`, `crawl_runs (started_at, updated_at, finished_at, outcome, counts)`. A run without `finished_at` whose `updated_at` is more than 120 s old is stale. The key rules (`src/modama_chain/crawler.py`) repeat the crawler's, with the namespace and URL prefix read from a stored record.
 
 From upstream (EOSC metadata-warehouse v1.10.0, data-commons-search 0.10.2), all in `src/modama_chain/warehouse.py`: the tables `endpoints`, `harvest_runs`, `harvest_events`, `records`; the record URL as OpenSearch `_id`; `/search?q=&resource=datasets`; runs of the Airflow DAG `warehouse_transform_index` with `harvest_run_id` in their conf.
 

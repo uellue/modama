@@ -207,6 +207,33 @@ def test_the_harvester_keeps_the_part_after_the_last_colon():
 # Output layout A (@weber 2026-11-05): keys once, then short stage lines
 
 
+# The crawler line shows the dataset's basis
+
+
+def test_a_text_file_named_like_a_k2is_tag_file():
+    from modama_chain.chain import crawler_detail
+    from modama_chain.crawler import Holding
+
+    basis = "single file; em/k2is: not application/x.dm-gtg, no DM4 header"
+    found = Holding("/notes.gtg", False, basis)
+    assert crawler_detail(found, True, True) == f"dataset; basis: {basis}"
+
+
+def test_a_plain_file_and_a_member():
+    from modama_chain.chain import crawler_detail
+    from modama_chain.crawler import Holding
+
+    plain = Holding("/a.txt", False, "single file")
+    assert crawler_detail(plain, True, True) == "dataset; basis: single file"
+    member = Holding("/scan/h.xml", True, "header names the raw file")
+    assert (
+        crawler_detail(member, True, False)
+        == "member of /scan/h.xml; basis: header names the raw file"
+    )
+    # No dataset holds it: nothing to show
+    assert crawler_detail(None, False, True) == "keys rebuilt from the path"
+
+
 def test_trace_lines_show_the_keys_once_and_wrap_long_details():
     from modama_chain.cli import trace_lines
 

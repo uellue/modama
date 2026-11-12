@@ -293,7 +293,10 @@ def test_the_raw_file_of_an_empad_pair(tree):
     (header,) = (DATA / "scan").glob("*.xml")
     stages, first = trace(f"/scan/{raw.name}")
     assert first is None
-    assert stages["crawler"].detail == f"member of /scan/{header.name}"
+    # Then the dataset's basis (spec chain-trace, change recognition-checks-content)
+    assert stages["crawler"].detail.startswith(
+        f"member of /scan/{header.name}; basis: "
+    )
     assert stages["index"].key.endswith(f"/scan/{header.name}")
 
 
