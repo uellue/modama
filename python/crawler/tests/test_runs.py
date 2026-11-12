@@ -1,5 +1,6 @@
 """Crawl runs (the `crawl-runs` spec): crawl and runs as typed, against a throwaway database."""
 
+import os
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -68,6 +69,43 @@ def test_the_root_disappears(conn, env, tree, tmp_path):
         "SELECT identifier, datestamp FROM records ORDER BY 1"
     ).fetchall()
     assert after == before
+
+
+# "A crawl stores no records while the user database cannot name its check user"
+
+
+def test_the_name_service_is_down(conn, env, tree):
+    assert shell(f"{CRAWLER} crawl --root {tree}", env).returncode == 0
+    before = conn.execute(
+        "SELECT identifier, datestamp FROM records ORDER BY 1"
+    ).fetchall()
+    (tree / "new.txt").write_text("new")  # would add a record
+    # 4242: a uid the user database does not know, as when sssd does not answer
+    run = shell(f"SSSD_CHECK_USER=4242 {CRAWLER} crawl --root {tree}", env)
+    assert run.returncode != 0
+    assert "Traceback" not in run.stderr
+    assert "does not know SSSD_CHECK_USER 4242: sssd is not answering" in run.stderr
+    *_, (outcome, *_, error) = runs(conn)
+    assert outcome == "failed" and "SSSD_CHECK_USER 4242" in error
+    after = conn.execute(
+        "SELECT identifier, datestamp FROM records ORDER BY 1"
+    ).fetchall()
+    assert after == before
+
+
+def test_the_name_service_answers(conn, env, tree):
+    uid, gid = os.getuid(), os.getgid()
+    run = shell(f"SSSD_CHECK_USER={uid}:{gid} {CRAWLER} crawl --root {tree}", env)
+    assert run.returncode == 0, run.stderr
+    ((outcome, *_, changed, error),) = runs(conn)
+    assert (outcome, changed, error) == ("finished", 3, None)
+
+
+def test_the_check_user_is_not_a_uid(conn, env, tree):
+    run = shell(f"SSSD_CHECK_USER=alice {CRAWLER} crawl --root {tree}", env)
+    assert run.returncode == 2
+    assert "SSSD_CHECK_USER must be a uid or uid:gid: 'alice'" in run.stderr
+    assert runs(conn) == []
 
 
 def test_progress_of_a_slow_walk(conn, tree, caplog):
