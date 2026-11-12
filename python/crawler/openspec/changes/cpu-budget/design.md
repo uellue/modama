@@ -115,6 +115,40 @@ Command, one throwaway container per row: `scratchpad/batchmem/run.sh N K T [SUB
 
 Not measured: the bulk request's HTTP buffers and the PostgreSQL writes (replaced; the bulk body was 2.4 MB); a batch inside Airflow (the supervisor's 0.25 GB is read from the running worker); staging's records (their token lengths are not known here); the sub-batch's cost on short texts and its effect at T > 1 (task 6.3).
 
+## Queued batches, measured (task 3.5)
+
+`perf/indexing-bench.sh 16000 250` in the VM (2026-11-12, the image without patch 0001), 64 transform batches, `task_queued_timeout` 60 s (`PERF_QUEUED_TIMEOUT=60`, Airflow checks every 120 s), the task limits at 1024:
+
+| Run | P | Pool `transform` | Transform batches | Records indexed | Queued → started (median, max) |
+|---|---|---|---|---|---|
+| the budget | 8 | 8 (set by `budget.py`) | 64 succeeded at try 1 | 16,000 | 0.1 s, 4.2 s |
+| one process | 1 | 1 | 64 succeeded at try 1 | 16,000 | 0.0 s, 5.0 s (over 1,048 s of batches) |
+| one process, the pool's hold removed | 1 | 1024 (`PERF_TRANSFORM_POOL=1024`) | 46 failed at try 3; 3, 5 and 10 succeeded at tries 1, 2 and 3 | 4,500; both DAG runs failed | 31.1 s, 64.7 s (of those that started) |
+
+So D6 (i) holds: with the pool the batches beyond P wait in the scheduler, where the timeout does not apply; without it they wait in the broker and are failed. The runs: `PERF_QUEUED_TIMEOUT=60 perf/indexing-bench.sh 16000 250 ""`, the same with `1`, and with `1` and `PERF_TRANSFORM_POOL=1024`; their raw outputs stayed in the session's scratchpad (not committed).
+
+## The budget against today, measured (tasks 6.1, 6.2)
+
+`perf/indexing-bench.sh 16000 250` in the VM (8 vCPUs, 2026-11-12; image with patches 0002 and 0003, without 0001), the same 16,000 seeded records each time, the stack reset before each run:
+
+| Run | Transform worker | Indexing | Records/s | Worker CPU s (cores busy of 8) | CPU pressure, s | Threads per batch process | Peak RSS per batch | Load, max |
+|---|---|---|---|---|---|---|---|---|
+| the budget | 8 × 1 | 267 s | 59.9 | 1,472 (5.5) | 71 | 2 | 0.36 to 0.40 GiB | 13.5 |
+| today (`PERF_TODAY=1`: 1 process, the libraries' defaults) | 1 × default | 1,232 s | 13.0 | 3,662 (3.0) | 143 | 23 | 0.37 to 0.39 GiB | 7.7 |
+| one process, budget's threads (`TRANSFORM_PROCESSES=1`) | 1 × 8 | 1,054 s | 15.2 | 3,031 (2.9) | 90 | 16 | 0.37 to 0.39 GiB | 6.9 |
+
+The budget indexes 4.6 times as fast as today, with 40 % of the CPU time per record, and the worker's CPU time stays within the CPUs it may use (5.5 of 8; the criterion of 2.4). The machine's load average reached 13.5 with the budget: it counts tasks waiting for a CPU across all containers, and the rest of the stack (harvest, PostgreSQL, OpenSearch) runs alongside; context, not the criterion. The run 4 × 2 (`TRANSFORM_PROCESSES=4 PERF_THREADS=2`) was not run (stopped to free the VM for other work, @weber: a one-off experiment): `PERF_THREADS=2 perf/indexing-bench.sh 16000 250 4`. Embedding alone (`perf/embed-bench.py`, 2,000 short texts per process, sub-batch 32): 1:8 47, 2:4 61, 4:2 108, 5:1 98, 8:1 146 texts/s; the budget's 8 × 1 is the best (task 6.1). On short texts the sub-batch of 32 is faster than fastembed's 256 (8 × 1: 128 and 134 against 120 and 121 texts/s, CPU per text 50 against 56 ms).
+
+## Patch 0001 on the same records (task 3.9)
+
+After the final e2e run (2026-11-12), its 17 records, in throwaway containers of both images (`scratchpad/same-records.sh` of the session, `perf/batch-memory.py 250 0 T` and `perf/validator-check.py`):
+
+- `perf/validator-check.py`: 17 records, 51 cases (as is, without the first required property, the first property's type broken), 34 rejected by `jsonschema.validate`, 0 differences against the one validator.
+- The bulk bodies (`BULK_OUT`) of a batch of 250 from the image without 0001 and with it, the budget's thread variables both times: byte-identical, embeddings included.
+- One batch of 250, the process alone on the VM: without 0001, T = 1: 22.9 and 23.0 s; with 0001, T = 1: 15.8 and 15.8 s (1.45× on these short records; staging's longer records spent more of a batch in validation, F16); the libraries' defaults without 0001 (today's batch, 8 ONNX threads, 23 threads in all): 15.6 and 14.5 s. The budget's gain is in running P batches at once on the cores (above), not in one batch.
+
+Task 6.3 (`perf/batch-memory.py` at 190 and 512 tokens, sub-batch 32 against 256, T = 1 and 8, with patch 0002 in the image) was not run (stopped to free the VM, @weber: a one-off experiment); the command is in `perf/batch-memory.py`'s header, the earlier numbers in "Measurement of one batch".
+
 ## Verification in the VM, and what only the dev server can settle
 
 - Crawler: unit tests (fake cgroup, patched `os.sched_getaffinity`), a test extractor that reports its threads, also in a replacement worker, the crawler's suite, then a crawl in the stack with `cpus: 4` on the crawler service (log line says 4).
