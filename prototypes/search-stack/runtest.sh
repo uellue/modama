@@ -42,7 +42,7 @@ fi
 SERVICES="crawler crawl-timer crawler-db postgres opensearch transform broker search-api
 matchmaker airflow-postgres airflow-api-server airflow-scheduler airflow-dag-processor airflow-worker
 airflow-worker-transform"
-INITS="warehouse-init airflow-init airflow-accounts"
+INITS="warehouse-init airflow-init airflow-accounts crawler-migrate"
 
 FAILED=0
 check() {  # what, command...
