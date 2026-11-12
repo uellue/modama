@@ -5,6 +5,10 @@
 - **Comparison across stages** (`design/requirements-pipeline.md` 2.5, handover 3): identifier sets per stage, with the trace's rules applied to the differences; for the e2e test first, an admin command if it runs quickly on production and its results are actionable.
 - **Purge of stale entries** (handover 4): warehouse `records` and OpenSearch documents of datasets the crawler no longer publishes, as the trace flags them `STALE`; never touches the data tree.
 - **Crawl timer and harvest trigger** (handover 5): done in the change `harvest-trigger-and-timer` and `prototypes/search-stack/` (2026-11-05), review findings resolved; archived 2026-11-11 (spec `harvest-trigger`). Later the inotify watcher.
+- **CPU budget** (change [`cpu-budget`](openspec/changes/cpu-budget/), R43, 2026-11-12): implemented on its branch (the crawler's count and one math thread per worker, the transform worker's and the search API's start script, the pools, the background services' CPU weight, `cpu-budget.sh`); waiting for @weber's review and the measurement on staging (task 6.4: `./cpu-budget.sh staging`, SMT for the embedding, the DAG limit of 16, the per-process memory). Left from it:
+  - (a) CPU limits in production, whether and how (slices, per-container quotas). @weber: "I don't think we have any limits beyond what we do with docker at this time."
+  - (b) The cgroup version on the dev server and in production (question 152, "let's deal with that later"); `./cpu-budget.sh staging` prints it. Under cgroup v1 the quota is not read (the log lines say so); a v1 branch only if one of them says 1.
+  - (c) A slice of the stack's own with a lower `CPUWeight` on the dev server (compose `cgroup_parent`), so that the devvms go before the whole stack, not only its background services (163); an operator option, described in `/prototypes/search-stack/README.md`, "CPU budget".
 
 Deferred items, roughly in the order they are likely to come up.
 

@@ -1,4 +1,4 @@
-"""Command line: crawl, runs, timer, serve, records. Configuration from environment variables and an optional TOML file."""
+"""Command line: crawl, runs, timer, serve, records, cpu-budget. Configuration from environment variables and an optional TOML file."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
-from . import extraction, harvest, mimedb, render, selection
+from . import cpus, extraction, harvest, mimedb, render, selection
 from .formats import Format, Result
 from .records import build, format_names
 from .server import OAIError, OAIServer, parse_range
@@ -238,6 +238,44 @@ def _workers() -> int | None:
     return int(value) if value else None
 
 
+def _budget(usable: cpus.Usable) -> str:
+    """The crawl's CPU budget as one line: worker processes, math threads, where the number came from (R43)."""
+    workers = _workers()
+    if workers:
+        source = f"set by MODAMA_CRAWLER_EXTRACT_WORKERS; {usable}"
+    else:
+        workers = extraction.default_workers()
+        source = str(usable)
+        if usable.cpus > extraction.MAX_WORKERS:
+            source += f"; at most {extraction.MAX_WORKERS}"
+    return f"CPU budget: {workers} worker processes, 1 math thread each; {source}"
+
+
+def cmd_cpu_budget(args) -> int:
+    """Print the crawl's CPU budget and its inputs, without crawling (spec `cpu-budget`, for cpu-budget.sh)."""
+    usable = cpus.usable()
+    if not usable.cgroup_v2:
+        quota = "not read (no cgroup v2)"
+    elif usable.quota is None:
+        quota = "none"
+    else:
+        quota = f"{usable.quota:g} CPUs (cpu.max of the own cgroup)"
+    value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
+    print(_budget(usable))
+    print(f"  logical CPUs of the affinity: {usable.affinity}")
+    print(f"  cgroup v2: {'yes' if usable.cgroup_v2 else 'no'}; CPU quota: {quota}")
+    print(
+        f"  override: MODAMA_CRAWLER_EXTRACT_WORKERS={value}"
+        if value
+        else "  override: none"
+    )
+    print(
+        "  MODAMA_CRAWLER_EXTRACT_WORKERS=N in the crawler's environment sets the matching and extraction"
+        " processes in place of the count, also above the CPUs (for measurements)"
+    )
+    return 0
+
+
 def _memory() -> int:
     """MODAMA_CRAWLER_EXTRACT_MEMORY, in MiB, as bytes; or the default."""
     value = os.environ.get("MODAMA_CRAWLER_EXTRACT_MEMORY")
@@ -279,46 +317,51 @@ def cmd_crawl(args) -> int:
             log.error("another crawl is running on this database%s", holder)
             return 1
         run_id = start_run(conn, root)
-        heartbeat = _Heartbeat(conninfo, run_id)
-        heartbeat.start()
-        try:
-            result, report, changed = crawl_tree(
-                conn,
-                run_id,
-                root,
-                formats,
-                config,
-                rules,
-                progress=heartbeat,
-                threads=threads,
-            )
-            warnings = _report(result)
-        except (
-            BaseException
-        ) as e:  # Ctrl-C and SIGTERM too: the run must not look running
-            heartbeat.stop()
-            # A signal may have interrupted a query: closing the connection makes the server
-            # roll back the store and release the crawl lock; the failure goes in on a new one
-            conn.close()
+        log.info("%s", _budget(cpus.usable()))
+        # The worker processes inherit one thread per math library (R43). Set while
+        # no other thread runs: libpq reads the environment in the heartbeat's
+        # connect, and setenv is not safe against a concurrent getenv (D3)
+        with cpus.set_num_threads_env(1):
+            heartbeat = _Heartbeat(conninfo, run_id)
+            heartbeat.start()
             try:
-                with psycopg.connect(conninfo) as other:
-                    end_run(
-                        other,
-                        run_id,
-                        "failed",
-                        directories=heartbeat.directories,
-                        files=heartbeat.files,
-                        error=str(e) or type(e).__name__,
-                    )
+                result, report, changed = crawl_tree(
+                    conn,
+                    run_id,
+                    root,
+                    formats,
+                    config,
+                    rules,
+                    progress=heartbeat,
+                    threads=threads,
+                )
+                warnings = _report(result)
             except (
-                psycopg.Error
-            ) as db_error:  # keep the original error; the run shows as stale
-                log.error("cannot record the failed run: %s", db_error)
-            if isinstance(e, OSError):
-                log.error("cannot read %s: %s", e.filename or root, e.strerror)
-                return 2
-            raise
-        heartbeat.stop()
+                BaseException
+            ) as e:  # Ctrl-C and SIGTERM too: the run must not look running
+                heartbeat.stop()
+                # A signal may have interrupted a query: closing the connection makes the server
+                # roll back the store and release the crawl lock; the failure goes in on a new one
+                conn.close()
+                try:
+                    with psycopg.connect(conninfo) as other:
+                        end_run(
+                            other,
+                            run_id,
+                            "failed",
+                            directories=heartbeat.directories,
+                            files=heartbeat.files,
+                            error=str(e) or type(e).__name__,
+                        )
+                except (
+                    psycopg.Error
+                ) as db_error:  # keep the original error; the run shows as stale
+                    log.error("cannot record the failed run: %s", db_error)
+                if isinstance(e, OSError):
+                    log.error("cannot read %s: %s", e.filename or root, e.strerror)
+                    return 2
+                raise
+            heartbeat.stop()
         end_run(
             conn,
             run_id,
@@ -510,25 +553,27 @@ def cmd_records(args) -> int:
         logging.getLogger("modama_crawler").setLevel(logging.ERROR)
     threads = _threads()
     config, formats, _ = _configure(args)
-    try:
-        result = walk(
-            args.path,
+    log.info("%s", _budget(cpus.usable()))
+    with cpus.set_num_threads_env(1):  # the worker processes' math threads (R43)
+        try:
+            result = walk(
+                args.path,
+                formats,
+                exclude=config.exclude,
+                per_path_ignores=config.per_path_ignores,
+                threads=threads,
+                processes=_workers() or extraction.default_workers(),
+            )
+        except OSError as e:
+            log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
+            return 2
+        report = extraction.extract(
+            result,
             formats,
-            exclude=config.exclude,
-            per_path_ignores=config.per_path_ignores,
-            threads=threads,
-            processes=_workers() or extraction.default_workers(),
+            os.path.abspath(args.path),
+            workers=_workers(),
+            memory=_memory(),
         )
-    except OSError as e:
-        log.error("cannot read %s: %s", e.filename or args.path, e.strerror)
-        return 2
-    report = extraction.extract(
-        result,
-        formats,
-        os.path.abspath(args.path),
-        workers=_workers(),
-        memory=_memory(),
-    )
     warnings = result.all_warnings()
     # Everything in path order: one note per skipped entry and per warning, a note and a record per dataset
     NOTE, RECORD = 0, 1
@@ -656,6 +701,11 @@ def main(argv: list[str] | None = None) -> int:
     records.add_argument("--until", metavar="DATESTAMP")
     selection_args(records)
     records.set_defaults(func=cmd_records)
+    budget = sub.add_parser(
+        "cpu-budget",
+        help="print the crawl's worker processes and threads, and where they come from",
+    )
+    budget.set_defaults(func=cmd_cpu_budget)
 
     args = parser.parse_args(argv)
     load_dotenv()
