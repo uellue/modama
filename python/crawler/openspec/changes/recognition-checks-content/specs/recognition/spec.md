@@ -33,15 +33,15 @@ When a format says a file is not of its type, but the file's type did not come f
 - **THEN** `blob` keeps the type `image/png`, and the crawl's warnings name the format, `blob`, `image/png` and the format's reason
 
 ### Requirement: A failed format call leaves every type as it was
-A format call on a directory that fails, or exceeds its byte budget, SHALL leave the types of the directory's files as they were before the call. The bytes the core reads to find a file's new type SHALL count against the budget of the format call that dropped the type.
+A format call on a directory that fails, or exceeds its byte budget, SHALL leave the types of the directory's files as they were before the call. The bytes the core reads to find a file's new type SHALL NOT count against the format call's budget (decision 166); the format's own reads do.
 
 #### Scenario: A format fails after dropping a type
 - **WHEN** `test/tags` says `notes.tags` is not of its type and then raises an exception in the same call
 - **THEN** `notes.tags` is a single file of type `application/x.test-tags`, and the crawl warns that `test/tags` failed on the directory
 
-#### Scenario: The new type's detection exceeds the budget
-- **WHEN** `test/tags` says that `big.tags`, 20,000 bytes of text, is not of its type, with a byte budget of 1,000 bytes
-- **THEN** `big.tags` is a single file of type `application/x.test-tags`, and the crawl warns that `test/tags` was skipped on the directory for exceeding its budget
+#### Scenario: The new type's detection does not use the format's budget
+- **WHEN** `test/tags` reads 16 bytes of `big.tags`, 20,000 bytes of text, and says it is not of its type, with a byte budget of 1,000 bytes
+- **THEN** `big.tags` is a single file of type `text/plain`, and no warning about `test/tags`'s budget is given
 
 ### Requirement: A dropped type lasts until the file or the rules change
 The new type and basis of a file whose name type a format dropped SHALL be stored with its dataset like any recognition result. A crawl of the unchanged directory under the same rules SHALL give the same type and basis without reading the file. A crawl after the file changed SHALL check it again.

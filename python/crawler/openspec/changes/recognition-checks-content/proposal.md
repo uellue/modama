@@ -1,4 +1,6 @@
-# Proposal
+# Proposal: recognition checks the content
+
+Renamed from `extractor-rejects-type` (decision 168, 2026-11-12); the branch keeps its name, `worktree-agent-acfa97ac4ec4925f5`.
 
 ## In short
 
@@ -74,4 +76,8 @@ None.
 - **148, showing rejections:** "a normal rejection is business as usual. It should go into the per-item tracing / observability". So: no count in the crawl report, and no warning. The reason is in the dataset's basis, shown by `records --verbose` (spec `records-cli`) and by `modama-chain trace` (spec `chain-trace`).
 - **149, check during recognition instead of at extraction:** "149 sounds sensible!" This revision of the change.
 - **D2's case of the first version** (a single file in a subdirectory that a collection format adopted as a part): "Let's go with your lean until we find a specific example where that is wrong". It holds without a rule of its own. The subdirectory is recognised before its parent, so the file already has its new type when the parent adopts it.
+- **165, the order rule:** "yes, go with your lean please!": a format that drops types runs before the formats its files fall back to (`em/dmw` and K2IS at priority 61, D3).
+- **166, the re-detection and the read budget:** "yes, please change. First we make it work, and we fix the 'big ticket items'. This sounds like a keyhole case where we focus on it working correctly. We fix when it shows up as a real world drain in monitoring or benchmarking." Read as: the re-detection is not charged to the format's 1 MiB budget (the alternative), so a folder of many misnamed files cannot push a format over its budget and put every type back; its reads are the walk's ordinary reads.
+- **167, the trace shows every dataset's basis:** "Yes, longer line is OK. we adjust when we encounter it in the real world."
+- **168, the name:** "user facing yes, but we don't need to muck with branch names as long as we know what is what." The change is renamed `recognition-checks-content` (its directory and title, what people read); the branch keeps its name.
 - Also from @weber, for later (backlog): "it would be good to be able to scan a real world crawl result for 'suspicious' results. Maybe the crawling, recognition and extraction logic could tag 'interesting' results for manual follow-up?"
