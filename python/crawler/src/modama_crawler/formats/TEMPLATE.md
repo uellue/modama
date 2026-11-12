@@ -120,7 +120,7 @@ To see what a format makes of real files while you write it: `modama-chain brows
 
 What to keep (@weber, decisions 129 and 230): what the file says, without editorializing. With a reader that maps metadata to standard names (RosettaSciIO), take its original metadata first, complete but for GUI settings and large arrays, and the mapped metadata as a second, labelled section; where they disagree, the original wins. Interpreting metadata across vendors is out of scope: the user makes their own sense of what the file says (`python/modama-formats-em/README.md`, "Values and units").
 
-Keep every entry the file has, minus a skip list, never a list of wanted entries (@weber, 2026-11-12, for all formats: "we may encounter new and different tags in different files. So we don't keep a positive list, but a negative 'skip these' list"). A header with key/value lines keeps all its keys; a tag tree keeps all its tags; the skip list (GUI settings, placeholders, and content not suitable for text display: too large, such as long arrays and very long strings, or binary, such as raw bytes, unread arrays and text full of control characters) is one named list per format, documented in its spec with examples; the size and binary checks are the same for every format. A summary line's few chosen entries are the only positive list. Test it with an entry nobody has seen before: it must arrive in the values.
+Keep every entry the file has, minus a skip list, never a list of wanted entries (@weber, 2026-11-12, for all formats: "we may encounter new and different tags in different files. So we don't keep a positive list, but a negative 'skip these' list"). A header with key/value lines keeps all its keys; a tag tree keeps all its tags; the skip list (GUI settings, placeholders, and content not suitable for text display: too large, such as long arrays and very long strings, or binary, such as raw bytes, unread arrays and text full of control characters) is one named list per format, documented in its spec with examples; the size and binary checks are the same for every format (`modama_crawler.formats.values.textual`). A summary line's few chosen entries are the only positive list. Test it with an entry nobody has seen before: it must arrive in the values.
 
 A format may also read metadata from its datasets' files, after recognition:
 
@@ -184,3 +184,23 @@ diff gets reviewed before it is committed. Your tests run with your definitions
 and the core's only, whatever else is installed.
 
 Try a directory by hand: `modama-crawler records --verbose PATH`.
+
+## Lessons from the EM formats
+
+A checklist for every new format, from what `modama-formats-em` taught (where each comes from in brackets; the decision log is `design/architecture.md`).
+
+- [ ] **What the file says, without editorializing**: no rounding, no unit guessed from a value's size or converted, no number from one entry joined with a unit from another; interpreting metadata across vendors is out of scope. (@weber 2026-11-11; decision log 2026-11-12, 230; `modama-formats-em` README, "Values and units")
+- [ ] **`original_metadata`**: flat dotted names (`a.b[2].c`) to values as found, every entry the file has minus one skip list per format (GUI settings, placeholders, values not suitable for text), never a list of wanted entries; the skip list is named in code and in the spec, with examples. (decision log 2026-11-12, "minus a skip list per format"; decisions 129, 235)
+- [ ] **`mapped_metadata`**: what we compute (frame count, scan size) or a reader maps to standard names, a second, labelled section; where it disagrees with the original, the original wins. (230; Merlin, EMPAD)
+- [ ] **Not suitable for text** is one shared check: `modama_crawler.formats.values.textual(value)` (more than 16 items, more than 1,000 characters, control characters, bytes, arrays that are not numbers). Don't write your own. (@weber 2026-11-12)
+- [ ] **Empty values are kept** in the values, as the file has them (`""`, `[]`). (decision 161; `test_extract.py` of Merlin, EMPAD, K2IS)
+- [ ] **A test with an entry nobody has seen**: it must arrive in `original_metadata`. (the skip-list rule above)
+- [ ] **The summary line**: a few chosen entries as found, text bare, a number after its name (`Exposure Time (s) 2.0`), 0 placeholders left out, no words or units of ours. It is the only positive list. (`dm.HEADLINE`; 228, 231)
+- [ ] **The values become the record's second description**, one `name: value` line each, sorted by name, empty values left out there: names and values must read well that way. (234, change `tags-in-the-record`)
+- [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. Count the bytes read in a test (`modama_formats_em.testing.rchar`). (@weber 2026-11-12; block files: the header plus one buffer)
+- [ ] **Time-zone independent output**: a date and time as the file writes it, without a reader's conversion to the local time zone, and a test under another `TZ`. (`modama_formats_em.blockfile`, `test_the_acquisition_time_as_written`)
+- [ ] **Recognition by content where names lie**: a glob plus magic, a subtype (`sub-class-of`) where one exists, and `d.not_of_type` to fall back to the type the file has without its name rule. ("A file that is not of its name's type" above; DM by header whatever the name, `.blo` without `IMGBLO`)
+- [ ] **Fixtures**: public test data with licence and source in `fixtures.toml`, or generated at test time by the software that writes the format; small (cut to what the rules and extractor read if need be, the cut in `validity`); no copyrighted content without a licence. (Fixtures above; @weber 2026-11-12: "Use publicly available test data")
+- [ ] **One test per spec scenario**, named after it. (`tests/test_mime.py`; AGENTS.md, "Writing tests")
+- [ ] **No version to raise**: any change to the installed code changes the extractor identity, and the next crawl extracts every dataset again. Expect that cost with every merge. (`identity.py`, "Extracting metadata" above)
+- [ ] **Look at real files** with `modama-chain browse` before and after. (`python/search-chain/README.md`, "browse")
