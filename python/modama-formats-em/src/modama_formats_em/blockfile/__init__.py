@@ -51,10 +51,11 @@ class Blockfile(Format):
             warnings.simplefilter("always")
             (scan,) = file_reader(root + dataset.anchor, lazy=True)
         said = [str(w.message) for w in caught]
-        header = {
-            k: plain(v)
-            for k, v in scan["original_metadata"]["blockfile_header"].items()
-        }
+        # Every field the reader gives, flat under its dotted path; nothing
+        # skipped: the header has no GUI settings or arrays (decision 230,
+        # "every entry minus a skip list")
+        original = {k: plain(v) for k, v in tag_paths(scan["original_metadata"])}
+        header = {k.removeprefix("blockfile_header."): v for k, v in original.items()}
         # The serial date as written, without the reader's conversion to the
         # local time zone
         acquired = serial_date_to_datetime(header["Acquisition_time"]).replace(
@@ -66,7 +67,7 @@ class Blockfile(Format):
         summary.append(acquired.strftime("%Y-%m-%d %H:%M"))
         summary += [f"reader warning: {text}" for text in said]
         values = {
-            "original_metadata": {"blockfile_header": header},
+            "original_metadata": original,
             # HyperSpy's names; the conversions are RosettaSciIO's (its mapping)
             "mapped_metadata": {
                 **{k: v for k, v in tag_paths(scan["metadata"]) if k not in LOCAL},

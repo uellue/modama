@@ -51,13 +51,38 @@ def test_a_representative_block_file(collection_tests, tmp_path):
     assert scan.subjects == ["NanoMegas ASTAR block file", "4D-STEM"]
     values = scan.dataset.extraction.extracted.values
     assert list(values)[:2] == ["original_metadata", "mapped_metadata"]
-    header = values["original_metadata"]["blockfile_header"]
-    assert (header["ID"], header["MAGIC"], header["Beam_energy"]) == (
-        "IMGBLO",
-        258,
-        200000,
-    )
+    original = values["original_metadata"]
+    assert (
+        original["blockfile_header.ID"],
+        original["blockfile_header.MAGIC"],
+        original["blockfile_header.Beam_energy"],
+    ) == ("IMGBLO", 258, 200000)
     assert values["mapped_metadata"]["Acquisition_instrument.TEM.beam_energy"] == 200.0
+
+
+def test_every_field_the_reader_gives(collection_tests, tmp_path, monkeypatch):
+    # Every entry minus a skip list, which is empty here (decision of
+    # 2026-11-12): all the reader's fields, and one nobody has seen before
+    import rsciio.blockfile
+
+    from modama_formats_em.dm import tag_paths
+
+    real = rsciio.blockfile.file_reader
+
+    def with_a_new_field(*args, **kwargs):
+        (scan,) = real(*args, **kwargs)
+        scan["original_metadata"]["blockfile_header"]["New_field"] = 7
+        return [scan]
+
+    tree = collection_tests.materialise("scan", tmp_path)
+    (theirs,) = real(str(tree / "test2.blo"), lazy=True)
+    monkeypatch.setattr(rsciio.blockfile, "file_reader", with_a_new_field)
+    original = extracted(collection_tests, tree).values["original_metadata"]
+    assert list(original) == [
+        *(k for k, _ in tag_paths(theirs["original_metadata"])),
+        "blockfile_header.New_field",
+    ]
+    assert original["blockfile_header.New_field"] == 7
 
 
 def test_a_scan_rotation_of_0_is_left_out(collection_tests, tmp_path):
@@ -88,7 +113,7 @@ def test_the_16_bit_variant(collection_tests, tmp_path):
     (scan,) = described(collection_tests, "magic_259", tmp_path)
     assert scan.description.startswith(f"{SCAN}, reader warning: {UNKNOWN_MAGIC}; ")
     values = scan.dataset.extraction.extracted.values
-    assert values["original_metadata"]["blockfile_header"]["MAGIC"] == 259
+    assert values["original_metadata"]["blockfile_header.MAGIC"] == 259
     assert values["reader_warnings"] == [UNKNOWN_MAGIC]
 
 
