@@ -1,0 +1,24 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.tif",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/tiff",
+      "members": [
+        "/notes.tif"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/tiff",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/notes.tif": {
+      "error": "TiffFileError"
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -1,0 +1,85 @@
+[fei_sem]
+purpose = "representative"
+validity = "vendor-written: a 512x471 8-bit SEM image (electron beam, ETD detector) of an FEI Helios NanoLab 660, software 5.5.1.3318, with the FEI_HELIOS metadata tag; read by tifffile 2026.11.8 on 2026-11-12"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/tiff/tiff_FEI_Helios.zip (sha256 eb9e82342152ffd55024356cefdfeffc6c37159172e99e320132e9228f8c5e82), member FEI-Helios-Ebeam-8bits.tif, sha256 de85e8d4ebb1cd039259953dae0b4c986d15e49ce521b94d2be98374baf9a9cd, unchanged"
+
+[zeiss_sem]
+purpose = "representative"
+validity = "vendor-written: a 512x384 8-bit palette SEM image of a Zeiss ULTRA 55 (SmartSEM V05.04.03.00), with the CZ_SEM metadata tag; read by tifffile 2026.11.8 on 2026-11-12"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/tiff/tiff_Zeiss_SEM.zip (sha256 a4b4532fef22e9222682429dbe4723fff62e82bcaf17ad5142122c9999217950), member test_tiff_Zeiss_SEM_512pix.tif, sha256 3ff2ed5eb9fc1e75cf2188bd4aa11bba1cc82496e1084303bc8685aa1de99431, unchanged"
+
+[imagej]
+purpose = "representative"
+validity = "vendor-written: a 68x68 32-bit float image saved by ImageJ 1.51a (its description and IJMetadata tags; the Info entry holds a DM file's tags as text); read by tifffile 2026.11.8 on 2026-11-12"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/tiff/test_loading_image_saved_with_imageJ.tif, sha256 303dcaf1c33ec4112033fce92069ff7a7a93010f21414ea0620240f6266eeb9d, unchanged"
+
+[tifffile_tiff]
+purpose = "representative"
+validity = "written by tifffile 2026.11.8 at test time, as Python code writes TIFFs: a stack of three 64x48 16-bit pages, its shape in the first page's description, a fixed DateTime, and a private tag 65500 that no reader names (an entry nobody has seen before)"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:tifffile_tiff"
+generator = "modama_formats_common.image.tests.generate:tifffile_tiff"
+
+[camera_jpeg]
+purpose = "representative"
+validity = "vendor-written: a 480x360 JPEG from a Canon PowerShot S40 (2003), with EXIF (IFD0, Exif IFD with MakerNote and UserComment, Interop IFD, IFD1 with a thumbnail) and JFIF; read by Pillow 13.0.0 on 2026-11-12"
+licence = "MIT-CMU (HPND), Pillow's licence (LICENSE.fixtures beside this file). The Pillow repository names no separate licence for its test images; Debian reviewed their copyright (Debian bug 952899, Pillow issue https://github.com/python-pillow/Pillow/issues/4591) and its pillow 13.0.0-1 debian/copyright puts them under `Files: *`, License HPND, excluding only Tests/icc, Tests/images/a.fli and the McIDAS images, not flower.jpg (checked 2026-11-12 on sources.debian.org)"
+source = "Pillow test data at tag 13.0.0, Tests/images/flower.jpg, sha256 8a9d04b92d0de5836c59ede8ae421235488e4031e893e07b1fe7e4b78f6a9901, unchanged"
+
+[jpeg_exif]
+purpose = "representative"
+validity = "written by Pillow 13.0.0 at test time: a 64x48 JPEG with a COM comment and EXIF in IFD0 (Make, Model, Software, DateTime, the tag 0xC6FF that Pillow does not name), the Exif IFD and the GPS IFD"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:jpeg_exif"
+generator = "modama_formats_common.image.tests.generate:jpeg_exif"
+
+[png_text]
+purpose = "representative"
+validity = "written by Pillow 13.0.0 at test time: a 64x48 greyscale PNG with tEXt chunks (Title, Software, an empty Comment), a zTXt and an iTXt chunk, and a pHYs resolution"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:png_text"
+generator = "modama_formats_common.image.tests.generate:png_text"
+
+[bmp]
+purpose = "representative"
+validity = "written by Pillow 13.0.0 at test time: a 64x48 RGB BMP"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:bmp"
+generator = "modama_formats_common.image.tests.generate:bmp"
+
+[gif_comment]
+purpose = "representative"
+validity = "written by Pillow 13.0.0 at test time: a 64x48 palette GIF with a comment"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:gif_comment"
+generator = "modama_formats_common.image.tests.generate:gif_comment"
+
+[webp_exif]
+purpose = "representative"
+validity = "written by Pillow 13.0.0 (libwebp) at test time: a 64x48 RGB WEBP with EXIF (Make, Model)"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:webp_exif"
+generator = "modama_formats_common.image.tests.generate:webp_exif"
+
+[matplotlib_svg]
+purpose = "representative"
+validity = "vendor-written: an SVG saved by Matplotlib 3.6.0.dev (its metadata block with RDF and Dublin Core, a DOCTYPE with the SVG 1.1 DTD, text in Chinese characters); read by defusedxml 0.7.1 on 2026-11-12"
+licence = "Matplotlib licence (LICENSE.fixtures beside this file)"
+source = "Matplotlib test data at tag v3.10.0, lib/matplotlib/tests/baseline_images/test_backend_svg/multi_font_astext.svg, sha256 be452d3a707f92ef1c6d7caffbe4ffd906626c495df0c7795a79fdd3714950fb, unchanged"
+
+[eps]
+purpose = "representative"
+validity = "written by Pillow 13.0.0 at test time: an EPS with a PostScript image (DSC header: Creator, BoundingBox, Pages); typed by the core, no format of this part"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:eps"
+generator = "modama_formats_common.image.tests.generate:eps"
+
+[text_named_tif]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.tif (spec formats/image, a text file named like an image)"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:text_named_tif"
+generator = "modama_formats_common.image.tests.generate:text_named_tif"

@@ -11,13 +11,19 @@ version = "0.0.1.dev0"
 dependencies = [
     # Each part adds the libraries it reads its formats with
     "modama-crawler",
-    # office: XML parts of OOXML and ODF packages and XMP, safe against entity expansion
+    # image: TIFF tags and vendor blocks (2026.11.8 of 2026-11-08, BSD-3-Clause; brings NumPy)
+    "tifffile==2026.11.8",
+    # image: PNG, JPEG, BMP, GIF, WEBP headers and EXIF (13.0.0 of 2026-10-16, MIT-CMU)
+    "pillow==13.0.0",
+    # image: SVG, XML from anyone (0.7.1, PSF-2.0); office: XML parts of OOXML
+    # and ODF packages and XMP
     "defusedxml==0.7.1",
     # office: legacy Word, PowerPoint, Excel property sets (OleMetadata's names)
     "olefile==0.47",
-    # office: workbook sheets and their dimensions, read-only mode (no cells)
+    # office: workbook sheets and their dimensions, read-only mode (reads shared
+    # strings; not called when a part of cell data is over 16 MiB)
     "openpyxl==3.1.5",
-    # office: PDF Info and XMP; the extra brings cryptography for AES-encrypted files
+    # office: PDF Info and XMP; the extra brings cryptography (unpinned) for AES-encrypted files
     "pypdf[crypto]==7.0.1",
 ]
 authors = [
