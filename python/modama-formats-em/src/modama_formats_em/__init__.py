@@ -7,9 +7,15 @@ tests each part on its own (formats/TEMPLATE.md).
 
 from modama_crawler.formats import Collection
 
-from . import dm, empad, k2is, merlin
+from . import blockfile, dm, empad, k2is, merlin
 
-PARTS = (empad.COLLECTION, dm.COLLECTION, merlin.COLLECTION, k2is.COLLECTION)
+PARTS = (
+    empad.COLLECTION,
+    dm.COLLECTION,
+    merlin.COLLECTION,
+    k2is.COLLECTION,
+    blockfile.COLLECTION,
+)
 
 COLLECTION = Collection(
     "em",

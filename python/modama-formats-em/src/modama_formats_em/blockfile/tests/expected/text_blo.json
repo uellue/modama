@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.blo",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.blo"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

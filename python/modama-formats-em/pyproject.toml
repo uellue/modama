@@ -15,8 +15,10 @@ dependencies = [
     # imports rsciio.quantumdetector._api (MIBProperties); dm and
     # k2is import rsciio.digitalmicrograph._api (DigitalMicrographReader,
     # ImageObject), and dm.first_image repeats file_reader's steps (0.15.0), as
-    # test_first_image_is_what_file_reader_gives checks
-    "rosettasciio==0.15.0",
+    # test_first_image_is_what_file_reader_gives checks. The extra blockfile
+    # brings scikit-image, which rsciio.blockfile imports (decision 227);
+    # blockfile imports rsciio.utils._date_time (serial_date_to_datetime)
+    "rosettasciio[blockfile]==0.15.0",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},
