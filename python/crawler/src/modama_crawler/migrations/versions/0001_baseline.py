@@ -151,5 +151,5 @@ def _create() -> None:
 def downgrade() -> None:
     # Dropping every table is not a way back (design D7)
     raise NotImplementedError(
-        f"no downgrade from {revision}: restore the dump taken before the upgrade (README, Upgrade)"
+        f"no downgrade from {revision}: start from an empty database and crawl again (README, Upgrade)"
     )

@@ -81,8 +81,8 @@ All migrations of one `migrate` run SHALL be applied in one transaction. If any 
 - **THEN** `migrate` exits with status 1 with an error saying that the lock was not granted and to run `migrate` again, and the database is unchanged
 
 ### Requirement: A downgrade with no way back refuses with the step
-Every migration SHALL have a downgrade. Where a migration cannot be undone so that the older code reads the result correctly, its downgrade SHALL refuse with an error that names the migration and says to restore the dump taken before the upgrade, and SHALL change nothing.
+Every migration SHALL have a downgrade. Where a migration cannot be undone so that the older code reads the result correctly, its downgrade SHALL refuse with an error that names the migration and says to start from an empty database and crawl again, and SHALL change nothing.
 
 #### Scenario: Downgrading below the baseline
 - **WHEN** `alembic downgrade base` runs on a database at `0001_baseline`
-- **THEN** it exits with status 1, its last line is `NotImplementedError: no downgrade from 0001_baseline: restore the dump taken before the upgrade (README, Upgrade)`, and the database is still at `0001_baseline` with its tables and rows
+- **THEN** it exits with status 1, its last line is `NotImplementedError: no downgrade from 0001_baseline: start from an empty database and crawl again (README, Upgrade)`, and the database is still at `0001_baseline` with its tables and rows

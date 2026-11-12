@@ -23,7 +23,7 @@ from psycopg import sql
 BEFORE_MIGRATIONS = Path(__file__).parent / "migrations" / "before_migrations.sql"
 ALEMBIC_INI = Path(__file__).parents[1] / "alembic.ini"
 TABLES = ("datasets", "members", "directories", "records", "crawl_runs")
-REFUSAL = "restore the dump taken before the upgrade (README, Upgrade)"
+REFUSAL = "start from an empty database and crawl again (README, Upgrade)"
 
 # migrate with a scripts directory of the test's: the conninfo, then the directory
 MIGRATE = (

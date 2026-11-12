@@ -25,5 +25,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Undo upgrade() where the older code reads the result correctly; otherwise refuse with the step (README)."""
     raise NotImplementedError(
-        f"no downgrade from {revision}: restore the dump taken before the upgrade (README, Upgrade)"
+        f"no downgrade from {revision}: start from an empty database and crawl again (README, Upgrade)"
     )
