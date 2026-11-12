@@ -10,11 +10,13 @@ keywords = ["OAI-PMH", "data repository", "metadata"]
 requires-python = ">=3.14"
 version = "0.0.1.dev0"
 dependencies = [
+    "alembic>=1.20",
     "lxml",
     "pathspec",
     "psycopg[binary,pool]",
     "python-dotenv",
     "pyxdg>=0.28",
+    "SQLAlchemy>=2.0",
     "werkzeug",
 ]
 classifiers = [
@@ -51,7 +53,7 @@ modama_crawler = "modama_crawler.testing"
 modama-crawler = "modama_crawler.cli:main"
 
 [tool.setuptools.package-data]
-"*" = ["*.xml", "*.toml", "*.json", "LICENSE*"]
+"*" = ["*.xml", "*.toml", "*.json", "*.mako", "LICENSE*"]
 
 
 

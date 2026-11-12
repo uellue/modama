@@ -203,6 +203,170 @@ data tree's mount, into the run's folder:
 Leave `monitor.sh` (and `nfs-stats.sh`) running overnight in a terminal that survives
 the night (screen or tmux).
 
+## Upgrade
+
+An upgrade of the code keeps the crawler's database: a schema change comes as a
+migration, which `crawler-migrate` applies before `crawler` and `crawl-timer` start
+(change `schema-migrations`, R42; the general steps are in
+`/prototypes/search-stack/README.md`, "Upgrade"). The first upgrade to code with
+migrations takes staging's tables over as `0001_baseline` and changes nothing in them.
+On the server, in the stack's folder, with the `dc` shorthand of step 12. Not during a
+crawl if it can be helped: `--build` stops a running crawl, which is then recorded as
+failed, and the timer catches up at once.
+
+**U1.** Before pulling, note the deployed commit; after pulling, see whether the new code
+brings a migration (a file listed means: the dump first):
+
+```bash
+deployed=$(git rev-parse HEAD); echo "$deployed"
+```
+```bash
+git diff --stat "$deployed" HEAD -- ../../python/crawler/src/modama_crawler/migrations/versions/
+```
+
+**U2.** The state before, to compare afterwards:
+
+```bash
+dc exec crawler modama-crawler runs | head -3; dc exec crawler modama-chain status
+```
+```bash
+dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*), max(datestamp) FROM records"
+```
+
+**U3.** The dump, to the location agreed with @weber (not in the checkout, never under
+`/storage`), and that it is readable:
+
+```bash
+DUMP=<location agreed>/crawler-db-$(date +%F).dump
+```
+```bash
+dc exec -T crawler-db pg_dump -U postgres -Fc modama_crawler > "$DUMP"; ls -l "$DUMP"
+```
+```bash
+dc exec -T crawler-db pg_restore --list < "$DUMP" | head -5
+```
+
+**U4.** A dry run on a copy, once for the first upgrade to migrations (design D5 of
+`schema-migrations`: a database that differs from `0001_baseline` would be taken over
+too): restore the dump into a scratch database, build the new image, migrate the copy
+and a fresh database with it, and compare their schemas. `--no-deps` keeps compose from
+migrating the real database on the way:
+
+```bash
+dc exec -T crawler-db createdb -U postgres modama_crawler_copy
+```
+```bash
+dc exec -T crawler-db pg_restore -U postgres -d modama_crawler_copy < "$DUMP"
+```
+```bash
+dc exec -T crawler-db createdb -U postgres modama_crawler_fresh
+```
+```bash
+dc build crawler
+```
+```bash
+time dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_copy crawler-migrate
+```
+```bash
+dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_fresh crawler-migrate
+```
+```bash
+schema() { dc exec -T crawler-db psql -U postgres -d "$1" -At -c "SELECT table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = 'public' UNION ALL SELECT tablename, indexname, indexdef, '', '' FROM pg_indexes WHERE schemaname = 'public' UNION ALL SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid), '', '' FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1, 2, 3"; }
+```
+```bash
+diff <(schema modama_crawler_copy) <(schema modama_crawler_fresh) && echo "same schema"
+```
+```bash
+dc run --rm --no-deps -e MODAMA_CRAWLER_DB=modama_crawler_copy crawler modama-crawler runs | head -3
+```
+
+Expected: `crawler-migrate` on the copy logs `tables made before migrations found:
+adopted as 0001_baseline` and `schema migrated from none to 0001_baseline`; `diff`
+prints nothing and `same schema`; `runs` on the copy shows the lines of U2. Anything
+else: stop here, keep the logs, and build the deployed code again, since `dc build`
+replaced the image and the next `./upstaging.sh` would start it and migrate the real
+database (review 2.7 of `schema-migrations`, finding 3):
+
+```bash
+git checkout "$deployed" && dc build crawler
+```
+
+Then, in either case, remove the two scratch databases (the real one is
+`modama_crawler`, without a suffix):
+
+```bash
+dc exec -T crawler-db dropdb -U postgres modama_crawler_copy
+```
+```bash
+dc exec -T crawler-db dropdb -U postgres modama_crawler_fresh
+```
+
+**U5.** The upgrade:
+
+```bash
+./upstaging.sh --build
+```
+```bash
+dc logs -t crawler-migrate
+```
+
+Expected: the same two lines as on the copy, then `crawler` and `crawl-timer` running.
+If `up` fails with `service "crawler-migrate" didn't complete successfully`, the log
+names the reason and the step (`python/crawler/README.md`, "The database schema"); the
+database is unchanged then.
+
+**U6.** The state after, compared with U2: the same runs (plus the stopped crawl, if
+one ran), the same count of records and newest datestamp, `modama-chain status` as
+before:
+
+```bash
+dc exec crawler modama-crawler runs | head -3; dc exec crawler modama-chain status
+```
+```bash
+dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*), max(datestamp) FROM records"
+```
+
+**The way back** from the first upgrade: the code before migrations ignores Alembic's
+table and finds its own tables unchanged, so checking it out and building is enough:
+
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
+```
+
+From a later migration: first the downgrade with the image that is still there, then,
+only if it ended with exit status 0, the older code:
+
+```bash
+dc stop crawl-timer
+```
+```bash
+dc run --rm crawler-migrate alembic -c /src/alembic.ini downgrade <revision before the upgrade>
+```
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
+```
+
+Where the downgrade refuses (`restore the dump taken before the upgrade`), or the
+database is damaged: restore the dump of U3 into an empty database, then the older
+code. Check first that `$DUMP` is the file of U3 (`ls -l "$DUMP"`, `pg_restore --list`
+as in U3):
+
+```bash
+dc stop crawler crawl-timer
+```
+```bash
+dc exec -T crawler-db dropdb -U postgres modama_crawler
+```
+```bash
+dc exec -T crawler-db createdb -U postgres modama_crawler
+```
+```bash
+dc exec -T crawler-db pg_restore -U postgres -d modama_crawler < "$DUMP"
+```
+```bash
+git checkout "$deployed" && ./upstaging.sh --build
+```
+
 ## For colleagues
 
 ```bash

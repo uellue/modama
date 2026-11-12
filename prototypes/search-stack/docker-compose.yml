@@ -109,6 +109,22 @@ services:
     depends_on:
       crawler-db:
         condition: service_healthy
+      crawler-migrate:
+        condition: service_completed_successfully
+    networks: [search]
+
+  # Brings crawler-db's schema to the image's, then exits; at once when there is nothing
+  # to do (python/crawler/README.md, "The database schema"). No restart: a refusal or a
+  # failed migration makes `up` fail within seconds, naming this service; its log has
+  # the reason and the step (`docker compose logs crawler-migrate`).
+  crawler-migrate:
+    image: search-stack-crawler
+    pull_policy: never  # built by another service
+    command: modama-crawler migrate
+    environment: *crawler-env
+    depends_on:
+      crawler-db:
+        condition: service_healthy
     networks: [search]
 
   # Crawls every day at 19:00 UTC (20:00 CET, 21:00 CEST), outside business hours while
@@ -129,6 +145,8 @@ services:
     depends_on:
       crawler:
         condition: service_healthy
+      crawler-migrate:
+        condition: service_completed_successfully
       airflow-accounts:
         condition: service_completed_successfully
     networks: [search]
