@@ -151,8 +151,8 @@ or queued", 235 times); file-metadata batches are "stuck in queued; will try to
 requeue" and, after the requeue attempts, marked failed; the default worker
 (`--queues default`, concurrency 4) logs nothing in those 30 minutes. So file-metadata
 batches that no worker takes hold the DAG's slots, and the transform batches wait for
-them. Why the default worker takes nothing from about 01:00 is not shown yet. A
-hypothesis, not checked: the harvest DAG's task that waits for the indexing run
+them. Why the default worker takes nothing from about 01:00: F17 (confirmed). The
+hypothesis was: the harvest DAG's task that waits for the indexing run
 (`TriggerDagRunOperator`, `wait_for_completion`, on the default queue since 00:20) keeps
 its message unacknowledged for hours, and RabbitMQ 3 (`rabbitmq:3-management-alpine`)
 closes a channel whose delivery is not acknowledged within its `consumer_timeout`
@@ -181,6 +181,28 @@ session's scratchpad `indexing-perf/`):
   over staging's settings). Not worth it: a long-lived worker, skipping the empty
   file-metadata batches. All are changes upstream (EOSC Data Commons), as patches like
   the search API's first; not decided.
+
+**F17 (warehouse): the default worker loses its broker connection after a task of over
+30 minutes, and does not come back.** RabbitMQ (`rabbitmq:3-management-alpine`) closes a
+channel whose delivery is not acknowledged within `consumer_timeout`, 30 minutes by
+default; Celery under Airflow acknowledges a task when it ends. Two tasks on the default
+queue run longer: the harvest (19:06 to 00:20) and the harvest DAG's wait for the
+indexing run (`TriggerDagRunOperator`, `wait_for_completion`, from 00:20). The worker's
+log (`broker-0015.log`, 00:15 to 01:10): at 00:20:03 "Couldn't ack 4 ...
+ConnectionResetError" as the harvest ended, a reconnect at 00:20:13, one task failed
+with "Invalid auth token" at 00:20:14; at 00:51:14 "Unrecoverable error:
+PreconditionFailed(406, 'PRECONDITION_FAILED - delivery acknowledgement on channel 1
+timed out. Timeout value used: 1800000 ms ...')", 30 minutes after the wait began, and
+nothing more. The broker at 06:15 (`queues.txt`): queue `default` 437 messages, 0
+consumers; `transform` 1 consumer; only the transform worker's control queue
+(`celery@878bfea0fa86.celery.pidbox`) is left. Consequences: file-metadata batches time
+out in the queue and hold the indexing run's 16 slots (F16), and the next crawl's
+harvest would wait in `default` with nobody to run it. Not seen in the VM: its harvests
+and indexing runs take minutes. Fix options, not decided: a longer `consumer_timeout` in
+the broker's configuration (ours); the wait as a deferrable task, which needs Airflow's
+triggerer (upstream's DAG); a worker that exits on the lost connection so that Docker
+restarts it. A reproducer in the VM: a short `consumer_timeout` and a task longer than
+it.
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
 `libertem-test-data/many_mib` holds 19,601 `.mib` frames, each its own dataset: 90 % of
