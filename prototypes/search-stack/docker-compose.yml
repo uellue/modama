@@ -241,11 +241,16 @@ services:
 
   broker:
     image: rabbitmq:3-management-alpine
+    # RabbitMQ keeps its queues per node name, rabbit@<hostname>: a fixed host name keeps
+    # them across a recreated container (otherwise the random container id is a new node)
+    hostname: broker
     restart: unless-stopped
     env_file:
       - ${MODAMA_SECRETS_DIR:?see README.md}/broker.env
     volumes:
       - broker-data:/var/lib/rabbitmq
+      # consumer_timeout of 48 h: tasks on the default queue run for hours (F17)
+      - ./broker.conf:/etc/rabbitmq/conf.d/90-modama.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s

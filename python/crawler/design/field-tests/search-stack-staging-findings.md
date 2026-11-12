@@ -183,7 +183,7 @@ session's scratchpad `indexing-perf/`):
   the search API's first; not decided.
 
 **F17 (warehouse): the default worker loses its broker connection after a task of over
-30 minutes, and does not come back.** RabbitMQ (`rabbitmq:3-management-alpine`) closes a
+30 minutes, and takes no task until that one has ended.** RabbitMQ (`rabbitmq:3-management-alpine`) closes a
 channel whose delivery is not acknowledged within `consumer_timeout`, 30 minutes by
 default; Celery under Airflow acknowledges a task when it ends. Two tasks on the default
 queue run longer: the harvest (19:06 to 00:20) and the harvest DAG's wait for the
@@ -198,14 +198,58 @@ consumers; `transform` 1 consumer; only the transform worker's control queue
 (`celery@878bfea0fa86.celery.pidbox`) is left. Consequences: file-metadata batches time
 out in the queue and hold the indexing run's 16 slots (F16), and the next crawl's
 harvest would wait in `default` with nobody to run it. Not seen in the VM: its harvests
-and indexing runs take minutes. Fix options, not decided: a longer `consumer_timeout` in
-the broker's configuration (ours); the wait as a deferrable task, which needs Airflow's
-triggerer (upstream's DAG); a worker that exits on the lost connection so that Docker
-restarts it. A reproducer in the VM: a short `consumer_timeout` and a task longer than
-it. @weber restarted the default worker at 06:18 (decision 88): from 06:18:25 four
-transform batches ran at once again, in 96 of 98 probe snapshots until 06:35, 24 batches
-started in those 17 minutes (about 14 per 10 minutes, against 4.5 before); load 70 to
-106 on 48 CPUs (oversubscribed, F16).
+and indexing runs take minutes. @weber restarted the default worker at 06:18 (decision
+88): from 06:18:25 four transform batches ran at once again, in 96 of 98 probe snapshots
+until 06:35, 24 batches started in those 17 minutes (about 14 per 10 minutes, against 4.5
+before); load 70 to 106 on 48 CPUs (oversubscribed, F16). Reproduced in the VM, 2026-11-12
+(`prototypes/search-stack/consumer-timeout/run.sh`, its own compose project without
+published ports): the stack's broker image (RabbitMQ 3.13.7) with `consumer_timeout`
+60 s, a worker like the stack's default one (the Airflow image, `celery worker --queues
+default`, concurrency 4, Airflow's own Celery configuration: acks late, prefetch
+multiplier 1, the same health check), a task that sleeps 180 s, then a second task. That
+is enough without the scheduler or a DAG because the failure lies between the broker and
+Celery's consumer, before any Airflow task code: Celery retries connection errors but not
+channel errors (`broker_channel_error_retry` is off), so it logs "Unrecoverable error"
+and stops warm, which waits for the running task; staging's log shows the same lines.
+Baseline: "Unrecoverable error: PreconditionFailed(406, 'PRECONDITION_FAILED - delivery
+acknowledgement on channel 1 timed out ...')" 60 s after the long task started;
+`default 2 0 0` (messages, unacknowledged, consumers); the second task did not run while
+the long one ran; the container stayed `running`, turned `unhealthy` (the ping fails;
+still `healthy` 32 s after the error in one run, `unhealthy` 42 s after it in another,
+with a check every 10 s and 3 retries; the stack's checks every 30 s with 5), and Docker did not restart it (restart
+count 0: a restart policy acts when a container exits, not on its health). When the long
+task ended, the worker exited, Docker restarted it, and it ran the second task and the
+long one again, which the broker had requeued (in Airflow such a copy is refused:
+"Invalid auth token" at 00:20:14 above). So staging's 00:20 is the same failure during the
+harvest: the worker came back when the harvest ended (inferred: the log before 00:15 is
+not kept). The options, each in the reproducer: (a) `consumer_timeout` 48 hours
+(`prototypes/search-stack/broker.conf`): no timeout, the second task ran during the long
+one, the long one once. (b) The wait as a deferrable task: Airflow 3.3's
+`TriggerDagRunOperator` takes `deferrable` (default `[operators] default_deferrable`), so
+it needs no change to upstream's DAG, but a triggerer service; not tried: it would free a
+worker slot during indexing, but the harvest still holds its delivery for hours, so it
+does not replace (a). (c) Celery's `broker_channel_error_retry` (5.3 and later; it would
+need our own Celery configuration module): the worker reconnected and ran the second
+task, but the broker redelivered the long task and the worker ran it again when it ended,
+with another channel error a timeout later (as in celery/celery#6760, open since 2021).
+A health check that restarts the worker: the existing one already shows the state
+(`./runtest.sh` fails "every service with a health check is healthy"), but acting on it
+needs a watcher (a new dependency) or a check that kills the worker, which kills the
+running task too. Decision (2026-11-12): (a), in `docker-compose.yml`, so in the test
+deployment and staging, with a quick check in `./runtest.sh` that the broker runs with
+`broker.conf`'s value; (b) as an upstream issue (`.claude/drafts/`, not posted); (c) not
+adopted. Applying it recreates the broker (reproducer: 4 tasks running, 2 queued): the
+running tasks ran to their end once (their acknowledgement failed: "Couldn't ack ...
+connection already closed"), the worker reconnected within 20 s, and the 2 queued
+messages were gone: the new container is a new RabbitMQ node (`rabbit@<container id>`),
+the old node's data stays unused in the volume. Airflow sends a queued task again after
+`task_queued_timeout` (600 s, F16). Recheck on staging: `rabbitmq-diagnostics -q
+environment` shows `{consumer_timeout,172800000}`; after the next harvest and indexing,
+`rabbitmqctl list_queues name messages consumers` shows `default` with 1 consumer
+throughout, and the worker's log has no `PreconditionFailed`. Since decision 125 the
+broker's host name is fixed (`hostname: broker`): checked in the VM, two recreations keep
+the node `rabbit@broker` and add no node folder, so queued messages survive from then on
+(the first start with the fixed name is a new node once more).
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
 `libertem-test-data/many_mib` holds 19,601 `.mib` frames, each its own dataset: 90 % of

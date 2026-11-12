@@ -106,9 +106,19 @@ with psycopg.connect(os.environ['MODAMA_CHAIN_WAREHOUSE_DB']) as c:
     [ "$active" = "('http://crawler:7654/oai',)" ] || { echo "active endpoints: $active"; return 1; }
 }
 
+# broker.conf reached the broker: a shorter consumer_timeout stops the default worker
+# (staging finding F17; consumer-timeout/run.sh reproduces it)
+broker_consumer_timeout() {
+    local want got
+    want=$(sed -n 's/^consumer_timeout = //p' broker.conf)
+    got=$(dc exec -T broker rabbitmq-diagnostics -q environment | grep -o '{consumer_timeout,[0-9]*}')
+    [ "$got" = "{consumer_timeout,$want}" ] || { echo "broker: $got, broker.conf: $want"; return 1; }
+}
+
 check "every service is running" all_running
 check "every service with a health check is healthy" all_healthy
 check "the init services have finished" inits_done
+check "the broker's consumer_timeout is broker.conf's" broker_consumer_timeout
 check "the crawler answers OAI-PMH Identify" \
     dc exec -T crawler python -c "import urllib.request; urllib.request.urlopen('http://localhost:7654/oai?verb=Identify', timeout=10)"
 check "the crawler's Airflow account has the role harvest-trigger" crawler_role
