@@ -60,7 +60,7 @@ pre { margin: 0; padding: 6px 8px; font: 12px/1.35 ui-monospace, monospace; whit
 <div id="right">
   <div id="head"></div>
   <div id="views"></div>
-  <p class="muted">Keys: ↑ ↓ move, Enter or → open a folder, ← or Backspace up, / filter, Esc leave the filter.</p>
+  <p class="muted">Click a folder to open it, a file to see its views; the path above goes up. Keys: ↑ ↓ move, Enter or → open a folder, ← or Backspace up, / filter, Esc leave the filter.</p>
 </div>
 <script>
 "use strict";
@@ -146,7 +146,7 @@ function draw() {
   for (let i = first; i < Math.min(last, shown.length); i++) {
     const [name, kind] = shown[i];
     list.append(el("div", {class: `row ${kind}${i === sel ? " sel" : ""}`, style: `top:${i * ROW}px`, title: name,
-      onclick: () => select(i), ondblclick: () => kind === "folder" && openDir(dir + name + "/", null, true)}, name));
+      onclick: () => kind === "folder" ? openDir(dir + name + "/", null, true) : select(i)}, name));
   }
 }
 
