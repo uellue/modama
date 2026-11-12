@@ -32,10 +32,12 @@ None.
 - `modama-formats-em` on branch `dm-containers`: formats `em/dmw` and `em/gtg`, reproducer fixtures (`notes.gtg` holding text, an empty `empty.dmw`), and that change's D1, its spec requirement "Tag files and workspaces are not DM images", the comments in `dm.xml`/`k2is.xml` and the outcome of review M1.
 - No new dependency.
 
-## Questions for @weber
+## Decisions by @weber, 2026-11-12 (questions 144 to 148, answered on the open-items page)
 
-- Where should the `em` part go: here, as task group 2 on branch `dm-containers`, or folded into `dm-containers-and-k2is` as its fix for M1, with this change keeping only the crawler part? Lean: fold it in, since it changes that change's D1 and spec. Against: then the two changes must land together.
-- Should a file typed by its content also fall back when its extractor rejects it, for example a stray binary that happens to match DM4's three header fields? Lean: no, it fails as today (design D2). Against: such a collision is exactly the "collision we are unaware of" case, only on the content side.
-- Should the fallback type's own extractor run? For example, a DM3 file named `.dmw` would then also get image metadata. Lean: not now (design D3). No such file has been seen.
-- Should the `.dmw`/`.gtg` check accept the DM3 header too? Staging's `.dmw` and `.gtg` files all have the DM4 header (F15). Lean: DM4 only.
-- Should an admin see rejections, as a count in the crawl report or as a note in `records -v`? Lean: no, until someone asks.
+- **144, where the `em` part goes:** "yes let's group the changes together": folded into `dm-containers-and-k2is` as its fix for M1; the two land together.
+- **145, content-typed files:** asked for a concrete example; given in design.md, "Flows of events"; open.
+- **146, the fallback type's own extractor:** "let's clarify the flow of events for that"; the flows are in design.md, "Flows of events", together with the alternative of the check during recognition (question 149); open.
+- **147, the DM3 header:** "that depends on what we find in the wild. DMW should/could also exist as DM3, I think." @weber makes fresh `.dmw` files with a current GMS (his TODO, open item 155); until then DM4 only, revisited with those files.
+- **148, showing rejections:** "a normal rejection is business as usual. It should go into the per-item tracing / observability that we worked on in the crawling and recognition oracle before": no count in the crawl report; the rejection and its reason appear in the per-item diagnostics of `records --verbose` (spec `records-cli`) and in `modama-chain trace`. This replaces the risk note "Naming the rejection there needs a request".
+- **D2's undecided case** (a single file in a subdirectory that a collection format adopted as a part): "Let's go with your lean until we find a specific example where that is wrong": it falls back, and the parent keeps it.
+- Also from @weber, for later (backlog): "it would be good to be able to scan a real world crawl result for 'suspicious' results. Maybe the crawling, recognition and extraction logic could tag 'interesting' results for manual follow-up?"
