@@ -1,0 +1,55 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testEXCEL_custom_props.xls",
+      "basis": "OLE2 header",
+      "collapsed": false,
+      "format": "common/xls",
+      "members": [
+        "/testEXCEL_custom_props.xls"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.ms-excel",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testEXCEL_custom_props.xls": {
+      "subjects": [],
+      "summary": [
+        "2006-09-12T15:06:44Z",
+        "Microsoft Excel"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "author": "",
+          "codepage": 1252,
+          "codepage_doc": 1252,
+          "create_time": "2006-09-12T15:06:44Z",
+          "creating_application": "Microsoft Excel",
+          "heading_pairs": [
+            "Feuilles de calcul",
+            3
+          ],
+          "hlinks_changed": false,
+          "last_saved_by": "",
+          "last_saved_time": "2011-08-22T13:45:54Z",
+          "links_dirty": false,
+          "scale_crop": false,
+          "security": 0,
+          "shared_doc": false,
+          "titles_of_parts": [
+            "Feuil1",
+            "Feuil2",
+            "Feuil3"
+          ],
+          "version": 786432
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

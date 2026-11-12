@@ -1,0 +1,59 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testEXCEL_macro.xlsm",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/xlsm",
+      "members": [
+        "/testEXCEL_macro.xlsm"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.ms-excel.sheet.macroenabled.12",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testEXCEL_macro.xlsm": {
+      "subjects": [],
+      "summary": [
+        "2006-09-16T00:00:00Z",
+        "Microsoft Excel"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "sheets": {
+            "Sheet1": "A1:A2",
+            "Sheet2": "A1:A1",
+            "Sheet3": "A1:A1"
+          }
+        },
+        "original_metadata": {
+          "app.AppVersion": "16.0300",
+          "app.Application": "Microsoft Excel",
+          "app.DocSecurity": "0",
+          "app.HeadingPairs": [
+            "Worksheets",
+            "3"
+          ],
+          "app.HyperlinksChanged": "false",
+          "app.LinksUpToDate": "false",
+          "app.ScaleCrop": "false",
+          "app.SharedDoc": "false",
+          "app.TitlesOfParts": [
+            "Sheet1",
+            "Sheet2",
+            "Sheet3"
+          ],
+          "core.created": "2006-09-16T00:00:00Z",
+          "core.creator": "",
+          "core.lastModifiedBy": "",
+          "core.modified": "2016-09-21T20:12:03Z"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

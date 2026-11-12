@@ -1,0 +1,21 @@
+The files below fixtures/ that fixtures.toml gives as Apache-2.0 are test
+documents of Apache Tika (https://tika.apache.org/,
+https://github.com/apache/tika), copied unchanged from its commit
+a40d54f6a6d9cf8ce485f10bb07011cd32ef5925, the paths in fixtures.toml.
+
+Apache Tika
+Copyright 2007-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+They are distributed under the Apache License, Version 2.0; the licence text
+is in LICENSE.apache-2.0 beside this file, copied from
+https://www.apache.org/licenses/LICENSE-2.0.txt. The lines above are the part
+of Apache Tika's NOTICE.txt that concerns them (the rest names components
+of Tika's code that these files do not hold).
+
+The fixtures that generate.py writes at test time, and that fixtures.toml
+gives as MIT, are distributed under the MIT licence of
+modama-formats-common, as is the rest of modama-formats-common; see
+../../../../LICENSE.

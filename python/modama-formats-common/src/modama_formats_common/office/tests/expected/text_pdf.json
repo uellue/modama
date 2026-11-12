@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.pdf",
+      "basis": "single file; common/pdf: not application/pdf, no PDF header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.pdf"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

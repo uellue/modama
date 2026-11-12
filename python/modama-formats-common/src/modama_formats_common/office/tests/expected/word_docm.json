@@ -1,0 +1,67 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testWORD_macros.docm",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/docm",
+      "members": [
+        "/testWORD_macros.docm"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.ms-word.document.macroenabled.12",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testWORD_macros.docm": {
+      "subjects": [],
+      "summary": [
+        "Allison, Timothy B.",
+        "2016-09-21T13:01:00Z",
+        "Microsoft Office Word",
+        "Pages 1"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "app.AppVersion": "16.0000",
+          "app.Application": "Microsoft Office Word",
+          "app.Characters": "18",
+          "app.CharactersWithSpaces": "20",
+          "app.Company": "",
+          "app.DocSecurity": "0",
+          "app.HeadingPairs": [
+            "Title",
+            "1"
+          ],
+          "app.HyperlinksChanged": "false",
+          "app.Lines": "1",
+          "app.LinksUpToDate": "false",
+          "app.Pages": "1",
+          "app.Paragraphs": "1",
+          "app.ScaleCrop": "false",
+          "app.SharedDoc": "false",
+          "app.Template": "Normal.dotm",
+          "app.TitlesOfParts": [
+            ""
+          ],
+          "app.TotalTime": "6",
+          "app.Words": "3",
+          "core.created": "2016-09-21T13:01:00Z",
+          "core.creator": "Allison, Timothy B.",
+          "core.description": "",
+          "core.keywords": "",
+          "core.lastModifiedBy": "Allison, Timothy B.",
+          "core.modified": "2016-09-21T13:11:00Z",
+          "core.revision": "4",
+          "core.subject": "",
+          "core.title": ""
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
