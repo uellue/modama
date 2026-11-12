@@ -10,9 +10,9 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
+from modama_crawler.formats.values import textual
 
 from ..dm import mapped, tag_paths
-from ..values import textual
 
 HERE = Path(__file__).parent
 TYPE = "application/x.blockfile"

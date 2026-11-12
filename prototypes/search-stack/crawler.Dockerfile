@@ -1,5 +1,6 @@
-# The crawler with the EM formats and the chain tool. Build context: python/crawler;
-# python/modama-formats-em comes in as the context "em", python/search-chain as "chain".
+# The crawler with the EM and common formats and the chain tool. Build context: python/crawler;
+# python/modama-formats-em comes in as the context "em", python/modama-formats-common as
+# "common", python/search-chain as "chain".
 # libnss-sss: owners' names and groups from the service sssd (adds sss to nsswitch.conf)
 FROM python:3.14-slim-trixie AS crawler
 RUN apt-get update \
@@ -10,6 +11,8 @@ COPY . /src
 RUN pip install --no-cache-dir -e "/src[test]"
 COPY --from=em . /em
 RUN pip install --no-cache-dir -e /em
+COPY --from=common . /common
+RUN pip install --no-cache-dir -e /common
 COPY --from=chain . /chain
 RUN pip install --no-cache-dir -e /chain
 
