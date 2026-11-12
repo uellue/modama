@@ -202,7 +202,10 @@ and indexing runs take minutes. Fix options, not decided: a longer `consumer_tim
 the broker's configuration (ours); the wait as a deferrable task, which needs Airflow's
 triggerer (upstream's DAG); a worker that exits on the lost connection so that Docker
 restarts it. A reproducer in the VM: a short `consumer_timeout` and a task longer than
-it.
+it. @weber restarted the default worker at 06:18 (decision 88): from 06:18:25 four
+transform batches ran at once again, in 96 of 98 probe snapshots until 06:35, 24 batches
+started in those 17 minutes (about 14 per 10 minutes, against 4.5 before); load 70 to
+106 on 48 CPUs (oversubscribed, F16).
 
 **F1 (crawler): a Merlin frame series becomes 19,601 datasets.**
 `libertem-test-data/many_mib` holds 19,601 `.mib` frames, each its own dataset: 90 % of
