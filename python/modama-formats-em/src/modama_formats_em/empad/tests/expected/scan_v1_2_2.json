@@ -1,0 +1,20 @@
+{
+  "datasets": [
+    {
+      "anchor": "/EMPAD_v1.2.2_x32_y64_size0.8.xml",
+      "basis": "raw_file points to scan_x32_y64.raw",
+      "collapsed": false,
+      "format": "em/empad",
+      "members": [
+        "/EMPAD_v1.2.2_x32_y64_size0.8.xml",
+        "/scan_x32_y64.raw"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.empad+xml",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

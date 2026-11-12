@@ -1,0 +1,30 @@
+{
+  "datasets": [
+    {
+      "anchor": "/env",
+      "basis": "contains pyvenv.cfg",
+      "collapsed": true,
+      "format": "collapse/venv",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.python-venv",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

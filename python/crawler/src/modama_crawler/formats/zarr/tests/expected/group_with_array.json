@@ -1,0 +1,17 @@
+{
+  "datasets": [
+    {
+      "anchor": "/g.zarr",
+      "basis": "zarr.json: zarr_format 3, node_type group",
+      "collapsed": true,
+      "format": "zarr/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

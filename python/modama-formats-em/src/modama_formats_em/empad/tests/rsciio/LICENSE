@@ -1,0 +1,11 @@
+EMPAD_v1.2.2_x32_y64_size0.8.xml is a test file of RosettaSciIO
+(https://github.com/hyperspy/rosettasciio), copied unchanged from its tag
+v0.15.0, rsciio/tests/data/empad/.
+
+Copyright 2007-2026 The HyperSpy developers.
+
+It is distributed under the GNU General Public License, version 3 or (at your
+option) any later version, as RosettaSciIO is; the licence text is in
+../../../../../COPYING.rosettasciio, copied from RosettaSciIO's COPYING.txt.
+
+The rest of modama-formats-em is MIT-licensed; see ../../../../../LICENSE.

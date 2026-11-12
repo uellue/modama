@@ -1,0 +1,3 @@
+"""A module."""
+
+print("hello")

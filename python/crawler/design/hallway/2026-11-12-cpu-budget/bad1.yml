@@ -1,0 +1,7 @@
+services:
+  search-api:
+    environment: {WORKERS: "0"}
+  airflow-worker-transform:
+    environment: {TRANSFORM_PROCESSES: "abc"}
+  crawler:
+    environment: {MODAMA_CRAWLER_EXTRACT_WORKERS: "-1"}

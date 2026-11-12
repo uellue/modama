@@ -1,0 +1,136 @@
+{
+  "datasets": [
+    {
+      "anchor": "/scan_.gtg",
+      "basis": "8 sector files scan_*.bin",
+      "collapsed": false,
+      "format": "em/k2is",
+      "members": [
+        "/scan_.gtg",
+        "/scan_1.bin",
+        "/scan_2.bin",
+        "/scan_3.bin",
+        "/scan_4.bin",
+        "/scan_5.bin",
+        "/scan_6.bin",
+        "/scan_7.bin",
+        "/scan_8.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_.gtg",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_.gtg"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dm-gtg",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_1.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_1.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_2.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_2.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_3.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_3.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_4.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_4.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_5.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_5.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_6.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_6.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    },
+    {
+      "anchor": "/scan_2_7.bin",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/scan_2_7.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is-sector",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": [
+    [
+      "/scan_2_.gtg",
+      "scan_2_.gtg: 7 sector files scan_2_*.bin, a K2IS acquisition has 8"
+    ]
+  ]
+}

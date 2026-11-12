@@ -1,0 +1,27 @@
+[venv]
+purpose = "representative"
+validity = "vendor-written"
+licence = "MIT"
+source = "python -m venv --without-pip at test time, next to a text file"
+generator = "modama_crawler.formats.collapse.tests.generate:venv"
+
+[git]
+purpose = "representative"
+validity = "vendor-written"
+licence = "MIT"
+source = "git init at test time, next to a text file"
+generator = "modama_crawler.formats.collapse.tests.generate:git"
+
+[caches]
+purpose = "representative"
+validity = "parser-only: name-based rules; only __pycache__ is CPython-written, the .ipynb_checkpoints, node_modules and conda-meta layouts are mimicked"
+licence = "MIT"
+source = "a __pycache__ written by CPython and an .ipynb_checkpoints, node_modules and conda-meta layout, next to a text file"
+generator = "modama_crawler.formats.collapse.tests.generate:caches"
+
+[venv_without_lib]
+purpose = "reproducer"
+validity = "invalid-by-design: pyvenv.cfg without lib/, a half-deleted environment"
+licence = "MIT"
+source = "generated"
+generator = "modama_crawler.formats.collapse.tests.generate:venv_without_lib"

@@ -1,0 +1,17 @@
+{
+  "datasets": [
+    {
+      "anchor": "/env",
+      "basis": "contains pyvenv.cfg",
+      "collapsed": true,
+      "format": "collapse/venv",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.python-venv",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

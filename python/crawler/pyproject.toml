@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modama-crawler"
+description = "Expose a file system tree as a data repository, e.g. through OAI-PMH"
+license = {file = "LICENSE"}
+keywords = ["OAI-PMH", "data repository", "metadata"]
+requires-python = ">=3.14"
+version = "0.0.1.dev0"
+dependencies = [
+    "alembic>=1.20",
+    "lxml",
+    "pathspec",
+    "psycopg[binary,pool]",
+    "python-dotenv",
+    "pyxdg>=0.28",
+    "SQLAlchemy>=2.0",
+    "werkzeug",
+]
+classifiers = [
+    "Programming Language :: Python :: 3.14",
+    "Development Status :: 3 - Alpha",
+]
+authors = [
+    {name="Dieter Weber", email="d.weber@fz-juelich.de"},
+]
+
+[project.urls]
+repository = "https://iffgit.fz-juelich.de/weber/data-management-system/"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-postgresql",
+    "oaipmh",
+    "oaipmh-scythe",
+    "sickle",
+    "zarr",
+]
+
+[project.entry-points."modama.formats"]
+core = "modama_crawler.formats.core:COLLECTION"
+collapse = "modama_crawler.formats.collapse:COLLECTION"
+zarr = "modama_crawler.formats.zarr:COLLECTION"
+
+[project.entry-points.pytest11]
+modama_crawler = "modama_crawler.testing"
+
+[project.scripts]
+modama-crawler = "modama_crawler.cli:main"
+
+[tool.setuptools.package-data]
+"*" = ["*.xml", "*.toml", "*.json", "*.mako", "LICENSE*"]
+
+
+

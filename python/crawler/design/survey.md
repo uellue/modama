@@ -1,0 +1,93 @@
+# Survey of the ER-C data tree
+
+Status: facts from one listing, taken 2026-10-15 with `find` over the read-only NFS mount `/er-c-data` from the devcontainer (uid 20335). Listing only, no file contents read. The compressed listing is kept outside git in `.claude/survey/`.
+
+## What is visible
+
+- The mount holds 73 TB of 109 TB. The listing reached **525,533 files, 39,055 directories, 3,810 symlinks, 17.9 TB**: about a quarter of the data. `find` hit **1,428 unreadable directories in 127 of the 234 project directories** under `/adhoc`; they are group-owned with ACLs (for example `drwxrws--T+`, owner uid 20184, group 1020). The "millions of files" are presumably behind those.
+- Consequence for the design: a crawler running as an ordinary user sees a quarter of the tree. R18 ("whatever the crawl process can read") turns into a real decision sooner than planned: run the crawler as a user that is in every group, or with `CAP_DAC_READ_SEARCH` (R25's later item), or accept partial coverage.
+- Change rate in the visible part is low: 58 files modified in the last 7 days, 467 in the last 30, 211k in the last year. Incremental crawls will be cheap; the hundreds to thousands of new files per day (R10) must be in the invisible part or arrive in bursts.
+- No file names that aren't valid UTF-8; 3,810 symlinks.
+
+## What the files are
+
+By count, the top extensions are `.tif` (128k), `.npy` (73k), `.mib` (58k), `.dat` (45k), no extension (34k), `.xml` (22k), `.dm4` (21k), `.py` (19k), `.pyc` (18k), `.h` (14k). By size: `.bin` 3.9 TB, `.dm4` 3.1 TB, no extension 2.2 TB, `.mib` 2.0 TB, `.npy` 1.8 TB, `.dat` 0.8 TB, `.tiff` 0.6 TB, `.h5` 0.5 TB, `.emd` 0.5 TB, `.prz` 0.4 TB (174 files).
+
+Observations that matter for recognition:
+
+1. **Collapsible trees are 14% of the files.** 74k files sit under `site-packages`, `miniforge3`, `envs`, `__pycache__`, `.ipynb_checkpoints`, `.git` and `venv`: one backed-up miniforge installation alone accounts for most of the no-extension files (terminfo) and the numeric extensions (`.3`, `.0`: man pages). R11 pays off immediately. There are 2,016 `__pycache__` and 279 `.ipynb_checkpoints` directories, the latter also inside datasets (one inside a Zarr store).
+2. **Series directories are the dominant dataset shape, not pairs.** Four directories hold more than 10,000 files each and 43 more than 1,000: 67,600 and 29,800 `.tif` diffraction patterns in two acquisition folders (`DiffractionPatterns`), 10,100 files in a `CameraImageSeries`, 7,000 `.npy` frames per pre-processing folder in `ghost_imaging`, 1,356 `.bin` frames per simulation run in `holz-imaging`. "One directory of N numbered frames is one dataset" is a rule the spike needs; it wasn't on the list.
+3. **The same extension means different things in different places.** `.dat` (45k files) is Quantum Espresso output in `*.save` directories (`alsctizr`), event-detector raw data (`eventdetector`), and simulation images (`libertem`). `.bin` is simulation output in 20 directories. `.raw` appears in 114 directories; 52 files have EMPAD-style names (`scan_x*_y*.raw`, `series_x*.raw`), and 52 directories contain both `.raw` and `.xml`. Content and siblings, not names, decide these (C2 in `architecture.md`, now with the XDG priority model).
+4. **Zarr comes in both versions and nests.** 132 directories end in `.zarr`. The first survey said "all v3" because its extension scan missed dot-files; running the oracle on `mpx3/simulation/dataset/4dstem/0-6L/zarr` on 2026-10-16 showed they are version 2 (`.zgroup`, `.zattrs`, `array0/.zarray`, chunks named `0.0.0.0.0`), while `atomdensitymap` has v3 stores with `zarr.json`. The zarr format handles both. Several `.zarr` directories contain other `.zarr` directories (`mpx3/simulation/.../4dstem_defocus_200A_step_5.0A.zarr/4dstem_defocus_50A_step_1.0A.zarr`), which is the nesting case of Q2 in the wild, and the collapse rule must stop at the outer marker or produce nested datasets.
+5. **Header+data pairs exist but are few**: 324 `.emi` with 328 `.ser` (TIA; 326 match by stem, including the `_1`, `_2` suffixes), 710 `.hdr` next to 58k `.mib` (Merlin: one header per acquisition, many frames), 52 EMPAD pairs. `.ser`/`.emi` wasn't on the spike list; MIB is the series case with a header.
+6. **DM3/DM4 are the biggest single-file population**: 21k `.dm4` (3.1 TB) and 7k `.dm3`. The DM4 handler of the spike has plenty of representatives, and metadata extraction from DM tags (R15) has the largest payoff.
+7. **Notebooks**: 1,525 `.ipynb` (5 GB, so some carry large outputs), 736 files under `.ipynb_checkpoints`.
+8. **A copy of LiberTEM's test data lives in the tree** (`adhoc/libertem/libertem-test-data`, including `many_mib` with 19,600 files), which is both a deployment-test asset and a case for the "known collection, don't index the internals" rule.
+9. **Stray-file candidates** (R22): `.pt` (781 files, 8 GB, PyTorch), `.tpx3` (504, 10.7 GB, Timepix3), `.msg` (588), `.svn-base` (421), `.tcl`, `.f90`, `.flt`, `.ovf`, `.blo` (129 files, 0.26 TB), `.prz` (174 files, 0.38 TB), `.arc` (3 files, 0.16 TB). Each needs either a handler or an explicit "known, ignore" decision; most are real cases to handle, just not at the start (@weber).
+
+## Series: what they look like, and a rule derived from examples
+
+Grouping the files of each directory by name template (every run of digits replaced by `#`) gives 5,976 groups of five or more numbered files, holding 371,547 files, 71% of everything visible. By size: 40 groups above 1,000 files, 102 between 200 and 999, 758 between 50 and 199, 1,268 between 10 and 49, 3,808 between 5 and 9. Seven cheap features, all from the listing, separate the kinds:
+
+| Kind | Example | Files | Varying numeric fields | Size spread (CV) | Other files in the directory | mtime span; longest gap | Regular gaps |
+|---|---|---|---|---|---|---|---|
+| Frame series, one dataset | `Image-#.tif`, `#.npy`, `Camera-#.tif`, `w_# h_#-#map#.mib` | 67,600 / 7,000 / 10,100 / 19,600 | 1 | 0.00 | 0 or 1 (a header) | under 1.3 h; under 1 min | 65 to 100% |
+| Parameter sweep, one dataset? | `AWG_voltage#_#.#.dm#` (3,600), `#_KPEEM_E_#.#_hv_#_Gap_#.#_idx_#_#.tif` (3,787) | thousands | 3 to 7 | 0.00 | 0 to 40 | 0.4 to 10 h; up to 70 min | 86 to 100% |
+| Numbered acquisitions, one dataset each | `# - #_CD_#_#_#_STEM_HAADF.emd`, `NiPS#_#.dm#`, `GridSquare_#.dm` | 50 to 100 | 1 to 5 | 0.8 to 3.9 | as many again | 3 to 370 h; 30 to 1,000 min | 6 to 58% |
+| Simulation outputs, one dataset each or per run? | `nips#_#dstem_defocus_#A_step_#.#A_t#.#A.h5` | 1,302 | 5 | 1.56 | 651 | 0.0 h (batch-written or copied) | n/a |
+| Small numbered sets, index individually | `#` (files `0` to `7`), `result_t#.#A.png` | 7 to 8 | 1 to 2 | 0.05 to 0.4 | 0 to 21 | varies | varies |
+
+Reading of the kinds (@weber, 2026-10-16), against the search goals (R30, R31):
+- *Frame series* are one dataset, and often one of a larger producer-specific unit: a TENSOR acquisition with its `.npy`, `.hspy` and per-frame TIFFs, or an orientation-mapping result.
+- *Parameter sweeps* are series too, produced by scripts, too many files for human work. The large time gaps inside a template group most likely separate different script runs with the same naming pattern: only files from the same run belong together, so a template group is split into series at large gaps.
+- *Numbered acquisitions* look like surveys over a grid (cryo-EM style) and are candidates for both: indexed individually and as a collection, depending on how uniform the contents are, ideally tied to a specimen.
+- *Simulation outputs* are one unit that makes no sense to index individually. The valuable part is identifying the program (Quantum Espresso from its `.save` layout, Dr. Probe from `cel/`, `prm/`, `slc/`) and linking the output to the parameter file or script that produced it (R32).
+- *Small numbered sets* under ten files are indexed individually; the user can make sense of them.
+
+Frame series are unmistakable: one varying field, identical sizes, nothing else in the directory, written in one session without pauses. Timestamps need both mtime and ctime: a series copied with `cp` without `-p` has every mtime equal to the copy time (the 67,600-file series shows a span of 0.0 h), so mtime describes the original write session only when it was preserved, and ctime describes the transfer; files that belong together should be close in both. How data arrives on `/er-c-data` is a mess (ingest shares, `cp` with and without `-p`, instrument software), so the timing features are best effort: when every mtime in a group is identical, that means "no timing information", not "written in one instant", and the rule must still group on names and sizes; issues get fixed as they appear, and the only bad outcome is a user missing a result in their query response that the data would have justified (R30). The pace matters as well: frames are written by a machine at a fixed interval, so the share of gaps between consecutive files that lie within 25% of the median gap is 65 to 100% for frame series and sweeps (medians from 0.3 s to 25 s, sub-second mtimes are preserved on the NFS) and 6 to 58% for numbered acquisitions, which are human-paced with medians of one to five minutes. This is the cheap stand-in for a peak in the Fourier transform of the timestamps; a spectrum would add something only for series with several interleaved periods. The crawl currently stores `max(mtime, ctime)`, which loses this; it should keep both. Numbered Velox or DM acquisitions in a `raw` folder look like a series by name but have wildly different sizes and share the directory with other things; they are one dataset per file. The sweeps and the simulation runs are the cases where only the owner can say whether the directory is one dataset, which is exactly where labelled examples come in.
+
+**Rule sketch for the series handler** (stage 1 of the flow, on the listing, no content reads): in a directory, group files by name template and MIME type; first split each template group at time gaps above *g* (different script runs with the same naming pattern are different series); a segment is a series if it has at least *N* files, a size spread below *c*, makes up at least a fraction *f* of the directory's files, and a share of regular gaps above *r*, with the same checks on ctime for the transfer. Whether members are also indexed individually follows R31: always under 10, by case between 10 and 100, never above 100 unless some members are clearly distinct. Members are the group plus declared sidecars (the `.hdr` of a MIB series); the anchor is the directory. A suspected series is matched as a series *and* its files are matched individually: for frame series the members are plain files, for sweeps and numbered acquisition sets each member is a dataset of its own with its own record, referenced from the series record (nesting, `architecture.md` D). The sweep question then needs no global answer.
+
+**Producer-specific directory types beat the generic series rule where the producer is known.** The 67,600-file `DiffractionPatterns/` folder turned out to be a Tescan TENSOR orientation-mapping export (checked: each file is a 128×128 32-bit frame with an ImageJ description `unit=mrad`), and the parent directory is the real dataset: `DiffractionPatterns.hspy` (4.4 GB, the same data), `DriftImageSeries/` with its `.hspy`, maps named `Ambiguity-*`, `Correlation Coefficient Map-*`, `Grains-*`, and `Grain Size Distribution.txt`. The `CameraImageSeries/` with `Camera-#.tif` in a `TENSOR_session` folder is the same family. Dr. Probe simulation output is a second case: a `.json` with `img/<name>_####_####.dat` frames and `cel/`, `prm/`, `slc/` directories (`libertem/…/example_4dstem_drprobe`). For such producers a dedicated type that claims the whole export directory, with the frame folder swallowed as plain files, is cleaner than the generic series rule, which then only handles what no producer-specific handler claims. Priority order does that: the producer type carries a higher priority than the series rule. From the examples above, *N* somewhere between 10 and 50, *c* around 0.1, and *f* around 0.9 separate the frame series from the acquisitions with a wide margin; the sweeps need a decision.
+
+**Deriving the thresholds from good and bad examples.** The features are cheap and few, so the rule can stay a short, explainable expression (R9) rather than a classifier. The mechanism is the deployment's expectation file (T-D in `testing.md`): known-good series directories and known-bad ones. A `fit` step computes the features for every labelled example, proposes thresholds with the margin on each side, and reports every directory in the listing that falls near a threshold, so a human labels the borderline cases and the loop repeats. This fits an agent skill: show the candidates, ask for labels, propose the rule, show what it would change. The candidate groups with their features, including mtime span, longest gap, median gap and the share of regular gaps, are in `.claude/survey/series-candidates.tsv`, ready for labelling.
+
+## Implications for the spike
+
+- Add a **series handler** (a directory of N same-type numbered files is one dataset, anchor the directory) and the **MIB `.hdr` + frames** case to the spike, before DM4; the TIFF series and the `.npy` series are the largest populations by file count.
+- The collapse rule for environments must match `miniforge3`, `envs`, `site-packages`, `__pycache__`, `.ipynb_checkpoints`, `.git`, `venv` and Quantum Espresso `*.save` directories (676 `.dat` in one), not only `node_modules`.
+- Zarr v3 only (`zarr.json`), with nesting.
+- Store mtime and ctime separately in the crawl; the series rule needs the spread of each.
+- Two producer-specific directory types as candidates after the spike: TENSOR orientation-mapping export and Dr. Probe simulation output; both are directory datasets with a frame folder inside that must be swallowed.
+- The deployment test for ER-C needs a reader with full access, otherwise it tests a quarter of the tree.
+
+## First runs of the oracle on real data (2026-10-16, change `recognition-core`)
+
+`modama-crawler records --verbose PATH` on three directories of the visible tree, output validated against the OAI-PMH and `oai_dc` schemas:
+
+| Directory | Result | Time |
+|---|---|---|
+| `ise_tan-invtan/20220502_C4248-tan/raw/SCA2_rings` (EMPAD) | 1 record: the header and `series_x1000.raw` as one dataset, basis "raw_file points to series_x1000.raw"; no warnings | under 1 s |
+| `mpx3/simulation/dataset/4dstem/0-6L/zarr` (63 Zarr v2 stores) | first run: 513 records of chunk and metadata files, because the format knew only v3 markers; after adding `.zarray`/`.zgroup`: 64 records, 63 collapsed stores and one Markdown file; no warnings | 1 s |
+| `aidenoise/grace-cachedata-backup` (a miniforge installation and more) | `miniforge3` collapsed at the top by `conda-meta/`, nothing below it visited; 134 records for the rest; no warnings | a few seconds |
+
+The Zarr run is the first instance of the intended loop: the oracle showed a wrong outcome on real data, the format and its spec were corrected, a representative v2 fixture written by zarr-python was added, and the recorded results were regenerated.
+
+## Full crawl of the visible tree (2026-10-27, task 9.3 of `recognition-core`)
+
+`MODAMA_DATA_ROOT=/er-c-data modama-crawler crawl` into the development database, single-threaded, run on the code as it stood before the play-test fixes of the same day (the first attempt on 2026-10-16 died with its session).
+
+| | |
+|---|---|
+| Duration | 2 h 00 min (11:15 to 13:15 UTC) |
+| Datasets and records | 428,856 |
+| of which single files by MIME type | 428,332 |
+| Collapsed | 475: 283 `.ipynb_checkpoints`, 131 Zarr stores, 53 `__pycache__`, 7 `.git`, 1 conda installation |
+| EMPAD pairs | 49 |
+| Warnings | 3,532 |
+
+Warnings by kind: 1,569 ties between `application/x.empad+xml` and `application/xml` (the glob trick; no longer reported since a tie resolved to a candidate is not an ambiguity), 431 ties between `application/json` and `application/schema+json` resolved to `json5` (the bug the play test found, fixed), 85 `.obj` files tied between `application/x-tgif` and `model/obj` and left at `application/octet-stream` (a curation candidate: at ER-C they are more likely Wavefront or compiled objects than tgif drawings), 1,228 directories that cannot be listed and 28 entries that cannot be stat'ed, all under `/adhoc` (permissions, as in the listing survey; now info lines, not warnings), and a handful of ties between text subtypes such as `text/x-matlab` and `text/x-objcsrc` for `.m` files (curation candidate).
+
+Compared with the listing survey of 2026-10-15 (525,533 files visible), the crawl produced fewer records because collapsed trees hide their contents and because unreadable files are skipped.
+
+Harvest check: `modama-crawler serve` on that database, harvested completely with oaipmh-scythe (the EOSC harvester's client): all 428,856 records in 58 s over 4,289 pages of 100, every request answered with 200. Task 9.3 done.

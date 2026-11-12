@@ -1,0 +1,74 @@
+# Test deployment, loaded by `docker compose` together with docker-compose.yml (as in
+# deploy/): ports on 127.0.0.1 for looking around, test data in a volume, and the e2e
+# test, which writes the test tree, starts harvests and injects faults into the
+# warehouse (with the admin credentials of testconf/, mounted with this folder).
+x-check-user: &check-user
+  SSSD_CHECK_USER: "10001"  # alice, of the test directory (sssd's health check, the crawl's check)
+
+services:
+  crawler:
+    # the e2e test crawls here and waits for the harvests it starts
+    env_file:
+      - ${MODAMA_SECRETS_DIR:?see README.md}/chain.env
+      - ${MODAMA_SECRETS_DIR:?see README.md}/crawler-airflow.env
+    environment: *check-user
+    volumes:
+      - testdata:/data
+      - ./:/e2e:ro
+    ports:
+      - "127.0.0.1:7654:7654"
+
+  crawl-timer:
+    environment: *check-user
+    volumes:
+      - testdata:/data:ro
+
+  # snapshots into a volume here; staging writes them into the checkout's .claude/field-tests/
+  browse:
+    volumes:
+      - testdata:/data:ro
+      - browse-snapshots:/field-tests/browse
+    ports:
+      - "127.0.0.1:7655:7655"
+
+  # deploy/'s test directory (alice 10001, bob 10002, carol 10003, mallory 10004), without
+  # a certificate, so plain LDAP; testconf/secrets/sssd.conf points sssd at it. Reset by
+  # ./downtest.sh --reset.
+  ldap:
+    build: ../../deploy/ldap
+    image: search-stack-ldap
+    restart: unless-stopped
+    volumes:
+      - ldapdata:/var/lib/ldap
+    networks: [search]
+
+  sssd:
+    environment: *check-user
+    volumes:
+      # the test directory's configuration, from this folder whatever MODAMA_SECRETS_DIR says
+      - ./testconf/secrets/sssd.conf:/sssd.conf.in:ro
+    depends_on:
+      ldap:
+        # sssd goes offline for a while if it asks before the directory is loaded
+        condition: service_healthy
+
+  airflow-api-server:
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  search-api:
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  matchmaker:
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  opensearch:
+    ports:
+      - "127.0.0.1:9200:9200"
+
+volumes:
+  testdata:
+  ldapdata:
+  browse-snapshots:

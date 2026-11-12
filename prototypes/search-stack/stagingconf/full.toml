@@ -1,0 +1,3 @@
+# Crawl the whole data tree, with every installed format (the defaults).
+[crawl]
+exclude = []

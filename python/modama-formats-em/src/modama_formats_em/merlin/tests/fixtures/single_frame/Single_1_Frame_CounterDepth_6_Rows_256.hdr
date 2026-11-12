@@ -1,0 +1,29 @@
+HDR,	
+Time and Date Stamp (day, mnth, yr, hr, min, s):	15/04/2021 14:43:23
+Chip ID:	W556_B4, - , - , - 
+Chip Type (Medipix 3.0, Medipix 3.1, Medipix 3RX):	Medipix 3RX
+Assembly Size (NX1, 2X2):	   1x1
+Chip Mode  (SPM, CSM, CM, CSCM):	SPM
+Counter Depth (number):	6
+Gain:	SLGM
+Active Counters:	Counter 0
+Thresholds (keV):	2.000000E+0,5.110000E+2,0.000000E+0,0.000000E+0,0.000000E+0,0.000000E+0,0.000000E+0,0.000000E+0
+DACs:	011,511,000,000,000,000,000,000,175,010,200,125,100,100,093,100,099,030,128,004,255,140,128,191,179,511,511; ; ; 
+bpc File:	c:\Merlin_Quad_Config\default\Default_SPM.bpc,c:\Merlin_Quad_Config\default\Default_SPM.bpc,c:\Merlin_Quad_Config\default\Default_SPM.bpc,c:\Merlin_Quad_Config\default\Default_SPM.bpc
+DAC File:	c:\Merlin_Quad_Config\default\Default_SPM.dacs,c:\Merlin_Quad_Config\default\Default_SPM.dacs,c:\Merlin_Quad_Config\default\Default_SPM.dacs,c:\Merlin_Quad_Config\default\Default_SPM.dacs
+Gap Fill Mode:	None
+Flat Field File:	None
+Dead Time File:	Dummy (C:\<NUL>\)
+Acquisition Type (Normal, Th_scan, Config):	Normal
+Frames in Acquisition (Number):	1
+Frames per Trigger (Number):	1
+Trigger Start (Positive, Negative, Internal):	Internal
+Trigger Stop (Positive, Negative, Internal):	Internal
+Sensor Bias (V):	120 V
+Sensor Polarity (Positive, Negative):	Positive
+Temperature (C):	Board Temp 43.616199 Deg C
+Humidity (%):	Board Humidity 14.690918 
+Medipix Clock (MHz):	180MHz
+Readout System:	Merlin Quad
+Software Version:	0.77
+End	                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           

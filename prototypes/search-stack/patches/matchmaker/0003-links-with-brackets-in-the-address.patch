@@ -1,0 +1,228 @@
+Links whose address holds brackets
+
+The chat reads the Markdown links in an answer with the pattern \[(.+?)]\((.+?)\),
+which ends a link's address at its first closing bracket. A link to a file in a
+folder such as "SI data (20)",
+[acq 01](https://er-c-data-mgmt.fz-juelich.de/browse/?path=/adhoc/x/SI+data+(20)/Spectrum+of+Live+EELS+Spectrum.dm4),
+ended after "(20": the rest of the address showed as text, and the dataset was
+missing from the answer's references (staging 2026-11-12, @weber: 7 of 14 links).
+CommonMark allows brackets in a link's address in balanced pairs; read links that
+way, the pairs nested up to three deep. As in CommonMark, an address with an
+unbalanced bracket makes no link and stays text. Nothing else of CommonMark is added
+(no escaped brackets, no <…> addresses, no link titles).
+
+- datasetCitations.ts: LINK_ADDRESS, the address pattern, in MARKDOWN_LINK (the
+  answer's citation numbers and references).
+- MessageMarkdown.tsx: the same in the link and bold-link forms of tokenRegex (the
+  answer as shown, also in the PDF export).
+- conversationExport.ts: the same in LINK (the reference numbers in the Markdown
+  export).
+- utils.ts, trimTrailingPartialLink: while an answer streams in, a link counts as
+  complete once the brackets in its address are closed, not at the first closing
+  bracket, so the rest of its address does not flash as text.
+- Tests: the staging link, nested brackets, a link followed by text in brackets,
+  an unbalanced bracket.
+
+Not changed: stripMarkdown (utils.ts), which is for the Data Player's tool
+descriptions, not the chat.
+
+Applies to matchmaker v0.14.0 (e7138c898926ebb79e45dd7d20cbf838dcf5dbe5) with
+patches 0001 and 0002.
+
+--- a/src/components/MessageMarkdown.test.tsx
++++ b/src/components/MessageMarkdown.test.tsx
+@@ -143,4 +143,37 @@ describe("MessageMarkdown", () => {
+         renderMarkdown("Found [Ocean te", false);
+         expect(screen.getByText(/Found \[Ocean te/)).toBeInTheDocument();
+     });
++
++    // CommonMark lets a link's address hold brackets in balanced pairs, as file paths do.
++    describe("brackets in a link's address", () => {
++        const BRACKETED_URL = "https://er-c-data-mgmt.fz-juelich.de/browse/?path=/adhoc/x/SI+data+(20)/Spectrum+of+Live+EELS+Spectrum.dm4";
++        const bracketed = makeDataset({_id: BRACKETED_URL, dataset_url: BRACKETED_URL});
++
++        it("keeps the link whole, as a pill to a known dataset", () => {
++            const {container} = render(
++                <MessageMarkdown text={`See [acq 01](${BRACKETED_URL}) for details.`}
++                                 datasets={new Map([[normalizeDatasetUrl(BRACKETED_URL), bracketed]])}/>,
++            );
++            expect(screen.getByRole("link", {name: /acq 01/})).toHaveAttribute("href", BRACKETED_URL);
++            expect(container.textContent).not.toContain("Spectrum+of");
++        });
++
++        it("keeps nested brackets in the address", () => {
++            const {container} = renderMarkdown("See [the run](https://example.org/a(b(c)d)e) here.");
++            expect(screen.getByRole("link", {name: "the run"})).toHaveAttribute("href", "https://example.org/a(b(c)d)e");
++            expect(container.textContent).toBe("See the run here.");
++        });
++
++        it("ends the link at its own closing bracket when text in brackets follows", () => {
++            const {container} = renderMarkdown("See [the run](https://example.org/a(1)) (raw data).");
++            expect(screen.getByRole("link", {name: "the run"})).toHaveAttribute("href", "https://example.org/a(1)");
++            expect(container.textContent).toBe("See the run (raw data).");
++        });
++
++        it("leaves a link with an unbalanced bracket in its address as text", () => {
++            const {container} = renderMarkdown("See [the run](https://example.org/a(1) here.");
++            expect(screen.queryByRole("link")).not.toBeInTheDocument();
++            expect(container.textContent).toBe("See [the run](https://example.org/a(1) here.");
++        });
++    });
+ });
+--- a/src/components/MessageMarkdown.tsx
++++ b/src/components/MessageMarkdown.tsx
+@@ -1,6 +1,6 @@
+ import {Fragment, JSX, useMemo} from "react";
+ import type {BackendDataset} from "../types/commons.ts";
+-import {lookupDataset, type DatasetCitation} from "../lib/datasetCitations.ts";
++import {LINK_ADDRESS, lookupDataset, type DatasetCitation} from "../lib/datasetCitations.ts";
+ import {sanitizeLinkHref, trimTrailingPartialLink} from "../lib/utils.ts";
+ import type {DatasetContext} from "../lib/analytics.ts";
+ import {DatasetReference} from "./DatasetReference.tsx";
+@@ -88,8 +88,9 @@ export const MessageMarkdown = ({
+         // Handles `code`, **[label](url)**, [label](url), **bold** and *italic* in a
+         // single pass. `**` is tried before `*` so bold never reads as empty italics.
+         // Italics are deliberately limited to `*word*`: `_word_` would mangle the
+-        // identifiers this chat is full of (total_precipitation, ERA5_Land, …).
+-        const tokenRegex = /`([^`]+)`|\*\*\[(.+?)]\((.+?)\)\*\*|\[(.+?)]\((.+?)\)|\*\*(.+?)\*\*|\*([^\s*](?:[^*]*[^\s*])?)\*/g;
++        // identifiers this chat is full of (total_precipitation, ERA5_Land, …). A link's
++        // address may hold brackets in balanced pairs (see LINK_ADDRESS).
++        const tokenRegex = new RegExp(String.raw`\`([^\`]+)\`|\*\*\[(.+?)]\((${LINK_ADDRESS})\)\*\*|\[(.+?)]\((${LINK_ADDRESS})\)|\*\*(.+?)\*\*|\*([^\s*](?:[^*]*[^\s*])?)\*`, 'g');
+         const nodes: (string | JSX.Element)[] = [];
+         let lastIndex = 0;
+         let tokenIndex = 0;
+--- a/src/lib/conversationExport.test.ts
++++ b/src/lib/conversationExport.test.ts
+@@ -1,7 +1,7 @@
+ import {afterEach, describe, expect, it, vi} from "vitest";
+ import {makeDataset} from "@/test/fixtures/datasets";
+ import type {Message} from "@/types/chat";
+-import {buildDatasetUrlMap, collectCitations} from "@/lib/datasetCitations";
++import {buildDatasetUrlMap, collectCitations, normalizeDatasetUrl} from "@/lib/datasetCitations";
+ import {AI_DISCLAIMER, FUNDING_STATEMENT} from "@/lib/branding";
+ import {
+     conversationToMarkdown,
+@@ -194,6 +194,14 @@ describe("markCitations", () => {
+     it("leaves an image alone", () => {
+         expect(markCitations(`![chart](${OCEAN_URL})`, datasets, citations)).toBe(`![chart](${OCEAN_URL})`);
+     });
++
++    it("numbers a link whose address holds brackets in balanced pairs", () => {
++        const url = "https://er-c-data-mgmt.fz-juelich.de/browse/?path=/adhoc/x/SI+data+(20)/Spectrum+of+Live+EELS+Spectrum.dm4";
++        const dataset = makeDataset({_id: url, dataset_url: url});
++        const text = `See [acq 01](${url}) (raw data).`;
++        expect(markCitations(text, new Map([[normalizeDatasetUrl(url), dataset]]), [{number: 1, dataset}]))
++            .toBe(`See [1] [acq 01](${url}) (raw data).`);
++    });
+ });
+
+ describe("conversationToMarkdown", () => {
+--- a/src/lib/conversationExport.ts
++++ b/src/lib/conversationExport.ts
+@@ -3,6 +3,7 @@ import type {BackendDataset} from "@/types/commons.ts";
+ import {
+     buildDatasetUrlMap,
+     collectCitations,
++    LINK_ADDRESS,
+     normalizeDatasetUrl,
+     type DatasetCitation
+ } from "@/lib/datasetCitations.ts";
+@@ -196,7 +197,7 @@ export const demoteHeadings = (text: string): string => {
+
+ // A Markdown link, its label kept to one line without brackets so that "[a] text [b](url)"
+ // marks the link "[b](url)" and not everything from the first bracket.
+-const LINK = /\[([^\]\n]+)]\((.+?)\)/g;
++const LINK = new RegExp(String.raw`\[([^\]\n]+)]\((${LINK_ADDRESS})\)`, 'g');
+
+ /**
+  * Puts the reference number in front of every link to a cited dataset, "[1] [label](url)",
+--- a/src/lib/datasetCitations.test.ts
++++ b/src/lib/datasetCitations.test.ts
+@@ -67,4 +67,32 @@ describe("collectCitations", () => {
+         const citations = collectCitations([text(`Found [A](${DATASET_URL}) and [B](https://doi.org/10.5281/zen`)], datasets);
+         expect(citations.map(c => c.dataset)).toEqual([hit]);
+     });
++
++    // CommonMark lets a link's address hold brackets in balanced pairs, as file paths do.
++    describe("brackets in a link's address", () => {
++        const cited = (url: string, t: string) => {
++            const dataset = makeDataset({_id: url, dataset_url: url});
++            return collectCitations([text(t)], new Map([[normalizeDatasetUrl(url), dataset]]))
++                .map(c => c.dataset._id);
++        };
++        const BRACKETED_URL = "https://er-c-data-mgmt.fz-juelich.de/browse/?path=/adhoc/x/SI+data+(20)/Spectrum+of+Live+EELS+Spectrum.dm4";
++
++        it("cites a dataset whose address holds a pair of brackets", () => {
++            expect(cited(BRACKETED_URL, `See [acq 01](${BRACKETED_URL}).`)).toEqual([BRACKETED_URL]);
++        });
++
++        it("cites a dataset whose address holds nested brackets", () => {
++            const url = "https://example.org/a(b(c)d)e";
++            expect(cited(url, `See [the run](${url}).`)).toEqual([url]);
++        });
++
++        it("ends the address at the link's own closing bracket when text in brackets follows", () => {
++            expect(cited(BRACKETED_URL, `See [acq 01](${BRACKETED_URL}) (raw data).`)).toEqual([BRACKETED_URL]);
++        });
++
++        it("does not read a link with an unbalanced bracket in its address", () => {
++            const url = "https://example.org/a(1";
++            expect(cited(url, `See [the run](${url}) here.`)).toEqual([]);
++        });
++    });
+ });
+--- a/src/lib/datasetCitations.ts
++++ b/src/lib/datasetCitations.ts
+@@ -52,8 +52,18 @@ export interface DatasetCitation {
+     dataset: BackendDataset;
+ }
+
++// One character of text on one line, or a bracket pair around such text, the pairs
++// nested up to `depth` deep.
++const balancedBrackets = (depth: number): string =>
++    depth === 0 ? String.raw`[^()\n]` : String.raw`(?:[^()\n]|\(${balancedBrackets(depth - 1)}*\))`;
++
++// A link's address as CommonMark reads it: brackets in it only in balanced pairs, here
++// nested up to three deep, so "(…/SI+data+(20)/…)" is one address and "[a](u) (note)"
++// ends after "u". An address with an unbalanced bracket makes no link.
++export const LINK_ADDRESS = `${balancedBrackets(3)}+`;
++
+ // The link forms MessageMarkdown renders: [label](url), also inside **bold**.
+-const MARKDOWN_LINK = /\[(.+?)]\((.+?)\)/g;
++const MARKDOWN_LINK = new RegExp(String.raw`\[(.+?)]\((${LINK_ADDRESS})\)`, 'g');
+
+ /**
+  * Numbers the datasets an assistant message cites, in order of first mention across
+--- a/src/lib/utils.test.ts
++++ b/src/lib/utils.test.ts
+@@ -173,6 +173,13 @@ describe("trimTrailingPartialLink", () => {
+         );
+         expect(trimTrailingPartialLink("no links here")).toBe("no links here");
+     });
++
++    it("hides a link until the brackets in its address are closed", () => {
++        expect(trimTrailingPartialLink("See [acq 01](https://example.org/SI+data+(20)/Spec")).toBe("See ");
++        expect(trimTrailingPartialLink("See [acq 01](https://example.org/SI+data+(20)/Spec.dm4)")).toBe(
++            "See [acq 01](https://example.org/SI+data+(20)/Spec.dm4)",
++        );
++    });
+ });
+
+ describe("formatPublicationDate", () => {
+--- a/src/lib/utils.ts
++++ b/src/lib/utils.ts
+@@ -1,4 +1,5 @@
+ import type {BackendDataset} from "@/types/commons.ts";
++import {LINK_ADDRESS} from "@/lib/datasetCitations.ts";
+ // Logger utility for error handling and messaging
+
+ // Define isDev based on Vite's import.meta.env or Node's process.env
+@@ -129,7 +130,7 @@ export function stripMarkdown(md: string): string {
+ export function trimTrailingPartialLink(text: string): string {
+     const open = text.lastIndexOf('[');
+     if (open === -1) return text;
+-    return /^\[[^\]]*]\([^)]*\)/.test(text.slice(open)) ? text : text.slice(0, open);
++    return new RegExp(String.raw`^\[[^\]]*]\(${LINK_ADDRESS}\)`).test(text.slice(open)) ? text : text.slice(0, open);
+ }
+
+ /**

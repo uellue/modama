@@ -1,0 +1,27 @@
+{
+  "datasets": [
+    {
+      "anchor": "/Capture52_.gtg",
+      "basis": "8 sector files Capture52_*.bin",
+      "collapsed": false,
+      "format": "em/k2is",
+      "members": [
+        "/Capture52_.gtg",
+        "/Capture52_1.bin",
+        "/Capture52_2.bin",
+        "/Capture52_3.bin",
+        "/Capture52_4.bin",
+        "/Capture52_5.bin",
+        "/Capture52_6.bin",
+        "/Capture52_7.bin",
+        "/Capture52_8.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.k2is",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

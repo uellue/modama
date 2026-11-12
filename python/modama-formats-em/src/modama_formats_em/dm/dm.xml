@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- No MIME type is registered or used in the wild for Digital Micrograph
+       files, hence unofficial ones. No globs: a file named *.dm3 or *.dm4 has
+       no glob match, so its content decides (spec formats/dm, a misnamed file).
+       Header layout as RosettaSciIO 0.15.0 reads it (digitalmicrograph/_api.py,
+       parse_header), all big-endian: the version (uint32), the file size
+       (uint32 in DM3, uint64 in DM4), then the byte order flag of the tags
+       (uint32, 1 little-endian, 0 big-endian). -->
+  <mime-type type="application/x.dm3">
+    <comment>Gatan Digital Micrograph file, version 3</comment>
+    <magic priority="60">
+      <match type="big32" offset="0" value="3">
+        <match type="big32" offset="8" value="1"/>
+        <match type="big32" offset="8" value="0"/>
+      </match>
+    </magic>
+  </mime-type>
+  <mime-type type="application/x.dm4">
+    <comment>Gatan Digital Micrograph file, version 4</comment>
+    <magic priority="60">
+      <match type="big32" offset="0" value="4">
+        <match type="big32" offset="12" value="1"/>
+        <match type="big32" offset="12" value="0"/>
+      </match>
+    </magic>
+  </mime-type>
+  <!-- Files with the DM4 header that hold tags and no image (no ImageList tag;
+       staging run 3, finding F15: 2,036 .dmw files). The name decides the type
+       without reading the file, so the DM4 format, which reacts to
+       application/x.dm4 only, does not take them. The format em/dmw checks the
+       header: it claims a file with the DM3 or DM4 header, and one without
+       gets the type it has without this glob (change recognition-checks-content).
+       Gatan's own name for them is to be confirmed; the comment says what is
+       verified. The .gtg tag files of K2IS captures are typed the same way, in
+       k2is/. -->
+  <mime-type type="application/x.dm-dmw">
+    <comment>Gatan Digital Micrograph workspace</comment>
+    <sub-class-of type="application/x.dm4"/>
+    <glob pattern="*.dmw"/>
+  </mime-type>
+  <!-- A compressed workspace as Gatan Microscopy Suite writes it (observed
+       2026-11-12): a ZIP whose first member is the workspace
+       <name>/<name>.dmw, then <name>/files/ with the images it names, all
+       deflated. The name decides; the format em/dmwx checks that the first
+       member is a .dmw (change recognition-checks-content, decision 190). -->
+  <mime-type type="application/x.dm-dmwx">
+    <comment>Gatan Digital Micrograph workspace (compressed)</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.dmwx"/>
+  </mime-type>
+</mime-info>

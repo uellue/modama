@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modama-search-chain"
+description = "Trace a path of the modama data tree through crawler, harvester, warehouse and search"
+license = {file = "LICENSE"}
+requires-python = ">=3.14"
+version = "0.0.1.dev0"
+dependencies = [
+    "psycopg[binary]",
+]
+authors = [
+    {name="Dieter Weber", email="d.weber@fz-juelich.de"},
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+# modama-chain browse (change chain-browse): the warehouse's transformation with the versions
+# of its transform environment (metadata-warehouse v1.10.0, uv.lock). The crawler and its
+# formats, for the live views, are installed beside it from the checkout, as in the crawler
+# image (not named here: there is no such package on PyPI to resolve)
+browse = [
+    "werkzeug",
+    "lxml",
+    "xmltodict==1.0.4",
+    "jsonschema==4.26.0",
+    # jsonschema's dependencies, as the warehouse's uv.lock has them
+    "attrs==26.1.0",
+    "jsonschema-specifications==2025.9.1",
+    "referencing==0.37.0",
+    "rpds-py==0.30.0",
+]
+
+[tool.setuptools.package-data]
+modama_chain = ["browse.html"]
+
+[project.scripts]
+modama-chain = "modama_chain.cli:main"

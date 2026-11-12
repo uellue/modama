@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- The text header of a Merlin (Quantum Detectors, Medipix) acquisition; no
+       MIME type is registered or used in the wild for it. No glob: *.hdr is
+       used by other formats too, and has no glob in the core, so the content
+       decides. The header starts with an "HDR," line, then the acquisition's
+       "key:<TAB>value" lines (RosettaSciIO 0.15.0, quantumdetector/_api.py,
+       parse_hdr_file; checked on its Merlin test files). -->
+  <mime-type type="application/x.merlin-header">
+    <comment>Header of a Merlin acquisition</comment>
+    <sub-class-of type="text/plain"/>
+    <magic priority="60">
+      <match type="string" offset="0" value="HDR,">
+        <match type="string" offset="4:256" value="Chip ID:"/>
+      </match>
+    </magic>
+  </mime-type>
+  <!-- Frame files of a Merlin acquisition, one or many per header; each frame
+       starts with an "MQ1," header (RosettaSciIO 0.15.0, MIBProperties). No
+       core type has *.mib, so the name decides; the Merlin format groups the
+       files with their .hdr. -->
+  <mime-type type="application/x.merlin-mib">
+    <comment>Frames of a Merlin acquisition</comment>
+    <glob pattern="*.mib"/>
+  </mime-type>
+</mime-info>
