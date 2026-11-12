@@ -6,6 +6,7 @@ Extraction reads the header itself (`read_header`) and the first frame's
 header through RosettaSciIO.
 """
 
+import logging
 import os
 from collections.abc import Iterable
 from datetime import datetime
@@ -13,6 +14,9 @@ from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
+from ..values import textual
+
+log = logging.getLogger(__name__)
 HERE = Path(__file__).parent
 # The header is read whole; real headers are a few kB
 MAX_HEADER = 64 << 10
@@ -34,6 +38,7 @@ def read_header(path: str) -> dict[str, str]:
     header that is not UTF-8"). Latin-1 decodes every byte, and µ stays µ;
     cp1252 would fail on the bytes it leaves undefined (0x81, 0x8D, 0x8F,
     0x90, 0x9D). Keys lose a trailing ":"; some have none ("Sensor Bias (V, µA)").
+    A blank line is skipped; a line without a tab is a key with an empty value.
     """
     size = os.stat(path).st_size
     if size > MAX_HEADER:
@@ -41,10 +46,10 @@ def read_header(path: str) -> dict[str, str]:
     header = {}
     with open(path, encoding="latin-1") as f:
         for line in f:
-            if line.startswith(("HDR", "End\t")):
+            if line.startswith(("HDR", "End\t")) or not line.strip():
                 continue
-            key, value = line.split("\t", 1)
-            header[key.rstrip(":")] = value.rstrip("\n")
+            key, _, value = line.partition("\t")
+            header[key.rstrip("\n").rstrip(":")] = value.rstrip("\n")
     return header
 
 
@@ -93,41 +98,45 @@ class Merlin(Format):
         height, width = first.merlin_size
         depth = int(hdr[DEPTH])
         readout = hdr.get(READOUT, "").strip()
-        # The key by its start (spec formats/merlin, "The date key names its
-        # fields in another order"); a value in another form fails, naming it
-        date = next((k for k in hdr if k.startswith(DATE)), None)
-        if date is None:
-            raise KeyError(DATE)
-        stamp = hdr[date].strip()
-        try:
-            acquired = datetime.strptime(stamp, "%d/%m/%Y %H:%M:%S")
-        except ValueError as e:
-            raise ValueError(f"{date}: {stamp!r} is not dd/mm/yyyy hh:mm:ss ({e})")
+        mapped = {
+            "frames": frames,
+            "frame": [width, height],
+            "counter_depth": depth,
+            "readout": readout,
+        }
         # The summary line: the chosen entries' values as the header writes them,
         # a number after its key, a text as it is; the frame size, from the frame
-        # file, after its name in mapped_metadata (decision 230)
+        # file's header (X, Y), whose reader names no axis, after its name in
+        # mapped_metadata (decision 230)
         summary = [
             f"{COUNT} {hdr[COUNT]}",
-            f"frame {width}×{height}",
+            f"frame {width}, {height}",
             f"{DEPTH} {hdr[DEPTH]}",
         ]
         if readout:
             summary.append(hdr[READOUT])
-        summary.append(hdr[date])
+        # The key by its start (spec formats/merlin, "The date key names its
+        # fields in another order"); a value in another form is shown as written,
+        # with a warning, and not read (spec formats/merlin, "A date in another form")
+        date = next((k for k in hdr if k.startswith(DATE)), None)
+        if date is not None:
+            summary.append(hdr[date])
+            try:
+                acquired = datetime.strptime(hdr[date].strip(), "%d/%m/%Y %H:%M:%S")
+                mapped["acquired"] = acquired.isoformat()
+            except ValueError:
+                log.warning(
+                    "%s: %s %r is not dd/mm/yyyy hh:mm:ss; no acquisition time",
+                    dataset.anchor,
+                    date,
+                    hdr[date],
+                )
         values = {
-            # Every entry, its key and its value as the file writes them; the skip
-            # list is empty (spec formats/merlin, "Every header entry is kept").
-            # TODO: the shared check of modama_formats_em for content not suitable
-            # for text display (too large, binary; TEMPLATE.md, "Extracting
-            # metadata"), one call per value here, once it is merged (DM change)
-            "original_metadata": hdr,
-            "mapped_metadata": {
-                "frames": frames,
-                "frame": [width, height],
-                "counter_depth": depth,
-                "readout": readout,
-                "acquired": acquired.isoformat(),
-            },
+            # Every entry, its key and its value as the file writes them, but a
+            # value not suitable for text (spec formats/merlin, "Every header
+            # entry is kept")
+            "original_metadata": {k: v for k, v in hdr.items() if textual(v)},
+            "mapped_metadata": mapped,
         }
         return Extracted(
             summary=summary, subjects=[readout] if readout else [], values=values

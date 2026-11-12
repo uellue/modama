@@ -21,7 +21,8 @@
         "4D-STEM"
       ],
       "summary": [
-        "scan 32\u00d764",
+        "scan_resolution_x 32",
+        "scan_resolution_y 64",
         "exposure_time 1 (unit unknown)",
         "2026-03-25T16:47:52.586728"
       ],
