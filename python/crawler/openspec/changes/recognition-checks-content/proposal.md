@@ -29,8 +29,8 @@ Serves R25 (honest types), R30 (records that don't mislead a searcher), R23/R8 (
 - While recognising a directory, a format can say that one of its files is **not of the type the file's name gave it**, with a reason.
 - **Only a file typed by its name alone qualifies**: exactly one best name rule gave it the type. Its type becomes what detection gives without that rule: another name rule, else the content, else `text/plain` or `application/octet-stream`. This takes effect at once, for the formats that run after it in the same directory and for the file as a single file. A format for the new type can claim it if it runs later.
 - A format that drops types must run before the formats that are to claim its files' new types. The format's priority says that. When a format that ran earlier on the directory reacts to a dropped file's new type, the crawl warns: the order is wrong.
-- A file typed by its content keeps its type. The crawl warns, naming the format and the reason: a content match that a format contradicts points at a weak content rule (decision 145, flow D).
-- A read error while finding the new type is reported as the format's failure, every type stays as it was, and the directory is recognised again next crawl.
+- A file typed by its content keeps its type. The crawl warns, naming the format and the reason: a content match that a format contradicts points at a weak content rule (decision 145, flow F). So does a file a format that ran earlier has claimed.
+- A file that cannot be read while it is checked keeps its type, the crawl warns at it, the rest of the directory's result stands, and the directory is recognised again next crawl (code review finding 1; revised from "reported as the format's failure").
 - The reason goes into the **basis** of the dataset that holds the file ("single file; em/k2is: not application/x.dm-gtg, no DM4 header"). `records --verbose` shows it, also for a single file, and the crawler line of `modama-chain trace` shows every dataset's basis. No warning, and no count in the crawl report (decision 148).
 - **Nothing new is stored.** The type and basis are stored with the dataset as they are today. An unchanged directory keeps them on the next crawl without reading a file. A changed file is checked again.
 - **In `modama-formats-em`**, built here on `crawler` (where `dm-containers-and-k2is` is merged):
@@ -63,7 +63,7 @@ None.
 
 ### Modified Capabilities
 
-- `recognition`: a format can say that a file is not of the type its name gave it. The file then gets the type detection gives without it, at once. A file typed by its content keeps its type, with a warning. A broken format order is warned about. A failed or over-budget format call, or a read error while finding the new type, leaves every type and basis as it was. The core's detection of a new type is not charged to the format's byte budget (decision 166).
+- `recognition`: a format can say that a file is not of the type its name gave it. The file then gets the type detection gives without it, at once. A file typed by its content, or claimed earlier, keeps its type, with a warning. A broken format order is warned about. A failed or over-budget format call leaves every type and basis as it was, and its warnings go with it. A read error on one file keeps that file's type and leaves the rest of the result. The core's detection of a new type is not charged to the format's byte budget (decision 166).
 - `mime-database`: detection can leave a type out.
 - `records-cli`: a single file whose name type a format dropped gets a recognition comment with its basis.
 - `chain-trace`: the crawler line shows the basis of the dataset that holds the item.

@@ -95,12 +95,21 @@ class Workspace(Format):
   a `.gtg` with its 8 sector files whatever the `.gtg` holds (a broken
   capture, reported at extraction), and checks only a `.gtg` without them.
 - The core finds the new type with a read that does not count against your
-  budget; a read error there fails your call, every type stays as it was,
-  and the directory is recognised again next crawl.
+  budget. A read error there keeps the file's type and warns at it
+  (`d.cannot_read`), and the directory is recognised again next crawl; your
+  call goes on. Where one file's read error must not decide the others'
+  outcome, catch `OSError` around your own `d.read` of it and call
+  `d.cannot_read(e, error)` too (`modama_formats_em.dm.header`). An exception
+  out of `recognize` discards all of your datasets of the directory.
+- Drop only types of files you react to: a drop of a file a format that ran
+  earlier claimed is undone, with a warning.
 - Order: a format that runs before yours does not see the new type. Give
   yours a higher priority than the formats that are to claim the new types.
   The crawl warns when a format that ran earlier reacts to a dropped file's
   new type; it cannot tell for formats that react to `DIRECTORY`.
+- A changed priority needs a new recognition `version`: priorities are not
+  part of the rule set's fingerprint, and a directory taken over from the
+  last crawl keeps the outcome of the old order, types included.
 
 ## Extracting metadata
 

@@ -32,7 +32,7 @@ When a directory holds a `.gtg` file and exactly 8 sector files whose names star
 ## ADDED Requirements
 
 ### Requirement: A lone tag file needs the DM4 header
-The K2IS format SHALL check the DM4 header of a `.gtg` file that has no sector files of its stem. One without it SHALL get the type detection gives without the `.gtg` type (spec `recognition`); a `.gtg` file with sector files of its stem SHALL NOT be checked.
+The K2IS format SHALL check the DM4 header of a `.gtg` file that has no sector files of its stem. One without it SHALL get the type detection gives without the `.gtg` type (spec `recognition`); a `.gtg` file with sector files of its stem SHALL NOT be checked. One that cannot be read SHALL keep its type, and the captures of the directory SHALL stand (spec `recognition`, "A read error on one file leaves the rest of the result").
 
 #### Scenario: A text file named like a tag file
 - **WHEN** a directory holds `notes.gtg` holding `hello\n` and no sector files
@@ -41,3 +41,11 @@ The K2IS format SHALL check the DM4 header of a `.gtg` file that has no sector f
 #### Scenario: An empty file named like a tag file
 - **WHEN** a directory holds an empty `empty.gtg` and no sector files
 - **THEN** it is a single file of type `text/plain`, and the crawl reports no warning for it
+
+#### Scenario: A lone tag file with the DM3 header
+- **WHEN** a directory holds `config.gtg`, the DM3 file of the fixture `stem_image_dm3` under a `.gtg` name, and no sector files, and the whole `em` collection is enabled
+- **THEN** it is a dataset of `em/dm3` of the DM3 type with the basis `Digital Micrograph header; em/k2is: not application/x.dm-gtg, no DM4 header` (decision 147; open question 183, whose lean is to accept the DM3 header here as for `.dmw`)
+
+#### Scenario: A lone tag file that cannot be read
+- **WHEN** a directory holds `Capture52_.gtg` with its 8 sector files and `notes.gtg` holding `hello\n`, and reading `notes.gtg` fails with a stale file handle, in K2IS's check of its header or in the core's detection of its new type
+- **THEN** the capture is one K2IS dataset of 9 files, `notes.gtg` is a single file of the `.gtg` type with the basis `single file`, the crawl's only warning names `notes.gtg` and the error, and the directory is marked to be recognised again on the next crawl

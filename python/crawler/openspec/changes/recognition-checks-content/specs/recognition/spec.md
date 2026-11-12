@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: A format can say a file is not of the type its name gave it
-While recognising a directory, a format SHALL be able to say that a file is not of the type the file's name gave it, with a reason. When a single best name rule gave that type, the file SHALL get the type detection gives without it, at once: for the formats that run after it on that directory, and as a single file. The dataset holding the file SHALL carry the format, the dropped type and the reason in its basis, and the crawl SHALL report no warning for it.
+While recognising a directory, a format SHALL be able to say that a file is not of the type the file's name gave it, with a reason. When a single best name rule gave that type, the file SHALL get the type detection gives without it, at once: for the formats that run after it on that directory, and as a single file. Its dataset's basis SHALL carry the format, the dropped type and the reason, and the crawl SHALL not warn about it, except for a tie in its new type, warned about as the walk does.
 
 #### Scenario: A text file named like the format's files
 - **WHEN** a directory holds `notes.tags` holding `hello\n`, and the test format `test/tags`, whose files are named `*.tags` and start with `TAGS`, reads its first 4 bytes and says it is not of its type, with the reason "no TAGS header"
@@ -25,6 +25,10 @@ While recognising a directory, a format SHALL be able to say that a file is not 
 - **WHEN** `test/tags` says twice in one call that `notes.tags`, holding `hello\n`, is not of its type
 - **THEN** `notes.tags` is a single file of type `text/plain`, the file is read once by the core for its new type, and the crawl warns once that `text/plain` does not come from its name alone and is kept
 
+#### Scenario: A tie among the remaining name rules
+- **WHEN** a directory holds `notes.pair` holding `hello\n`, whose name matches `*.pair` of `application/x.test-pair` at weight 60 and of `application/x.test-a` and `application/x.test-b` at weight 50, and a format says it is not of type `application/x.test-pair`
+- **THEN** `notes.pair` is a single file of type `application/octet-stream`, the common ancestor, and the crawl warns at it that its type is ambiguous between `application/x.test-a` and `application/x.test-b`, as the walk warns about a tie
+
 ### Requirement: A broken format order is reported
 When a format drops a file's type, and a format that runs earlier on the directory reacts to the file's new type, the crawl SHALL report a warning naming both formats, the file and the new type. The earlier format SHALL NOT be called again.
 
@@ -40,15 +44,37 @@ When a format says a file is not of its type, but the file's type did not come f
 - **THEN** `blob` is a single file of type `image/png` with the basis `single file`, and the crawl's warnings name `test/contradicts`, `blob`, `image/png` and "not a picture"
 
 ### Requirement: A failed format call leaves every type as it was
-A format call on a directory that fails, exceeds its byte budget, or meets a read error while the core finds a file's new type, SHALL leave the types and bases of the directory's files as they were before the call. A read error SHALL be reported as the format's failure on the directory, and the directory SHALL be recognised again on the next crawl.
+A format call on a directory that fails or exceeds its byte budget SHALL leave the types and bases of the directory's files as they were before the call, and the warnings the call gave SHALL be discarded with its result; only the warning that the format failed or was skipped SHALL remain.
 
 #### Scenario: A format fails after dropping a type
 - **WHEN** a variant of `test/tags` says `notes.tags` is not of its type and then raises an exception in the same call
-- **THEN** `notes.tags` is a single file of type `application/x.test-tags` with the basis `single file`, and the crawl warns that the format failed on the directory
+- **THEN** `notes.tags` is a single file of type `application/x.test-tags` with the basis `single file`, and the crawl's only warning is that the format failed on the directory
+
+#### Scenario: A format reads past its budget after dropping a type
+- **WHEN** a variant of `test/tags` says `notes.tags` is not of its type and then reads more bytes than its budget allows
+- **THEN** `notes.tags` is a single file of type `application/x.test-tags` with the basis `single file`, and the crawl's only warning is that the format was skipped, naming the read
+
+#### Scenario: A warning of a discarded call
+- **WHEN** a variant of `test/contradicts` gets the warning that `blob`'s type `image/png` is kept, and then raises an exception
+- **THEN** the crawl's only warning is that the format failed on the directory
+
+### Requirement: A read error on one file leaves the rest of the result
+When a file cannot be read while a format checks it (its first bytes, or the core's detection of its new type), the file SHALL keep its type and basis, the crawl SHALL warn at the file, naming the format and the error, the format's call SHALL NOT be discarded, so that the other files' outcome does not depend on it, and the directory SHALL be recognised again on the next crawl.
 
 #### Scenario: A read error while finding the new type
 - **WHEN** `test/tags` says `notes.tags` is not of its type, and reading `notes.tags` for its new type fails with an I/O error
-- **THEN** `notes.tags` is a single file of type `application/x.test-tags` with the basis `single file`, the crawl warns that `test/tags` failed on the directory, naming the error, and the directory is marked to be recognised again on the next crawl
+- **THEN** `notes.tags` is a single file of type `application/x.test-tags` with the basis `single file`, the crawl warns at `notes.tags` that `test/tags` cannot read it, naming the error, and the directory is marked to be recognised again on the next crawl
+
+#### Scenario: A read error on one file leaves the others
+- **WHEN** a directory holds `notes.tags` holding `hello\n` and `picture.tags` starting with the PNG signature, `test/tags` drops both, `test/png` runs after it, and reading `notes.tags` for its new type fails with a stale file handle
+- **THEN** `notes.tags` keeps the type `application/x.test-tags`, `picture.tags` is a dataset of `test/png` with the basis `PNG signature; test/tags: not application/x.test-tags, no TAGS header`, the crawl's only warning names `notes.tags` and the error, and the directory is marked to be recognised again on the next crawl
+
+### Requirement: A claimed file keeps its type
+When a format says a file is not of its type, but a format that ran earlier on the directory has claimed the file, the file SHALL keep its type, the claiming dataset SHALL keep its basis, and the crawl SHALL warn at the file, naming both formats.
+
+#### Scenario: A file an earlier format claimed
+- **WHEN** a test format `test/claim` at a higher priority than `test/tags` claims `x.tags`, holding `hello\n`, with the basis "claimed", and `test/tags` then says it is not of its type
+- **THEN** `x.tags` is a dataset of `test/claim` of type `application/x.test-tags` with the basis `claimed`, and the crawl warns at `x.tags` that it is claimed by `test/claim` and its type is kept
 
 ### Requirement: A dropped type lasts until the file or the rules change
 The new type and basis of a file whose name type a format dropped SHALL be stored with its dataset like any recognition result. A crawl of the unchanged directory under the same rules SHALL give the same type and basis without reading the file. A crawl after the file changed SHALL check it again.

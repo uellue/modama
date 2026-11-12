@@ -34,6 +34,20 @@ These need tasks 1.1 and 1.2.
   - `modama-chain trace` on `notes.gtg` shows the basis of spec `chain-trace`.
   - `./runtest.sh e2e` in `/prototypes/search-stack/`, the crawler suite and the `modama-formats-em` suite pass, with the number skipped given.
 
+  State: the e2e tree holds `stray/notes.gtg`, and `test_the_crawler_line_shows_the_datasets_basis` in `prototypes/search-stack/test_e2e.py` traces it and a plain file (code review finding 3). `./runtest.sh e2e` is pending: the VM's stack is held by another agent.
+
+## 4. Code review (`code-review.md`, 2026-11-12)
+
+- [x] 4.1 Finding 1: a read error on one file while it is checked keeps its type, warns at it and marks the directory for the next crawl; the call is not discarded (`Directory.cannot_read`, `dm.header` for `em/dmw` and K2IS). The spec's earlier scenario, which made it the format's failure on the directory, is changed. Verify: `test_a_read_error_while_finding_the_new_type`, `test_a_read_error_on_one_file_leaves_the_others` (crawler), `test_a_lone_tag_file_that_cannot_be_read[format's read, new type's detection]` (Capture52 next to an unreadable `notes.gtg`: one capture of 9), `test_a_dmw_file_that_cannot_be_read`.
+- [x] 4.2 Finding 2: left as it is until question 183; `formats/dm` excepts the lone `.gtg` without the DM4 header, `formats/k2is` has "A lone tag file with the DM3 header" with today's outcome. Verify: `k2is/tests/test_with_the_dm_part.py`.
+- [x] 4.3 Finding 3: `notes.gtg` in the e2e tree and its trace test; the run waits (task 3.1).
+- [x] 4.4 Finding 4: a drop of a file an earlier format claimed is undone, with a warning. Verify: `test_a_file_an_earlier_format_claimed`.
+- [x] 4.5 Finding 5: spec `formats/dm` says what is stored. Verify: `test_the_stored_dmw_description` (through `extraction.extract`: 298 phrases, the colour table cut to 4,096 characters).
+- [x] 4.6 Finding 6: `test_a_format_over_budget_after_a_drop`, `test_a_tie_in_the_new_types_detection`.
+- [x] 4.7 Finding 7: one name, "Gatan Digital Micrograph workspace", the type's comment in `dm.xml`; `em/dmw` has no `display_name` of its own. Verify: `test_a_dmw_file_with_the_dm4_header`.
+- [x] 4.8 Finding 8: a discarded call's warnings go with it. Verify: `test_warnings_of_a_discarded_call_go_with_it`, and "A format fails after dropping a type" now asserts the only warning.
+- [x] 4.9 Finding 9: design's migration plan, TEMPLATE (a changed priority needs a new recognition `version`), the em README's K2IS row.
+
 ## Not now
 
 - A fallback for files typed by their content (weak magic collisions, flow F): a warning only.

@@ -124,6 +124,22 @@ The record says the file's type, and its basis says that it is not of that type.
 - TEMPLATE now tells authors to set a priority above the formats that are to claim the new types. It does not say that changing a format's priority needs a new recognition `version`. Priorities are not in the fingerprint (`selection.py:155`), and with D3 a priority decides types as well as claims, so taken-over directories keep the old outcome.
 - `modama-formats-em/README.md:10`, K2IS row: "a `.gtg` with other than 8 [sector files] stay[s] single files with a warning". A `.gtg` with none gets no warning (spec `formats/k2is`, "A tag file without sectors"). The wording is older, but this change rewrote the row.
 
+## Outcomes (2026-11-12)
+
+Each finding verified against the code before it was acted on; the coordinator's leans of 2026-11-12 decided 1, 2 and 7.
+
+| # | Outcome | Where |
+|---|---|---|
+| 1 | Addressed (option A, the lean: the same data gives the same result or a failure; decision 185, a failure is retried by the next regular crawl; transient errors must not change good results). A read error on one file while it is checked keeps that file's type, warns at it (`<format>: cannot read <file>: <error>; type kept`) and sets `retry`; the format's call is not discarded. This changes the spec's earlier scenario "A read error while finding the new type", which made it the format's failure on the directory | `formats/__init__.py` (`Directory.cannot_read`, `not_of_type`), `dm/__init__.py` (`header`, used by `em/dmw` and K2IS); spec `recognition` ADDED "A read error on one file leaves the rest of the result", spec `formats/k2is` "A lone tag file that cannot be read", spec `formats/dm` "A .dmw file that cannot be read"; tests `test_a_read_error_while_finding_the_new_type`, `test_a_read_error_on_one_file_leaves_the_others`, `test_a_lone_tag_file_that_cannot_be_read` (both reads), `test_a_dmw_file_that_cannot_be_read`; design D1, D3; TEMPLATE |
+| 2 | Left as it is until question 183; the specs now agree with the code: `formats/dm` excepts a lone `.gtg` without the DM4 header, `formats/k2is` has the scenario with today's outcome; the open question stays in the design | specs `formats/dm`, `formats/k2is`; `k2is/tests/test_with_the_dm_part.py`; design, "Open questions" |
+| 3 | Addressed in part: `stray/notes.gtg` in the e2e tree, and a test of both `chain-trace` scenarios; `./runtest.sh e2e` pending (the VM's stack is held by another agent) | `prototypes/search-stack/test_e2e.py` (`STRAY_TAGS`, `test_the_crawler_line_shows_the_datasets_basis`); tasks 3.1, 4.3 |
+| 4 | Addressed: the drop is undone, with a warning at the file naming the claiming format | `formats/__init__.py` (`run_post`, `Directory._undrop`); spec `recognition` ADDED "A claimed file keeps its type"; `test_a_file_an_earlier_format_claimed`; TEMPLATE |
+| 5 | Addressed: the spec says what is stored (each phrase to 4,096 characters, the list to 1,000), and a test checks the stored form through `extraction.extract` | spec `formats/dm` "A tag longer than storage keeps"; `test_the_stored_dmw_description`; BACKLOG "`.dmw` description"; em README |
+| 6 | Addressed: a test for each path | `test_a_format_over_budget_after_a_drop`, `test_a_tie_in_the_new_types_detection` (a `*.pair` rule at weight 60, two at 50); spec `recognition` scenarios for both |
+| 7 | Addressed: one name, "Gatan Digital Micrograph workspace" (@weber's "DM workspace"; 184 open for the exact name), the type's comment in `dm.xml`; `em/dmw` has no `display_name`, so the subject uses the comment | `dm/dm.xml`, `dm/__init__.py`; `test_a_dmw_file_with_the_dm4_header`; spec `formats/dm`; design E1 |
+| 8 | Addressed: `_call` cuts the warnings back on failure, before adding its own | `formats/__init__.py` (`_call`); spec `recognition` "A warning of a discarded call"; `test_warnings_of_a_discarded_call_go_with_it`, `test_a_format_fails_after_dropping_a_type` |
+| 9 | Addressed | design, Migration Plan; TEMPLATE (a changed priority needs a new recognition `version`); em README, K2IS row |
+
 ## Notes, no action proposed
 
 - Each drop copies the entry list (`formats/__init__.py:218`), and `_check_order` scans the entries for each dropped file (`formats/__init__.py:441`), so a directory of n entries with k drops costs O(n·k). That is negligible at staging's numbers (2,036 `.dmw` files, all with the DM4 header per F15, so no drops). It would matter only for directories with tens of thousands of misnamed files.

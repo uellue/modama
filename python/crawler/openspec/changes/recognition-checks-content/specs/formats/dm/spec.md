@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Tag files and workspaces are not DM images
-A file named `*.dmw` or `*.gtg` SHALL be typed by its name with a type of its own, a subclass of the DM4 type, and SHALL NOT be described or extracted as a DM image, even when its content has a DM header. One that its format finds without a DM header SHALL get the type detection gives without its name's type (spec `recognition`).
+A file named `*.dmw` or `*.gtg` SHALL be typed by its name with a type of its own, a subclass of the DM4 type, and SHALL NOT be described or extracted as a DM image while it keeps that type. A `.dmw` file without the DM3 or the DM4 header, and a `.gtg` file without sector files and without the DM4 header (spec `formats/k2is`), SHALL get the type detection gives without its name's type (spec `recognition`); for a lone `.gtg` with the DM3 header that is the DM3 type (open question 183).
 
 #### Scenario: A .dmw file with the DM4 header
 - **WHEN** a file named `conditions_00C.dmw` starts with the DM4 header
@@ -24,11 +24,19 @@ A file named `*.dmw` or `*.gtg` SHALL be typed by its name with a type of its ow
 ## ADDED Requirements
 
 ### Requirement: A .dmw file is described by all its tags
-The format `em/dmw` SHALL claim each file of the `.dmw` type that starts with the DM3 or the DM4 header as a dataset of one file. Its extractor SHALL yield every tag of the file, under its path of tag names and with the reader's value, in the reader's order, leaving nothing out (decision 173). A `.dmw` file with the DM3 header SHALL carry the note "file of interest" in its basis (decision 174).
+The format `em/dmw` SHALL claim each `.dmw` file with the DM3 or the DM4 header as a dataset of one file, whose extractor yields every tag, as `path value` in the reader's order (decision 173). Storage cuts it as every extraction: each phrase to 4,096 characters, the list to 1,000. A DM3 one SHALL carry "file of interest" in its basis (decision 174). Description and subject SHALL name the type "Gatan Digital Micrograph workspace" (open item 184).
 
 #### Scenario: A representative .dmw file
 - **WHEN** `conditions_00C.dmw`, the DM4 file of the fixture `cl_image_dm4` under a `.dmw` name, is crawled
-- **THEN** its record's description starts with `ApplicationBounds (0, 0, 703, 1102), ` and holds one phrase for each of the file's 298 tags, among them `ImageList.TagGroup1.ImageTags.DataBar.Device Name DigiScan`; its subjects are `Gatan Digital Micrograph workspace`; its basis is `Digital Micrograph header`
+- **THEN** its record's description starts with `ApplicationBounds (0, 0, 703, 1102), `, holds one phrase for each of the file's 298 tags, among them `ImageList.TagGroup1.ImageTags.DataBar.Device Name DigiScan`, and ends with `Gatan Digital Micrograph workspace, 1 file, 611.4 kB, in /`; its subjects are `Gatan Digital Micrograph workspace`; its basis is `Digital Micrograph header`
+
+#### Scenario: A tag longer than storage keeps
+- **WHEN** `conditions_00C.dmw` is crawled and its extraction stored
+- **THEN** the stored description has 298 phrases, and the one of the tag `DocumentObjectList.TagGroup0.ImageDisplayInfo.CLUT` (6,053 characters) is cut to 4,096 characters
+
+#### Scenario: A .dmw file that cannot be read
+- **WHEN** a directory holds `conditions_00C.dmw` and `broken.dmw`, and reading `broken.dmw`'s header fails with a stale file handle
+- **THEN** `conditions_00C.dmw` is a dataset of `em/dmw`, `broken.dmw` is a single file of the `.dmw` type with the basis `single file`, the crawl's only warning names `broken.dmw` and the error, and the directory is marked to be recognised again on the next crawl
 
 #### Scenario: A .dmw file with the DM3 header
 - **WHEN** `old_workspace.dmw`, the DM3 file of the fixture `stem_image_dm3` under a `.dmw` name, is crawled
