@@ -231,22 +231,48 @@ Thread pools in a transform process (`pools.py`, run in throwaway containers of 
 ```python
 import collections, os, sys
 
+
 def snapshot(step):
     by = collections.Counter()
     for tid in os.listdir("/proc/self/task"):
         name = open(f"/proc/self/task/{tid}/comm").read().strip()
-        aff = next(l.split(":", 1)[1].strip() for l in open(f"/proc/self/task/{tid}/status")
-                   if l.startswith("Cpus_allowed_list"))
+        aff = next(
+            l.split(":", 1)[1].strip()
+            for l in open(f"/proc/self/task/{tid}/status")
+            if l.startswith("Cpus_allowed_list")
+        )
         by[(name, aff)] += 1
-    print(f"{step}: {sum(by.values())} threads", {f"{n}@{a}": c for (n, a), c in sorted(by.items())})
+    print(
+        f"{step}: {sum(by.values())} threads",
+        {f"{n}@{a}": c for (n, a), c in sorted(by.items())},
+    )
+
 
 threads = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-snapshot("start"); import numpy; snapshot("numpy")
-from fastembed import TextEmbedding; snapshot("fastembed imported")
-m = TextEmbedding(model_name=os.environ["EMBEDDING_MODEL"], cache_dir=os.environ["FASTEMBED_CACHE_DIR"],
-                  threads=threads or None, local_files_only=True); snapshot("model loaded")
-list(m.embed([f"text number {i} about a beam and a sample" for i in range(600)])); snapshot("after embed of 600 texts")
-print("os.cpu_count", os.cpu_count(), "process_cpu_count", os.process_cpu_count(), "affinity", len(os.sched_getaffinity(0)))
+snapshot("start")
+import numpy
+
+snapshot("numpy")
+from fastembed import TextEmbedding
+
+snapshot("fastembed imported")
+m = TextEmbedding(
+    model_name=os.environ["EMBEDDING_MODEL"],
+    cache_dir=os.environ["FASTEMBED_CACHE_DIR"],
+    threads=threads or None,
+    local_files_only=True,
+)
+snapshot("model loaded")
+list(m.embed([f"text number {i} about a beam and a sample" for i in range(600)]))
+snapshot("after embed of 600 texts")
+print(
+    "os.cpu_count",
+    os.cpu_count(),
+    "process_cpu_count",
+    os.process_cpu_count(),
+    "affinity",
+    len(os.sched_getaffinity(0)),
+)
 ```
 
 ```sh
