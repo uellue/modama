@@ -97,10 +97,11 @@ Issues and fixes for the projects we build on, with their state (@weber, 2026-11
 - **data-commons-search:**
   - Its keyword leg queries the nested title, description and subject fields, which never match; our patch `prototypes/search-stack/patches/search-api/0001-keyword-leg-root-copy-fields.patch` queries their root copies (`_title`, `_description`, `_subject`). Applies to v0.10.2; main has the same code. *Worked around here*; not yet offered upstream.
   - Its uvicorn workers oversubscribe the CPUs as the warehouse's batches do (6 workers × 7 ONNX threads pinned to CPUs 1 to 7, VM, review of `cpu-budget` M5). *Worked around here* by `cpu-budget` (`patches/search-api/0002-embedding-threads-setting.patch` and `budget.py` as the start); not yet offered upstream.
-- **matchmaker** (the search web frontend, 0.14.0), all *found*:
+- **matchmaker** (the search web frontend, 0.14.0), *found* unless the item says otherwise:
+  - AI Mode needs a login, although the search API answers `POST /chat` without one (`src/pages/ChatPage.tsx`, the gate; `src/components/SearchInput.tsx`, the toggle). *Worked around here*: `prototypes/search-stack/patches/matchmaker/0001-ai-mode-without-login.patch`, built by `matchmaker.Dockerfile` (@weber, 2026-11-12). Could become an upstream option, a setting that opens AI Mode to visitors, rather than our fork; not yet offered.
   - Matomo tracking to egi.matomo.cloud is off only for localhost names (`src/lib/analytics.ts`); to settle between @weber and riwtik (decision 81; the search stack's README, "Open").
   - The FAIR check and the Data Player call outside services by default; decide before production (decision 82).
-  - `pm2-runtime -i max` starts one Node process per logical CPU (about 48 and 4 GB on the dev server, estimate); question 112.
+  - `pm2-runtime -i max` starts one Node process per logical CPU (in the VM 8 processes of 11 threads and about 110 MB each; on the dev server 48, about 5 GB). *Worked around here* (decision 112): our compose starts 2. Upstream: a setting for the process count, fire and forget.
 - **RosettaSciIO** (0.15.0, staging finding F14):
   - `file_reader(lazy=True)` refuses RGBA DM images ("Lazy loading of RGBA images is not supported"); its reader classes read their tags. *Worked around here* (our `dm.first_image`, branch `dm-containers`).
   - Merlin: `MIBProperties` from bytes fails for Quad detectors, because it then opens `self.path`, which is `None`. *Found.*
