@@ -20,7 +20,7 @@ modama-chain browse [--config TOML] [--bind ADDRESS] [--port 7655]   # a local w
 
 ## browse
 
-A page for tuning metadata extraction and how a record looks in the search (change `chain-browse` in `python/crawler/openspec/changes/`; @weber's request is scenario D of `python/crawler/design/requirements-pipeline.md`). On the left the data tree: a click opens a folder or shows a file, the path above the list goes up; ↑/↓ move, Enter or → opens a folder, ← or Backspace goes up, `/` filters the folder's entries; the address bar holds the path (`?path=/notes/readme.txt`) and is the link to a view. On the right, for the selected file, side by side, each labelled by where it comes from:
+A page for tuning metadata extraction and how a record looks in the search (change `chain-browse` in `python/crawler/openspec/changes/`; @weber's request is scenario D of `python/crawler/design/requirements-pipeline.md`). On the left the data tree, by mouse only (@weber, 2026-11-12: the keys got in the way of typing): a click opens a folder or shows a file, the path above the list goes up, the filter box filters the folder's entries; the address bar holds the path (`?path=/notes/readme.txt`) and is the link to a view. On the right, for the selected file, side by side, each labelled by where it comes from:
 
 | View | Stored (what the chain holds now) | Live (the checkout's code, now) |
 |---|---|---|
