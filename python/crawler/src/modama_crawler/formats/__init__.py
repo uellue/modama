@@ -165,6 +165,8 @@ class Directory:
         self.retry = False  # a format met a read error or the time limit
         # File rel -> "<format>: not <type>, <reason>", from not_of_type; goes into the basis
         self.notes: dict[str, str] = {}
+        # File rel -> "<format>: <text>", from note: also into the basis, the type kept
+        self.remarks: dict[str, str] = {}
         self._format = ""  # the id of the format being called
 
     @property
@@ -224,6 +226,12 @@ class Directory:
         self._by_name[entry.name] = replaced
         self.notes[entry.rel] = f"{self._format}: not {entry.mime}, {reason}"
         return replaced
+
+    def note(self, entry: Entry, text: str) -> None:
+        """A note for the basis of the dataset that holds the file, its type kept: a file of interest (decisions 174, 183)."""
+        if self._by_name.get(entry.name) is not entry:
+            raise ValueError(f"{entry.rel} is not an entry of {self.rel}")
+        self.remarks[entry.rel] = f"{self._format}: {text}"
 
     def cannot_read(self, entry: Entry, error: OSError) -> None:
         """A file a format could not check: it keeps its type, the crawl warns at it, and the directory is recognised again next crawl.
@@ -307,11 +315,12 @@ def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Data
     # its result (D3): not_of_type replaces the list, so the old one is the
     # state before the call
     entries, notes, warned = d.entries, dict(d.notes), len(d.warnings)
+    remarks = dict(d.remarks)
     start = time.monotonic()
     try:
         datasets = list(fmt.recognize(d))
     except Exception as e:  # noqa: BLE001  a failing format must not stop the crawl
-        d.entries, d.notes = entries, notes
+        d.entries, d.notes, d.remarks = entries, notes, remarks
         d._by_name = {x.name: x for x in entries}
         del d.warnings[warned:]
         if isinstance(e, BudgetExceeded):
@@ -464,7 +473,7 @@ def run_post(
                     directory=d.rel,
                 )
             )
-    return [_noted(ds, d.notes) for ds in out], adoptions
+    return [_noted(ds, d.notes, d.remarks) for ds in out], adoptions
 
 
 def _check_order(
@@ -482,9 +491,9 @@ def _check_order(
                 )
 
 
-def _noted(ds: Dataset, notes: dict[str, str]) -> Dataset:
-    """The dataset with the notes of its members whose name type a format dropped, in its basis (D4)."""
-    mine = [notes[m] for m in ds.members if m in notes]
+def _noted(ds: Dataset, notes: dict[str, str], remarks: dict[str, str]) -> Dataset:
+    """The dataset with its members' notes in its basis: a dropped name type (D4), then a remark (note)."""
+    mine = [n[m] for m in ds.members for n in (notes, remarks) if m in n]
     if not mine:
         return ds
     return replace(ds, basis="; ".join([ds.basis, *mine]))

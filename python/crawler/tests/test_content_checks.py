@@ -309,6 +309,34 @@ def test_warnings_of_a_discarded_call_go_with_it(tmp_path):
     ]
 
 
+# A file of interest is noted in its dataset's basis
+
+
+def test_a_file_of_interest_is_noted_in_its_basis(tmp_path):
+    # Decision 183: the type is kept, the note goes into the basis; a failed call drops it
+    class Interest(Tags):
+        name = "tags"
+
+        def drop(self, d, e):
+            d.note(e, "file of interest: no TAGS header, review by hand")
+
+    result = recognised(tmp_path, {"odd.tags": b"hello\n"}, Interest())
+    (d,) = result.datasets
+    assert (d.type, d.basis) == (
+        TAGS,
+        "single file; test/tags: file of interest: no TAGS header, review by hand",
+    )
+    assert result.all_warnings() == []
+
+    class InterestThenFails(Interest):
+        def drop(self, d, e):
+            super().drop(d, e)
+            raise RuntimeError("boom")
+
+    (d,) = recognised(tmp_path, {}, InterestThenFails()).datasets
+    assert d.basis == "single file"
+
+
 # A claimed file keeps its type
 
 

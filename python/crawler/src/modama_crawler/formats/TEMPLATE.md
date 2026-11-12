@@ -101,6 +101,9 @@ class Workspace(Format):
   outcome, catch `OSError` around your own `d.read` of it and call
   `d.cannot_read(e, error)` too (`modama_formats_em.dm.header`). An exception
   out of `recognize` discards all of your datasets of the directory.
+- A file of your type that is odd but kept (a variant nobody has seen yet)
+  can be flagged for a person with `d.note(e, "file of interest: …")`: the
+  note goes into its dataset's basis, its type stays.
 - Drop only types of files you react to: a drop of a file a format that ran
   earlier claimed is undone, with a warning.
 - Order: a format that runs before yours does not see the new type. Give
