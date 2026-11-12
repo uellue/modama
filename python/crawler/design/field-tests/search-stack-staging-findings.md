@@ -401,8 +401,9 @@ links with `\[(.+?)]\((.+?)\)` (`src/components/MessageMarkdown.tsx:92`), a lazy
 the first `)`; CommonMark allows balanced brackets in a link. The citation list uses the same
 pattern (`src/lib/datasetCitations.ts:56`), so those links also got no number and are missing
 from "Datasets cited" (7 of the 14 inline links in the answer are cited, all without brackets; the 7 with brackets are not). Many of our
-paths have brackets (`SI data (20)`, `(3) Spectrum of … (low-loss).dm4`). Not yet checked:
-whether any link was invented rather than cut.
+paths have brackets (`SI data (20)`, `(3) Spectrum of … (low-loss).dm4`). No link was
+invented: all 14 paths, opened as encoded browse URLs, are real files (@weber, 2026-11-12,
+item 213).
 
 ## Review of the staging changes, 2026-11-11
 
