@@ -132,7 +132,19 @@ machine full (the transform worker 24 cores on average, load 56 on 48); from 01:
 at a time, 70 to 80 s each, with gaps of up to 8 minutes in which nothing of the
 warehouse ran: busy 35 to 86 % of each 10 minutes. What holds the batches back after
 01:10 (Airflow's scheduling, the DAG's task order, the queue) is not known from here:
-needs the indexing DAG run's task list. Reproduced in the VM's test deployment (8 CPUs,
+needs the indexing DAG run's task list. The task list (`index-tasks.sh`, 06:07 UTC):
+the harvest stored all 1,451,848 records ("1451848 events in 726 batches"); 201 of 726
+transform batches done, 82 to 223 s each (median 99 s), 12 to 13 per 10 minutes until
+01:05, then 2 to 8 (median 4.5); from 01:05 no transform batch waits in the queue (0
+queued, at most 2 running, 525 scheduled), so the scheduler stopped handing them out,
+not the worker. At the same time the file-metadata batches (default queue) stopped
+running: 56 ran in 1 s each until 01:10, then 130 failed without starting (no host,
+start = end) after 600 to 720 s queued, which matches Airflow's `task_queued_timeout`
+(600 s by default); their summary is `upstream_failed`, so the run will end failed. At
+4.5 batches per 10 minutes the rest takes about 19 hours (extrapolated). Why the default
+queue's tasks are not taken from 01:10, and whether that holds back the scheduling of
+the transform batches, is open: needs the scheduler's and the default worker's logs
+from 01:00 to 01:30. Reproduced in the VM's test deployment (8 CPUs,
 16,000 synthetic records, `prototypes/search-stack/perf/`, untracked; raw data in the
 session's scratchpad `indexing-perf/`):
 - **Harvest:** 68 records/s, serial: one task, one record per `POST /harvest_event`
