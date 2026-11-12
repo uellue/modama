@@ -2,7 +2,7 @@
   "datasets": [
     {
       "anchor": "/notes.hspy",
-      "basis": "single file; common/hspy: not application/x.hspy, no HDF5 signature at its start",
+      "basis": "single file; common/hspy: not application/x.hspy, no HDF5 signature at its start, or no HyperSpy in its first 4096 bytes",
       "collapsed": false,
       "format": "",
       "members": [

@@ -20,9 +20,11 @@ def dunder(name: str) -> bool:
 
 
 def imports(tree: ast.Module) -> list[str]:
-    """The imported module names in the order first found, as written (relative ones with their dots)."""
+    """The imported module names in source order, each once, as written (relative ones
+    with their dots); module level and inside functions alike."""
+    found = (n for n in ast.walk(tree) if isinstance(n, ast.Import | ast.ImportFrom))
     names = []
-    for node in ast.walk(tree):
+    for node in sorted(found, key=lambda n: (n.lineno, n.col_offset)):
         if isinstance(node, ast.Import):
             names += [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):

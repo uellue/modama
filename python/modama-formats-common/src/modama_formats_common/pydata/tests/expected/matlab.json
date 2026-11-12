@@ -78,7 +78,7 @@
         "original_metadata": {
           "header": "MATLAB 7.0 MAT-file, Platform: GLNX86, Created on: Sat Oct  4 19:01:58 2008 HDF5 schema 0.05 .",
           "testdouble.MATLAB_class": "double",
-          "testdouble.dtype": "float64",
+          "testdouble.dtype": "<f8",
           "testdouble.shape": [
             9,
             1

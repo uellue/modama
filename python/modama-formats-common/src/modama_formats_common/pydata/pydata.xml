@@ -56,8 +56,9 @@
 
   <!-- HyperSpy's HDF5 files (RosettaSciIO, hspy: file_format "HyperSpy"). No
        type in use was found. By name; the format common/hspy checks the HDF5
-       signature at 0. Older HyperSpy files named .hdf5 are HDF5 files whose
-       values show file_format HyperSpy. -->
+       signature at 0 and "HyperSpy" in the first 4096 bytes, and a file without
+       them falls back to HDF5. Older HyperSpy files named .hdf5 are HDF5 files
+       whose values show file_format HyperSpy. -->
   <mime-type type="application/x.hspy">
     <comment>HyperSpy file</comment>
     <sub-class-of type="application/vnd.hdfgroup.hdf5"/>

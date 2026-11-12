@@ -76,11 +76,14 @@ def described(path: str) -> tuple[dict, dict, list[str]]:
         if size > MAX_WHOLE:
             no_readahead(f.fileno())
             f.seek(size - TAIL)
-            raw, nb = from_tail(f.read(TAIL)) or {}, None
-            mapped = {
-                "read": f"the last {TAIL} bytes of {size}, over {MAX_WHOLE}: "
-                "no cells counted"
-            }
+            found, nb = from_tail(f.read(TAIL)), None
+            raw = found or {}
+            read = (
+                f"the last {TAIL} bytes of {size}, over {MAX_WHOLE}: no cells counted"
+            )
+            if found is None:
+                read += "; notebook metadata not found in the tail"
+            mapped = {"read": read}
         else:
             text = f.read().decode("utf-8-sig")
             raw = json.loads(text)  # the metadata as found

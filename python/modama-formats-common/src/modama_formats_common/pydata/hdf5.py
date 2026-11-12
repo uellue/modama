@@ -3,15 +3,27 @@
 Every attribute of the file, its groups and datasets, each dataset's shape and
 dtype, and the value of each scalar dataset, as dotted names, minus a skip
 list per format (spec formats/pydata, "An HDF5 file is described by a walk of
-its objects"). No array is read, no external link followed.
+its objects"). No array is read, no link to another file followed, nothing
+read from outside the file.
 """
 
+import warnings
 from collections.abc import Callable
 
 import h5py
 import numpy
+from modama_crawler.formats.values import MAX_CHARS
+from numpy.lib.format import dtype_to_descr
 
-from .values import MAX_ITEMS, Walk, headline, matches, no_readahead, plain
+from .values import (
+    MAX_ENTRIES,
+    MAX_ITEMS,
+    Walk,
+    headline,
+    matches,
+    no_readahead,
+    plain,
+)
 
 SIGNATURE = b"\x89HDF\r\n\x1a\n"
 
@@ -49,22 +61,58 @@ def opened(path: str) -> h5py.File:
     return f
 
 
-def dtype_name(dt: numpy.dtype) -> str:
-    """A dataset's dtype as NumPy names it; h5py's variable-length types, which NumPy
-    calls object, as h5py spells them (`vlen str`, `vlen int32`)."""
+def dtype_name(dt: numpy.dtype):
+    """A dtype as the file spells it, NumPy's descr as an .npy header has it (`<f8`, a
+    list of fields for a compound); h5py's variable-length and reference types, which
+    NumPy calls object, as h5py names them (`vlen str`, `vlen <i4`, `Reference`)."""
     if (info := h5py.check_string_dtype(dt)) is not None and info.length is None:
         return "vlen str" if info.encoding == "utf-8" else "vlen bytes"
     if (base := h5py.check_vlen_dtype(dt)) is not None:
-        return f"vlen {base.__name__ if isinstance(base, type) else numpy.dtype(base)}"
-    return str(dt)
+        inner = base.__name__ if isinstance(base, type) else numpy.dtype(base).str
+        return f"vlen {inner}"
+    if (ref := h5py.check_ref_dtype(dt)) is not None:
+        return ref.__name__
+    if dt.fields is None:
+        return dt.str
+    # h5py's metadata on a field's dtype (its string encoding), which an .npy
+    # file would not keep, makes NumPy warn: the descr is the same
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return dtype_to_descr(dt)
+
+
+def small(dt: numpy.dtype) -> bool:
+    """Whether one element of dt is small enough to read for its value: not more bytes
+    than a text values.textual keeps can take (4 bytes a character), no array type.
+    A variable-length type cannot be sized before it is read."""
+    return dt.itemsize <= 4 * MAX_CHARS and dt.subdtype is None
+
+
+def outside(dataset: h5py.Dataset) -> str | None:
+    """Where a dataset keeps its data outside this file, from its creation property
+    list, before anything else is asked of it: "virtual" (mapped onto datasets of other
+    files) or "external" (raw data in other files), else None."""
+    dcpl = dataset.id.get_create_plist()
+    if dcpl.get_layout() == h5py.h5d.VIRTUAL:
+        return "virtual"
+    if dcpl.get_external_count() > 0:
+        return "external"
+    return None
 
 
 def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
     """original_metadata and the mapped note of a cut, from the file's objects in name order.
 
-    Names are joined with dots as found (a name holding a dot is not escaped).
+    Depth first, each object once (by its address), hard links only: an
+    external link (another file) and a soft link (another name) are not
+    followed, and an object on the skip list is not entered. Names are joined
+    with dots as found (a name holding a dot is not escaped). Nothing is read
+    from outside the file: a virtual dataset gives its dtype and the extent its
+    first mapping declares, a dataset with external storage no value (spec
+    formats/pydata, "Nothing is read from outside the file").
     """
     walk = Walk()
+    seen: set[int] = set()
 
     def add(name: str, value) -> None:
         value = plain(value)
@@ -72,44 +120,84 @@ def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
             walk.add(name, value)
 
     def attributes(obj, prefix: str) -> None:
-        # One of more than MAX_ITEMS elements is not read: textual would refuse it
-        for name in obj.attrs:
+        # No more names listed than entries can still be kept, and one to tell
+        # that there are more (one group of 200,000 attributes): h5a.iterate
+        # stops when the callback returns something
+        names: list[bytes] = []
+        room = MAX_ENTRIES - len(walk.values)
+
+        def listed(name: bytes, *_) -> bool | None:
+            names.append(name)
+            return True if len(names) > room else None
+
+        h5py.h5a.iterate(obj.id, listed)
+        for raw in names:
+            if walk.over():
+                return
+            name = raw.decode("utf-8", "replace")
             try:
-                shape = obj.attrs.get_id(name).shape
-                if shape is not None and numpy.prod(shape) > MAX_ITEMS:
+                attr = h5py.h5a.open(obj.id, raw)
+                # Not read: more elements than textual keeps, or too large ones
+                if attr.shape is not None and numpy.prod(attr.shape) > MAX_ITEMS:
+                    continue
+                if not small(attr.dtype):
                     continue
                 value = obj.attrs[name]
             except (OSError, TypeError, ValueError, KeyError):
                 continue  # a type h5py cannot convert (a region reference, …)
             add(f"{prefix}{name}", "" if isinstance(value, h5py.Empty) else value)
 
-    skipped: list[str] = []
-
-    def visit(name: str, obj) -> bool | None:
-        if walk.over():
-            return True  # stops visititems
-        dotted = name.replace("/", ".")
-        if any(dotted.startswith(f"{s}.") for s in skipped):
-            return None
-        if skip(dotted, None):
-            skipped.append(dotted)
-            return None
-        if isinstance(obj, h5py.Dataset):
-            if obj.shape == ():
+    def dataset(obj: h5py.Dataset, dotted: str) -> None:
+        where = outside(obj)
+        if where == "virtual":
+            # Its shape (H5Dget_space) opens the source files of an unlimited
+            # one: the extent declared in its first mapping instead
+            dcpl = obj.id.get_create_plist()
+            if dcpl.get_virtual_count() > 0:
+                add(f"{dotted}.shape", list(dcpl.get_virtual_vspace(0).shape))
+            add(f"{dotted}.dtype", dtype_name(obj.dtype))
+            return
+        if obj.shape == () and where is None:
+            if small(obj.dtype):
                 try:
                     add(dotted, obj[()])
                 except (OSError, TypeError, ValueError):
                     pass  # a type h5py cannot convert
-            else:
-                add(f"{dotted}.shape", list(obj.shape or ()))
-                add(f"{dotted}.dtype", dtype_name(obj.dtype))
-        attributes(obj, f"{dotted}.")
-        return None
+            return
+        add(f"{dotted}.shape", list(obj.shape or ()))
+        add(f"{dotted}.dtype", dtype_name(obj.dtype))
 
-    attributes(f, "")
-    # visititems follows hard links only: an external link (another file) and
-    # a soft link (another name for an object) are not visited
-    f.visititems(visit)
+    def members(group: h5py.Group, prefix: str) -> bool:
+        """Walks the members of group; False when a limit stopped the walk."""
+        for name in group:
+            if walk.over():
+                return False
+            if not isinstance(group.get(name, getlink=True), h5py.HardLink):
+                continue
+            obj = group[name]
+            address = h5py.h5o.get_info(obj.id).addr
+            if address in seen:
+                continue  # another name of an object already walked
+            seen.add(address)
+            dotted = f"{prefix}{name}"
+            skipped = skip(dotted, None)  # not entered: nothing below it either
+            if not skipped:
+                if isinstance(obj, h5py.Dataset):
+                    dataset(obj, dotted)
+                attributes(obj, f"{dotted}.")
+            walk.objects += 1  # once done with it, skipped or not
+            if (
+                not skipped
+                and isinstance(obj, h5py.Group)
+                and not members(obj, f"{dotted}.")
+            ):
+                return False
+        return True
+
+    root = f["/"]
+    seen.add(h5py.h5o.get_info(root.id).addr)
+    attributes(root, "")
+    members(root, "")
     return walk.result()
 
 

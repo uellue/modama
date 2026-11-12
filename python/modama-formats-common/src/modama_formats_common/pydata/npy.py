@@ -9,18 +9,25 @@ is pinned exactly for it (pyproject.toml).
 import zipfile
 from typing import BinaryIO
 
+from modama_crawler.formats.values import textual
 from numpy.lib import format as npformat
 from numpy.lib._format_impl import _read_array_header
 
 from .values import MAX_ITEMS, Walk
 
 ZIP = b"PK\x03\x04"  # a ZIP's local file header (APPNOTE 4.3.7)
+MAX_HEADER = 1 << 20
 
 
 def header(f: BinaryIO) -> tuple[dict, str]:
     """The header of the array file f at its start, as the file says it, and NumPy's dtype."""
     version = npformat.read_magic(f)
-    shape, fortran_order, dtype = _read_array_header(f, version)
+    # NumPy refuses headers over 10,000 bytes by default (a structured dtype of
+    # 600 fields has more); the header is a dict literal, parsed with
+    # ast.literal_eval, never unpickled, so a larger one is safe to read
+    shape, fortran_order, dtype = _read_array_header(
+        f, version, max_header_size=MAX_HEADER
+    )
     descr = npformat.dtype_to_descr(dtype)
     found = {
         "descr": descr,
@@ -39,10 +46,12 @@ def npy(path: str) -> tuple[dict, dict, list[str]]:
     walk = Walk()
     for name, value in found.items():
         walk.add(name, value)  # a structured descr's tuples as lists
-    summary = [f"shape {found['shape']}", dtype]
+    # NumPy's name of a structured dtype of many fields is too long for text
+    named = [dtype] if textual(dtype) else []
+    summary = [f"shape {found['shape']}", *named]
     if found["fortran_order"]:
         summary.append("fortran_order True")
-    return walk.values, {"dtype": dtype}, summary
+    return walk.values, {"dtype": dtype} if named else {}, summary
 
 
 def npz(path: str) -> tuple[dict, dict, list[str]]:

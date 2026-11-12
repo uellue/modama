@@ -111,8 +111,18 @@ class Nexus(Hdf5):
 
 
 class Hspy(Nexus):
+    """Content beats name: HyperSpy's root attribute `file_format` "HyperSpy", which
+    HyperSpy writes first, has its value within the first 4 KiB of its files (at byte
+    2,080 of RosettaSciIO's test files); searched as a magic rule with an offset range
+    would search it, not parsed."""
+
     type = "application/x.hspy"
-    basis = "HDF5 signature, named .hspy"
+    basis = "HDF5 signature and HyperSpy, named .hspy"
+    head = 4096
+    reason = "no HDF5 signature at its start, or no HyperSpy in its first 4096 bytes"
+
+    def fits(self, data):
+        return data.startswith(hdf5.SIGNATURE) and b"HyperSpy" in data
 
 
 class Matlab(Single):

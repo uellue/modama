@@ -2,7 +2,7 @@
   "datasets": [
     {
       "anchor": "/example2_v3.1.hspy",
-      "basis": "HDF5 signature, named .hspy",
+      "basis": "HDF5 signature and HyperSpy, named .hspy",
       "collapsed": false,
       "format": "common/hspy",
       "members": [
@@ -51,7 +51,7 @@
           "Experiments.test_diffraction_pattern.axis-1.scale": 0.17443285882472992,
           "Experiments.test_diffraction_pattern.axis-1.size": 16,
           "Experiments.test_diffraction_pattern.axis-1.units": "1/nm",
-          "Experiments.test_diffraction_pattern.data.dtype": "int32",
+          "Experiments.test_diffraction_pattern.data.dtype": "<i4",
           "Experiments.test_diffraction_pattern.data.shape": [
             16,
             16
@@ -93,7 +93,7 @@
           "Experiments.__unnamed__.axis-0.offset": 0.0,
           "Experiments.__unnamed__.axis-0.scale": 1.0,
           "Experiments.__unnamed__.axis-0.size": 10,
-          "Experiments.__unnamed__.data.dtype": "int64",
+          "Experiments.__unnamed__.data.dtype": "<i8",
           "Experiments.__unnamed__.data.shape": [
             10
           ],
@@ -107,7 +107,7 @@
           "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance._list_1_axes.0.scale": 1.0,
           "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance._list_1_axes.0.size": 10,
           "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.attributes._lazy": false,
-          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data.dtype": "int64",
+          "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data.dtype": "<i8",
           "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data.shape": [
             10
           ],
@@ -119,31 +119,31 @@
           "Experiments.__unnamed__.metadata.Signal.signal_origin": "",
           "Experiments.__unnamed__.metadata.Signal.signal_type": "",
           "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list.0": 137,
-          "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list._tuple_1.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list._tuple_1.dtype": "<i8",
           "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list._tuple_1.shape": [
             2
           ],
           "Experiments.__unnamed__.metadata.test._list_3_list_inside_list.0": 42,
           "Experiments.__unnamed__.metadata.test._list_3_list_inside_list.1": 137,
-          "Experiments.__unnamed__.metadata.test._list_3_list_inside_list._list_2.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._list_3_list_inside_list._list_2.dtype": "<i8",
           "Experiments.__unnamed__.metadata.test._list_3_list_inside_list._list_2.shape": [
             2
           ],
-          "Experiments.__unnamed__.metadata.test._list_list.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._list_list.dtype": "<i8",
           "Experiments.__unnamed__.metadata.test._list_list.shape": [
             1
           ],
           "Experiments.__unnamed__.metadata.test._tuple_2_list_inside_tuple.0": 137,
-          "Experiments.__unnamed__.metadata.test._tuple_2_list_inside_tuple._list_1.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._tuple_2_list_inside_tuple._list_1.dtype": "<i8",
           "Experiments.__unnamed__.metadata.test._tuple_2_list_inside_tuple._list_1.shape": [
             2
           ],
           "Experiments.__unnamed__.metadata.test._tuple_2_tuple_inside_tuple.0": 137,
-          "Experiments.__unnamed__.metadata.test._tuple_2_tuple_inside_tuple._tuple_1.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._tuple_2_tuple_inside_tuple._tuple_1.dtype": "<i8",
           "Experiments.__unnamed__.metadata.test._tuple_2_tuple_inside_tuple._tuple_1.shape": [
             2
           ],
-          "Experiments.__unnamed__.metadata.test._tuple_tuple.dtype": "int64",
+          "Experiments.__unnamed__.metadata.test._tuple_tuple.dtype": "<i8",
           "Experiments.__unnamed__.metadata.test._tuple_tuple.shape": [
             2
           ],

@@ -61,7 +61,7 @@
         "mapped_metadata": {},
         "original_metadata": {
           "creator": "generate.py",
-          "data.dtype": "uint16",
+          "data.dtype": "<u2",
           "data.shape": [
             2,
             3
@@ -76,7 +76,7 @@
         "mapped_metadata": {},
         "original_metadata": {
           "creator": "generate.py",
-          "data.dtype": "uint16",
+          "data.dtype": "<u2",
           "data.shape": [
             2,
             3
@@ -91,7 +91,7 @@
         "mapped_metadata": {},
         "original_metadata": {
           "creator": "generate.py",
-          "data.dtype": "uint16",
+          "data.dtype": "<u2",
           "data.shape": [
             2,
             3
@@ -106,7 +106,7 @@
         "mapped_metadata": {},
         "original_metadata": {
           "creator": "generate.py",
-          "data.dtype": "uint16",
+          "data.dtype": "<u2",
           "data.shape": [
             2,
             3

@@ -34,11 +34,11 @@
       "values": {
         "mapped_metadata": {},
         "original_metadata": {
-          "<c16.dtype": "complex128",
+          "<c16.dtype": "<c16",
           "<c16.shape": [
             100
           ],
-          "<c8.dtype": "complex64",
+          "<c8.dtype": "<c8",
           "<c8.shape": [
             100
           ],
@@ -50,11 +50,11 @@
           ">c8.shape": [
             100
           ],
-          "c16.dtype": "complex128",
+          "c16.dtype": "<c16",
           "c16.shape": [
             100
           ],
-          "c8.dtype": "complex64",
+          "c8.dtype": "<c8",
           "c8.shape": [
             100
           ]

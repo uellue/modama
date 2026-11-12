@@ -3,7 +3,9 @@
 Run with -s to see each extraction's summary and the bytes it read.
 """
 
+import ctypes
 import json
+import os
 import pickle
 import shutil
 import time
@@ -26,6 +28,29 @@ def rchar() -> int:
         if key == "rchar":
             return int(value)
     raise RuntimeError("no rchar in /proc/self/io")
+
+
+class Opened:
+    """Whether a file is opened after this starts watching it, by inotify (Linux)."""
+
+    IN_OPEN = 0x20
+    IN_NONBLOCK = 0o4000
+
+    def __init__(self, path: Path):
+        self._libc = ctypes.CDLL(None, use_errno=True)
+        self._fd = self._libc.inotify_init1(self.IN_NONBLOCK)
+        assert self._fd >= 0, os.strerror(ctypes.get_errno())
+        watch = self._libc.inotify_add_watch(self._fd, os.fsencode(path), self.IN_OPEN)
+        assert watch >= 0, os.strerror(ctypes.get_errno())
+
+    def seen(self) -> bool:
+        """Whether it was opened; ends the watch."""
+        try:
+            return len(os.read(self._fd, 4096)) > 0
+        except BlockingIOError:
+            return False
+        finally:
+            os.close(self._fd)
 
 
 def datasets(ct, tree: Path) -> dict:
@@ -91,6 +116,17 @@ def test_the_header_only(collection_tests, tmp_path):
     assert read < 4096
 
 
+def test_a_header_over_numpys_default_limit(collection_tests, tmp_path):
+    # As NumPy's own test of a large header (test_format.py): 600 fields
+    many = numpy.dtype([(f"field{i}", "<f4") for i in range(600)])
+    numpy.save(tmp_path / "fields.npy", numpy.zeros(2, dtype=many))
+    assert (tmp_path / "fields.npy").stat().st_size > 10_000 + 2 * many.itemsize
+    x, _ = extracted(collection_tests, tmp_path, "fields.npy")
+    # The descr of 600 fields, and NumPy's name of it, are more than textual keeps
+    assert original(x) == {"fortran_order": False, "shape": [2], "version": "1.0"}
+    assert x.summary == ["shape [2]"] and mapped(x) == {}
+
+
 def test_stored_and_compressed_archives(collection_tests, tmp_path):
     rng = numpy.random.default_rng(0)
     arrays = {
@@ -150,6 +186,14 @@ def test_a_nexus_file_and_a_hyperspy_file(collection_tests, tmp_path):
     )
 
 
+def test_a_file_named_hspy_that_hyperspy_did_not_write(collection_tests, tmp_path):
+    with h5py.File(tmp_path / "other.hspy", "w") as f:
+        f["data"] = numpy.zeros(3)
+    d = datasets(collection_tests, tmp_path)["other.hspy"]
+    assert (d.type, d.format) == ("application/vnd.hdfgroup.hdf5", "common/hdf5")
+    assert "no HyperSpy" in d.basis
+
+
 def test_a_text_file_named_like_a_nexus_file(collection_tests, tmp_path):
     d = datasets(collection_tests, collection_tests.materialise("misnamed", tmp_path))[
         "notes.nxs"
@@ -169,7 +213,7 @@ def test_a_nexus_files_attributes_and_datasets(collection_tests, tmp_path):
         "entry.NX_class": "NXentry",
         "entry.mr_scan.mr_indices": [0],
         "entry.mr_scan.I00.shape": [31],
-        "entry.mr_scan.I00.dtype": "int32",
+        "entry.mr_scan.I00.dtype": "<i4",
         "entry.mr_scan.I00.units": "counts",
         "entry.title": "1-D scan of I00 v. mr",
     }.items() <= found.items()
@@ -191,6 +235,7 @@ def test_values_not_suitable_for_text(collection_tests, tmp_path, monkeypatch):
         f.attrs["opaque"] = numpy.void(b"\x00\x01\x02")
         f["long"] = "x" * 1001
         f.create_dataset("reference", data=f.ref, dtype=h5py.ref_dtype)  # no JSON
+        f["huge"] = numpy.bytes_(b"x" * 100_000)  # a scalar of 100,000 bytes
         f.attrs["kept"] = 1
     read_names = []
     get = h5py.AttributeManager.__getitem__
@@ -200,9 +245,10 @@ def test_values_not_suitable_for_text(collection_tests, tmp_path, monkeypatch):
         return get(self, name)
 
     monkeypatch.setattr(h5py.AttributeManager, "__getitem__", recording)
-    x, _ = extracted(collection_tests, tmp_path, "odd.h5")
+    x, read = extracted(collection_tests, tmp_path, "odd.h5")
     assert original(x) == {"kept": 1}
     assert "hundred" not in read_names and "opaque" in read_names
+    assert read < 100_000  # the large scalar is not read
 
 
 def test_arrays_are_never_read(collection_tests, tmp_path):
@@ -213,7 +259,7 @@ def test_arrays_are_never_read(collection_tests, tmp_path):
     x, read = extracted(collection_tests, tmp_path, "big.h5")
     assert original(x) == {
         "frames.shape": [2000, 2000],
-        "frames.dtype": "float64",
+        "frames.dtype": "<f8",
         "frames.units": "counts",
     }
     assert size > 32_000_000 and read < 256 * 1024
@@ -226,6 +272,37 @@ def test_the_walk_stops_at_1000_entries(collection_tests, tmp_path):
     x, _ = extracted(collection_tests, tmp_path, "many.h5")
     assert len(original(x)) == 1000
     assert mapped(x) == {"walk": "cut at the entry limit of 1000"}
+    with h5py.File(tmp_path / "crowded.h5", "w") as f:
+        crowded = f.create_group("crowded")  # all on one object
+        for i in range(1500):
+            crowded.attrs[f"a{i:04}"] = i
+    y, _ = extracted(collection_tests, tmp_path, "crowded.h5")
+    assert len(original(y)) == 1000
+    assert mapped(y) == {"walk": "cut at the entry limit of 1000"}
+
+
+def test_the_walk_stops_at_5000_objects(collection_tests, tmp_path):
+    with h5py.File(tmp_path / "empty.h5", "w") as f:
+        for i in range(6000):
+            f.create_group(f"g{i:04}")
+    x, _ = extracted(collection_tests, tmp_path, "empty.h5")
+    assert original(x) == {}
+    assert mapped(x) == {"walk": "cut at the object limit of 5000"}
+
+
+def test_a_group_on_the_skip_list_is_not_entered(collection_tests, tmp_path):
+    path = tmp_path / "cells.mat"
+    with h5py.File(path, "w", userblock_size=512) as f:
+        refs = f.create_group("#refs#")
+        for i in range(6000):  # more than the object limit, if entered
+            refs.create_group(f"r{i:04}")
+        f["x"] = numpy.zeros(3)
+        f["x"].attrs["MATLAB_class"] = numpy.bytes_("double")
+    with open(path, "r+b") as f:
+        f.write(b"MATLAB 7.3 MAT-file".ljust(116) + bytes(8) + b"\x00\x02IM")
+    x, _ = extracted(collection_tests, tmp_path, "cells.mat")
+    assert original(x)["x.MATLAB_class"] == "double"
+    assert mapped(x) == {}
 
 
 def test_the_walk_stops_after_its_time(collection_tests, tmp_path, monkeypatch):
@@ -236,6 +313,57 @@ def test_the_walk_stops_after_its_time(collection_tests, tmp_path, monkeypatch):
     x, _ = extracted(collection_tests, tmp_path, "slow.h5")
     assert original(x) == {}
     assert mapped(x) == {"walk": "cut at the time limit of -1 s"}
+
+
+def test_raw_data_stored_in_another_file(collection_tests, tmp_path):
+    elsewhere, tree = tmp_path / "elsewhere", tmp_path / "tree"
+    elsewhere.mkdir()
+    tree.mkdir()
+    raw = elsewhere / "raw.bin"
+    raw.write_bytes(b"SECRET42" + bytes(64))
+    with h5py.File(tree / "external.h5", "w") as f:
+        # h5py's create_dataset ignores external= for a scalar: HDF5's own calls
+        dcpl = h5py.h5p.create(h5py.h5p.DATASET_CREATE)
+        dcpl.set_external(os.fsencode(raw), 0, 8)
+        text = h5py.h5t.C_S1.copy()
+        text.set_size(8)
+        scalar = h5py.h5s.create(h5py.h5s.SCALAR)
+        h5py.h5d.create(f.id, b"secret", text, scalar, dcpl=dcpl)
+        f.create_dataset("frames", shape=(8,), dtype="u1", external=[(str(raw), 0, 8)])
+    opened = Opened(raw)
+    x, _ = extracted(collection_tests, tree, "external.h5")
+    assert "SECRET42" not in json.dumps(x.values)
+    assert original(x) == {
+        "secret.shape": [],
+        "secret.dtype": "|S8",
+        "frames.shape": [8],
+        "frames.dtype": "|u1",
+    }
+    assert not opened.seen()
+
+
+def test_a_virtual_dataset(collection_tests, tmp_path):
+    elsewhere, tree = tmp_path / "elsewhere", tmp_path / "tree"
+    elsewhere.mkdir()
+    tree.mkdir()
+    source = elsewhere / "src0.h5"
+    with h5py.File(source, "w") as s:
+        s.create_dataset("data", data=numpy.arange(4), maxshape=(None,))
+        s["value"] = 42
+    with h5py.File(tree / "virtual.h5", "w") as f:
+        unlimited = h5py.VirtualLayout(shape=(4,), maxshape=(None,), dtype="<i8")
+        part = h5py.VirtualSource(str(source), "data", shape=(4,), maxshape=(None,))
+        unlimited[0 : h5py.h5s.UNLIMITED] = part[0 : h5py.h5s.UNLIMITED]
+        f.create_virtual_dataset("unlimited", unlimited)
+        scalar = h5py.VirtualLayout(shape=(), dtype="<i8")
+        scalar[()] = h5py.VirtualSource(str(source), "value", shape=())
+        f.create_virtual_dataset("scalar", scalar)
+    opened = Opened(source)
+    x, _ = extracted(collection_tests, tree, "virtual.h5")
+    assert original(x)["unlimited.dtype"] == "<i8"
+    assert original(x)["scalar.dtype"] == "<i8"
+    assert 42 not in original(x).values()
+    assert not opened.seen()
 
 
 def test_external_links_are_not_followed(collection_tests, tmp_path):
@@ -314,7 +442,7 @@ def test_a_matlab_73_file(collection_tests, tmp_path):
         "header": "MATLAB 7.0 MAT-file, Platform: GLNX86, Created on: Sat Oct  4 "
         "19:01:58 2008 HDF5 schema 0.05 .",
         "testdouble.shape": [9, 1],
-        "testdouble.dtype": "float64",
+        "testdouble.dtype": "<f8",
         "testdouble.MATLAB_class": "double",
     }
     tree = collection_tests.materialise("matlab73_refs", tmp_path / "b")
@@ -401,6 +529,12 @@ def test_a_large_notebook(collection_tests, tmp_path, monkeypatch):
     assert "cells.code" not in mapped(x) and "read" in mapped(x)
     assert x.summary == ["Python 3"]
     assert read <= notebook.TAIL
+    # A writer that puts the metadata first: not in the tail
+    text = json.dumps({"metadata": nb.metadata, "cells": nb.cells, "nbformat": 4})
+    (tmp_path / "first.ipynb").write_text(text)
+    y, _ = extracted(collection_tests, tmp_path, "first.ipynb")
+    assert original(y) == {}
+    assert mapped(y)["read"].endswith("notebook metadata not found in the tail")
 
 
 # Python scripts
@@ -412,6 +546,8 @@ def test_a_script(collection_tests, tmp_path):
         "#!/usr/bin/env python3\n"
         '"""Tool to convert scans.\n\nMore text."""\n'
         "import os\n"
+        "def convert():\n"
+        "    import scipy\n"
         "import numpy as np\n"
         "from .tools import x\n"
         '__version__ = "1.2"\n'
@@ -424,7 +560,8 @@ def test_a_script(collection_tests, tmp_path):
         "docstring": "Tool to convert scans.\n\nMore text.",
         "__version__": "1.2",
         "__author__": "Someone",
-        "imports": ["os", "numpy", ".tools"],
+        # In source order: the import in the function before the later ones
+        "imports": ["os", "scipy", "numpy", ".tools"],
     }
     assert x.summary == ["Tool to convert scans."]
     assert not written.exists()

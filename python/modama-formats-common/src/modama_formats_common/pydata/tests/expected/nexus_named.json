@@ -29,7 +29,7 @@
           "default": "entry",
           "entry.NX_class": "NXentry",
           "entry.default": "mr_scan",
-          "entry.mr_scan.I00.dtype": "int32",
+          "entry.mr_scan.I00.dtype": "<i4",
           "entry.mr_scan.I00.long_name": "USAXS I00 (counts)",
           "entry.mr_scan.I00.shape": [
             31
@@ -37,7 +37,7 @@
           "entry.mr_scan.I00.units": "counts",
           "entry.mr_scan.NX_class": "NXdata",
           "entry.mr_scan.axes": "mr",
-          "entry.mr_scan.mr.dtype": "float64",
+          "entry.mr_scan.mr.dtype": "<f8",
           "entry.mr_scan.mr.long_name": "USAXS mr (degrees)",
           "entry.mr_scan.mr.shape": [
             31

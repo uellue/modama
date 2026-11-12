@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Python and data-science files (NumPy arrays and archives, HDF5 with NeXus, HyperSpy and MATLAB 7.3, MATLAB, Jupyter notebooks, Python scripts, pickles) typed as what they are and described by what their headers and metadata say, read with the field's readers and never by reading their arrays.
+Python and data-science files (NumPy arrays and archives, HDF5 with NeXus, HyperSpy and MATLAB 7.3, MATLAB, Jupyter notebooks, Python scripts, pickles) typed as what they are and described by what their headers and metadata say, read with the field's readers and never by reading their arrays. Known limits: an HDF5 file with a user block of 1,024 bytes or more is not recognised by its content (a `.nxs` or `.hspy` file with one loses its name's type and becomes `application/octet-stream`); an archive written by `numpy.savez()` without arrays has no ZIP local header and keeps the type `application/zip`; a variable-length string cannot be sized before it is read.
 
 ## ADDED Requirements
 
@@ -14,11 +14,15 @@ A file starting with the NumPy magic `\x93NUMPY` SHALL be typed `application/x-n
 - **THEN** both are datasets of type `application/x-npy`
 
 ### Requirement: A NumPy array file is described by its header
-The extractor of `common/npy` SHALL read the file's header only, through `numpy.lib.format`, and give as `original_metadata` the header's `descr`, `fortran_order` and `shape` and the format `version`, as `mapped_metadata` NumPy's `dtype`, and as the summary line `shape` with the shape, the dtype, and `fortran_order True` when it is true.
+The extractor of `common/npy` SHALL read the file's header only, of up to 1 MiB (it is a dict literal, parsed with `ast.literal_eval`, never unpickled), through `numpy.lib.format`, and give as `original_metadata` the header's `descr`, `fortran_order` and `shape` and the format `version`, as `mapped_metadata` NumPy's `dtype`, and as the summary line `shape` with the shape, the dtype, and `fortran_order True` when it is true.
 
 #### Scenario: The header only
 - **WHEN** an `.npy` file of 8 MB holding a 1000 × 1000 array of `float64` in Fortran order is extracted
 - **THEN** the summary is `shape [1000, 1000], float64, fortran_order True`, `original_metadata` is `descr <f8`, `fortran_order true`, `shape [1000, 1000]`, `version 1.0`, and fewer than 4,096 bytes are read
+
+#### Scenario: A header over NumPy's default limit
+- **WHEN** an `.npy` file of a structured array of 600 fields, whose header is over NumPy's default limit of 10,000 bytes, is extracted
+- **THEN** its `shape`, `fortran_order` and `version` are given; the `descr` and the dtype, more than `textual` keeps, are left out
 
 ### Requirement: A NumPy archive is described by its arrays' headers
 A file named `*.npz` that starts as a ZIP SHALL be a dataset of type `application/x.npz`; one that does not SHALL lose that type. Its extractor SHALL read the ZIP's directory and the header of each `.npy` member, never an array, and give each array's `descr`, `fortran_order` and `shape` under NumPy's key for it (the member's name without `.npy`), as `<key>.shape` and so on; the summary line SHALL give `<key>.shape` with the shape for the first 16 arrays.
@@ -38,8 +42,8 @@ A file with the HDF5 signature at offset 0 or 512 (after a user block, as MATLAB
 - **WHEN** a directory holds HDF5 files named `scan.h5`, `velox.emd` and `old.hdf`, one with a user block of 512 bytes named `blocked.h5`, and an HDF4 file named `legacy.hdf`
 - **THEN** the four HDF5 files are of type `application/vnd.hdfgroup.hdf5` and `legacy.hdf` is of type `application/x-hdf`
 
-### Requirement: NeXus and HyperSpy files are HDF5 files of their name
-A file named `*.nxs` SHALL be typed `application/x.nexus` and one named `*.hspy` `application/x.hspy`, both subclasses of HDF5, when it starts with the HDF5 signature; one that does not SHALL lose that type.
+### Requirement: NeXus and HyperSpy files are HDF5 files of their name and content
+A file named `*.nxs` SHALL be typed `application/x.nexus` when it starts with the HDF5 signature; a file named `*.hspy` SHALL be typed `application/x.hspy` when it starts with the HDF5 signature and has `HyperSpy` (the value of HyperSpy's root attribute `file_format`) in its first 4,096 bytes, searched as a magic rule with an offset range would search it. A file that does not SHALL lose its name's type.
 
 #### Scenario: A NeXus file and a HyperSpy file
 - **WHEN** a directory holds the NeXus example file renamed `example.nxs` and RosettaSciIO's test file `example2_v3.1.hspy`
@@ -49,31 +53,54 @@ A file named `*.nxs` SHALL be typed `application/x.nexus` and one named `*.hspy`
 - **WHEN** a text file is named `notes.nxs`
 - **THEN** it is not of type `application/x.nexus`, and its basis says it has no HDF5 signature
 
+#### Scenario: A file named hspy that HyperSpy did not write
+- **WHEN** an HDF5 file without HyperSpy's attributes is named `other.hspy`
+- **THEN** it is a dataset of type `application/vnd.hdfgroup.hdf5` of the format `common/hdf5`, and its basis says it has no HyperSpy
+
 ### Requirement: An HDF5 file is described by a walk of its objects
-The extractor of the HDF5 types SHALL walk the file's objects with h5py in name order and give as `original_metadata`, with dotted names: every attribute of the file, its groups and datasets (`group.dataset.name`); each dataset's `shape` and `dtype`; each scalar dataset's value (`entry.title`). Values as found, text bytes decoded as UTF-8, an empty attribute as `""`; left out: what h5py cannot read and what is not suitable for text (`textual`).
+The extractor of the HDF5 types SHALL walk the file's objects with h5py, depth first in name order, and give as `original_metadata`, with dotted names: every attribute (`group.dataset.name`); each dataset's `shape` and `dtype` (NumPy's descr: `<i4`); each scalar dataset's value (`entry.title`). Values as found, text bytes as UTF-8, an empty attribute as `""`; left out: what h5py cannot read and what `textual` refuses.
 
 #### Scenario: A NeXus file's attributes and datasets
 - **WHEN** the NeXus example file `simple_example_basic.nexus.hdf5` is extracted
-- **THEN** `original_metadata` has `creator simple_example_basic_write.py`, `entry.NX_class NXentry`, `entry.mr_scan.mr_indices [0]`, `entry.mr_scan.I00.shape [31]`, `entry.mr_scan.I00.dtype int32`, `entry.mr_scan.I00.units counts` and `entry.title` with its value, and the summary starts with that title
+- **THEN** `original_metadata` has `creator simple_example_basic_write.py`, `entry.NX_class NXentry`, `entry.mr_scan.mr_indices [0]`, `entry.mr_scan.I00.shape [31]`, `entry.mr_scan.I00.dtype <i4`, `entry.mr_scan.I00.units counts` and `entry.title` with its value, and the summary starts with that title
 
 #### Scenario: An attribute nobody has seen before
 - **WHEN** an HDF5 file has an attribute `never_seen_before` on a group `g` and an empty attribute `blank`
 - **THEN** `original_metadata` has `g.never_seen_before` with its value and `blank` as `""`
 
 #### Scenario: Values not suitable for text
-- **WHEN** an HDF5 file has an attribute of 100 numbers, an opaque attribute of bytes and a scalar dataset of a string over 1,000 characters
-- **THEN** none of them is in `original_metadata`, and the attribute of 100 numbers is not read
+- **WHEN** an HDF5 file has an attribute of 100 numbers, an opaque attribute of bytes, a scalar dataset of a string over 1,000 characters, a scalar object reference and a scalar of 100,000 bytes
+- **THEN** none of them is in `original_metadata`, and neither the attribute of 100 numbers nor the scalar of 100,000 bytes is read
+
+### Requirement: Nothing is read from outside the file
+The extractor SHALL learn from a dataset's creation property list, before anything else is asked of it, whether it keeps its data outside the file: a virtual dataset SHALL give its dtype and the extent its first mapping declares, never its value or its shape as HDF5 computes it (which opens the source files of an unlimited one); a dataset with external raw storage SHALL give its shape and dtype, never its value. The files they refer to SHALL not be opened.
+
+#### Scenario: Raw data stored in another file
+- **WHEN** an HDF5 file has a scalar dataset and an array dataset whose raw data is stored in a file `raw.bin` outside the tree, holding `SECRET42`
+- **THEN** `original_metadata` has their shapes and dtypes, `SECRET42` is nowhere in the values, and `raw.bin` is not opened
+
+#### Scenario: A virtual dataset
+- **WHEN** an HDF5 file has an unlimited virtual dataset and a scalar virtual dataset mapped onto a file `src0.h5` outside the tree, whose scalar holds 42
+- **THEN** `original_metadata` has their dtypes, not the value 42, and `src0.h5` is not opened
 
 ### Requirement: The walk of an HDF5 file is bounded
-The extractor SHALL open the file without file locking and with readahead off, SHALL never read a dataset of more than one element, nor follow an external link, and SHALL stop the walk at 1,000 entries or after 20 seconds; `mapped_metadata.walk` SHALL then say which limit cut it.
+The extractor SHALL open the file without file locking and with readahead off; read a value only of at most 16 elements of at most 4,000 bytes each (4 bytes a character `textual` keeps), not of an array type; never follow an external or a soft link, nor enter an object on the skip list; and stop at 1,000 entries, 5,000 objects or a third of the extractor's time limit (20 s), `mapped_metadata.walk` saying which limit cut it.
 
 #### Scenario: Arrays are never read
 - **WHEN** an HDF5 file of 32 MB holding one array dataset with attributes is extracted
 - **THEN** its shape, dtype and attributes are given, and fewer than 256 KiB are read
 
 #### Scenario: The walk stops at 1,000 entries
-- **WHEN** an HDF5 file has 1,500 groups with one attribute each
-- **THEN** `original_metadata` has 1,000 entries, and `mapped_metadata.walk` says that the entry limit of 1,000 cut it
+- **WHEN** an HDF5 file has 1,500 groups with one attribute each, and another has one group with 1,500 attributes
+- **THEN** each gives 1,000 entries in `original_metadata`, and `mapped_metadata.walk` says that the entry limit of 1,000 cut it
+
+#### Scenario: The walk stops at 5,000 objects
+- **WHEN** an HDF5 file has 6,000 groups without attributes
+- **THEN** `original_metadata` is empty, and `mapped_metadata.walk` says that the object limit of 5,000 cut it
+
+#### Scenario: A group on the skip list is not entered
+- **WHEN** a MATLAB 7.3 file has 6,000 groups under `#refs#` and a variable `x`
+- **THEN** `x` is described and the walk is not cut
 
 #### Scenario: The walk stops after its time
 - **WHEN** the walk's time is up before the walk ends
@@ -139,18 +166,18 @@ The extractor SHALL give as `original_metadata` the notebook's `metadata`, flatt
 - **THEN** `original_metadata` has the kernelspec and nothing under `widgets` or `toc`
 
 ### Requirement: A large notebook is read at its end only
-A notebook of more than 8 MiB SHALL be read at its end only (64 KiB): its metadata as Jupyter writes it, after the cells, without cell counts; `mapped_metadata.read` says so.
+A notebook of more than 8 MiB SHALL be read at its end only (64 KiB): its metadata as Jupyter writes it, after the cells, without cell counts; `mapped_metadata.read` says so, and that the notebook's metadata was not found in the tail when a writer put it elsewhere.
 
 #### Scenario: A large notebook
-- **WHEN** a notebook larger than the limit is extracted
-- **THEN** its metadata is given, no cell counts, `mapped_metadata.read` says why, and at most 64 KiB are read
+- **WHEN** a notebook larger than the limit is extracted, and one of a writer that puts the metadata first
+- **THEN** the first gives its metadata, no cell counts, and `mapped_metadata.read` says why; the second no metadata, and `mapped_metadata.read` says it was not found in the tail; each reads at most 64 KiB
 
 ### Requirement: A Python script is described by its source, never run
-The extractor of `text/x-python` and `text/x-python3` files SHALL parse the source with `ast`, never executing it, and give as `original_metadata` the shebang line (`shebang`), the module docstring (`docstring`), each module-level assignment of a literal to a dunder name (`__version__` …), and the imported module names in the order first found (`imports`, relative ones with their dots). The summary line SHALL be the docstring's first line.
+The extractor of `text/x-python` and `text/x-python3` files SHALL parse the source with `ast`, never executing it, and give as `original_metadata` the `shebang`, the module `docstring`, each module-level assignment of a literal to a dunder name (`__version__` …), and the `imports` in source order, each once, as written (more than 16: `textual` refuses the list). The summary line SHALL be the docstring's first line.
 
 #### Scenario: A script
-- **WHEN** a script with a shebang, a docstring, `__version__ = "1.2"`, `__author__`, imports of `os`, `numpy as np` and `from .tools import x`, and code that writes a file when run, is extracted
-- **THEN** all of these are in `original_metadata` (`imports ["os", "numpy", ".tools"]`), the summary is the docstring's first line, and the file the code would write does not exist
+- **WHEN** a script with a shebang, a docstring, `__version__ = "1.2"`, `__author__`, imports of `os`, of `scipy` in a function, then of `numpy as np` and `from .tools import x`, and code that writes a file when run, is extracted
+- **THEN** all of these are in `original_metadata` (`imports ["os", "scipy", "numpy", ".tools"]`), the summary is the docstring's first line, and the file the code would write does not exist
 
 ### Requirement: A script that cannot be parsed gives its shebang and the reason
 The extractor SHALL read at most 1 MiB. A larger file, or one that Python cannot parse (Python 2), SHALL give its shebang and, in `mapped_metadata.not_parsed`, the reason.

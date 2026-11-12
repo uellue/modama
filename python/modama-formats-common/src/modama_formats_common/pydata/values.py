@@ -12,12 +12,15 @@ from modama_crawler.formats import Directory, Entry
 from modama_crawler.formats.values import MAX_ITEMS, textual
 
 # A walk over a file's entries (HDF5 objects, .npz members) stops at the
-# storage's limit of entries per dict, which would cut the rest anyway, or
-# after a third of the extractor's time limit (60 s), so that a file of
-# hundreds of thousands of objects on a slow NFS ends with what was found
-# (spec formats/pydata, "The walk of an HDF5 file is bounded")
+# storage's limit of entries per dict, which would cut the rest anyway; after
+# a number of objects, as most add no entry (200,000 empty groups: 11 s and
+# 335 MB in the review of change common-pydata); or after a third of the
+# extractor's time limit, so that a file of hundreds of thousands of objects
+# on a slow NFS ends with what was found (spec formats/pydata, "The walk of an
+# HDF5 file is bounded")
 MAX_ENTRIES = extraction.MAX_ITEMS
-SECONDS = 20.0
+MAX_OBJECTS = 5000
+SECONDS = extraction.TIME_LIMIT / 3
 ENTRY_LIMIT = f"cut at the entry limit of {MAX_ENTRIES}"
 
 
@@ -26,13 +29,16 @@ class Walk:
 
     def __init__(self):
         self.values: dict = {}
+        self.objects = 0  # counted by the walker
         self.cut: str | None = None
         self._start = time.monotonic()
 
     def over(self) -> bool:
-        """Whether a limit is reached before the next entry; notes which one."""
+        """Whether a limit is reached before the next entry or object; notes which one."""
         if len(self.values) >= MAX_ENTRIES:
             self.cut = ENTRY_LIMIT
+        elif self.objects >= MAX_OBJECTS:
+            self.cut = f"cut at the object limit of {MAX_OBJECTS}"
         elif time.monotonic() - self._start > SECONDS:
             self.cut = f"cut at the time limit of {SECONDS:g} s"
         return self.cut is not None

@@ -24,7 +24,7 @@
         "mapped_metadata": {},
         "original_metadata": {
           "cells.MATLAB_class": "cell",
-          "cells.dtype": "object",
+          "cells.dtype": "Reference",
           "cells.shape": [
             1,
             1
