@@ -8,7 +8,7 @@
 # Upstream: ../EOSC-Data-Commons/metadata-warehouse at v1.10.0, whose docker-compose.yml
 # this follows (re-check on every upgrade). Left out: pgadmin, tool-registry,
 # opensearch-dashboards, coordinator, and the toolmeta DAG bundle. Its frontend is our
-# matchmaker, pinned by digest instead of :latest.
+# matchmaker, built from a pinned upstream commit instead of :latest.
 #
 # Test deployment: docker-compose.override.yml (ports on 127.0.0.1, test data, the e2e
 # test), ./uptest.sh, ./runtest.sh, ./downtest.sh [--reset]. See README.md.
@@ -18,12 +18,12 @@ x-warehouse-build: &warehouse-build
   context: ../EOSC-Data-Commons/metadata-warehouse
 
 x-airflow-common: &airflow-common
+  # upstream's image (airflow-upstream below) with patches/warehouse/ and cpu-budget/budget.py
   build:
-    <<: *warehouse-build
-    dockerfile: ./docker/airflow/Dockerfile
-    args:
-      # metadata-crawlers (the harvester) installed in the image; upstream v1.10.0's pin
-      HARVESTER_REF: 9c120f5dc207cf46421211357cfea2419ddb8e8a
+    context: patches/warehouse
+    dockerfile: ../../warehouse-airflow.Dockerfile
+    additional_contexts:
+      budget: cpu-budget
   image: search-stack-airflow:3.3.2
   networks: [search]
   env_file:
@@ -38,6 +38,12 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
     AIRFLOW__CELERY__WORKER_CONCURRENCY: "4"
     AIRFLOW__CORE__MAX_MAP_LENGTH: "10000"
+    # Airflow's task limits (default 16 per DAG, 32 in all), here as one value for the
+    # scheduler and the workers: by default a ceiling no machine of ours reaches, so that the
+    # transform worker's CPU budget governs; a shared machine sets AIRFLOW_TASK_LIMIT in its
+    # env file (staging: 16). README, "CPU budget".
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: ${AIRFLOW_TASK_LIMIT:-1024}
+    AIRFLOW__CORE__PARALLELISM: ${AIRFLOW_TASK_LIMIT:-1024}
     PYTHONPATH: /opt/airflow/project/src:/opt/airflow/project
     INDEX_NAME: test_datacite
     # harvest events per indexing task; each task is a fresh Python process that loads
@@ -77,6 +83,9 @@ services:
     image: search-stack-crawler
     command: modama-crawler serve
     restart: unless-stopped
+    # background: crawls (docker compose exec) and the OAI-PMH server the harvester reads, below
+    # Docker's default CPU weight, so that searches go first (README, "CPU budget")
+    cpu_shares: 512
     env_file:
       - ${MODAMA_SECRETS_DIR:?see README.md}/chain.env
     environment: &crawler-env
@@ -127,6 +136,7 @@ services:
     pull_policy: never  # built by another service
     command: modama-crawler timer --at 19:00
     restart: unless-stopped
+    cpu_shares: 512  # background (README, "CPU budget")
     init: true
     stop_grace_period: 60s
     env_file:
@@ -206,6 +216,7 @@ services:
     image: search-stack-transform
     command: ["fastapi", "run", "--host", "0.0.0.0", "app/routes.py", "--port", "80"]
     restart: unless-stopped
+    cpu_shares: 512  # background: the warehouse's API for the DAG tasks (README, "CPU budget")
     env_file:
       - ${MODAMA_SECRETS_DIR:?see README.md}/warehouse-db.env
       - ${MODAMA_SECRETS_DIR:?see README.md}/keys.env
@@ -276,11 +287,15 @@ services:
       retries: 3
     networks: [search]
 
-  # upstream's 0.10.2 with patches/search-api/ applied (search-api.Dockerfile)
+  # upstream's 0.10.2 with patches/search-api/ applied and budget.py as its start, which runs
+  # a uvicorn worker per usable CPU with one embedding thread each (search-api.Dockerfile;
+  # README, "CPU budget"). Docker's default CPU weight: it answers users.
   search-api:
     build:
       context: patches/search-api
       dockerfile: ../../search-api.Dockerfile
+      additional_contexts:
+        budget: cpu-budget
     image: search-stack-search-api:0.10.2-patched
     restart: unless-stopped
     env_file:
@@ -302,9 +317,20 @@ services:
   # The EOSC search web frontend (github.com/EOSC-Data-Commons/matchmaker, MIT), upstream's
   # "frontend"; its server proxies /api/search/* to the search API. The FAIR check and the
   # Data Player (GRPC_TARGET: upstream's coordinator, which we leave out) keep the image's
-  # defaults, outside services (@weber, 2026-11-12; README, "Open").
+  # defaults, outside services (@weber, 2026-11-12; README, "Open"). Built from upstream's
+  # 0.14.0 source with patches/matchmaker/ applied (matchmaker.Dockerfile): AI Mode
+  # without login (@weber, 2026-11-12).
   matchmaker:
-    image: ghcr.io/eosc-data-commons/matchmaker-frontend:0.14.0@sha256:1637bade91c9e7d429e21120033f8ed9a33d92df01f4fd1a57640977152ae1c2
+    build:
+      context: patches/matchmaker
+      dockerfile: ../../matchmaker.Dockerfile
+      target: production
+    image: search-stack-matchmaker:0.14.0-patched
+    # Two server processes instead of upstream's one per logical CPU (`npm run prod`:
+    # pm2-runtime -i max; 48 on the dev server, about 110 MB each): the server only passes
+    # requests on, one process carries a few users, the second takes over while pm2
+    # restarts a crashed one (@weber, 2026-11-12, decision 112)
+    command: ["./node_modules/.bin/pm2-runtime", "start", "build/server.js", "--name", "matchmaker", "-i", "2"]
     restart: unless-stopped
     environment:
       SEARCH_API_URL: http://search-api:8000
@@ -313,6 +339,19 @@ services:
     networks: [search]
 
   # ------------------------------------------------------------------ Airflow
+  # Build-only: upstream's Airflow image, unchanged, the base of ours (warehouse-airflow.Dockerfile).
+  # Never started (profile build). ./uptest.sh and ./upstaging.sh build it before `up`, since
+  # Compose 2.26 cannot order one service's build before another's.
+  airflow-upstream:
+    build:
+      <<: *warehouse-build
+      dockerfile: ./docker/airflow/Dockerfile
+      args:
+        # metadata-crawlers (the harvester) installed in the image; upstream v1.10.0's pin
+        HARVESTER_REF: 9c120f5dc207cf46421211357cfea2419ddb8e8a
+    image: search-stack-airflow-upstream:3.3.2
+    profiles: [build]
+
   airflow-postgres:
     image: postgres:16
     restart: unless-stopped
@@ -420,6 +459,7 @@ services:
     <<: *airflow-common
     command: celery worker --queues default
     restart: unless-stopped
+    cpu_shares: 512  # background (README, "CPU budget")
     env_file:
       - ${MODAMA_SECRETS_DIR:?see README.md}/airflow.env
       - ${MODAMA_SECRETS_DIR:?see README.md}/warehouse-db.env
@@ -439,11 +479,14 @@ services:
       airflow-api-server:
         condition: service_healthy
 
-  # Transform tasks, one at a time because of the embedding model
+  # Transform tasks: budget.py counts the cores, the task slots and a memory limit if one is
+  # set, logs its CPU budget, sets the pool `transform` and the threads, and starts Celery with
+  # --concurrency P (README, "CPU budget"; TRANSFORM_PROCESSES and EMBEDDING_THREADS override)
   airflow-worker-transform:
     <<: *airflow-common
-    command: celery worker --queues transform --concurrency 1
+    command: python /opt/modama/budget.py transform -- celery worker --queues transform
     restart: unless-stopped
+    cpu_shares: 512  # background: below the default, so searches go first (README, "CPU budget")
     env_file:
       - ${MODAMA_SECRETS_DIR:?see README.md}/airflow.env
       - ${MODAMA_SECRETS_DIR:?see README.md}/warehouse-db.env

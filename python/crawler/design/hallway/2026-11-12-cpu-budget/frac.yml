@@ -1,0 +1,4 @@
+services:
+  crawler: {cpus: 1.5}
+  search-api: {cpus: 0.5}
+  airflow-worker-transform: {cpus: 2.5, mem_limit: 4g}
