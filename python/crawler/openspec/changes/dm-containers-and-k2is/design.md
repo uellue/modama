@@ -29,6 +29,6 @@ Kept, though near them: the other processing objects of the acquisition (`cm_img
 
 ## Risks / Trade-offs
 
-- [The tag names are LiberTEM's, not checked on a real `.gtg` here] → the representative fixture decides; until then the extractor's test runs on a reproducer, and missing tags are left out, not guessed.
+- [The tag names are LiberTEM's, checked on one real `.gtg` only] → Capture52 (task 3.1) has `SI Dimensions` and `Microscope Info` at the root, where LiberTEM reads them; other GMS versions may name or nest tags differently: missing tags are left out, not guessed.
 - [A `.dmw` that does hold an image is no longer extracted] → none seen: all 2,036 on staging failed for lack of an `ImageList`.
-- [Fixtures] → no real K2IS capture or `.dmw` in the VM; reproducers are cut or built (a DM4 file of RosettaSciIO's test data renamed, sector files with valid block headers); representative files from staging need @weber's agreement per file (task 3.1).
+- [Fixtures] → a real K2IS capture since task 3.1 (Capture52, metadata only: the `.gtg` whole, the sectors cut to their first block's header); its `.gtg` also stands for the lone `.gtg`. No real `.dmw` yet (task 3.3): its fixture is a DM4 image of RosettaSciIO's test data, renamed, which holds an image where staging's `.dmw` files hold none. Representative files from staging need @weber's agreement per file.
