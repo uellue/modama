@@ -55,9 +55,12 @@ def _applied(step, **kwargs) -> None:
 
 def online() -> None:
     conninfo = config.attributes.get("conninfo")
+    # Alembic's command line: the database the crawler's commands use
     if conninfo is None:
+        from dotenv import load_dotenv
         from modama_crawler.cli import conninfo_from_env
 
+        load_dotenv()  # python/crawler/.env, as modama-crawler reads it
         conninfo = conninfo_from_env()
     engine = sa.create_engine(
         "postgresql+psycopg://",
