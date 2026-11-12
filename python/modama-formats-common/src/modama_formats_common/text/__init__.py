@@ -14,6 +14,7 @@ from dataclasses import replace
 
 from modama_crawler import mime
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
+from modama_crawler.formats.values import credential
 
 from . import head, markup
 
@@ -85,6 +86,11 @@ class Text(Format):
         found = self.decode(found)
         original, mapped = self.parse(found)
         mapped = {"encoding": found.encoding, **head.lines(found), **mapped}
+        # The package's shared credential check, as the area structured applies it
+        secrets = [k for k, v in original.items() if credential(k, v)]
+        if secrets:
+            original = {k: v for k, v in original.items() if k not in secrets}
+            mapped["credentials_left_out"] = len(secrets)
         summary = [
             p
             for name in self.HEADLINE

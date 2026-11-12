@@ -9,13 +9,14 @@ import codecs
 import email.message
 import io
 import itertools
-import math
 import re
 from collections.abc import Iterator
 from html.parser import HTMLParser
 
 import yaml
 from modama_crawler.formats.values import textual
+
+from ..yamldoc import documents
 
 # Characters of the decoded head parsed for Markdown, reStructuredText and
 # LaTeX: their metadata is at the start, and docutils needs 28 s for 1 MiB
@@ -48,39 +49,17 @@ def flat(
         yield name, value
 
 
-class YamlLoader(yaml.SafeLoader):
-    """PyYAML's safe loader, a date or time as written: no conversion to a time zone.
-
-    TODO (main's decision 3, review of common-text): use the package's one YAML
-    loader of the area `structured` once it is merged (keys and scalars as
-    written: `10:30`, `1.10`, `012`, `NO`; unknown tags as text).
-    """
-
-
-YamlLoader.add_constructor(
-    "tag:yaml.org,2002:timestamp",
-    lambda loader, node: loader.construct_scalar(node),
-)
-
-
-def plain(value):
-    """A YAML value as JSON holds it: an infinity or NaN as Python writes it (`inf`)."""
-    if isinstance(value, float) and not math.isfinite(value):
-        return str(value)
-    if isinstance(value, list):
-        return [plain(v) for v in value]
-    return value
-
-
 def front_matter(source: str) -> dict:
-    """Every entry of a YAML front matter but values not suitable for text, at most MAX_ENTRIES."""
-    found = yaml.load(source, Loader=YamlLoader)  # a safe loader
+    """Every entry of a YAML front matter but values not suitable for text, at most
+    MAX_ENTRIES, read by the package's one YAML loader (`yamldoc`: keys, scalars,
+    dates and times as written; an application's own tag as its plain value)."""
+    found = next(iter(documents(source)), None)
     if found is None:
         return {}
     entries = itertools.islice(
         flat(found, "" if isinstance(found, dict) else "front matter"), MAX_ENTRIES
     )
-    return {name: plain(value) for name, value in entries if textual(value)}
+    return {name: value for name, value in entries if textual(value)}
 
 
 def markdown(text: str) -> tuple[dict, dict]:

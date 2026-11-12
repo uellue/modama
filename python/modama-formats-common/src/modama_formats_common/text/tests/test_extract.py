@@ -295,6 +295,20 @@ def test_a_front_matter_that_holds_itself(tmp_path):
     assert found.values["original_metadata"] == {"x[0]": 1, "y.d": 2, "kept": 1}
 
 
+def test_front_matter_scalars_as_written(tmp_path):
+    note = "---\nstart: 10:30\nversion: 1.10\n---\n"
+    found = extracted(written(tmp_path, "x.md", note), "Markdown")
+    # PyYAML's safe loader (YAML 1.1) reads 10:30 as 630 (base 60) and 1.10 as 1.1
+    assert found.values["original_metadata"] == {"start": "10:30", "version": "1.10"}
+
+
+def test_a_front_matter_credential(tmp_path):
+    note = "---\ntitle: Notes\napi_key: abc123\nserver: postgres://admin:x@db/x\n---\n"
+    found = extracted(written(tmp_path, "x.md", note), "Markdown")
+    assert found.values["original_metadata"] == {"title": "Notes"}
+    assert found.values["mapped_metadata"]["credentials_left_out"] == 2
+
+
 # reStructuredText title and docinfo
 
 
