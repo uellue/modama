@@ -197,24 +197,29 @@ def test_another_bin_file(collection_tests, tmp_path):
 
 def test_a_representative_capture(collection_tests, tmp_path):
     (capture,) = described(collection_tests, "capture52", tmp_path)
-    # The scan shape and the microscope first, then the other tags in the
-    # reader's order, under their paths, the values not rounded (decision 129)
-    assert capture.description.startswith(
-        "SI Dimensions.Size X 35, SI Dimensions.Size Y 34, Microscope Info.Cs(mm) 0.0, "
+    # The summary line of DM files' tags (spec formats/dm), the scan as the size
+    assert capture.description == (
+        "IMAGING, SCANNING, STEM NANOPROBE, 300kV, 320kx, STEM Camera Length 275.0, "
+        "K2-IS, K2-IS-0001, Exposure Time (s) 0.0025, Search, Size X 35, Size Y 34, "
+        "3/29/2018, 1:28:03 PM; K2IS acquisition, 9 files, 27.3 kB, in /"
     )
-    for phrase in (
-        "Microscope Info.Voltage 300000.0, Acquisition.Device.Active Size (pixels) (1920, 1792), ",
-        "Microscope Info.Stage Position.Stage Alpha -2.4043772802208405, ",
-        "DataBar.Acquisition Date 3/29/2018, DataBar.Acquisition Time 1:28:03 PM, ",
-        "DataBar.Device Name K2-IS-0001, ",
-        "SI Image Tags.SI.Acquisition.Pixel time (s) 0.0025, ",
-    ):
-        assert phrase in capture.description
-    assert capture.description.endswith("; K2IS acquisition, 9 files, 27.3 kB, in /")
+    # The tags as values, under their paths, the values not rounded (decision 129)
+    tags = capture.dataset.extraction.extracted.values["original_metadata"]
+    assert {
+        "SI Dimensions.Size X": 35,
+        "Microscope Info.Voltage": 300000.0,
+        "Acquisition.Device.Active Size (pixels)": (1920, 1792),
+        "Microscope Info.Stage Position.Stage Alpha": -2.4043772802208405,
+        "DataBar.Acquisition Date": "3/29/2018",
+        "DataBar.Device Name": "K2-IS-0001",
+        "SI Image Tags.SI.Acquisition.Pixel time (s)": 0.0025,
+    }.items() <= tags.items()
     # 359 tags: 52 of them user-interface settings; the 11 without a value are kept (decision 161)
-    assert len(capture.dataset.extraction.extracted.summary) == 307
-    assert "Session Info.Operator []" in capture.description
-    assert capture.subjects == ["Gatan K2 IS", "FEI Tecnai Remote"]
+    assert len(tags) == 307
+    assert tags["Session Info.Operator"] == []
+    # JSON holds no infinity: as Python writes it
+    assert tags["Acquisition.Parameters.High Level.Exposure Live Time"] == "inf"
+    assert capture.subjects == ["Gatan K2 IS", "FEI Tecnai Remote", "IMAGING", "K2-IS"]
     # The .gtg read whole (26,931 bytes, tags only), and no sector file
     assert capture.bytes_read < 28_000
     assert set(capture.reads) == {"/Capture52_.gtg"}
@@ -222,7 +227,8 @@ def test_a_representative_capture(collection_tests, tmp_path):
 
 def test_user_interface_settings_are_left_out(collection_tests, tmp_path):
     (capture,) = described(collection_tests, "capture52", tmp_path)
-    summary = capture.dataset.extraction.extracted.summary
+    tags = capture.dataset.extraction.extracted.values["original_metadata"]
+    summary = [f"{path} {value}" for path, value in tags.items()]
     # The image viewer (Acquisition.Parameters.Objects.TagGroup1, and the
     # same under SI Image Tags) and the definition of the Session Info form
     for setting in (
@@ -253,13 +259,12 @@ def test_the_groups_at_the_root_whatever_the_tag_order(monkeypatch):
     tags = {
         "Acquisition": {
             "Microscope Info": {"Name": "nested"},
-            "SI Dimensions": {"Size X": 1},
+            "SI Dimensions": {"Size X": 1, "Size Y": 2},
         },
         "Microscope Info": {"Name": "FEI Tecnai Remote"},
-        "SI Dimensions": {"Size X": 35},
+        "SI Dimensions": {"Size X": 35, "Size Y": 34},
     }
     monkeypatch.setattr(k2is, "parsed", lambda path: SimpleNamespace(tags_dict=tags))
     extracted = k2is.K2is().extract(Dataset(anchor="/X_.gtg"), "/nowhere")
     assert extracted.subjects == ["FEI Tecnai Remote"]
-    assert "SI Dimensions.Size X 35" in extracted.summary
-    assert "SI Dimensions.Size X 1" not in extracted.summary
+    assert extracted.summary == ["Size X 35", "Size Y 34"]
