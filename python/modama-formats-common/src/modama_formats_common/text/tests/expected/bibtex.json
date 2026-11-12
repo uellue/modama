@@ -1,0 +1,42 @@
+{
+  "datasets": [
+    {
+      "anchor": "/references.bib",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/bibtex",
+      "members": [
+        "/references.bib"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-bibtex",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/references.bib": {
+      "subjects": [],
+      "summary": [
+        "entries 3",
+        "ascii",
+        "lines 22"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "ascii",
+          "entries": 3,
+          "keys": [
+            "example2024",
+            "example2025",
+            "example2026"
+          ],
+          "lines": 22
+        },
+        "original_metadata": {}
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

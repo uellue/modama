@@ -1,0 +1,35 @@
+{
+  "datasets": [
+    {
+      "anchor": "/acquisition.log",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/log",
+      "members": [
+        "/acquisition.log"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-log",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/acquisition.log": {
+      "subjects": [],
+      "summary": [
+        "ascii",
+        "lines at least 20164"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encoding": "ascii",
+          "lines at least": 20164
+        },
+        "original_metadata": {}
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

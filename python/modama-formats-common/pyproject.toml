@@ -27,6 +27,17 @@ dependencies = [
     "pypdf[crypto]==7.0.1",
     # structured, text: YAML with the safe loader (yamldoc.py); current release on PyPI 2026-11-12, cp314 manylinux wheel with libyaml
     "PyYAML==6.0.3",
+    # text: pinned exactly, as the fixtures' recorded results (expected/) and the
+    # docutils-written fixtures depend on the readers' versions.
+    # Markdown, with its front matter plugin
+    "markdown-it-py==4.3.0",
+    "mdit-py-plugins==0.7.0",
+    # text: reStructuredText
+    "docutils==0.23",
+    # text: LaTeX
+    "pylatexenc==2.11",
+    # text: BibTeX
+    "bibtexparser==2.1.0",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},

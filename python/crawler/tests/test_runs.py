@@ -8,6 +8,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import modama_formats_common  # noqa: F401 (installed: common/text extracts the tree's text files)
 import modama_formats_em
 import pytest
 from conftest import CRAWLER, shell
@@ -46,9 +47,10 @@ def test_an_unchanged_crawl_leaves_a_run(conn, env, tree):
     first, second = runs(conn)
     assert (first[0], first[7]) == ("finished", 3)
     assert (second[0], second[7]) == ("finished", 0)
-    # The rule set's fingerprint is the same in a new process: both directories are taken over
+    # The rule set's fingerprint is the same in a new process: both directories are
+    # taken over, with the extractions of the three text files (common/text, installed)
     assert "0 directories unchanged" in crawls[0].stderr
-    assert "extraction: 0 run, 0 reused, 0 failed; 2 directories unchanged" in (
+    assert "extraction: 0 run, 3 reused, 0 failed; 2 directories unchanged" in (
         crawls[1].stderr
     )
     # The run keeps the extraction counts the crawl logged, and the runs command shows them
@@ -56,9 +58,9 @@ def test_an_unchanged_crawl_leaves_a_run(conn, env, tree):
         "SELECT extractions_run, extractions_reused, extractions_failed, directories_unchanged"
         " FROM crawl_runs ORDER BY run_id"
     ).fetchall()
-    assert counts == [(0, 0, 0, 0), (0, 0, 0, 2)]
+    assert counts == [(3, 0, 0, 0), (0, 3, 0, 2)]
     newest = shell(f"{CRAWLER} runs", env).stdout.splitlines()[0]
-    assert "extraction: 0 run, 0 reused, 0 failed; 2 directories unchanged" in newest
+    assert "extraction: 0 run, 3 reused, 0 failed; 2 directories unchanged" in newest
 
 
 def test_the_root_disappears(conn, env, tree, tmp_path):
