@@ -11,7 +11,7 @@ crawler (OAI-PMH) ◀───────────────────�
 It is our own composition of the upstream images (EOSC metadata-warehouse `v1.10.0` in `../EOSC-Data-Commons/metadata-warehouse`, built from there; data-commons-search `0.10.2`, with the patches in `patches/search-api/` applied by `search-api.Dockerfile`: its keyword search queries the root copies of the nested title, description and subject fields; matchmaker `0.14.0`, upstream's image, pinned by digest), shaped like `deploy/` so that it can move there:
 
 - **Secrets as files**, from `MODAMA_SECRETS_DIR`, which must be set; `./uptest.sh` writes a `.env` (gitignored, as `deploy/.env`) that points it at the throwaway test values in `testconf/secrets/`. One file per concern, and each service gets only the files it needs: the crawler has no warehouse credentials; `modama-chain` reads with a read-only database role and an Airflow Viewer account; the search API has its own role, owner of its database `appdb` only; the crawler's Airflow account (only in `crawl-timer`) has a role `harvest-trigger` that may start and read runs of the harvest DAG and nothing else (Airflow needs edit on that DAG to start its runs, so it could pause that one DAG).
-- **One-shot init services** instead of scripts on the host, idempotent, run on every start and restarted on failure: `warehouse-init` (`init-warehouse.sh`: databases, schema, index, our endpoint as the only active one, the roles) `airflow-init` (Airflow's database and admin), and `airflow-accounts` (`init-airflow.sh`, once the dag-processor has written the DAGs, since Airflow's per-DAG permissions exist only then: the crawler's role and the two accounts, created when missing; to change a password, delete the account and restart).
+- **One-shot init services** instead of scripts on the host, idempotent, run on every start and restarted on failure: `warehouse-init` (`init-warehouse.sh`: databases, schema, index, our endpoint as the only active one, the roles) `airflow-init` (Airflow's database and admin), and `airflow-accounts` (`init-airflow.sh`, once the dag-processor has written the DAGs, since Airflow's per-DAG permissions exist only then: the crawler's role and the two accounts, created when missing; to change a password, delete the account and restart). `crawler-migrate` (`modama-crawler migrate`) brings `crawler-db`'s schema to the image's before `crawler` and `crawl-timer` start, and is not restarted: when it refuses or fails, `up` fails within seconds and names it ("Upgrade" below).
 - **The crawl starts the harvest:** `crawl-timer` crawls every day at 19:00 UTC (20:00 CET, 21:00 CEST; outside business hours while a full crawl takes hours), and at once when the last finished crawl is more than a day old (after a restart or a killed crawl). Every finished crawl starts the harvest DAG for the crawler's endpoint after its commit. Upstream's own schedule stays off, and the DAGs are unpaused at creation (none has a schedule, so they run only when started). `docker compose stop` passes SIGTERM to a running crawl, which records its run as failed.
 - **The broker waits 48 hours for an acknowledgement** (`consumer_timeout` in `broker.conf`), not RabbitMQ's 30 minutes. Celery under Airflow acknowledges a task when it ends, and on the default queue the harvest and the harvest DAG's wait for the indexing run take hours. With 30 minutes the broker closed the default worker's channel, and the worker took no task until that one had ended (staging finding F17). `./runtest.sh` checks the broker's value; `consumer-timeout/run.sh` reproduces the failure in a compose project of its own, without published ports: about 4 minutes, exit 0 when a second task runs during a long one; `REPRO_BROKER_CONF=../broker.conf consumer-timeout/run.sh` runs it with this setting. Its host name is fixed (`hostname: broker`), so that its RabbitMQ node, `rabbit@broker`, and the queued messages survive a recreated container.
 - **Left out from upstream's compose:** pgadmin, tool-registry, opensearch-dashboards, coordinator (so matchmaker, upstream's `frontend`, uses the hosted Data Player), and the toolmeta DAG bundle (it polls GitHub every minute; without it the dag-processor logs about 230 lines in 15 minutes instead of 1,374).
@@ -55,6 +55,45 @@ ssh -N -J <you>@<host> -L 3000:127.0.0.1:3000 -L 8000:127.0.0.1:8000 -L 8081:127
 ```
 
 Then http://localhost:3000, http://localhost:8000/search?q=ferritin&resource=datasets or http://localhost:8081. Open matchmaker as `localhost`, as above: its page sends usage statistics to EGI's Matomo (egi.matomo.cloud) unless the page's host name is `localhost` or `127.0.0.1`. Searching needs no login; its login (EGI Check-in), the FAIR check and the Data Player reach outside services.
+
+## Upgrade
+
+A new version of the crawler may bring a schema migration (a new file in `python/crawler/src/modama_crawler/migrations/versions/`). `crawler-migrate` applies it in place, keeping the crawls, records and datestamps, so nothing is crawled, harvested or indexed again. The commands are for the test deployment; on staging, use the runbook's `dc` shorthand and `./upstaging.sh --build` (`python/crawler/design/field-tests/search-stack-staging-runbook.md`, "Upgrade").
+
+1. After pulling, see whether the new code brings a migration, without touching the database:
+
+   ```bash
+   git diff --stat <deployed commit> HEAD -- ../../python/crawler/src/modama_crawler/migrations/versions/
+   ```
+
+   To ask the database instead: `docker compose run --rm --no-deps crawler modama-crawler runs` with the new image refuses with `… run modama-crawler migrate` when a migration is pending. Keep `--no-deps`: without it, compose runs `crawler-migrate` first, and the database is migrated before you have the dump.
+2. If a migration comes, take a dump of the crawler's database first, outside the checkout (it holds the paths and owners of the data). It is the way back from anything a downgrade cannot undo:
+
+   ```bash
+   docker compose exec -T crawler-db pg_dump -U postgres -Fc modama_crawler > ~/crawler-db.dump
+   docker compose exec -T crawler-db pg_restore --list < ~/crawler-db.dump | head   # the dump is readable
+   ```
+
+3. Build and start: `./uptest.sh --build`. Compose stops `crawler` and `crawl-timer` (a running crawl is recorded as failed, as on any rebuild), runs `crawler-migrate`, then starts them again. The OAI-PMH endpoint is down until `crawler` is healthy again. `docker compose logs crawler-migrate` shows `schema migrated from … to …`, or `schema up to date at …` when there was nothing to do.
+4. If `up` fails with `service "crawler-migrate" didn't complete successfully: exit 1` (or `exit 2`), `docker compose logs crawler-migrate` says why and what to do; the messages and their steps are in `python/crawler/README.md`, "The database schema". The database is unchanged then.
+
+The way back, while the newer image is still there (a downgrade needs the newer code):
+
+```bash
+docker compose stop crawl-timer
+docker compose run --rm crawler-migrate alembic -c /src/alembic.ini downgrade <revision before the upgrade>
+git checkout <deployed commit> && ./uptest.sh --build
+```
+
+Where a revision cannot be undone, the downgrade refuses with `NotImplementedError: no downgrade from …: restore the dump taken before the upgrade (README, Upgrade)` and changes nothing. Then restore the dump into an empty database, with the older code checked out:
+
+```bash
+docker compose stop crawler crawl-timer
+docker compose exec -T crawler-db dropdb -U postgres modama_crawler
+docker compose exec -T crawler-db createdb -U postgres modama_crawler
+docker compose exec -T crawler-db pg_restore -U postgres -d modama_crawler < ~/crawler-db.dump
+./uptest.sh --build
+```
 
 ## Open
 
