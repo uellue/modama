@@ -36,8 +36,29 @@ def test_a_representative_acquisition(collection_tests, tmp_path):
     assert acq.subjects == ["Quantum Detectors Merlin", "Merlin Quad"]
 
 
+def test_a_header_that_is_not_utf8(collection_tests, tmp_path):
+    (acq,) = described(collection_tests, "not_utf8", tmp_path)
+    assert acq.description.startswith("1 frame, 256×256 pixels, 6-bit, Merlin Quad, ")
+    assert acq.subjects == ["Quantum Detectors Merlin", "Merlin Quad"]
+
+
+def test_the_date_key_names_its_fields_in_another_order(collection_tests, tmp_path):
+    (acq,) = described(collection_tests, "not_utf8", tmp_path / "a")
+    assert acq.description.startswith(
+        "1 frame, 256×256 pixels, 6-bit, Merlin Quad, 2019-02-22 10:27; "
+    )
+    # A value in another form, here with AM/PM appended, is not guessed at
+    tree = collection_tests.materialise("not_utf8", tmp_path / "b")
+    hdr = tree / "acq.hdr"
+    hdr.write_bytes(hdr.read_bytes().replace(b"10:27:28", b"10:27:28 AM"))
+    (d,) = walk(tree, collection_tests.collection.formats).datasets
+    (merlin,) = collection_tests.collection.formats
+    with pytest.raises(ValueError, match="22/02/2019 10:27:28 AM"):
+        merlin.extract(d, str(tree))
+
+
 def test_an_oversized_header_is_not_parsed(collection_tests, tmp_path):
-    # Not a scenario of its own: parse_hdr_file reads the whole file (review 2026-11-11, 5)
+    # Not a scenario of its own: the header is read whole (review 2026-11-11, 5)
     tree = collection_tests.materialise("single_frame", tmp_path)
     (d,) = walk(tree, collection_tests.collection.formats).datasets
     with open(str(tree) + d.anchor, "ab") as f:

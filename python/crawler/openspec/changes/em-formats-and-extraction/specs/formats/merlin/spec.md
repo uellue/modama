@@ -23,3 +23,12 @@ For a Merlin dataset, the extractor SHALL yield the number of frames, the frame 
 #### Scenario: A representative acquisition
 - **WHEN** a representative Merlin acquisition is crawled
 - **THEN** its record's description carries the number of frames, the frame size and the bit depth from the header
+
+#### Scenario: A header that is not UTF-8
+- **WHEN** a Merlin header holds a byte that is not UTF-8, as the Merlin software writes "µ" as the single byte 0xB5 (staging 2026-11-12: `Sensor Bias (V, µA)`)
+- **THEN** the header is read as Latin-1, so that every byte decodes and µ stays µ, and its record is described as any other
+
+#### Scenario: The date key names its fields in another order
+- **WHEN** a Merlin header's date key is `Time and Date Stamp (yr, mnth, day, hr, min, s)` with the value `22/02/2019 10:27:28` (staging 2026-11-12)
+- **THEN** the key is found by its start `Time and Date Stamp`, the value is read as day/month/year as in `Time and Date Stamp (day, mnth, yr, hr, min, s)`, and the description ends with `2019-02-22 10:27`
+- **AND** a value in another form fails the extraction with a message that names the value, so that it is retried and visible, rather than a guess at its form

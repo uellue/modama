@@ -18,6 +18,13 @@ licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "modama_formats_em.merlin.tests.generate:frames_without_header, from the files of single_frame"
 generator = "modama_formats_em.merlin.tests.generate:frames_without_header"
 
+[not_utf8]
+purpose = "reproducer"
+validity = "parser-only: composed, acq.hdr and acq.mib; the header has the lines of single_frame's header in its order with neutral values, except the lines quoted from staging's 01_ms1_3p3gK.hdr (Merlin software 0.67.0.1, error message of 2026-11-12): the key 'Time and Date Stamp (yr, mnth, day, hr, min, s)' with a day/month/year value, and 'Sensor Bias (V, µA)' without a colon and with µ as the byte 0xB5, so the header is not UTF-8; the frame file is one 256x256 frame of zeros behind a single-chip frame header"
+licence = "MIT"
+source = "modama_formats_em.merlin.tests.generate:not_utf8, written by the generator, no file copied"
+generator = "modama_formats_em.merlin.tests.generate:not_utf8"
+
 [single_frame]
 purpose = "representative"
 validity = "vendor-written: a one-frame 256x256 acquisition, counter depth 6, written by the Merlin software 0.77 (header) of a Merlin Quad readout; read by rosettasciio 0.15.0 as shape (256, 256) uint8 on 2026-11-11"
