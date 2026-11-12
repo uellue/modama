@@ -282,10 +282,13 @@ def cited_entry(hit: dict, number: int = 1) -> dict:
         ),  # repoProvenance.ts:160-171, unknown codes as text
         "title": hit.get("title"),
         "meta": " · ".join(x for x in (date and date[:4], byline) if x),
+        # SearchResultItem.tsx:202 with utils.ts:217-226 sanitizeLinkHref: http(s) only (the
+        # browser's URL normalisation is not emulated)
         "source": hit["_id"] if re.match(r"https?://", hit["_id"]) else None,
         "relevance": None  # SearchResultItem.tsx:27-48
         if not isinstance(score, int | float)
         else (100 if score >= 1 else min(99, round(max(0, score) * 100))),
+        # characters here, UTF-16 code units in JavaScript: differs only beyond the BMP
         "description": description[:DESCRIPTION_LIMIT]
         + ("..." if len(description) > DESCRIPTION_LIMIT else ""),
         "description_full": description,

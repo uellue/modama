@@ -212,7 +212,7 @@ function views(path) {
   $("head").replaceChildren(el("h1", {}, path),
     el("div", {class: "bar"}, "Path on the server:", el("code", {}, host), hostCopy),
     el("div", {class: "bar"}, info),
-    S.snapshots && file ? el("div", {class: "bar"}, save, saved) : null);
+    ...(S.snapshots && file ? [el("div", {class: "bar"}, save, saved)] : []));
   const cells = {};
   const grid = el("div", {class: "grid"}, el("strong", {}, "Stored (what the chain holds now)"), el("strong", {}, "Live (the checkout's code, now)"));
   for (const [key] of ORDER) for (const side of ["stored", "live"]) {
@@ -231,7 +231,7 @@ function views(path) {
     const i = r.info;
     info.textContent = i.error ? i.error : `${i.size} bytes, mtime ${i.mtime}, ctime ${i.ctime}${i.readable ? "" : ", not readable"}`;
     fill("stored", r.views);
-    return file ? api(path, "live").then(r => fill("live", r.views)) : null;
+    return file ? api(path, "live", {headers: {"X-Modama-Browse": "1"}}).then(r => fill("live", r.views)) : null;
   }).catch(e => { fail("stored", e); if (file) fail("live", e); });
 }
 

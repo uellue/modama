@@ -114,16 +114,16 @@ def stored_views(stores: chain.Stores, path: str) -> Stored:
         dataset.note = (
             "no dataset holds this path: not crawled yet, skipped or excluded"
         )
+    try:  # the live index document's _repo, also for a file not crawled yet
+        with chain.connect(stores.warehouse_db, "warehouse database") as conn:
+            out.repo = warehouse.repository_code(conn, stores.oai_url)
+    except Unreachable:
+        pass  # the live index document says that its _repo is unknown
     if out.record is None:
         record.note = "the crawler publishes no record for it"
         return out
     try:
         record.text = pretty_xml(get_record(stores.oai_url, identifier))
-    except Unreachable as e:
-        record.note = str(e)
-    try:
-        with chain.connect(stores.warehouse_db, "warehouse database") as conn:
-            out.repo = warehouse.repository_code(conn, stores.oai_url)
     except Unreachable as e:
         record.note = str(e)
     doc = View(
@@ -139,13 +139,17 @@ def stored_views(stores: chain.Stores, path: str) -> Stored:
     views += [doc, hit_view, entry]
     try:
         source = warehouse.document(stores.opensearch, stores.index, out.url)
-        if source is None:
-            doc.note = hit_view.note = entry.note = "not in the index"
-            return out
-        doc.text = pretty_json(without_embedding(source))
+    except Unreachable as e:
+        doc.note = hit_view.note = entry.note = str(e)
+        return out
+    if source is None:
+        doc.note = hit_view.note = entry.note = "not in the index"
+        return out
+    doc.text = pretty_json(without_embedding(source))
+    try:
         hits = warehouse.search_hits(stores.search_api, out.anchor)
     except Unreachable as e:
-        doc.note = hit_view.note = str(e)
+        hit_view.note = entry.note = str(e)
         return out
     hit = next((h for h in hits if h["_source"].get("url") == out.url), None)
     if hit is None:

@@ -16,12 +16,15 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-# Twice the crawler's time limit per extraction (extraction.TIME_LIMIT, 60 s): the folder and one extraction
-LIMIT = 120.0
+from modama_crawler.extraction import TIME_LIMIT
+
+# Twice the crawler's time limit per extraction: the folder and one extraction
+LIMIT = 2 * TIME_LIMIT
 THREADS = 4  # file system calls in flight for one folder (the crawl's 32 are for a whole tree)
 MEMBERS_SHOWN = 20  # a Merlin series has about 19,600 members (review R14)
 # The child's whole environment: no database, HTTP or Airflow setting (D4, review R2)
@@ -210,31 +213,34 @@ def run(
         if stored is None
         else {"datestamp": stored[0].isoformat(), "metadata": stored[1]}
     )
-    with _lock:
-        if _running is not None:
-            _running.superseded = True
-            _end(_running)
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-            env=child_env(),
-        )
-        proc.superseded = False
-        _running = proc
-    try:
-        out, err = proc.communicate(json.dumps(given), timeout=limit)
-    except subprocess.TimeoutExpired:
-        _end(proc)
-        proc.communicate()
-        return {"error": f"stopped after {limit:.0f} s ({__name__}.LIMIT)"}
-    finally:
+    # The child's temporary files (its MIME database) in a folder of this run, removed after
+    # the child ended, also when it was killed (in the stack /tmp is a tmpfs, memory)
+    with tempfile.TemporaryDirectory(prefix="modama-browse-") as tmp:
         with _lock:
-            if _running is proc:
-                _running = None
+            if _running is not None:
+                _running.superseded = True
+                _end(_running)
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+                env=child_env() | {"TMPDIR": tmp},
+            )
+            proc.superseded = False
+            _running = proc
+        try:
+            out, err = proc.communicate(json.dumps(given), timeout=limit)
+        except subprocess.TimeoutExpired:
+            _end(proc)
+            proc.communicate()
+            return {"error": f"stopped after {limit:.0f} s ({__name__}.LIMIT)"}
+        finally:
+            with _lock:
+                if _running is proc:
+                    _running = None
     if proc.superseded:
         return {"error": "ended by a newer request"}
     if proc.returncode != 0:

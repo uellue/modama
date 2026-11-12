@@ -107,11 +107,11 @@ def walk(
     previous: Previous | None = None,
     threads: int = DEFAULT_THREADS,
     processes: int = 0,
-    top: str = "/",
+    top: str | None = None,
 ) -> Result:
     """Recognise the tree under root.
 
-    With `top`, a folder relative to root ("/a/b"), that one folder as the
+    With `top`, a folder relative to root ("/a/b", or "/" for root alone), that one folder as the
     crawl of the whole tree would recognise it: the pre-order call of each
     folder from root down to top's parent, ending with the dataset of the
     first that collapses, else top recognised without entering its
@@ -155,7 +155,7 @@ def walk(
                 previous,
                 pool,
                 None if matchers is None else mime.match_in(matchers),
-                "/" + top.strip("/"),
+                None if top is None else "/" + top.strip("/"),
             )
         )
     finally:  # also on an error or a signal: queued work is dropped
@@ -173,7 +173,7 @@ async def _walk(
     previous: Previous | None,
     pool: ThreadPoolExecutor,
     match: Callable | None,
-    top: str = "/",
+    top: str | None = None,
 ) -> Result:
     loop = asyncio.get_running_loop()
     result = Result()
@@ -254,7 +254,7 @@ async def _walk(
         try:
             entries = await entries_of(dirpath, rel, notes)
         except OSError as e:
-            if rel == top:
+            if rel == (top or "/"):
                 raise  # the root or top itself: the caller asked for it, so it is an error
             result.skipped.append((rel, f"cannot list directory: {e.strerror}"))
             log.info("%s: skipped, cannot list directory: %s", rel, e.strerror)
@@ -301,7 +301,7 @@ async def _walk(
         children = [
             asyncio.create_task(visit(e.path, e.rel))
             for e in entries
-            if e.kind == "dir" and top == "/"  # one folder alone with top (D5)
+            if e.kind == "dir" and top is None  # one folder alone with top (D5)
         ]
         subtree: list[Dataset] = []
         unchanged = same
@@ -367,11 +367,12 @@ async def _walk(
         top (excluded, a symlink, not a folder), or None to walk top.
         """
         rel, dirpath = "/", root
-        for name in top.strip("/").split("/"):
+        for name in [p for p in top.split("/") if p]:
             entries = await entries_of(dirpath, rel, Result())
             st = await io(os.lstat, dirpath)
             pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
             collapsed = await io(run_pre, pre, formats_for(rel), SLOW, BYTE_BUDGET)
+            result.warnings.extend(pre.warnings)
             if collapsed is not None:
                 return [replace(collapsed, stamp=_digest(st, entries), parent=None)]
             child = next((e for e in entries if e.name == name), None)
@@ -380,7 +381,7 @@ async def _walk(
             rel, dirpath = child.rel, child.path
         return None
 
-    if top == "/":
+    if top is None:
         found = (await visit(root, "/"))[0]
     elif (found := await above()) is None:
         found = (await visit(os.path.join(root, top.lstrip("/")), top))[0]

@@ -210,7 +210,36 @@ def test_a_file_next_to_a_large_subfolder(tree):
 
 
 def test_a_folder_has_no_live_views(tree):
-    assert get(tree, "/api/live", path="/scan").status_code == 400
+    response = client(tree).get(
+        "/api/live",
+        query_string={"path": "/scan"},
+        headers={**LOCAL, SNAPSHOT_HEADER: "1"},
+    )
+    assert response.status_code == 400
+
+
+def test_another_site_cannot_start_a_live_computation(tree):
+    # an <img src="http://localhost:7655/api/live?..."> on any page (code review, finding 5)
+    assert get(tree, "/api/live", path="/notes/readme.txt").status_code == 403
+
+
+def test_a_file_at_the_top_of_the_tree(tree):
+    # its folder is the root alone, not the whole tree (code review, finding 1)
+    (tree / "top.txt").write_text("t")
+    result = run(tree, "/top.txt")
+    assert result["folder"] == "/" and result["dataset"]["anchor"] == "/top.txt"
+
+
+def test_a_killed_computation_leaves_no_temporary_files(started, tmp_path, monkeypatch):
+    # its MIME database would stay in the tmpfs (code review, finding 2)
+    monkeypatch.setattr(live.tempfile, "tempdir", str(tmp_path))
+    argv = [
+        sys.executable,
+        "-c",
+        "import os, time; open(os.environ['TMPDIR'] + '/x', 'w'); time.sleep(60)",
+    ]
+    live.run("/", "/x", base_url=OAI, limit=1.0, argv=argv)
+    assert list(tmp_path.iterdir()) == []
 
 
 SLEEPER = [

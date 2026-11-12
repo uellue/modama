@@ -17,13 +17,19 @@ from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 
-from werkzeug.exceptions import BadRequest, Forbidden, HTTPException, NotFound
+from werkzeug.exceptions import (
+    BadRequest,
+    Conflict,
+    Forbidden,
+    HTTPException,
+    NotFound,
+)
 from werkzeug.routing import Map, Rule
 from werkzeug.wrappers import Request, Response
 
 from . import chain, upstream, views
 
-# The header a snapshot request must carry: a cross-site form cannot send it (D14)
+# The header a live or snapshot request must carry: another site cannot make the browser send it (D14)
 SNAPSHOT_HEADER = "X-Modama-Browse"
 # Host names the page answers to, the port aside (DNS rebinding; D14)
 LOCAL = frozenset({"localhost", "127.0.0.1"})
@@ -257,13 +263,19 @@ class Browser:
             }
         )
 
+    @staticmethod
+    def _own_page(request: Request) -> None:
+        """Refuse a request without the page's header: another site could start it from the user's browser (D14)."""
+        if request.headers.get(SNAPSHOT_HEADER) != "1":
+            raise Forbidden(f"this request needs the header {SNAPSHOT_HEADER}")
+
     def on_live(self, request: Request) -> Response:
+        self._own_page(request)  # it ends a running computation and starts one (D3)
         path = self._file(request)
         return self._json({"path": path, "views": views.as_dicts(self.live(path))})
 
     def on_snapshot(self, request: Request) -> Response:
-        if request.headers.get(SNAPSHOT_HEADER) != "1":
-            raise Forbidden(f"a snapshot needs the header {SNAPSHOT_HEADER}")
+        self._own_page(request)
         if self.s.snapshots is None:
             raise NotFound("no snapshot folder configured")
         path = self._file(request)
@@ -279,10 +291,13 @@ class Browser:
             views.as_dicts(live),
             now,
         )
-        with open(
-            self.s.snapshots / name, "x", encoding="utf-8"
-        ) as f:  # never overwrites
-            f.write(text)
+        try:
+            with open(
+                self.s.snapshots / name, "x", encoding="utf-8"
+            ) as f:  # never overwrites
+                f.write(text)
+        except FileExistsError as e:  # the same file name in the same second
+            raise Conflict(f"{name} exists; save again in a second") from e
         return self._json({"name": f"{self.s.snapshots.name}/{name}"})
 
     @staticmethod

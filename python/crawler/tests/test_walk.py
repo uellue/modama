@@ -531,6 +531,13 @@ def test_subfolders_are_not_entered(tmp_path, monkeypatch):
     assert [d.anchor for d in result.datasets] == ["/a/file.txt"]
     assert not [p for p in listed + classified if "/big" in p]
     assert sorted(listed) == [str(tmp_path), str(tmp_path / "a")]
+    # The root alone, for a file at the top of the tree (review of the code, finding 1)
+    (tmp_path / "top.txt").write_text("t")
+    listed.clear()
+    classified.clear()
+    result = walk(tmp_path, FORMATS, top="/")
+    assert [d.anchor for d in result.datasets] == ["/top.txt"]
+    assert [p.rstrip("/") for p in listed] == [str(tmp_path)]
 
 
 def test_a_folder_inside_a_collapsed_tree(tmp_path, monkeypatch):
