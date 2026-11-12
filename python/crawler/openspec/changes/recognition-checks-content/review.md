@@ -23,6 +23,25 @@ Severity, as used here: **high**, the plan does not meet a stated requirement, o
 | 11 | low | CONFIRMED | Several statements assume the older code and branch state: the `dm-containers` branch, "land together", the K2IS version bump, the backlog entry, the expected files |
 | 12 | low | PLAUSIBLE | `not_of_type` changes the directory in place, a second output beside the datasets, which the architecture's plan to run formats in worker processes has to carry |
 
+## Outcomes (2026-11-12, with @weber's decisions 172 to 174)
+
+Each finding verified against `crawler` at 50533f9 before it was acted on.
+
+| # | Outcome | Where |
+|---|---|---|
+| 1 | Addressed by decision 172: K2IS groups a `.gtg` with 8 sector files of its stem whatever it holds, and checks the header only of a `.gtg` without sector files | proposal "In short" and 172; design Goals, D2, E2, flow B; spec `formats/k2is` (MODIFIED "A K2IS tag file and its sector files form one dataset", scenario "An empty tag file with its 8 sectors"; ADDED "A lone tag file needs the DM4 header"); task 2.3 |
+| 2 | Addressed by decision 173: `em/dmw` claims a `.dmw` with a DM header and extracts every tag, so it has a dataset on the representative `dmw_file` | proposal 173; design E1; spec `formats/dm` (ADDED "A .dmw file is described by all its tags"); task 2.2 |
+| 3 | Addressed by decision 172: the broken `scan_2_.gtg` is grouped with its own 8 sectors, so `scan_` keeps its own | design E2, flow C; spec `formats/k2is`, scenario "A broken capture next to a complete one"; task 2.3 |
+| 4 | Addressed: `detect_with_tie(..., strict=True)` raises a read error, which `_call` reports as the format's failure, puts the types back and marks the directory for the next crawl. The walk's own detection is left as it is, stated out of scope | design Context, D1; spec `mime-database` "A read error is raised when asked", spec `recognition` "A read error while finding the new type"; tasks 1.1, 1.2, 1.6 (backlog), "Not now" |
+| 5 | Addressed for `.dmw` by decision 174: the check accepts DM3 and DM4, and a DM3 `.dmw` is a file of interest; flow C of the earlier design (a DM3 image named `.dmw` becomes a DM3 image) is gone. The `.gtg` case stays open | design E1, flows D and E, "Open questions"; spec `formats/dm` scenario "A .dmw file with the DM3 header"; selection by type in E1 |
+| 6 | Addressed: the rule is worded "higher than the formats expected to claim its files' new types", and `run_post` warns when an earlier format reacts to a dropped file's new type; `DIRECTORY` formats are the stated blind spot | design D3; spec `recognition` ADDED "A broken format order is reported"; tasks 1.2, 1.6 (TEMPLATE) |
+| 7 | Addressed: the risk rewritten to decision 166; MODIFIED "Plain data in, no reach outside the directory" (with the budget scenario) and "A byte budget bounds every format call" (`parallel-walk`'s, so this change archives after it); a scenario for the bound (a second call reads nothing) | design D1, D2, Risks; spec `recognition`; proposal, archive order |
+| 8 | Addressed: the notes are put back with the types, and the scenario checks the basis | design D3; spec `recognition` "A format fails after dropping a type" |
+| 9 | Addressed: the delta names its test formats (`test/tags`, `test/png`, `test/contradicts`, a raising variant), and the budget scenario reads 4 bytes | spec `recognition`, preamble and scenarios; task 1.2 |
+| 10 | Addressed: ADDED requirement "Detection can leave a type out" with the weaker name rule, the left-out content match and the read error | spec `mime-database`; design D1, Risks; task 1.1 |
+| 11 | Addressed: no branch `dm-containers` or "fold into" step (the em part is built here); the migration and the K2IS version bump restated; `BACKLOG.md`'s existing item renamed (task 1.6); the K2IS warning keeps its wording, so the expected files with it stay | proposal, design Context, E2, E3, Migration Plan, tasks 1.6, 2.3, 2.5 |
+| 12 | Addressed: one paragraph in D1 on what a worker would return | design D1 |
+
 ### 1. A broken tag file next to its 8 sectors is treated as "not K2IS" (high, PLAUSIBLE)
 
 **What.** @weber's words that started this change: "A stray file will not have 8 bin files". In other words, a tag file next to 8 sector files of its stem is a broken capture, not a stray file. The proposal (`proposal.md:11`), flow B (`design.md:92-97`) and the new K2IS requirement (`design.md:174-183`, scenario "A capture whose tag file is text") decide the opposite. K2IS checks the header of every `.gtg` before grouping, and a `.gtg` without the DM4 header loses its type even when exactly 8 sector files of its stem sit next to it. So "not K2IS" and "broken" are told apart by the tag file's first 16 bytes, not by whether the capture is there. The first version of this change did it @weber's way: "A K2IS capture whose `.gtg` does not read stays one K2IS record, and the crawl reports its extraction failure" (71be726, proposal). Flow B "with 149" was put to @weber before he answered "149 sounds sensible!" (95d3487), so he may have accepted the reversal. None of the recorded decisions says so, though.

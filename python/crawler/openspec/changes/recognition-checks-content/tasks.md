@@ -1,41 +1,45 @@
 # Tasks
 
+Commands below run from the worktree with `PATH=~/.venv/bin:$PATH` and `PYTHONPATH` set to the worktree's `python/crawler/src` and `python/modama-formats-em/src` (`~/.venv` has both installed editable from the main checkout).
+
 ## 1. The crawler: dropping a name's type during recognition
 
-- [ ] 1.1 `mime.by_name(name)`, factored out of `detect_with_tie` with no change of result, and `detect_with_tie(path, exclude=...)` (D1, D2). Verify: `test_mime.py` passes unchanged, plus one test each for `exclude`: another name candidate left, none left with a content match, and none left with the text and the octet-stream fallbacks. These use synthetic files of the core's rule-processing tests. Run `uvx ruff check` and `uvx ruff format --check --diff` from the repo root.
-- [ ] 1.2 `Directory.not_of_type(entry, reason)`, and the changes to the runner (D1 to D4). These are: the type check by `by_name`, with the warning otherwise; the new detection's read not charged to the format's budget (decision 166); the entry replaced; `run_post` reading the current types before each format and for the single files; the entries put back when `_call` discards a call; the note appended to the basis. Verify: one test per scenario of spec `recognition` (this change) in `tests/test_formats.py`, with two test formats. `test/tags` is for files named `*.tags`: type `application/x.test-tags`, a name rule only, files starting with the 4 bytes `TAGS`. It reads those 4 bytes and says that a file without them is not of its type, with the reason "no TAGS header". `test/png` claims files of type `image/png`. Also run the existing `test_formats.py` and `test_walk.py`.
+- [ ] 1.1 `mime.by_name(name)`, factored out of `detect_with_tie` with no change of result, and `detect_with_tie(path, exclude=..., strict=...)` (D1, D2; spec `mime-database`, "Detection can leave a type out"). Verify: `test_mime.py` passes unchanged, plus one test per scenario of the `mime-database` delta, on files of the core's types. Run `uvx ruff check` and `uvx ruff format --check --diff` from the repo root.
+- [ ] 1.2 `Directory.not_of_type(entry, reason)`, and the changes to the runner (D1 to D4): the type check by `by_name`, with the warning otherwise; the new detection's read not charged to the format's budget (decision 166), with `strict`; the entry replaced; `run_post` reading the current types before each format and for the single files; the order warning; the entries and notes put back when `_call` discards a call; the notes appended to the basis. Verify: one test per scenario of spec `recognition` (this change) in `tests/test_formats.py`, with the test formats the delta names: `test/tags`, `test/png`, `test/contradicts`, and a variant of `test/tags` that raises after its drop. Also run the existing `test_formats.py` and `test_walk.py`.
 - [ ] 1.3 The reuse scenarios of spec `recognition`, "A dropped type lasts until the file or the rules change". Verify: tests in `tests/test_walk.py` with `previous` set: the second walk of an unchanged tree calls no format and reads no file of the directory, and a replaced file gets its name type back. The datestamp check runs in a store test against `conn`.
-- [ ] 1.4 `records --verbose`: a single file whose basis is not plain `single file` gets a recognition comment (spec `records-cli`, this change). Verify: the scenario's test in `modama-formats-em`, since only an installed collection's format can drop a type in `records` (task E.4). Check the output by eye in a real terminal with `tools/xterm-shots.py`, as for every `records` output change.
-- [ ] 1.5 `modama-chain trace`: the crawler line shows the dataset's basis (spec `chain-trace`, this change). Update `python/search-chain/README.md`, "What it reads": `datasets (anchor, basis)`. Verify: a test in `python/search-chain/tests/` with canned inputs for the line's detail. The e2e scenario runs in task 2.1.
+- [ ] 1.4 `records --verbose`: a single file whose basis is not plain `single file` gets a recognition comment (spec `records-cli`, this change). Verify: the scenario's test in `modama-formats-em` (task 2.4), since only an installed collection's format can drop a type in `records`. Check the output by eye in a real terminal with `tools/xterm-shots.py` where the VM has its tools (xvfb, xterm, xdotool, imagemagick); otherwise say so.
+- [ ] 1.5 `modama-chain trace`: the crawler line shows the dataset's basis (spec `chain-trace`, this change). Update `python/search-chain/README.md`, "What it reads": `datasets (anchor, basis)`. Verify: a test in `python/search-chain/tests/` with canned inputs for the line's detail. The e2e scenario runs in task 3.1.
 - [ ] 1.6 Docs:
-  - TEMPLATE "Rules first, Python second": `not_of_type`, with an example; check the signature only, never parse to decide; the order rule of D3.
+  - TEMPLATE "Rules first, Python second": `not_of_type`, with an example; check the signature only, never parse to decide; decide what is broken by the files around it first; the order rule of D3, its warning and its blind spot (formats reacting to `DIRECTORY`).
   - README "Walk and recognise": one sentence on a format dropping a name's type.
-  - `BACKLOG.md`: this change in Next; the items of "Not now" below as deferred; @weber's idea of tagging suspicious results for follow-up.
+  - `BACKLOG.md`: the items of "Not now" below as deferred; the item "Suspicious results for manual follow-up" renamed to this change, with the DM3 `.dmw` as its first concrete case (decision 174); "filter the `.dmw` description to relevant tags" next to the K2IS description item (decision 173); the walk's own detection that never raises a read error (review finding 4).
 
-  Verify: the TEMPLATE example runs as written (a doctest or the test of task 1.2 imports it), and the README sentence matches spec `recognition`.
+  Verify: the TEMPLATE example runs as written (the test of task 1.2 imports it), and the README sentence matches spec `recognition`.
 
-## To fold into dm-containers-and-k2is
+## 2. modama-formats-em (built here on `crawler`, decision 144)
 
-These tasks move with design.md's section of the same name into `dm-containers-and-k2is` on branch `dm-containers` (decision 144). They need tasks 1.1 and 1.2.
+These need tasks 1.1 and 1.2.
 
-- [ ] E.1 The format `em/dmw` in `dm/` (E1). Fixtures: `notes.dmw` (`hello\n`) and an empty `empty.dmw` as reproducers, `invalid-by-design`, and `stem_image.dmw`, a copy of the DM3 fixture `stem_image_dm3`. Verify: the `formats/dm` scenarios of the section, one test each. `conditions_00C.dmw` (DM4 header) keeps the `.dmw` type with no extraction. `stem_image.dmw` gives the same extracted values as `stem_image_dm3`. The coverage rule passes.
-- [ ] E.2 K2IS checks its tag files before grouping (E2): the priority 61, the recognition version, the warning's wording. Fixtures: `notes.gtg` (`hello\n`), a capture `X_` whose `.gtg` holds `hello\n` next to sector files cut as Capture52's are, and Capture52 with its `.gtg` cut after 1,000 bytes. Verify: the `formats/k2is` scenarios of the section, one test each. Capture52 unchanged is still one dataset of 9 members, with no "already claimed" warning.
-- [ ] E.3 Amend `dm-containers-and-k2is` (E3): D1, the requirement "Tag files and workspaces are not DM images" (the section's text), the new K2IS requirement, the comments in `dm.xml` and `k2is.xml`, and the outcome of review finding 1. Verify: `openspec validate dm-containers-and-k2is --strict`. `grep -rn "being its subclass, wins\|subclass of the sniffed type wins" python/modama-formats-em/src/modama_formats_em/dm python/modama-formats-em/src/modama_formats_em/k2is` finds nothing.
-- [ ] E.4 The `records-cli` scenario of this change: `python -m modama_crawler records --verbose` on a tree holding `notes.gtg`. Verify: a test in the k2is part's tests that runs the command as typed and finds the comment directly before the record.
+- [ ] 2.1 `dm.version(data)`, the DM3 and DM4 header tests of `dm.xml`, and the tag walker moved from `k2is/` to `dm/` with K2IS's filter as its argument (E1). Verify: K2IS's tests and recorded results unchanged.
+- [ ] 2.2 The format `em/dmw` in `dm/` with its extractor (E1, decisions 173, 174). Fixtures: `dmw_file` (the DM4 stand-in, its provenance kept honest: an image, not a workspace), `dm3_dmw` (`old_workspace.dmw`, a copy of `stem_image_dm3`'s file, also a stand-in), `text_dmw` (`notes.dmw` holding `hello\n`, `invalid-by-design`), `empty_dmw` (an empty `empty.dmw`, `invalid-by-design`). Verify: one test per scenario of the `formats/dm` delta; the coverage rule passes (`em/dmw` has a dataset on the representative `dmw_file`, review finding 2).
+- [ ] 2.3 K2IS: groups whatever the `.gtg` holds, checks a lone `.gtg` (E2): priority 61, recognition version 2. Fixtures: `text_tags` (`notes.gtg` holding `hello\n`), `empty_tags` (an empty `empty.gtg`), `empty_capture` (an empty `Capture7_.gtg` with 8 sector blocks), `broken_next_to_complete` (`scan_.gtg`, Capture52's tag file, with 8 sector blocks, and `scan_2_.gtg` holding `hello\n` with 8). Verify: one test per scenario of the `formats/k2is` delta, the extraction failures through `extraction.extract` as a crawl runs it; the recorded results of the existing fixtures unchanged.
+- [ ] 2.4 The `records-cli` scenario of this change: `python -m modama_crawler records --verbose` on a tree holding `notes.gtg`. Verify: a test in the k2is part's tests that runs the command as typed and finds the comment directly before the record.
+- [ ] 2.5 The XML comments of `dm.xml` and `k2is.xml` (E3); `dm-containers-and-k2is` task 4.1 points here; the README of `modama-formats-em` names `em/dmw`. Verify: `grep -rn "subclass of the sniffed type wins" python/modama-formats-em/src` finds nothing; `openspec validate dm-containers-and-k2is --strict`.
 
-## 2. Integration
+## 3. Integration
 
-- [ ] 2.1 Crawl a test tree twice in the search stack, with the `em` collection enabled. The tree holds Capture52, `notes.gtg`, `notes.dmw`, `empty.dmw`, `stem_image.dmw` and `IDES_DMS_Config.gtg`. Between the crawls, change one unrelated file in the directory. Verify:
-  - `modama-crawler records` shows the types of tasks E.1 and E.2.
+- [ ] 3.1 Crawl a test tree twice in the search stack, with the `em` collection enabled. The tree holds Capture52, `notes.gtg`, `notes.dmw`, `empty.dmw`, `conditions_00C.dmw` and `IDES_DMS_Config.gtg`. Between the crawls, change one unrelated file in the directory. Verify:
+  - `modama-crawler records` shows the types of tasks 2.2 and 2.3.
   - The second crawl recognises that directory again and gives the same types and bases. Records of unchanged datasets keep their datestamps.
   - `modama-chain trace` on `notes.gtg` shows the basis of spec `chain-trace`.
   - `./runtest.sh e2e` in `/prototypes/search-stack/`, the crawler suite and the `modama-formats-em` suite pass, with the number skipped given.
 
 ## Not now
 
-- A fallback for files typed by their content (weak magic collisions, flow D): a warning only.
+- A fallback for files typed by their content (weak magic collisions, flow F): a warning only.
 - Checking the fallback type again (one drop per file per crawl).
-- Calling formats that already ran on a directory again after a drop, or a check stage before recognition (D1's alternative). Revisit if the order rule bites.
+- Calling formats that already ran on a directory again after a drop, or a check stage before recognition (D1's alternative). Revisit if the order rule bites; the order warning shows when.
 - A count of rejections in the crawl report (decision 148).
-- The DM3 header for `.dmw` and `.gtg` (decision 147, @weber's fresh `.dmw` files, open item 155).
-- Metadata from `.dmw` files.
+- The DM3 header for a lone `.gtg` (decision 147; design.md, "Open questions").
+- Filtering the `.dmw` description to the relevant tags (decision 173, backlog).
+- A read error in the walk's own detection, which gives `application/octet-stream` today (review finding 4, second paragraph).
