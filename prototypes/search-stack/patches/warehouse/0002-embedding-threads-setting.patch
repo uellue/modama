@@ -15,14 +15,14 @@ from 1,000 texts on (bge-small-en-v1.5); with 32 it peaks at 1.40 GB for 250 and
 1.42 GB for 2,000, at about 7 % more time (48.0 against 45.0 s for 250 texts of
 512 tokens). The bound lets a worker size its processes by memory.
 
-Against metadata-warehouse v1.10.0; applied with `patch -p1` in the image build
-(modama search stack, warehouse-airflow.Dockerfile; change cpu-budget, D7, D9).
+Against metadata-warehouse v1.10.0 with 0001 applied; applied with `patch -p1` in the image
+build (modama search stack, warehouse-airflow.Dockerfile; change cpu-budget, D7, D9).
 
 diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
-index b63e17a..9c04a16 100644
+index c329889..301ace7 100644
 --- a/src/transform/transform_core.py
 +++ b/src/transform/transform_core.py
-@@ -61,7 +61,11 @@ class TransformResources:
+@@ -64,7 +64,11 @@ class TransformResources:
          if not EMBEDDING_MODEL:
              raise ValueError('Missing EMBEDDING_MODEL environment variable')
 

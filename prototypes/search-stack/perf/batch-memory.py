@@ -19,7 +19,8 @@ batch", change cpu-budget; the test deployment's throwaway password of the read-
     -e POSTGRES_ADDRESS_DOCKER=postgres -e OPENSEARCH_ADDRESS_DOCKER=opensearch -e OPENSEARCH_PORT_DOCKER=9200 \
     --entrypoint /opt/airflow/transform-venv/bin/python search-stack-airflow:3.3.2 /probe/batch-memory.py 250 0 0
 
-With the budget's variables add `-e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1
+With BULK_OUT=<file in a writable mount> it also writes the bulk body it would send, to compare the documents
+two images make of the same records (patch 0001, change cpu-budget task 3.9). With the budget's variables add `-e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1
 -e RAYON_NUM_THREADS=T`. In an image with patch 0002 the image's own sub-batch is already 32.
 
 Reads the warehouse with the read-only role (POSTGRES_* in the environment). The writes are replaced:
@@ -45,10 +46,9 @@ def st():
 n, fill, threads, embed_batch = (int(a) for a in (sys.argv[1:5] + ["0"])[:4])
 print("start      ", st(), flush=True)
 
-import psycopg  # noqa: E402
-
-from planning.transform_planning import load_batch  # noqa: E402
-import transform.transform_core as core  # noqa: E402
+import psycopg
+import transform.transform_core as core
+from planning.transform_planning import load_batch
 
 print("imported   ", st(), flush=True)
 
@@ -83,10 +83,35 @@ print(
     flush=True,
 )
 
-words = (
-    "beam dose sample tilt focus aberration detector camera frame series drift lattice defect interface grain "
-    "vacuum specimen holder voltage current spectrum map region particle thickness calibration alignment".split()
-)
+words = [
+    "beam",
+    "dose",
+    "sample",
+    "tilt",
+    "focus",
+    "aberration",
+    "detector",
+    "camera",
+    "frame",
+    "series",
+    "drift",
+    "lattice",
+    "defect",
+    "interface",
+    "grain",
+    "vacuum",
+    "specimen",
+    "holder",
+    "voltage",
+    "current",
+    "spectrum",
+    "map",
+    "region",
+    "particle",
+    "thickness",
+    "calibration",
+    "alignment",
+]
 filler = " ".join(words[i * 7 % len(words)] for i in range(fill))
 text_of = core.get_embedding_text_from_fields
 texts = []
@@ -148,6 +173,11 @@ def bulk(client, actions):
         if data is not None:
             body.append(client.transport.serializer.dumps(data))
     bulk.bytes = sum(len(b) for b in body) + len(body)
+    if os.environ.get(
+        "BULK_OUT"
+    ):  # the bulk body as sent, one line each, to compare two images' documents
+        with open(os.environ["BULK_OUT"], "w") as f:
+            f.write("\n".join(body) + "\n")
     return len(actions), []
 
 
