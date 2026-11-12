@@ -17,6 +17,10 @@ dependencies = [
     # ImageObject), and dm.first_image repeats file_reader's steps (0.15.0), as
     # test_first_image_is_what_file_reader_gives checks
     "rosettasciio==0.15.0",
+    # Imported by rsciio.blockfile (RosettaSciIO's extra "blockfile"), which
+    # the block file format reads the header with; pinned exactly as
+    # rosettasciio (decision 227)
+    "scikit-image==0.26.0",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},

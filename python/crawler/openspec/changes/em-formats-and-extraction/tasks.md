@@ -15,6 +15,7 @@
 - [x] 2.3 EMPAD extractor (scan size, frame size, exposure). Verify: spec `formats/empad` scenario on the representative fixture.
 - [x] 2.4 DM3/DM4 recognition by magic and extractor via RosettaSciIO; representative files from the tree, scrubbed or small, with @weber's agreement on each (R27, R29); bytes read per file measured. Verify: spec `formats/dm` scenarios; bytes per file in the test output; fallback D7 decided if it reads image data. Done with RosettaSciIO's test files (2026-11-11); files from the tree still open. The reader skips the image data by seeking; it reads the tags plus Python's 128 KiB buffer (96,513 of 96,400 bytes of the DM3, 143,371 of 611,355 of the DM4), so no fallback.
 - [x] 2.5 Merlin recognition (`.hdr` plus frames) and extractor. Verify: spec `formats/merlin` scenarios; on `libertem-test-data/many_mib`'s shape: one dataset.
+- [x] 2.6 NanoMegas ASTAR block files (`.blo`, found with `modama-chain browse` on staging, 2026-11-12): recognition by the `IMGBLO` header, extraction with RosettaSciIO's blockfile reader, lazily; scikit-image added, which that module imports (decision 227). Verify: spec `formats/blockfile` scenarios, on RosettaSciIO's `test2.blo`.
 
 ## 3. Stack and real data
 

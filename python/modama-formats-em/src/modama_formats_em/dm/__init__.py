@@ -329,8 +329,10 @@ def mapped(original: dict, mapping: dict) -> dict:
         if value is None:
             continue
         value = convert(value) if convert else value
+        # A NumPy scalar (the block file's header fields) as a Python value first
+        value = value.item() if hasattr(value, "item") else value
         if value is not None and value != []:
-            out[target] = value.item() if hasattr(value, "item") else value
+            out[target] = value
     return out
 
 

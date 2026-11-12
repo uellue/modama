@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- A NanoMegas ASTAR block file (.blo): a header, a virtual bright-field
+       image, then the scan's diffraction patterns. No MIME type is registered
+       or used in the wild for it; RosettaSciIO calls the format "blockfile".
+       The header starts with the ID "IMGBLO" (RosettaSciIO 0.15.0,
+       blockfile/_api.py, get_header_dtype_list and get_default_header;
+       checked on its test files). No glob: the content decides, so that a
+       file named *.blo without the header keeps the type its content gives
+       (spec formats/blockfile, a text file named like a block file). -->
+  <mime-type type="application/x.blockfile">
+    <comment>NanoMegas ASTAR block file</comment>
+    <magic priority="60">
+      <match type="string" offset="0" value="IMGBLO"/>
+    </magic>
+  </mime-type>
+</mime-info>
