@@ -38,7 +38,7 @@ class K2is(Format):
     priority = 60
     reacts_to = frozenset({TAGS, SECTOR})
     # 2: every tag but the user-interface settings (decision 129), not rounded
-    extractor_version = "2"
+    extractor_version = "3"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         sectors = d.of_type(SECTOR)
@@ -100,14 +100,14 @@ class K2is(Format):
 
 def _tags(node: dict, path: tuple[str, ...] = ()) -> Iterator[tuple[str, object]]:
     """(dotted path, value) of every tag below node in the reader's order, its values
-    as the reader gives them, without GMS's user-interface settings and empty tags."""
+    as the reader gives them (an empty one too: decision 161), without GMS's
+    user-interface settings."""
     for key, value in node.items():
         here = (*path, str(key))
         if isinstance(value, dict):
             if value.get("Class Name") not in VIEWER_CLASSES and here[-2:] != FORM:
                 yield from _tags(value, here)
-        # The reader gives [] for an empty string or list: no value to show, as dm.mapped
-        elif not (isinstance(value, list) and not value):
+        else:
             yield ".".join(here), value
 
 

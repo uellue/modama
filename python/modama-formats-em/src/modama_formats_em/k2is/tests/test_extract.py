@@ -117,8 +117,9 @@ def test_a_representative_capture(collection_tests, tmp_path):
     ):
         assert phrase in capture.description
     assert capture.description.endswith("; K2IS acquisition, 9 files, 27.3 kB, in /")
-    # 359 tags: 52 of them user-interface settings, 11 without a value
-    assert len(capture.dataset.extraction.extracted.summary) == 296
+    # 359 tags: 52 of them user-interface settings; the 11 without a value are kept (decision 161)
+    assert len(capture.dataset.extraction.extracted.summary) == 307
+    assert "Session Info.Operator []" in capture.description
     assert capture.subjects == ["Gatan K2 IS", "FEI Tecnai Remote"]
     # The .gtg read whole (26,931 bytes, tags only), and no sector file
     assert capture.bytes_read < 28_000
@@ -148,8 +149,8 @@ def test_user_interface_settings_are_left_out(collection_tests, tmp_path):
         "Acquisition.Parameters.Objects.TagGroup0.Frame Combine Style Copy" in summary
         and "SI Image Tags.DigiScan.Zoom factor 0.06730239987373351" in summary
     )
-    # and no tag without a value (the reader gives [] for an empty string)
-    assert not [p for p in summary if p.endswith(" []")]
+    # Tags without a value stay, as the reader gives them (decision 161): [] for an empty string
+    assert len([p for p in summary if p.endswith(" []")]) == 11
 
 
 def test_the_groups_at_the_root_whatever_the_tag_order(monkeypatch):
