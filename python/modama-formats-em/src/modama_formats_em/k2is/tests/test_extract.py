@@ -6,6 +6,7 @@ Run with -s to see each description, its subjects and the bytes the extractor re
 from types import SimpleNamespace
 
 from modama_crawler.formats import Dataset
+from modama_crawler.records import description
 from modama_crawler.testing import recognise
 
 from modama_formats_em import k2is
@@ -84,6 +85,10 @@ def test_a_tag_file_without_sectors(collection_tests, tmp_path):
         "",
         ("/IDES_DMS_Config.gtg",),
     )
+    assert (
+        description(d)
+        == "Gatan Digital Micrograph .gtg tag file, 1 file, 26.9 kB, in /"
+    )
     assert result.warnings == []
 
 
@@ -115,8 +120,9 @@ def test_a_representative_capture(collection_tests, tmp_path):
     # 359 tags: 52 of them user-interface settings, 11 without a value
     assert len(capture.dataset.extraction.extracted.summary) == 296
     assert capture.subjects == ["Gatan K2 IS", "FEI Tecnai Remote"]
-    # The .gtg read whole (26,931 bytes, tags only); the fixture's sectors are 40-byte headers
+    # The .gtg read whole (26,931 bytes, tags only), and no sector file
     assert capture.bytes_read < 28_000
+    assert set(capture.reads) == {"/Capture52_.gtg"}
 
 
 def test_user_interface_settings_are_left_out(collection_tests, tmp_path):

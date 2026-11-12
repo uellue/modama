@@ -7,6 +7,7 @@ import errno
 import os
 
 import pytest
+from modama_crawler.records import description, format_names, subjects
 from modama_crawler.testing import recognise
 
 from modama_formats_em.dm import first_image, parsed
@@ -33,6 +34,11 @@ def test_a_dmw_file_with_the_dm4_header(collection_tests, tmp_path):
     # The name decides over the DM4 header; the DM4 format does not take it (F15)
     (d,) = recognise(collection_tests, "dmw_file", tmp_path).datasets
     assert (d.type, d.format) == ("application/x.dm-dmw", "")
+    # Its record names the .dmw type, not a DM image, and nothing is extracted
+    assert (
+        description(d) == "Gatan Digital Micrograph .dmw file, 1 file, 611.4 kB, in /"
+    )
+    assert subjects(d, format_names(collection_tests.collection.formats)) == []
     assert described(collection_tests, "dmw_file", tmp_path / "x") == []
 
 
@@ -52,6 +58,14 @@ def test_a_representative_dm4_image(collection_tests, tmp_path):
     # The tags, not the whole file (D7), in a small buffer: 143,372 bytes with
     # RosettaSciIO's file_reader on a local disk, 1 MiB per refill on NFS (F14)
     assert image.bytes_read < 100_000
+    # in reads no larger than NFS's read size, from this file only
+    assert_tags_read(image, "/test-MonarcCL_mono-image.dm4")
+
+
+def assert_tags_read(image, path):
+    """The scenario "The tags, not the image data": each read at most 64 KiB, of the file only."""
+    assert set(image.reads) == {path}
+    assert 0 < max(image.reads[path]) <= 64 * 1024
 
 
 def test_a_representative_dm3_image(collection_tests, tmp_path):
@@ -61,6 +75,7 @@ def test_a_representative_dm3_image(collection_tests, tmp_path):
         "0.24853801727294922 nm/pixel, 68×68, DigiScan, FEI Titan, 2016-08-08 16:26; "
     )
     assert image.subjects == ["Gatan Digital Micrograph (DM3)", "FEI Titan", "STEM"]
+    assert_tags_read(image, "/test_STEM_image.dm3")
 
 
 def test_an_rgba_image(collection_tests, tmp_path):
