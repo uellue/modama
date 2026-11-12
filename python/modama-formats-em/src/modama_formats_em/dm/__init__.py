@@ -1,11 +1,13 @@
 """Gatan Digital Micrograph files (DM3, DM4): single-file datasets, recognised by their header (dm.xml).
 
 Extraction goes through RosettaSciIO's reader: it parses the tags and skips the
-image data by seeking past it (D7; bytes read per file in the tests).
+image data by seeking past it (D7; bytes read per file in the tests). `.dmw`
+files, typed by their name, are claimed by `em/dmw` when they have a DM header
+and described by all their tags (change recognition-checks-content, E1).
 """
 
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import suppress
 from copy import deepcopy
 from pathlib import Path
@@ -17,6 +19,36 @@ HERE = Path(__file__).parent
 # tree then refills up to 1 MiB (staging run 3, F14: 1,168 kB per file). 64 KiB is
 # NFS's read size; smaller buffers read less but need more round trips.
 BUFFER = 64 * 1024
+HEADER = 16  # bytes version() needs: the DM4 header's byte order flag ends at 16
+DMW = "application/x.dm-dmw"
+
+
+def version(data: bytes) -> int | None:
+    """3 or 4 when data starts with the DM3 or DM4 header as dm.xml's magic tests it, else None.
+
+    The version (big32) at 0, then the byte order flag (big32, 0 or 1) at 8 in
+    DM3 and at 12 in DM4, after the file size.
+    """
+    v = int.from_bytes(data[:4], "big") if len(data) >= 4 else None
+    flag = {3: data[8:12], 4: data[12:16]}.get(v)
+    return v if flag in (bytes(4), b"\0\0\0\1") else None
+
+
+def tag_paths(
+    node: dict,
+    skip: Callable[[tuple[str, ...], dict], bool] = lambda path, group: False,
+    path: tuple[str, ...] = (),
+) -> Iterator[tuple[str, object]]:
+    """(dotted path, value) of every tag below node in the reader's order, its values
+    as the reader gives them (an empty one too: decision 161), without the groups
+    for which skip(path, group) is true."""
+    for key, value in node.items():
+        here = (*path, str(key))
+        if isinstance(value, dict):
+            if not skip(here, value):
+                yield from tag_paths(value, skip, here)
+        else:
+            yield ".".join(here), value
 
 
 def parsed(path: str):
@@ -146,6 +178,46 @@ class Dm4(Dm):
     reacts_to = frozenset({type})
 
 
+class Dmw(Format):
+    """A .dmw file (a DM workspace) with a DM header, as one dataset described by all its tags (decision 173).
+
+    The name decides the type without reading the file; recognition reads its
+    header, and a file without one gets the type it has without the name rule
+    (Directory.not_of_type). Gatan's own name for these files is to be
+    confirmed with fresh ones (open item 155).
+    """
+
+    type = DMW
+    display_name = "Gatan Digital Micrograph workspace"
+    # Before em/dm3 and em/dm4 (60), which may claim a dropped file (decision 165)
+    priority = 61
+    reacts_to = frozenset({type})
+
+    def recognize(self, d: Directory) -> Iterable[Dataset]:
+        # By type, not by name: the glob matches any case (Up.DMW)
+        for e in d.of_type(self.type):
+            match version(d.read(e, HEADER)):
+                case 4:
+                    yield Dataset(anchor=e.rel, basis="Digital Micrograph header")
+                case 3:
+                    # Handled, and a file of interest (decision 174; BACKLOG,
+                    # "Suspicious results for manual follow-up")
+                    yield Dataset(
+                        anchor=e.rel,
+                        basis="Digital Micrograph header; file of interest: "
+                        "DM3, no .dmw in DM3 seen yet",
+                    )
+                case _:
+                    d.not_of_type(e, "no DM header")
+
+    def extract(self, dataset: Dataset, root: str) -> Extracted:
+        """Every tag of the file, as the reader gives them (spec formats/dm, "A .dmw file is described by all its tags")."""
+        # Everything for now (decision 173). TODO: filter to the relevant tags
+        # (BACKLOG, ".dmw description")
+        found = tag_paths(parsed(root + dataset.anchor).tags_dict)
+        return Extracted(summary=[f"{p} {v}" for p, v in found], subjects=[], values={})
+
+
 class Tags(dict):
     """A tag group as HyperSpy's metadata tree hands it to RosettaSciIO's conversions:
     spaces in keys as underscores, `get` by a dotted path."""
@@ -184,4 +256,4 @@ def mapped(original: dict, mapping: dict) -> dict:
 
 
 # This part of the collection, for its tests; the package's COLLECTION joins the parts.
-COLLECTION = Collection("em", [Dm3(), Dm4()], mime_files=(HERE / "dm.xml",))
+COLLECTION = Collection("em", [Dm3(), Dm4(), Dmw()], mime_files=(HERE / "dm.xml",))

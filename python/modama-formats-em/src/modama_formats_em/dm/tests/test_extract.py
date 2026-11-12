@@ -7,10 +7,10 @@ import errno
 import os
 
 import pytest
-from modama_crawler.records import description, format_names, subjects
+from modama_crawler.records import description
 from modama_crawler.testing import recognise
 
-from modama_formats_em.dm import first_image, parsed
+from modama_formats_em.dm import first_image, parsed, version
 from modama_formats_em.testing import described
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -31,15 +31,70 @@ def test_a_misnamed_file(collection_tests, tmp_path):
 
 
 def test_a_dmw_file_with_the_dm4_header(collection_tests, tmp_path):
-    # The name decides over the DM4 header; the DM4 format does not take it (F15)
-    (d,) = recognise(collection_tests, "dmw_file", tmp_path).datasets
-    assert (d.type, d.format) == ("application/x.dm-dmw", "")
-    # Its record names the .dmw type, not a DM image, and nothing is extracted
-    assert (
-        description(d) == "Gatan Digital Micrograph .dmw file, 1 file, 611.4 kB, in /"
+    # The name decides over the DM4 header; the DM4 format does not take it (F15),
+    # em/dmw does (decision 173)
+    result = recognise(collection_tests, "dmw_file", tmp_path)
+    (d,) = result.datasets
+    assert (d.type, d.format) == ("application/x.dm-dmw", "em/dmw")
+    assert result.all_warnings() == []
+    # Its record names the .dmw type, not a DM image, and its extraction does not fail
+    (dmw,) = described(collection_tests, "dmw_file", tmp_path / "x")
+    assert dmw.description.endswith(
+        "; Gatan Digital Micrograph .dmw file, 1 file, 611.4 kB, in /"
     )
-    assert subjects(d, format_names(collection_tests.collection.formats)) == []
-    assert described(collection_tests, "dmw_file", tmp_path / "x") == []
+    assert "Digital Micrograph (DM" not in dmw.description
+    assert dmw.subjects == ["Gatan Digital Micrograph workspace"]
+
+
+def test_a_representative_dmw_file(collection_tests, tmp_path):
+    (dmw,) = described(collection_tests, "dmw_file", tmp_path)
+    assert dmw.dataset.basis == "Digital Micrograph header"
+    summary = dmw.dataset.extraction.extracted.summary
+    # Every tag, in the reader's order, nothing left out (decision 173)
+    assert dmw.description.startswith("ApplicationBounds (0, 0, 703, 1102), ")
+    assert len(summary) == 298
+    assert "ImageList.TagGroup1.ImageTags.DataBar.Device Name DigiScan" in summary
+    # The tags, not the image data, in reads of at most 64 KiB (as for DM images)
+    assert_tags_read(dmw, "/conditions_00C.dmw")
+
+
+def test_a_dmw_file_with_the_dm3_header(collection_tests, tmp_path):
+    result = recognise(collection_tests, "dm3_dmw", tmp_path)
+    assert result.all_warnings() == []
+    (dmw,) = described(collection_tests, "dm3_dmw", tmp_path / "x")
+    assert (dmw.dataset.type, dmw.dataset.format) == ("application/x.dm-dmw", "em/dmw")
+    # Handled, and marked as a file of interest (decision 174)
+    assert dmw.dataset.basis == (
+        "Digital Micrograph header; file of interest: DM3, no .dmw in DM3 seen yet"
+    )
+    summary = dmw.dataset.extraction.extracted.summary
+    assert len(summary) == 236
+    name = "ImageList.TagGroup1.ImageTags.Microscope Info.Name FEI Tecnai Remote"
+    assert name in summary
+
+
+@pytest.mark.parametrize(
+    "fixture, name", [("text_dmw", "notes"), ("empty_dmw", "empty")]
+)
+def test_a_file_named_like_a_workspace(collection_tests, tmp_path, fixture, name):
+    # Without a DM header it is not a .dmw file: the type it has without the
+    # name rule, the reason in its basis, no warning (spec formats/dm)
+    result = recognise(collection_tests, fixture, tmp_path)
+    (d,) = result.datasets
+    assert (d.anchor, d.type, d.format) == (f"/{name}.dmw", "text/plain", "")
+    assert d.basis == "single file; em/dmw: not application/x.dm-dmw, no DM header"
+    assert description(d).startswith("Plain text document, 1 file, ")
+    assert result.all_warnings() == []
+
+
+def test_the_dm_header():
+    assert version(b"\0\0\0\4" + bytes(8) + b"\0\0\0\1") == 4
+    assert version(b"\0\0\0\3" + bytes(4) + b"\0\0\0\0" + bytes(4)) == 3
+    # The flag at the other version's place, a wrong flag, too short
+    assert version(b"\0\0\0\4" + bytes(4) + b"\0\0\0\1" + b"\0\0\0\7") is None
+    assert version(b"\0\0\0\3" + bytes(4) + b"\0\0\0\2") is None
+    assert version(b"\0\0\0\4") is None
+    assert version(b"") is None
 
 
 def test_a_representative_dm4_image(collection_tests, tmp_path):

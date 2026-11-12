@@ -2,9 +2,9 @@
   "datasets": [
     {
       "anchor": "/conditions_00C.dmw",
-      "basis": "single file",
+      "basis": "Digital Micrograph header",
       "collapsed": false,
-      "format": "",
+      "format": "em/dmw",
       "members": [
         "/conditions_00C.dmw"
       ],

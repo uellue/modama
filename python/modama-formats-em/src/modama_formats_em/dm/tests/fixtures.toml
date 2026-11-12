@@ -24,7 +24,28 @@ source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/digitalmicrog
 
 [dmw_file]
 purpose = "representative"
-validity = "a stand-in, not a real .dmw file, until one is agreed (task 3.3 of dm-containers-and-k2is): the vendor-written DM4 image of cl_image_dm4, unchanged, named conditions_00C.dmw as a staging file is. It holds an image, staging's .dmw files hold none (F15), so it stands for their name only; the name decides the type, the content is not read for it"
+validity = "a stand-in, not a real .dmw file, until @weber's fresh ones (his TODO, open item 155; task 3.3 of dm-containers-and-k2is): the vendor-written DM4 image of cl_image_dm4, unchanged, named conditions_00C.dmw as a staging file is. It holds an image, staging's .dmw files hold none (F15), so it stands for their name and their DM4 header only: the name decides the type, em/dmw reads the 16-byte header and the extractor all tags, here the image's (ImageList among them), which a real workspace does not have"
 licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "modama_formats_em.dm.tests.generate:dmw_file, from the file of cl_image_dm4"
 generator = "modama_formats_em.dm.tests.generate:dmw_file"
+
+[dm3_dmw]
+purpose = "reproducer"
+validity = "a stand-in for a DM3 .dmw file, of which none has been seen (decision 174, a file of interest): the vendor-written DM3 image of stem_image_dm3, unchanged, named old_workspace.dmw. Like dmw_file it holds an image, which a real workspace does not"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.dm.tests.generate:dm3_dmw, from the file of stem_image_dm3"
+generator = "modama_formats_em.dm.tests.generate:dm3_dmw"
+
+[text_dmw]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.dmw without a Digital Micrograph header (spec formats/dm, a text file named like a workspace)"
+licence = "MIT"
+source = "modama_formats_em.dm.tests.generate:text_dmw"
+generator = "modama_formats_em.dm.tests.generate:text_dmw"
+
+[empty_dmw]
+purpose = "reproducer"
+validity = "invalid-by-design: an empty file named empty.dmw, as an interrupted copy leaves one (spec formats/dm, an empty file named like a workspace)"
+licence = "MIT"
+source = "modama_formats_em.dm.tests.generate:empty_dmw"
+generator = "modama_formats_em.dm.tests.generate:empty_dmw"

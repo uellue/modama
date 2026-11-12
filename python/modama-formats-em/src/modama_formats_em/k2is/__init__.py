@@ -4,15 +4,17 @@ The sector files belong to a .gtg by LiberTEM's naming rule (K2ISDataSet):
 `X.gtg` takes `X*.bin`, and an acquisition has exactly 8 (NUM_SECTORS).
 Extraction reads the .gtg's tags through RosettaSciIO's DM reader on our own
 handle (dm.parsed) and describes all of them but GMS's user-interface
-settings; the sector files are not read.
+settings; the sector files are not read. A .gtg with its 8 sector files is a
+capture whatever it holds (a broken one fails at extraction); only a .gtg
+without sector files is checked for the DM4 header (decision 172).
 """
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
-from ..dm import parsed
+from ..dm import HEADER, parsed, tag_paths, version
 
 HERE = Path(__file__).parent
 ACQUISITION = "application/x.k2is"
@@ -35,8 +37,11 @@ FORM = ("Session Info", "Items")
 class K2is(Format):
     type = ACQUISITION
     display_name = "Gatan K2 IS"
-    priority = 60
+    # Before em/dm3 (60): a lone .gtg without the DM4 header may be DM3 (decision 165)
+    priority = 61
     reacts_to = frozenset({TAGS, SECTOR})
+    # 2: a lone .gtg without the DM4 header loses the .gtg type (decision 172)
+    version = "2"
     # 2: every tag but the user-interface settings (decision 129), not rounded
     extractor_version = "3"
 
@@ -69,6 +74,9 @@ class K2is(Format):
                     f"{tags.name}: {len(mine)} sector files {stem}*.bin, "
                     f"a K2IS acquisition has {SECTORS}",
                 )
+            elif version(d.read(tags, HEADER)) != 4:
+                # A lone .gtg: of the type only with the DM4 header (decision 147)
+                d.not_of_type(tags, "no DM4 header")
         orphans = sorted(s.name for s in sectors if s.rel not in taken)
         if orphans:
             d.warn(
@@ -89,7 +97,7 @@ class K2is(Format):
         }
         # The scan shape and the microscope first, then the rest in the reader's order
         ordered = {**values, **{k: v for k, v in tags.items() if k not in values}}
-        summary = [f"{path} {value}" for path, value in _tags(ordered)]
+        summary = [f"{path} {value}" for path, value in tag_paths(ordered, _settings)]
         subjects = (
             [n]
             if isinstance(n := values.get("Microscope Info", {}).get("Name"), str)
@@ -98,17 +106,9 @@ class K2is(Format):
         return Extracted(summary=summary, subjects=subjects, values=values)
 
 
-def _tags(node: dict, path: tuple[str, ...] = ()) -> Iterator[tuple[str, object]]:
-    """(dotted path, value) of every tag below node in the reader's order, its values
-    as the reader gives them (an empty one too: decision 161), without GMS's
-    user-interface settings."""
-    for key, value in node.items():
-        here = (*path, str(key))
-        if isinstance(value, dict):
-            if value.get("Class Name") not in VIEWER_CLASSES and here[-2:] != FORM:
-                yield from _tags(value, here)
-        else:
-            yield ".".join(here), value
+def _settings(path: tuple[str, ...], group: dict) -> bool:
+    """A tag group of GMS's user-interface settings, left out of the description."""
+    return group.get("Class Name") in VIEWER_CLASSES or path[-2:] == FORM
 
 
 # This part of the collection, for its tests; the package's COLLECTION joins the parts.

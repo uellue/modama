@@ -2,7 +2,9 @@ fixtures/stem_image_dm3/test_STEM_image.dm3,
 fixtures/cl_image_dm4/test-MonarcCL_mono-image.dm4 and
 fixtures/rgba_image_dm4/test-8.dm4 are test files of
 RosettaSciIO (https://github.com/hyperspy/rosettasciio), copied unchanged from
-its tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/.
+its tag v0.15.0, rsciio/tests/data/digitalmicrograph/2D/. The fixtures
+dmw_file and dm3_dmw are copies of the first two under .dmw names, made at
+test time by generate.py.
 
 Copyright 2007-2026 The HyperSpy developers.
 
