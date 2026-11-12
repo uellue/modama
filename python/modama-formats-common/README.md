@@ -4,8 +4,12 @@ Common file formats for the modama crawler (`python/crawler/`), as the format co
 
 | Format | Recognised as | Extracted |
 |---|---|---|
+| TIFF (`image`) | a file of the core's type `image/tiff` (`*.tif`, `*.tiff`, or its header), one dataset (`common/tiff`); the name decides, nothing is read at recognition | through tifffile, the first page only: every tag under tifffile's name (a tag without one under its number), its value as tifffile reads it, the vendor blocks tifffile parses in tags flat under dotted names (`FEI_HELIOS.Beam.HV`, `CZ_SEM.ap_actualkv`, `ExifTag.…`), an ImageJ file's description and IJMetadata as `imagej_metadata.…`, as `original_metadata`; but one skip list (`tiff.skipped`: strip and tile offsets and byte counts, FEI's data bar settings, a tag of more than 1 MiB, values not suitable for text); the first page's `shape`, `dtype`, `axes` as `mapped_metadata`. Summary line, for example `Helios NanoLab" 660, ETD, SE, HV 5000 (unit unknown), ImageWidth 512, ImageLength 471, BitsPerSample 8, 06/13/2016, 05:06:40 PM`. No page count: that walks every page |
+| PNG, JPEG, BMP, GIF, WEBP (`image`) | a file of the core's type (`image/png`, `image/jpeg`, `image/bmp`, `image/gif`, `image/webp`), one dataset (`common/png`, …) | through Pillow, what `Image.open` reads before the image data: its `info` (PNG text chunks before the image data, dpi, JFIF, a comment as text), the EXIF block parsed by Pillow (`exif.Make`, `exif.Exif.ExposureTime`, `exif.GPSInfo.…`, `exif.Interop.…`; not the thumbnail's IFD1, not binary fields such as `MakerNote`); `width`, `height`, `mode` as `mapped_metadata`; for example `Canon, Canon PowerShot S40, width 480, height 360, 2003:12:14 12:01:44`. A WEBP of more than 16 MiB is not extracted (Pillow reads the whole file) |
+| SVG (`image`) | a file of the core's type `image/svg+xml`, one dataset (`common/svg`) | through defusedxml, at most the first MiB: the root's attributes (`@width`, `@viewBox`, `@inkscape:version`) and its `title`, `desc` and `metadata` elements under dotted paths with the file's namespace prefixes (`metadata.rdf:RDF.cc:Work.dc:date`); for example `width 576pt, height 432pt` |
+| EPS (`image`) | the core's type `image/x-eps`, no format | nothing: Pillow's reader reads the whole file to its end |
 
-None yet: each area (`image`, `pydata`, `office`, `text`, `structured`) is a subpackage added by its own change, with one import and one entry in `PARTS` in `src/modama_formats_common/__init__.py`, and its rows here.
+Each area (`image`, `pydata`, `office`, `text`, `structured`) is a subpackage added by its own change, with one import and one entry in `PARTS` in `src/modama_formats_common/__init__.py`, and its rows here.
 
 ## Values and units: what the file says
 

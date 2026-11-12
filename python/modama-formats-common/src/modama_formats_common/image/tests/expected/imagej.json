@@ -1,0 +1,62 @@
+{
+  "datasets": [
+    {
+      "anchor": "/test_loading_image_saved_with_imageJ.tif",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "common/tiff",
+      "members": [
+        "/test_loading_image_saved_with_imageJ.tif"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/tiff",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/test_loading_image_saved_with_imageJ.tif": {
+      "subjects": [],
+      "summary": [
+        "ImageWidth 68",
+        "ImageLength 68",
+        "BitsPerSample 32"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "axes": "YX",
+          "dtype": "float32",
+          "shape": [
+            68,
+            68
+          ]
+        },
+        "original_metadata": {
+          "BitsPerSample": 32,
+          "ImageLength": 68,
+          "ImageWidth": 68,
+          "NewSubfileType": "UNDEFINED",
+          "PhotometricInterpretation": "MINISBLACK",
+          "ResolutionUnit": "NONE",
+          "RowsPerStrip": 68,
+          "SampleFormat": "IEEEFP",
+          "SamplesPerPixel": 1,
+          "XResolution": [
+            5928571,
+            1000000
+          ],
+          "YResolution": [
+            5928571,
+            1000000
+          ],
+          "imagej_metadata.ImageJ": "1.51a",
+          "imagej_metadata.max": 5040.0927734375,
+          "imagej_metadata.min": 86.0,
+          "imagej_metadata.unit": "micron"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
