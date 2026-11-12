@@ -8,6 +8,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import modama_formats_common  # noqa: F401 (installed: common/text extracts the tree's text files)
 import modama_formats_em
 import pytest
 from conftest import CRAWLER, shell

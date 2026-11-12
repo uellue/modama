@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 import pytest
-from modama_crawler.formats import Dataset
+from modama_crawler.formats import Collection, Dataset, Format
 from modama_crawler.walk import walk
 
 from modama_formats_common import text
@@ -93,6 +93,56 @@ def test_text_files_of_each_kind(collection_tests, tmp_path):
     }
 
 
+class Dropping(Format):
+    """A stand-in for a format of another area that drops the type of a file its name gave it."""
+
+    type = "application/xml"
+    reacts_to = frozenset({type})
+    priority = 21  # above common/text's 20 (design D4)
+
+    def recognize(self, d):
+        for e in d.of_type(self.type):
+            d.not_of_type(e, "no < first")
+        return ()
+
+
+def test_a_type_dropped_to_text_by_a_format_of_higher_priority(
+    collection_tests, tmp_path
+):
+    (tmp_path / "notes.xml").write_text("hello\n")
+    stand_in = Collection("stand-in", [Dropping()])
+    result = walk(tmp_path, [*text.COLLECTION.formats, *stand_in.formats])
+    (d,) = result.datasets
+    assert (d.format, d.type, d.basis) == (
+        "common/text",
+        "text/plain",
+        (
+            "single file, typed by its content; "
+            "stand-in/dropping: not application/xml, no < first"
+        ),
+    )
+    assert result.all_warnings() == []
+
+
+def test_a_file_typed_by_its_content(collection_tests, tmp_path):
+    notes = written(tmp_path, "notes", "2026-11-12 frame written\n" * 10000)
+    assert notes.stat().st_size > head.SNIFFED_HEAD
+    (d,) = walk(tmp_path, text.COLLECTION.formats).datasets
+    assert (d.format, d.type, d.basis) == (
+        "common/text",
+        "text/plain",
+        "single file, typed by its content",
+    )
+    found = FORMATS["Text"].extract(d, str(tmp_path))
+    assert found.summary == ["ascii", "lines at least 2621"]
+    FORMATS["Text"].extract(d, str(tmp_path))  # once first: imports read files too
+    before = rchar()
+    own = rchar() - before
+    before = rchar()
+    FORMATS["Text"].extract(d, str(tmp_path))
+    assert rchar() - before - own <= head.SNIFFED_HEAD
+
+
 # The encoding as detected
 
 
@@ -145,7 +195,7 @@ def test_a_log_larger_than_the_bound(tmp_path):
     generate.big_log(tmp_path)
     log = tmp_path / "acquisition.log"
     assert extracted(log, "Log").summary == ["ascii", "lines at least 20164"]
-    assert bytes_read(log, "Log") <= head.HEAD + 1
+    assert bytes_read(log, "Log") <= head.HEAD
 
 
 def test_a_utf_8_character_cut_by_the_bound(tmp_path):
@@ -169,8 +219,10 @@ def test_a_note_with_front_matter(tmp_path):
         "draft": False,
     }
     assert found.values["mapped_metadata"]["first heading"] == "Lamella preparation"
+    # The author's name from the list of mappings, as Pandoc writes authors
     assert found.summary == [
         "Lamella preparation",
+        "A. Example",
         "2026-11-12T10:00:00+01:00",
         "ascii",
         "lines 18",
@@ -235,6 +287,12 @@ def test_a_front_matter_with_an_alias_bomb(tmp_path):
     found = extracted(written(tmp_path, "x.md", note), "Markdown")
     assert time.monotonic() - start < 1
     assert len(found.values["original_metadata"]) <= 1000
+
+
+def test_a_front_matter_that_holds_itself(tmp_path):
+    note = "---\nx: &a [1, *a]\ny: &b {c: *b, d: 2}\nkept: 1\n---\n"
+    found = extracted(written(tmp_path, "x.md", note), "Markdown")
+    assert found.values["original_metadata"] == {"x[0]": 1, "y.d": 2, "kept": 1}
 
 
 # reStructuredText title and docinfo
@@ -349,7 +407,15 @@ def test_a_large_report(tmp_path):
     path = written(tmp_path, "report.html", page)
     assert path.stat().st_size > 3 << 20
     assert extracted(path, "Html").values["original_metadata"] == {"title": "Report"}
-    assert bytes_read(path, "Html") <= head.HEAD + 1
+    assert bytes_read(path, "Html") <= head.HEAD
+
+
+def test_the_declared_encoding_where_the_bytes_are_not_utf_8(tmp_path):
+    page = '<html><head><meta charset="shift_jis"><title>電子顕微鏡</title></head></html>\n'
+    found = extracted(written(tmp_path, "x.html", page.encode("shift_jis")), "Html")
+    assert found.values["original_metadata"]["title"] == "電子顕微鏡"
+    assert found.values["mapped_metadata"]["encoding"] == "shift_jis"
+    assert found.summary[:2] == ["電子顕微鏡", "shift_jis"]
 
 
 # LaTeX title fields
@@ -382,6 +448,26 @@ def test_raw_latex_as_written_comments_left_out(tmp_path):
     }
 
 
+def test_a_preamble_macro_nobody_has_seen_before(tmp_path):
+    paper = (
+        "\\documentclass{article}\n"
+        "\\usepackage[utf8]{inputenc}\n"
+        "\\newcommand{\\vect}[1]{\\mathbf{#1}}\n"
+        "\\def\\why{because}\n"
+        "\\setlength{\\parindent}{0pt}\n"
+        "\\madeupmacro{42 zz}\n"
+        "\\affiliation{ER-C}\n"
+        "\\affiliation{second}\n"
+        "\\begin{document}\n\\section{Not the preamble}\n\\end{document}\n"
+    )
+    found = extracted(written(tmp_path, "paper.tex", paper), "Tex")
+    assert found.values["original_metadata"] == {
+        "documentclass": "article",
+        "madeupmacro": "42 zz",
+        "affiliation": "ER-C",
+    }
+
+
 # BibTeX entries
 
 
@@ -394,6 +480,13 @@ def test_a_bibliography(tmp_path):
         ["example2024", "example2025", "example2026"],
     )
     assert found.summary[0] == "entries 3"
+
+
+def test_a_bibliography_of_more_than_16_entries(tmp_path):
+    entry = "@misc{{key{},\n  title = {{A made-up title}},\n}}\n\n"
+    path = written(tmp_path, "refs.bib", "".join(entry.format(i) for i in range(17)))
+    mapped = extracted(path, "Bibtex").values["mapped_metadata"]
+    assert mapped["entries"] == 17 and "keys" not in mapped
 
 
 def test_a_bibliography_larger_than_the_bound(tmp_path, caplog):

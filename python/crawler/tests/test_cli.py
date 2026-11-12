@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import modama_formats_common  # noqa: F401 (installed: common/text claims text files here)
 import modama_formats_em
 import pytest
 from conftest import CRAWLER, database_environment, validate_oai
@@ -99,6 +100,19 @@ def test_verbose_diagnostics_travel_with_the_records(store):
     # Also accepted before the subcommand
     before = records("--verbose", "records", str(store))
     assert before.returncode == 0 and before.stdout.count(b"<!--") == text.count("<!--")
+
+
+def test_a_dropped_type_claimed_by_another_collection(tmp_path):
+    # Both collections: em/k2is drops the name's type of a text notes.gtg, and
+    # common/text, after it, claims the file with em's reason in its basis
+    # (change common-text, design D4)
+    (tmp_path / "notes.gtg").write_text("hello\n")
+    run = records("records", "--verbose", str(tmp_path))
+    assert run.returncode == 0, run.stderr
+    assert (
+        "<!-- /notes.gtg: text/plain by common/text 1, basis: single file, typed by "
+        "its content; em/k2is: not application/x.dm-gtg, no DM header -->"
+    ) in run.stdout.decode()
 
 
 def test_the_records_command_shows_the_tags(tmp_path):

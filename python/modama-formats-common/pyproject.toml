@@ -11,7 +11,9 @@ version = "0.0.1.dev0"
 dependencies = [
     # Each part adds the libraries it reads its formats with
     "modama-crawler",
-    # text: Markdown front matter
+    # text: pinned exactly, as the fixtures' recorded results (expected/) and the
+    # docutils-written fixtures depend on the readers' versions.
+    # Markdown front matter
     "PyYAML==6.0.3",
     # text: Markdown, with its front matter plugin
     "markdown-it-py==4.3.0",

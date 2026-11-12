@@ -12,4 +12,5 @@
 ## 2. Checks and review
 
 - [x] 2.1 Crawler suite and the package's suite in a venv of their own; CI's ruff from the repo root. Verify: the commands' output in the hand-over.
-- [ ] 2.2 Independent review started by main; findings verified and applied. Verify: the findings and the fixes in the hand-over.
+- [x] 2.2 Independent review started by main; findings applied with main's decisions (2026-11-12): (1) the priority rule in design D4, test with a stand-in at 21; (2) a front matter that holds itself; (4) LaTeX preamble macros minus a skip list, pylatexenc's environment pairing worked around; (5) the detectors' results in `BACKLOG.md`, "Sync with upstream", and a question in the proposal; (6) 64 KiB for a file typed by its content, `fstat` and no readahead; (7) HTML's declared encoding; (8) the crawler tests import `modama_formats_common`; (9) a test with the `em` and `common` collections; (10) authors as a list of mappings in the Markdown summary; (11) README, the reason for exact pins, BibTeX keys above 16. Verify: one test per new scenario; the suites.
+- [ ] 2.3 (3) Front matter scalars as written (`10:30`, `1.10`) with the package's one YAML loader of the area `structured`, once it is merged; then the scenario's test. Verify: the test `test_front_matter_scalars_as_written`.

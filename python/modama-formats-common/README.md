@@ -4,14 +4,12 @@ Common file formats for the modama crawler (`python/crawler/`), as the format co
 
 | Format | Recognised as | Extracted |
 |---|---|---|
-| Plain text, logs, READMEs | each file the core types `text/plain` (`.txt`, `.asc`, text without a name rule), `text/x-log` (`.log`) or `text/x-readme` (`README` and the like) is one dataset (`common/text`, `common/log`, `common/readme`) | from the first 1 MiB: the encoding as the bytes say it (a BOM's, `ascii`, `utf-8`, else `Windows-1252`; none for a NUL byte) and the line count, for example `Windows-1252, lines 2` or `ascii, lines at least 20164` for a larger file, as `mapped_metadata`; never the text itself |
-| Markdown | `text/markdown` (`.md`, `.markdown`), one dataset each (`common/markdown`) | every entry of a YAML front matter, flat under its dotted name, dates as written, as `original_metadata`; the first heading, encoding and lines as `mapped_metadata`; for example `Lamella preparation, 2026-11-12T10:00:00+01:00, ascii, lines 18` |
+| Plain text, logs, READMEs | each file the core types `text/plain` (`.txt`, `.asc`, text without a name rule), `text/x-log` (`.log`) or `text/x-readme` (`README` and the like) is one dataset (`common/text`, `common/log`, `common/readme`) | from the first 1 MiB (64 KiB of a file typed by its content, not its name): the encoding as the bytes say it (a BOM's, `ascii`, `utf-8`, else `Windows-1252`; none for a NUL byte) and the line count, for example `Windows-1252, lines 2` or `ascii, lines at least 20164` for a larger file, as `mapped_metadata`; never the text itself |
+| Markdown | `text/markdown` (`.md`, `.markdown`), one dataset each (`common/markdown`) | every entry of a YAML front matter, flat under its dotted name, dates as written, as `original_metadata`; the first heading, encoding and lines as `mapped_metadata`; for example `Lamella preparation, A. Example, 2026-11-12T10:00:00+01:00, ascii, lines 18` |
 | reStructuredText | `text/x-rst` (`.rst`), one dataset each (`common/rst`) | the title, subtitle and docinfo fields as docutils reads them (includes not followed), for example `Docutils Front-End Tools, David Goodger, 2024-12-04, utf-8, lines 570` |
-| HTML | `text/html` (`.html`, `.htm`), one dataset each (`common/html`) | from the head: `title`, `lang`, every `meta.<name>` but `meta.viewport`, for example `Docutils Front-End Tools, David Goodger, Docutils 0.23: https://docutils.sourceforge.io/, utf-8, lines 1283` |
-| LaTeX | `text/x-tex` (`.tex`, `.sty`, `.cls`, …), one dataset each (`common/tex`) | `documentclass`, `title`, `author`, `date` as raw LaTeX, for example `Docutils Front-End Tools, article, utf-8, lines 850` |
-| BibTeX | `text/x-bibtex` (`.bib`), one dataset each (`common/bibtex`) | the number of entries and their keys, for example `entries 3, ascii, lines 22` |
-
-None yet: each area (`image`, `pydata`, `office`, `text`, `structured`) is a subpackage added by its own change, with one import and one entry in `PARTS` in `src/modama_formats_common/__init__.py`, and its rows here.
+| HTML | `text/html` (`.html`, `.htm`), one dataset each (`common/html`) | from the head: `title`, `lang`, every `meta.<name>` but `meta.viewport`; text that is not UTF-8 decoded as the head declares; for example `Docutils Front-End Tools, David Goodger, Docutils 0.23: https://docutils.sourceforge.io/, utf-8, lines 1283` |
+| LaTeX | `text/x-tex` (`.tex`, `.sty`, `.cls`, …), one dataset each (`common/tex`) | every macro of the preamble with its first mandatory argument but definitions, packages and layout (`markup.LATEX_SKIPPED`), and `documentclass`, `title`, `author`, `date`, as raw LaTeX, for example `Docutils Front-End Tools, article, utf-8, lines 850` |
+| BibTeX | `text/x-bibtex` (`.bib`), one dataset each (`common/bibtex`) | the number of entries and their keys (no keys above 16), for example `entries 3, ascii, lines 22` |
 
 ## Values and units: what the file says
 
