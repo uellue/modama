@@ -6,6 +6,7 @@ import os
 import signal
 import threading
 import time
+from dataclasses import replace
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -482,3 +483,90 @@ def test_the_number_of_threads_is_a_setting(monkeypatch):
     assert cli._threads() == 32
     monkeypatch.setenv("MODAMA_CRAWLER_WALK_THREADS", "4")
     assert cli._threads() == 4
+
+
+# One folder is recognised as in the crawl of the whole tree (change chain-browse, D5)
+
+
+@pytest.mark.parametrize("tests_module", _fixture_tests_modules())
+def test_one_folder_gives_the_same_datasets_as_the_whole_crawl(
+    tests_module, mime_database, tmp_path
+):
+    # The collections' formats adopt nothing, so a folder's datasets do not depend on its subfolders'
+    ct = collection_tests_for(importlib.import_module(tests_module))
+    formats = [f for c in mime_database.values() for f in c.formats]
+    for name in ct.fixture_names():
+        ct.materialise(name, tmp_path / "deep" / "er")
+    whole = walk(tmp_path, formats)
+    folders = sorted(
+        "/" + str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*") if p.is_dir()
+    )
+    assert len(folders) > 2
+    for top in folders:
+        here = [d for d in whole.datasets if d.directory == top]
+        collapsed = [
+            d for d in whole.datasets if d.collapsed and top.startswith(d.anchor + "/")
+        ]
+        assert walk(tmp_path, formats, top=top).datasets == (collapsed or here), top
+
+
+def test_subfolders_are_not_entered(tmp_path, monkeypatch):
+    import modama_crawler.walk as walk_module
+
+    listed, classified = [], []
+    real_names, real_detect = walk_module._names, walk_module.mime.detect_with_tie
+    monkeypatch.setattr(
+        walk_module, "_names", lambda p: (listed.append(p), real_names(p))[1]
+    )
+    monkeypatch.setattr(
+        walk_module.mime,
+        "detect_with_tie",
+        lambda path, **kw: (classified.append(path), real_detect(path, **kw))[1],
+    )
+    (tmp_path / "a" / "big" / "deeper").mkdir(parents=True)
+    (tmp_path / "a" / "file.txt").write_text("f")
+    for i in range(20):
+        (tmp_path / "a" / "big" / f"{i}.txt").write_text(str(i))
+    result = walk(tmp_path, FORMATS, top="/a")
+    assert [d.anchor for d in result.datasets] == ["/a/file.txt"]
+    assert not [p for p in listed + classified if "/big" in p]
+    assert sorted(listed) == [str(tmp_path), str(tmp_path / "a")]
+
+
+def test_a_folder_inside_a_collapsed_tree(tmp_path, monkeypatch):
+    import modama_crawler.walk as walk_module
+    from modama_crawler.formats import Directory
+
+    classified, read = [], []
+    real_detect, real_read = walk_module.mime.detect_with_tie, Directory.read
+    monkeypatch.setattr(
+        walk_module.mime,
+        "detect_with_tie",
+        lambda path, **kw: (classified.append(path), real_detect(path, **kw))[1],
+    )
+    monkeypatch.setattr(
+        Directory, "read", lambda d, e, n: (read.append(e.path), real_read(d, e, n))[1]
+    )
+    (tmp_path / "a" / "boring" / "deep" / "er").mkdir(parents=True)
+    (tmp_path / "a" / "boring" / "COLLAPSE").write_text("")
+    (tmp_path / "a" / "boring" / "deep" / "er" / "x.bin").write_bytes(b"\0")
+    (whole,) = [d for d in walk(tmp_path, FORMATS).datasets if d.collapsed]
+    classified.clear()
+    read.clear()
+    result = walk(tmp_path, FORMATS, top="/a/boring/deep/er")
+    # The parent is set by the folder above, which a walk of a subtree does not
+    # recognise (D5's limit; t/bundle adopts, none of the real formats does)
+    assert whole.anchor == "/a/boring" and whole.parent == "/a"
+    assert result.datasets == [replace(whole, parent=None)]
+    assert not [p for p in classified + read if "/boring/" in p]
+
+
+def test_an_excluded_folder_has_no_datasets(tmp_path):
+    (tmp_path / "scratch" / "deep").mkdir(parents=True)
+    (tmp_path / "scratch" / "deep" / "x.txt").write_text("x")
+    os.symlink(tmp_path / "scratch", tmp_path / "link")
+    (tmp_path / "file").write_text("f")
+    for top in ("/scratch/deep", "/link/deep", "/file", "/missing"):
+        result = walk(tmp_path, FORMATS, exclude=["/scratch/"], top=top)
+        assert result.datasets == [], top
+    assert walk(tmp_path, FORMATS, top="/scratch/deep").datasets
