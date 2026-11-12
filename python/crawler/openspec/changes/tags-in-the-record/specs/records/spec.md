@@ -24,7 +24,7 @@ A record whose dataset's extracted values hold `original_metadata` (a flat mappi
 - **THEN** the record has two `dc:description`, the second starting with the line `Acquisition.Device.Active Size (pixels): [1920, 1792]`
 
 ### Requirement: Tag values as stored
-In the tag description, a string value SHALL appear as it is stored but for its line breaks, each of which SHALL become a space (design D6), any other value as its JSON text, not rounded and without units added, with numbers as the database gives them back (design D2). A value whose text is longer than 4,096 characters (the storage's limit for a string) SHALL be cut to that length and end in `…` (design D3).
+In the tag description, a string value on one line SHALL appear as it is stored; any other value, a string with line breaks included (design D6), SHALL appear as its JSON text on one line, not rounded and without units added, with numbers as the database gives them back and an object's keys sorted (design D2). A non-string value whose JSON text is longer than 4,096 characters (the storage's limit for a string) SHALL be cut to that length and end in `…` (design D3).
 
 #### Scenario: Values as stored
 - **WHEN** an entry's value is the list `[1920, 1792]`, the number -2.4043772802208405, or the string `inf`
@@ -34,9 +34,13 @@ In the tag description, a string value SHALL appear as it is stored but for its 
 - **WHEN** an entry's value is the number 1.316679648365784e+17 or -0.0
 - **THEN** its line shows `131667964836578400` or `0.0`, whether the extraction ran in this crawl or was stored by the last one
 
-#### Scenario: A line break in a value
-- **WHEN** an entry's value is the string `Precession angle : \r\nPrecession Frequency : \r\nCamera gamma : on` (the block file fixture test2.blo's `Note`)
-- **THEN** its line shows `Precession angle :  Precession Frequency :  Camera gamma : on`, one line, each line break a space
+#### Scenario: A string with line breaks
+- **WHEN** an entry's value is a string with line breaks whose lines look like tags (the block file fixture Stingray16bit_7_11.blo's `blockfile_header.Note`: `…\r\nDetector: AVT Stingray F046B\r\n…`)
+- **THEN** its line shows the string's JSON text, `"…\r\nDetector: AVT Stingray F046B\r\n…"`, and no line of the description starts with `Detector`
+
+#### Scenario: An object's keys sorted
+- **WHEN** an entry's value is the object `{"zz": 1, "a": 2}`
+- **THEN** its line shows `{"a": 2, "zz": 1}`, whether the extraction ran in this crawl or was stored by the last one
 
 #### Scenario: A very long value is cut
 - **WHEN** an entry's value is a list whose JSON text is longer than 4,096 characters

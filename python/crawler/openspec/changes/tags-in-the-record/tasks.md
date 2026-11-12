@@ -20,4 +20,4 @@ Written with the leans of the brief (decision 234, 2026-11-12) as assumptions; w
 ## 4. Checks and hand-over
 
 - [x] 4.1 `uvx ruff format --check --diff` and `uvx ruff check` from the repo root. Verify: their output.
-- [ ] 4.2 An independent review (the coordinator starts it). Verify: its findings and what became of them.
+- [x] 4.2 An independent review of ac1104cf (the coordinator's, 2026-11-12: fine for tonight). Its items, after merging `crawler` 4cef5532: D5 re-measured; a string with line breaks as JSON text (D6), tested on the block file Stingray16bit_7_11.blo; an object's keys sorted (D2); the reviewer's round trip as `test_a_stored_extraction_gives_the_same_lines_whatever_the_values`; the `…` for non-string values only in the spec. Verify: `pytest` in `python/crawler`, `python/modama-formats-em`, `python/search-chain`; the e2e.

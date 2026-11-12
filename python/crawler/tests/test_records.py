@@ -1,8 +1,11 @@
 import json
+import math
 import os
 import pwd
+import random
 import re
 import shutil
+import struct
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -10,9 +13,10 @@ from types import SimpleNamespace
 
 import modama_formats_em
 import pytest
-from conftest import CRAWLER, DC, OAI, shell
+from conftest import BASE_URL, CRAWLER, DC, OAI, shell
+from lxml import etree
 from modama_crawler import selection
-from modama_crawler.extraction import MAX_STRING
+from modama_crawler.extraction import MAX_STRING, _storable
 from modama_crawler.formats import Dataset, Extracted, Extraction, Format, Result
 from modama_crawler.formats.collapse.tests import generate as collapse_fixtures
 from modama_crawler.formats.zarr.tests import generate as zarr_fixtures
@@ -23,9 +27,12 @@ from modama_crawler.records import (
     creator,
     format_names,
     oai_identifier,
+    tags,
 )
+from modama_crawler.render import list_records
 from modama_crawler.store import Stored, store
 from modama_crawler.walk import walk
+from modama_formats_em.blockfile import Blockfile
 
 PREFIX = "oai:er-c-data-mgmt.fz-juelich.de:"
 
@@ -310,14 +317,29 @@ def test_values_as_stored():
     ]
 
 
-def test_a_line_break_in_a_value():
-    # The block file fixture test2.blo's Note, as RosettaSciIO reads it
-    note = "Precession angle : \r\nPrecession Frequency : \r\nCamera gamma : on"
-    dataset = tagged({"blockfile_header.Note": note, "blockfile_header.NX": 3})
-    assert descriptions(dataset)[1].splitlines() == [
-        "blockfile_header.NX: 3",
-        "blockfile_header.Note: Precession angle :  Precession Frequency :  Camera gamma : on",
-    ]
+def test_a_string_with_line_breaks():
+    # The block file fixture Stingray16bit_7_11.blo: its Note holds lines that
+    # look like tags ("Detector: AVT Stingray F046B")
+    stingray = (
+        Path(modama_formats_em.__file__).parent / "blockfile/tests/fixtures/stingray"
+    )
+    extracted = Blockfile().extract(
+        Dataset(anchor="/Stingray16bit_7_11.blo"), str(stingray)
+    )
+    note = extracted.values["original_metadata"]["blockfile_header.Note"]
+    assert "\r\nDetector: AVT Stingray F046B\r\n" in note
+    dataset = replace(
+        tagged(None), extraction=Extraction("em/blockfile", "1", "", extracted)
+    )
+    lines = descriptions(dataset)[1].splitlines()
+    assert len(lines) == len(extracted.values["original_metadata"])
+    assert "blockfile_header.Note: " + json.dumps(note, ensure_ascii=False) in lines
+    assert not [line for line in lines if line.startswith("Detector")]
+
+
+def test_a_dict_value_with_its_keys_sorted():
+    dataset = tagged({"Group": {"zz": 1, "a": 2}})
+    assert descriptions(dataset)[1] == 'Group: {"a": 2, "zz": 1}'
 
 
 def test_a_very_long_value_is_cut():
@@ -352,6 +374,54 @@ def test_numbers_as_the_database_gives_them_back(conn):
         "Huge: [100000000000000000000, 0.0, 1e-07, 300000.0, 7]",
         "Stage Alpha: 0.0",
     ]
+
+
+def any_float(r: random.Random) -> float:
+    k = r.random()
+    if k < 0.4:  # any bit pattern
+        return struct.unpack("d", struct.pack("Q", r.getrandbits(64)))[0]
+    if k < 0.7:
+        return r.uniform(-1, 1) * 10 ** r.randint(-30, 30)
+    return r.choice(
+        [0.0, -0.0, 1e16, 9999999999999998.0, 0.1 + 0.2, 5e-324, 1.7976931348623157e308, 2.0**63, -(2.0**70), 1e-5]
+    )  # fmt: skip
+
+
+def test_a_stored_extraction_gives_the_same_lines_whatever_the_values(conn):
+    # The review's round trip (change tags-in-the-record): random floats and
+    # awkward values through storing as a crawl stores them, and back
+    r = random.Random(1)
+    values = {f"f{i:05d}": any_float(r) for i in range(700)}
+    values |= {f"l{i:04d}": [any_float(r) for _ in range(4)] for i in range(150)}
+    values = {
+        k: [x for x in v if math.isfinite(x)] if isinstance(v, list) else v
+        for k, v in values.items()
+        if not isinstance(v, float) or math.isfinite(v)
+    }
+    values |= {
+        "int_big": 2**80,
+        "neg_int": -(2**63),
+        "u": "Ǻ µm ° 日本 😀 ﻿ x",
+        "ctrl": "a\x01b\x0bc]]>d￾e",
+        "nul": "a\x00b",
+        "crlf": "line1\r\nline2",
+        "nested": {"zz": 1, "a": 2, "bbb": 1e20},
+        "emptytuple": (),
+        "bool": True,
+        "long": "x" * 5000,
+        "longlist": list(range(2000)),
+    }
+    extracted = Extracted(["300kV"], [], _storable({"original_metadata": values}))
+    fresh = replace(
+        tagged(None), stamp="s", extraction=Extraction("em/dm", "1", "", extracted)
+    )
+    store(conn, Result([fresh]), {})
+    again = replace(
+        fresh, extraction=Stored(conn).extractions([fresh.anchor])[fresh.anchor]
+    )
+    assert tags(again) == tags(fresh)
+    md = build(again, {})[1]
+    etree.fromstring(list_records(BASE_URL, [("oai:x:1", datetime.now(UTC), md)]))
 
 
 CAPTURE52 = Path(modama_formats_em.__file__).parent / "k2is/tests/fixtures/capture52"

@@ -120,10 +120,10 @@ def tags(dataset: Dataset) -> str:
     """The file's own tags as found, `values["original_metadata"]`, one `name: value` line each (decision 234).
 
     Sorted by name: the stored values (JSONB) do not keep the file's order, and
-    a record must not change between a fresh and a reused extraction. Strings
-    as they are but for line breaks (a space each), any other value as its
-    JSON text, cut to the storage's limit for a string with "…" at the end;
-    empty values left out.
+    a record must not change between a fresh and a reused extraction. A
+    string on one line as it is, any other value (a string with line breaks
+    too) as its JSON text, cut to the storage's limit for a string with "…"
+    at the end; empty values left out.
     """
     extracted = dataset.extraction.extracted if dataset.extraction else None
     found = extracted.values.get("original_metadata") if extracted else None
@@ -133,12 +133,13 @@ def tags(dataset: Dataset) -> str:
     for name, value in sorted(found.items()):
         if value in ("", []):
             continue
-        if isinstance(value, str):
-            # One line per tag: a line break in a value becomes a space, as
-            # the harvester's conversion makes it anyway (a block file's Note)
-            text = " ".join(value.splitlines())
+        if isinstance(value, str) and value.splitlines() == [value]:
+            text = value
         else:
-            text = json.dumps(as_stored(value), ensure_ascii=False)
+            # A string with line breaks as JSON text too, so that no line of
+            # a value looks like a tag of its own (a block file's Note); a
+            # dict's keys sorted, as JSONB gives them back in its own order
+            text = json.dumps(as_stored(value), ensure_ascii=False, sort_keys=True)
         if len(text) > MAX_STRING:
             text = text[:MAX_STRING] + "…"
         lines.append(f"{name}: {text}")
