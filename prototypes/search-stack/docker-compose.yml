@@ -245,6 +245,8 @@ services:
       - ${MODAMA_SECRETS_DIR:?see README.md}/broker.env
     volumes:
       - broker-data:/var/lib/rabbitmq
+      # consumer_timeout of 48 h: tasks on the default queue run for hours (F17)
+      - ./broker.conf:/etc/rabbitmq/conf.d/90-modama.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
