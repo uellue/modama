@@ -33,6 +33,7 @@ OAI_URL = "http://crawler:7654/oai"
 AIRFLOW = "http://airflow-api-server:8080"
 OPENSEARCH = "http://opensearch:9200"
 SEARCH = "http://search-api:8000"
+FRONTEND = "http://matchmaker:3000"
 INDEX = "test_datacite"
 DAG = "warehouse_harvest_and_index"
 DAG_TIMEOUT = 20 * 60
@@ -323,6 +324,22 @@ def test_status_of_a_complete_chain(tree):
 def test_search_finds_the_file(tree):
     wanted = next(url for _, url in tree.values() if url.endswith(DISTINCT_FILE))
     hits = http(f"{SEARCH}/search?q=ferritin&resource=datasets")
+    urls = [h["_source"]["url"] for h in hits["hits"]]
+    assert wanted in urls, (wanted, urls)
+
+
+def test_the_frontend_serves_its_page(tree):
+    with urllib.request.urlopen(FRONTEND + "/", timeout=30) as response:
+        assert response.headers.get_content_type() == "text/html"
+        page = response.read().decode()
+    assert "<title>EOSC Data Commons</title>" in page, page[:500]
+
+
+def test_the_frontend_finds_the_file(tree):
+    # the route the frontend's search page calls (matchmaker's src/lib/api.ts), which its
+    # server proxies to the search API
+    wanted = next(url for _, url in tree.values() if url.endswith(DISTINCT_FILE))
+    hits = http(f"{FRONTEND}/api/search/search?q=ferritin&resource=datasets")
     urls = [h["_source"]["url"] for h in hits["hits"]]
     assert wanted in urls, (wanted, urls)
 

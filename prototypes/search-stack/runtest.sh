@@ -40,7 +40,7 @@ if [ "${1:-}" = e2e ]; then
 fi
 
 SERVICES="crawler crawl-timer crawler-db postgres opensearch transform broker search-api
-airflow-postgres airflow-api-server airflow-scheduler airflow-dag-processor airflow-worker
+matchmaker airflow-postgres airflow-api-server airflow-scheduler airflow-dag-processor airflow-worker
 airflow-worker-transform"
 INITS="warehouse-init airflow-init airflow-accounts"
 
