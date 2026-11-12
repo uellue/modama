@@ -12,6 +12,7 @@ from pathlib import Path
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
 from ..dm import mapped, tag_paths
+from ..values import textual
 
 HERE = Path(__file__).parent
 TYPE = "application/x.blockfile"
@@ -51,10 +52,15 @@ class Blockfile(Format):
             warnings.simplefilter("always")
             (scan,) = file_reader(root + dataset.anchor, lazy=True)
         said = [str(w.message) for w in caught]
-        # Every field the reader gives, flat under its dotted path; nothing
-        # skipped: the header has no GUI settings or arrays (decision 230,
-        # "every entry minus a skip list")
-        original = {k: plain(v) for k, v in tag_paths(scan["original_metadata"])}
+        # Every field the reader gives, flat under its dotted path, but for
+        # what is not textual (decision 230, "every entry minus a skip list";
+        # the header has no GUI settings or arrays). Bytes are decoded first,
+        # so that the ID IMGBLO stays and binary content is caught as text
+        original = {
+            k: v
+            for k, v in ((k, plain(v)) for k, v in tag_paths(scan["original_metadata"]))
+            if textual(v)
+        }
         header = {k.removeprefix("blockfile_header."): v for k, v in original.items()}
         # The serial date as written, without the reader's conversion to the
         # local time zone

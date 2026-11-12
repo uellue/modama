@@ -23,7 +23,7 @@ For a block file dataset, the extractor SHALL read the header with RosettaSciIO'
 #### Scenario: A representative block file
 - **WHEN** a representative block file with a 3×2 scan, `SX` and `SY` 64.0, `DP_SZ` 5, `Beam_energy` 200000, `Camera_length` 2000 and `Scan_rotation` 2500, acquired on 2015-12-01 at 15:43 is crawled
 - **THEN** its record's description starts with `NX 3, NY 2, SX 64.0, SY 64.0, DP_SZ 5, Beam_energy 200000, Camera_length 2000, Scan_rotation 2500, 2015-12-01 15:43`, with no unit added
-- **AND** its values hold every field the reader gives first, flat under its dotted path (`blockfile_header.Beam_energy`), with an empty skip list (the header has no GUI settings or arrays), and the mapped metadata (HyperSpy's names, RosettaSciIO's conversions) as a second, labelled section
+- **AND** its values hold every field the reader gives first, flat under its dotted path (`blockfile_header.Beam_energy`), minus the skip list: values not suitable for text display (`modama_formats_em.values.textual`: binary data, text of more than 1,000 characters or with control characters, more than 16 items; for example a note of binary bytes); the header has no GUI settings or arrays to skip, and the mapped metadata (HyperSpy's names, RosettaSciIO's conversions) as a second, labelled section
 - **AND** its subjects are the format's name and `4D-STEM`
 
 #### Scenario: The acquisition time as written

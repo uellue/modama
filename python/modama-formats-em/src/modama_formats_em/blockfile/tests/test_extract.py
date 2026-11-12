@@ -61,28 +61,33 @@ def test_a_representative_block_file(collection_tests, tmp_path):
 
 
 def test_every_field_the_reader_gives(collection_tests, tmp_path, monkeypatch):
-    # Every entry minus a skip list, which is empty here (decision of
-    # 2026-11-12): all the reader's fields, and one nobody has seen before
+    # Every entry minus a skip list (decision of 2026-11-12): all the reader's
+    # fields, one nobody has seen before, but not a note of binary bytes
     import rsciio.blockfile
 
     from modama_formats_em.dm import tag_paths
 
     real = rsciio.blockfile.file_reader
+    binary = {"Note": "\x01\x02\x00binary"}
 
     def with_a_new_field(*args, **kwargs):
         (scan,) = real(*args, **kwargs)
-        scan["original_metadata"]["blockfile_header"]["New_field"] = 7
+        header = scan["original_metadata"]["blockfile_header"]
+        header["New_field"] = 7
+        header.update(binary)
         return [scan]
 
     tree = collection_tests.materialise("scan", tmp_path)
     (theirs,) = real(str(tree / "test2.blo"), lazy=True)
     monkeypatch.setattr(rsciio.blockfile, "file_reader", with_a_new_field)
     original = extracted(collection_tests, tree).values["original_metadata"]
+    fields = [k for k, _ in tag_paths(theirs["original_metadata"])]
     assert list(original) == [
-        *(k for k, _ in tag_paths(theirs["original_metadata"])),
+        *(k for k in fields if k != "blockfile_header.Note"),
         "blockfile_header.New_field",
     ]
     assert original["blockfile_header.New_field"] == 7
+    assert original["blockfile_header.ID"] == "IMGBLO"  # bytes, decoded, kept
 
 
 def test_a_scan_rotation_of_0_is_left_out(collection_tests, tmp_path):
