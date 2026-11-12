@@ -1,6 +1,6 @@
 # Tasks
 
-The decision for Alembic is @weber's (2026-11-12), and so is A1 (the warehouse's practice). The other assumptions in `proposal.md` are leans, A2 and A4 revised after the review (`review.md`); apply waits for his answers to the questions 140, 141, 142 and 160, or his overrides.
+The decision for Alembic is @weber's (2026-11-12), and so is A1 (the warehouse's practice). The other assumptions in `proposal.md` are leans, A2 and A4 revised after the review (`review.md`); his answers to the questions 140, 141, 142 and 160 (2026-11-12) take each lean: wait for the crawl lock, `migrate`, this change first, the leans on the baseline and the downgrades.
 
 ## 1. Before the code
 

@@ -54,6 +54,13 @@ Priorities: **must** for the first working version, **should** for soon after, *
   Files claimed only by a generic type (XML, YAML, JSON, ZIP, …) are suspicious in the same way, since most of them follow a domain-specific schema (`docker-compose.yml`, Dublin Core XML) that a sub-handler could distinguish. Both reviews are candidates for agentic workflows (R14): inspect the likely candidates, then search for, activate or create a handler.
 - **R35 (must, decided 2026-10-27)** What recognition sees: regular files and directories. Symlinks, special files (FIFOs, devices), files the crawl cannot read and directories it cannot list are skipped with a diagnostic naming the entry and the reason, and get no record; names that cannot be stored (not valid UTF-8) are reported. The one exception: the path the operator named on the command line being unreadable or missing is an error. A record for symlinks to files is an open question in the backlog.
 - **R36 (should, @weber 2026-10-27)** Severity model, to serve operators and end users: *info* for diagnostics, as detailed as needed; *warning* for what the operator might want to review or act upon; *error* where action is likely required. Warning and error output must not be crowded with items that are not actionable or that repeat: similar items are summarised in one line, such as "123456 unreadable files encountered", so that an operator keeps an overview over millions of files. The concrete rules grow from examples and user stories (Q20); the exit status of a run with warnings is zero.
+- **R42 (must for production, @weber 2026-11-12)** A schema change reaches an existing crawler database in place, without recreating it.
+  - Datasets, extractions, records with their datestamps and the run history are kept, so a change costs no re-crawl, re-harvest or re-indexing (staging: about a night; `field-tests/search-stack-staging-findings.md`).
+  - The change is applied by one explicit step before the crawler's services start, never by two processes at once and never during a crawl.
+  - A crawler refuses a database whose schema is not the one its code expects, and names the step to take.
+  - Example: staging's database, made by commit 3251cad, gains `crawl_runs.scope`, with its 1.45 million records and their datestamps unchanged.
+  - Accepted when a database made by the code before this change migrates in a test and compares equal to a fresh one, and a copy of staging's database migrates before staging does.
+  - Mechanism: the `database-schema` spec (change `schema-migrations`), with Alembic.
 
 ### Scale
 
