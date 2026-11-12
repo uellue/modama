@@ -1,0 +1,105 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- Python and data-science formats (change common-pydata). Each type is
+       named after one in use where one was found; the formats in __init__.py
+       check the content of files typed by name only. -->
+
+  <!-- NumPy's own format (numpy.lib.format): the magic string \x93NUMPY, then
+       the version. Named as PRONOM fmt/2112 names it; file(1) calls it
+       application/x-numpy-data. -->
+  <mime-type type="application/x-npy">
+    <comment>NumPy array</comment>
+    <alias type="application/x-numpy-data"/>
+    <magic priority="60">
+      <match type="string" offset="0" value="\223NUMPY"/>
+    </magic>
+    <glob pattern="*.npy"/>
+  </mime-type>
+
+  <!-- numpy.savez and savez_compressed: a ZIP of .npy members. No type in use
+       was found. By name; the format common/npz checks the ZIP signature. -->
+  <mime-type type="application/x.npz">
+    <comment>NumPy array archive</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.npz"/>
+  </mime-type>
+
+  <!-- HDF5 as registered with IANA on 2026-03-17 (application/x-hdf5 its
+       deprecated alias): the signature at 0, or at 512 after a user block, as
+       MATLAB 7.3 writes it (HDF5 allows further powers of two; none seen,
+       none tested, so no rule for them). The core's
+       application/x-hdf covers HDF4 and HDF5 by the same names; the shared
+       globs make the names tie, so that the content decides. The priority is
+       above the core's (50), so that HDF5 content wins whatever the name. -->
+  <mime-type type="application/vnd.hdfgroup.hdf5">
+    <comment>HDF5 file</comment>
+    <alias type="application/x-hdf5"/>
+    <sub-class-of type="application/x-hdf"/>
+    <magic priority="60">
+      <match type="string" offset="0" value="\211HDF\r\n\032\n"/>
+      <match type="string" offset="512" value="\211HDF\r\n\032\n"/>
+    </magic>
+    <glob pattern="*.h5"/>
+    <glob pattern="*.hdf5"/>
+    <glob pattern="*.hdf"/>
+  </mime-type>
+
+  <!-- NeXus files in HDF5 (NeXus manual, "Physical File format"). No type in
+       use was found (silx defines application/x-silx-nexus for its own
+       desktop entry). By name; the format common/nexus checks the HDF5
+       signature at 0. -->
+  <mime-type type="application/x.nexus">
+    <comment>NeXus file</comment>
+    <sub-class-of type="application/vnd.hdfgroup.hdf5"/>
+    <glob pattern="*.nxs"/>
+  </mime-type>
+
+  <!-- HyperSpy's HDF5 files (RosettaSciIO, hspy: file_format "HyperSpy"). No
+       type in use was found. By name; the format common/hspy checks the HDF5
+       signature at 0 and "HyperSpy" in the first 4096 bytes, and a file without
+       them falls back to HDF5. Older HyperSpy files named .hdf5 are HDF5 files
+       whose values show file_format HyperSpy. -->
+  <mime-type type="application/x.hspy">
+    <comment>HyperSpy file</comment>
+    <sub-class-of type="application/vnd.hdfgroup.hdf5"/>
+    <glob pattern="*.hspy"/>
+  </mime-type>
+
+  <!-- MATLAB MAT-files, as Apache Tika names them (tika-mimetypes.xml):
+       versions 5 and 7.3 start with the header text "MATLAB …"; version 4 has
+       no mark, so the format common/matlab checks a file typed by its name as
+       SciPy's matfile_version does. The priority is above HDF5's: a 7.3 file
+       is both. -->
+  <mime-type type="application/x-matlab-data">
+    <comment>MATLAB data file</comment>
+    <magic priority="70">
+      <match type="string" offset="0" value="MATLAB"/>
+    </magic>
+    <glob pattern="*.mat"/>
+  </mime-type>
+
+  <!-- Python pickles, as Apache Tika names and recognises them: PROTO 2 or 3
+       followed by a dict, list, mark or global opcode; PROTO 4 or 5 followed
+       by FRAME. Protocols 0 and 1 have no mark. -->
+  <mime-type type="application/x-python-pickle">
+    <comment>Python pickle</comment>
+    <magic priority="50">
+      <match type="string" offset="0" value="\200\002">
+        <match type="string" offset="2" value="}"/>
+        <match type="string" offset="2" value="]"/>
+        <match type="string" offset="2" value="("/>
+        <match type="string" offset="2" value="c"/>
+      </match>
+      <match type="string" offset="0" value="\200\003">
+        <match type="string" offset="2" value="}"/>
+        <match type="string" offset="2" value="]"/>
+        <match type="string" offset="2" value="("/>
+        <match type="string" offset="2" value="c"/>
+      </match>
+      <match type="string" offset="0" value="\200\004\225"/>
+      <match type="string" offset="0" value="\200\005\225"/>
+    </magic>
+    <glob pattern="*.pkl"/>
+    <glob pattern="*.pickle"/>
+  </mime-type>
+</mime-info>

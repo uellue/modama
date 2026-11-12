@@ -1,0 +1,9 @@
+#!/usr/bin/python3
+"""Sum the frames of a stack and save the sum beside it."""
+
+import sys
+
+import numpy
+
+stack = numpy.load(sys.argv[1], mmap_mode="r")
+numpy.save(sys.argv[1] + ".sum.npy", stack.sum(axis=0))

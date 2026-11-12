@@ -1,0 +1,131 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testdouble_4.2c_SOL2.mat",
+      "basis": "MATLAB header, or a version 4 file",
+      "collapsed": false,
+      "format": "common/matlab",
+      "members": [
+        "/testdouble_4.2c_SOL2.mat"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-matlab-data",
+      "warnings": []
+    },
+    {
+      "anchor": "/testhdf5_7.4_GLNX86.mat",
+      "basis": "MATLAB header, or a version 4 file",
+      "collapsed": false,
+      "format": "common/matlab",
+      "members": [
+        "/testhdf5_7.4_GLNX86.mat"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-matlab-data",
+      "warnings": []
+    },
+    {
+      "anchor": "/testmulti_7.4_GLNX86.mat",
+      "basis": "MATLAB header, or a version 4 file",
+      "collapsed": false,
+      "format": "common/matlab",
+      "members": [
+        "/testmulti_7.4_GLNX86.mat"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-matlab-data",
+      "warnings": []
+    },
+    {
+      "anchor": "/teststruct_7.4_GLNX86.mat",
+      "basis": "MATLAB header, or a version 4 file",
+      "collapsed": false,
+      "format": "common/matlab",
+      "members": [
+        "/teststruct_7.4_GLNX86.mat"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-matlab-data",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testdouble_4.2c_SOL2.mat": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "testdouble.class": "double",
+          "testdouble.shape": [
+            1,
+            9
+          ]
+        }
+      }
+    },
+    "/testhdf5_7.4_GLNX86.mat": {
+      "subjects": [],
+      "summary": [
+        "MATLAB 7.0 MAT-file, Platform: GLNX86, Created on: Sat Oct  4 19:01:58 2008 HDF5 schema 0.05 ."
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "header": "MATLAB 7.0 MAT-file, Platform: GLNX86, Created on: Sat Oct  4 19:01:58 2008 HDF5 schema 0.05 .",
+          "testdouble.MATLAB_class": "double",
+          "testdouble.dtype": "<f8",
+          "testdouble.shape": [
+            9,
+            1
+          ]
+        }
+      }
+    },
+    "/testmulti_7.4_GLNX86.mat": {
+      "subjects": [],
+      "summary": [
+        "MATLAB 5.0 MAT-file, Platform: GLNX86, Created on: Fri Feb 20 15:26:59 2009"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "a.class": "double",
+          "a.shape": [
+            3,
+            5
+          ],
+          "header": "MATLAB 5.0 MAT-file, Platform: GLNX86, Created on: Fri Feb 20 15:26:59 2009",
+          "theta.class": "double",
+          "theta.shape": [
+            1,
+            9
+          ]
+        }
+      }
+    },
+    "/teststruct_7.4_GLNX86.mat": {
+      "subjects": [],
+      "summary": [
+        "MATLAB 5.0 MAT-file, Platform: GLNX86, Created on: Fri Feb 20 15:26:59 2009"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "header": "MATLAB 5.0 MAT-file, Platform: GLNX86, Created on: Fri Feb 20 15:26:59 2009",
+          "teststruct.class": "struct",
+          "teststruct.shape": [
+            1,
+            1
+          ]
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

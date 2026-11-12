@@ -1,0 +1,98 @@
+[nexus_examples]
+purpose = "representative"
+validity = "vendor-written: example.h5 by the EPICS areaDetector NeXus file writer (root attribute creator 'write_nexus_file()', h5py 3.6.0, 2022-03-07), with a 1024 x 1024 uint8 image; simple_example_basic.nexus.hdf5 by the NeXus manual's h5py example simple_example_basic_write.py (NeXus_version 4.3.0, 2022-06-15); read by h5py 3.16.0 on 2026-11-12"
+licence = "LGPL-3.0 (LICENSE.fixtures beside this file)"
+source = "nexusformat/definitions on main, 2026-11-12: manual/source/examples/epics/example.h5 (sha256 6bc811bc43aa4fe1b87157b4487514af8bb54f44399caee2bdb8f69e932297e3) and manual/source/examples/python/simple_example_basic/simple_example_basic.nexus.hdf5 (sha256 d9e4ed7589b6c0eb7626b8dda30b098d7120adee1598c0ba0bdf743dc4a11540), https://raw.githubusercontent.com/nexusformat/definitions/main/…, unchanged"
+
+[nexus_named]
+purpose = "representative"
+validity = "vendor-written: the NeXus example simple_example_basic.nexus.hdf5 of nexus_examples, unchanged, under the extension .nxs that NeXus files have in the wild (1,231 in the October listing)"
+licence = "LGPL-3.0 (LICENSE.fixtures beside this file)"
+source = "modama_formats_common.pydata.tests.generate:nexus_named, from the file of nexus_examples"
+generator = "modama_formats_common.pydata.tests.generate:nexus_named"
+
+[hyperspy]
+purpose = "representative"
+validity = "vendor-written: example2_v3.1.hspy, a 16 x 16 diffraction pattern saved by HyperSpy 1.7.0.dev0 (file_format_version 3.1) from a DM3 file, with the TEM metadata mapped from it; with_lists_etc.hdf5, a HyperSpy file of the same version with lists, tuples, a binary string and a variance signal in its metadata (_sig_variance); read by h5py 3.16.0 on 2026-11-12"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/hspy/example2_v3.1.hspy (sha256 7e598f0ba4af5c5ce40d1511c650ddcf3ff387f9d0ddd9bf2baf7c3f60597b60) and with_lists_etc.hdf5 (sha256 16ed9d4bcb44ba3510963c102eab888b89516921cd4acc4fdb85271407dae562), https://raw.githubusercontent.com/hyperspy/rosettasciio/v0.15.0/rsciio/tests/data/hspy/…, unchanged"
+
+[h5py_dtypes]
+purpose = "representative"
+validity = "second-reader: h5py's test files of variable-length strings (vlen_string_dset.h5) and of compound types of complex numbers (compound-dtype-complex.h5), dtypes the walk must name; read by h5py 3.16.0 on 2026-11-12"
+licence = "BSD-3-Clause (LICENSE.fixtures beside this file)"
+source = "h5py on master, 2026-11-12: h5py/tests/data_files/vlen_string_dset.h5 (sha256 900f8baf19d3d8c4d1193ac1ac6019ee7774005e85c030af44e6757b38d29793) and compound-dtype-complex.h5 (sha256 ebcd9658096064f16e46a2d74b9532c9e6a6ad5b67a827f2fb4f6379f6b05380), https://raw.githubusercontent.com/h5py/h5py/master/h5py/tests/data_files/…, unchanged"
+
+[matlab]
+purpose = "representative"
+validity = "vendor-written by MATLAB: testmulti_7.4_GLNX86.mat and teststruct_7.4_GLNX86.mat (version 5, MATLAB 7.4 on Linux), testhdf5_7.4_GLNX86.mat (version 7.3, HDF5 after a user block of 512 bytes), testdouble_4.2c_SOL2.mat (version 4, MATLAB 4.2c on Solaris); read by SciPy 1.18.1 and h5py 3.16.0 on 2026-11-12"
+licence = "BSD-3-Clause (LICENSE.fixtures beside this file)"
+source = "SciPy on main, 2026-11-12: scipy/io/matlab/tests/data/testmulti_7.4_GLNX86.mat (sha256 62be182823f6ef231694ae5438adc1004380c8cafe9b4c9819c8fcbf5b42c7e2), teststruct_7.4_GLNX86.mat (e76a9a1781d10ad3e5d6313a9636e4125da6a1f65500fa66071ae6f89e4e4d32), testhdf5_7.4_GLNX86.mat (66855b1a4dfcfcc0a9a59d0b46be8e134ec72fc641e2b1d780c8fd2f05018068), testdouble_4.2c_SOL2.mat (3334fb3983c45171d834f06b564c8a11a1b909ab3668e034c6faceee5e184eb4), https://raw.githubusercontent.com/scipy/scipy/main/scipy/io/matlab/tests/data/…, unchanged"
+
+[notebooks]
+purpose = "representative"
+validity = "vendor-written by Jupyter: test4.5.ipynb (nbformat 4.5, kernel 'Python 3 (ipykernel)', Python 3.10.0) and test3.ipynb (nbformat 3.0, worksheets and heading cells); read by nbformat 5.11.1 on 2026-11-12"
+licence = "BSD-3-Clause (LICENSE.fixtures beside this file)"
+source = "nbformat on main, 2026-11-12: tests/test4.5.ipynb (sha256 6f56a1d9334d3d7db41038515cee6d5a5e266fca30bd11b5ea51ee11fe373829) and tests/test3.ipynb (sha256 70773f0dd204b4dddb0cf0272726b581c521c1bc5f194f41cacbef2f1e4016cf), https://raw.githubusercontent.com/jupyter/nbformat/main/tests/…, unchanged"
+
+[scripts]
+purpose = "representative"
+validity = "parser-only: a module with a shebang, a docstring, dunder names and imports at module level and in a function (calibrate.py), and a script without an extension with a python3 shebang (sum-frames), as scripts in the wild are; parsed by Python 3.14's ast"
+licence = "MIT"
+source = "written by hand for these tests"
+
+[npy_arrays]
+purpose = "representative"
+validity = "written by numpy.save (NumPy 2.5.4) at test time: a 4 x 6 float64 array in Fortran order, the same file named frames.bin, and a structured array"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:npy_arrays"
+generator = "modama_formats_common.pydata.tests.generate:npy_arrays"
+
+[npz_archives]
+purpose = "representative"
+validity = "written by numpy.savez and numpy.savez_compressed (NumPy 2.5.4) at test time, two arrays each"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:npz_archives"
+generator = "modama_formats_common.pydata.tests.generate:npz_archives"
+
+[hdf5_names]
+purpose = "representative"
+validity = "written by h5py 3.16.0 at test time under names HDF5 files have in the wild (.h5, .emd, .hdf), one with a user block of 512 bytes"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:hdf5_names"
+generator = "modama_formats_common.pydata.tests.generate:hdf5_names"
+
+[pickles]
+purpose = "representative"
+validity = "written by Python 3.14's pickle module at test time, protocols 2 to 5"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:pickles"
+generator = "modama_formats_common.pydata.tests.generate:pickles"
+
+[hdf4]
+purpose = "reproducer"
+validity = "parser-only: the HDF4 signature 0x0e031301 and zeros, named .hdf, as far as type detection reads; not a readable HDF4 file"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:hdf4"
+generator = "modama_formats_common.pydata.tests.generate:hdf4"
+
+[misnamed]
+purpose = "reproducer"
+validity = "invalid-by-design: text files named .npz, .nxs, .hspy, .mat and .ipynb, and a protocol 0 pickle named .pkl (spec formats/pydata, the scenarios of text files named like a type)"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:misnamed"
+generator = "modama_formats_common.pydata.tests.generate:misnamed"
+
+[matlab73_refs]
+purpose = "reproducer"
+validity = "composed: a MATLAB 7.3 file written by h5py with MATLAB's header (as in SciPy's testhdf5_7.4_GLNX86.mat) and a cell array laid out as MATLAB writes one, a variable of references into #refs#; not written by MATLAB"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:matlab73_refs"
+generator = "modama_formats_common.pydata.tests.generate:matlab73_refs"
+
+[python2]
+purpose = "reproducer"
+validity = "invalid-by-design for Python 3: a Python 2 script with a print statement"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:python2"
+generator = "modama_formats_common.pydata.tests.generate:python2"

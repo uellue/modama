@@ -1,0 +1,33 @@
+{
+  "datasets": [
+    {
+      "anchor": "/legacy.py",
+      "basis": "",
+      "collapsed": false,
+      "format": "common/python",
+      "members": [
+        "/legacy.py"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/x-python",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/legacy.py": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {
+          "not_parsed": "Missing parentheses in call to 'print'. Did you mean print(...)? (line 3)"
+        },
+        "original_metadata": {
+          "shebang": "#!/usr/bin/env python"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

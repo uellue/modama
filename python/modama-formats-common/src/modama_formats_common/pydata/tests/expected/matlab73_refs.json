@@ -1,0 +1,39 @@
+{
+  "datasets": [
+    {
+      "anchor": "/cells.mat",
+      "basis": "MATLAB header, or a version 4 file",
+      "collapsed": false,
+      "format": "common/matlab",
+      "members": [
+        "/cells.mat"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-matlab-data",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/cells.mat": {
+      "subjects": [],
+      "summary": [
+        "MATLAB 7.3 MAT-file, Platform: GLNXA64, Created on: Thu Nov 12 09:00:00 2026 HDF5 schema 1.00 ."
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "cells.MATLAB_class": "cell",
+          "cells.dtype": "Reference",
+          "cells.shape": [
+            1,
+            1
+          ],
+          "header": "MATLAB 7.3 MAT-file, Platform: GLNXA64, Created on: Thu Nov 12 09:00:00 2026 HDF5 schema 1.00 ."
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

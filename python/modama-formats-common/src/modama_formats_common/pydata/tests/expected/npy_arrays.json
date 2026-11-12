@@ -1,0 +1,124 @@
+{
+  "datasets": [
+    {
+      "anchor": "/events.npy",
+      "basis": "NumPy magic",
+      "collapsed": false,
+      "format": "common/npy",
+      "members": [
+        "/events.npy"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-npy",
+      "warnings": []
+    },
+    {
+      "anchor": "/frames.bin",
+      "basis": "NumPy magic",
+      "collapsed": false,
+      "format": "common/npy",
+      "members": [
+        "/frames.bin"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-npy",
+      "warnings": []
+    },
+    {
+      "anchor": "/frames.npy",
+      "basis": "NumPy magic",
+      "collapsed": false,
+      "format": "common/npy",
+      "members": [
+        "/frames.npy"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-npy",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/events.npy": {
+      "subjects": [],
+      "summary": [
+        "shape [3]",
+        "[('x', '<u2'), ('y', '<u2'), ('t', '<f4')]"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "dtype": "[('x', '<u2'), ('y', '<u2'), ('t', '<f4')]"
+        },
+        "original_metadata": {
+          "descr": [
+            [
+              "x",
+              "<u2"
+            ],
+            [
+              "y",
+              "<u2"
+            ],
+            [
+              "t",
+              "<f4"
+            ]
+          ],
+          "fortran_order": false,
+          "shape": [
+            3
+          ],
+          "version": "1.0"
+        }
+      }
+    },
+    "/frames.bin": {
+      "subjects": [],
+      "summary": [
+        "shape [4, 6]",
+        "float64",
+        "fortran_order True"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "dtype": "float64"
+        },
+        "original_metadata": {
+          "descr": "<f8",
+          "fortran_order": true,
+          "shape": [
+            4,
+            6
+          ],
+          "version": "1.0"
+        }
+      }
+    },
+    "/frames.npy": {
+      "subjects": [],
+      "summary": [
+        "shape [4, 6]",
+        "float64",
+        "fortran_order True"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "dtype": "float64"
+        },
+        "original_metadata": {
+          "descr": "<f8",
+          "fortran_order": true,
+          "shape": [
+            4,
+            6
+          ],
+          "version": "1.0"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

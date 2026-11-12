@@ -1,0 +1,80 @@
+{
+  "datasets": [
+    {
+      "anchor": "/compound-dtype-complex.h5",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/compound-dtype-complex.h5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    },
+    {
+      "anchor": "/vlen_string_dset.h5",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/vlen_string_dset.h5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/compound-dtype-complex.h5": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "<c16.dtype": "<c16",
+          "<c16.shape": [
+            100
+          ],
+          "<c8.dtype": "<c8",
+          "<c8.shape": [
+            100
+          ],
+          ">c16.dtype": ">c16",
+          ">c16.shape": [
+            100
+          ],
+          ">c8.dtype": ">c8",
+          ">c8.shape": [
+            100
+          ],
+          "c16.dtype": "<c16",
+          "c16.shape": [
+            100
+          ],
+          "c8.dtype": "<c8",
+          "c8.shape": [
+            100
+          ]
+        }
+      }
+    },
+    "/vlen_string_dset.h5": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "DS1.dtype": "vlen bytes",
+          "DS1.shape": [
+            4
+          ]
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

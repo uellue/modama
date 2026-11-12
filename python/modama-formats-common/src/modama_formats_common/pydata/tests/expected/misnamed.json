@@ -1,0 +1,84 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.hspy",
+      "basis": "single file; common/hspy: not application/x.hspy, no HDF5 signature at its start, or no HyperSpy in its first 4096 bytes",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.hspy"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.ipynb",
+      "basis": "single file; common/notebook: not application/x-ipynb+json, not a JSON object",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.ipynb"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.mat",
+      "basis": "single file; common/matlab: not application/x-matlab-data, no MATLAB header, not a version 4 file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.mat"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.npz",
+      "basis": "single file; common/npz: not application/x.npz, no ZIP signature",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.npz"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.nxs",
+      "basis": "single file; common/nexus: not application/x.nexus, no HDF5 signature at its start",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.nxs"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    },
+    {
+      "anchor": "/old.pkl",
+      "basis": "single file; common/pickle: not application/x-python-pickle, no pickle protocol 2 to 5 start",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/old.pkl"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

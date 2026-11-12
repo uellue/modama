@@ -7,7 +7,7 @@ tests each part on its own (formats/TEMPLATE.md).
 
 from modama_crawler.formats import Collection
 
-from . import image, office, structured, text
+from . import image, office, pydata, structured, text
 
 # The subpackages image, pydata, office, text and structured are added by
 # other changes, each with one import above and one entry here
@@ -16,6 +16,7 @@ PARTS = (
     office.COLLECTION,
     structured.COLLECTION,
     text.COLLECTION,
+    pydata.COLLECTION,
 )
 
 COLLECTION = Collection(

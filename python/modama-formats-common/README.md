@@ -25,6 +25,15 @@ Common file formats for the modama crawler (`python/crawler/`), as the format co
 | CSV (`structured`) | `text/csv` (`*.csv`; `common/csv`) | the dialect, the header's names, columns and rows; no data row |
 | XML (`structured`) | `application/xml` (`*.xml`, `<` first; `common/xml`), not its subtypes | every attribute and text, names with the file's prefixes |
 | INI, `.cfg` (`structured`) | `text/x-ini` (`*.ini`), `text/x-config` (`*.cfg`), a `[section]` first (`common/ini`, `common/cfg`) | every `section.key` |
+| NumPy `.npy` (`pydata`) | `application/x-npy`, by its magic (`common/npy`) | the header (`numpy.lib.format`): `descr`, `fortran_order`, `shape`, version |
+| NumPy `.npz` (`pydata`) | `application/x.npz`, by name, checked for a ZIP (`common/npz`) | each array's header, by NumPy's key |
+| HDF5 (`.h5`, `.hdf5`, `.emd` …; `pydata`) | `application/vnd.hdfgroup.hdf5`, by its signature (`common/hdf5`) | h5py, a bounded walk (1,000 entries, 5,000 objects, 20 s): every attribute, each dataset's shape and dtype, scalar datasets' values; no array, no link to another file, nothing from outside the file (virtual datasets, external storage) |
+| NeXus `.nxs` (`pydata`) | `application/x.nexus`, by name, checked for HDF5 (`common/nexus`) | as HDF5 (`NX_class` among the attributes) |
+| HyperSpy `.hspy` (`pydata`) | `application/x.hspy`, by name, checked for HDF5 and HyperSpy (`common/hspy`) | as HDF5, without HyperSpy's internal state |
+| MATLAB `.mat` (`pydata`) | `application/x-matlab-data`, by its header or name (`common/matlab`) | the header text; variables' shape and class (SciPy), version 7.3 as HDF5 |
+| Jupyter `.ipynb` (`pydata`) | the core's `application/x-ipynb+json`, checked for a JSON object (`common/notebook`) | the notebook's metadata (nbformat), cell counts, the first heading; no outputs |
+| Python scripts (`pydata`) | the core's `text/x-python`, `text/x-python3` (`common/python`, `common/python3`) | `ast`, never run: shebang, docstring, dunder names, imports |
+| Pickles `.pkl`, `.pickle` (`pydata`) | `application/x-python-pickle`, by its start (`common/pickle`) | the protocol; never unpickled |
 
 Each area (`image`, `pydata`, `office`, `text`, `structured`) is a subpackage added by its own change, with one import and one entry in `PARTS` in `src/modama_formats_common/__init__.py`, and its rows here. The YAML loader of every area is `src/modama_formats_common/yamldoc.py`: PyYAML's safe loader, with keys and plain values as the file writes them. Credentials are left out by the shared check `modama_crawler.formats.values.credential`.
 

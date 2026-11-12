@@ -1,0 +1,107 @@
+{
+  "datasets": [
+    {
+      "anchor": "/example.h5",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/example.h5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    },
+    {
+      "anchor": "/simple_example_basic.nexus.hdf5",
+      "basis": "HDF5 signature",
+      "collapsed": false,
+      "format": "common/hdf5",
+      "members": [
+        "/simple_example_basic.nexus.hdf5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/example.h5": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "H5PY_VERSION": "3.6.0",
+          "creator": "write_nexus_file()",
+          "default": "entry",
+          "entry.NX_class": "NXentry",
+          "entry.data.NX_class": "NXdata",
+          "entry.data.data.dtype": "|u1",
+          "entry.data.data.shape": [
+            1024,
+            1024
+          ],
+          "entry.data.data.target": "/entry/instrument/detector/image",
+          "entry.data.data.units": "counts",
+          "entry.data.signal": "data",
+          "entry.default": "data",
+          "entry.instrument.NX_class": "NXinstrument",
+          "entry.instrument.detector.NX_class": "NXdetector",
+          "entry.instrument.metadata.NX_class": "NXcollection",
+          "entry.instrument.metadata.bitcoin_value": "15000",
+          "entry.instrument.metadata.detector_state": 0,
+          "entry.instrument.metadata.size_x": 1024,
+          "entry.instrument.metadata.size_y": 1024,
+          "entry.instrument.metadata.unique_id": 333,
+          "file_time": "2022-03-07 14:34:04.418733",
+          "filename": "example.h5"
+        }
+      }
+    },
+    "/simple_example_basic.nexus.hdf5": {
+      "subjects": [],
+      "summary": [
+        "1-D scan of I00 v. mr"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "HDF5_Version": "1.12.1",
+          "NeXus_version": "4.3.0",
+          "creator": "simple_example_basic_write.py",
+          "default": "entry",
+          "entry.NX_class": "NXentry",
+          "entry.default": "mr_scan",
+          "entry.mr_scan.I00.dtype": "<i4",
+          "entry.mr_scan.I00.long_name": "USAXS I00 (counts)",
+          "entry.mr_scan.I00.shape": [
+            31
+          ],
+          "entry.mr_scan.I00.units": "counts",
+          "entry.mr_scan.NX_class": "NXdata",
+          "entry.mr_scan.axes": "mr",
+          "entry.mr_scan.mr.dtype": "<f8",
+          "entry.mr_scan.mr.long_name": "USAXS mr (degrees)",
+          "entry.mr_scan.mr.shape": [
+            31
+          ],
+          "entry.mr_scan.mr.units": "degrees",
+          "entry.mr_scan.mr_indices": [
+            0
+          ],
+          "entry.mr_scan.signal": "I00",
+          "entry.title": "1-D scan of I00 v. mr",
+          "file_name": "simple_example_basic.nexus.hdf5",
+          "file_time": "2022-06-15T14:31:39.410075+02:00",
+          "h5py_version": "3.6.0",
+          "instrument": "APS USAXS at 32ID-B"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

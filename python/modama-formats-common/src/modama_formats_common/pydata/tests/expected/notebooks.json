@@ -1,0 +1,81 @@
+{
+  "datasets": [
+    {
+      "anchor": "/test3.ipynb",
+      "basis": "JSON object named .ipynb",
+      "collapsed": false,
+      "format": "common/notebook",
+      "members": [
+        "/test3.ipynb"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-ipynb+json",
+      "warnings": []
+    },
+    {
+      "anchor": "/test4.5.ipynb",
+      "basis": "JSON object named .ipynb",
+      "collapsed": false,
+      "format": "common/notebook",
+      "members": [
+        "/test4.5.ipynb"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-ipynb+json",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/test3.ipynb": {
+      "subjects": [],
+      "summary": [
+        "nbconvert latex test"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "cells.code": 4,
+          "cells.markdown": 5,
+          "first_heading": "nbconvert latex test"
+        },
+        "original_metadata": {
+          "name": "",
+          "nbformat": 3,
+          "nbformat_minor": 0
+        }
+      }
+    },
+    "/test4.5.ipynb": {
+      "subjects": [],
+      "summary": [
+        "nbconvert latex test",
+        "Python 3 (ipykernel)"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "cells.code": 4,
+          "cells.markdown": 5,
+          "first_heading": "nbconvert latex test"
+        },
+        "original_metadata": {
+          "kernelspec.display_name": "Python 3 (ipykernel)",
+          "kernelspec.language": "python",
+          "kernelspec.name": "python3",
+          "language_info.codemirror_mode.name": "ipython",
+          "language_info.codemirror_mode.version": 3,
+          "language_info.file_extension": ".py",
+          "language_info.mimetype": "text/x-python",
+          "language_info.name": "python",
+          "language_info.nbconvert_exporter": "python",
+          "language_info.pygments_lexer": "ipython3",
+          "language_info.version": "3.10.0",
+          "nbformat": 4,
+          "nbformat_minor": 5
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}
