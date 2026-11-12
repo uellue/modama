@@ -79,6 +79,7 @@ services:
       dockerfile: ../../prototypes/search-stack/crawler.Dockerfile
       additional_contexts:
         em: ../../python/modama-formats-em
+        common: ../../python/modama-formats-common
         chain: ../../python/search-chain
     image: search-stack-crawler
     command: modama-crawler serve
@@ -174,6 +175,7 @@ services:
       target: browse
       additional_contexts:
         em: ../../python/modama-formats-em
+        common: ../../python/modama-formats-common
         chain: ../../python/search-chain
     image: search-stack-browse
     command: [modama-chain, browse, --bind, 0.0.0.0]
@@ -193,6 +195,7 @@ services:
       - ssspipes:/var/lib/sss/pipes/:ro
       - ../../python/crawler/src:/src/src:ro
       - ../../python/modama-formats-em/src:/em/src:ro
+      - ../../python/modama-formats-common/src:/common/src:ro
       - ../../python/search-chain/src:/chain/src:ro
       - ../EOSC-Data-Commons/metadata-crawlers/harvester:/upstream/metadata-crawlers/harvester:ro
       - ../EOSC-Data-Commons/metadata-warehouse/src:/upstream/metadata-warehouse/src:ro
