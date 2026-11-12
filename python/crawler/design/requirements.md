@@ -59,7 +59,7 @@ Priorities: **must** for the first working version, **should** for soon after, *
   - The change is applied by one explicit step before the crawler's services start, never by two processes at once and never during a crawl.
   - A crawler refuses a database whose schema is not the one its code expects, and names the step to take.
   - Example: staging's database, made by commit 3251cad, gains `crawl_runs.scope`, with its 1.45 million records and their datestamps unchanged.
-  - Accepted when a database made by the code before this change migrates in a test and compares equal to a fresh one, and a copy of staging's database migrates before staging does.
+  - Accepted when a database made by the code before this change migrates in a test and compares equal to a fresh one, and staging's database, migrated in place, compares equal to a fresh one after the upgrade (done 2026-11-12, "same schema"; no dry run on a copy since @weber's decision that a failed upgrade's way back is a re-crawl).
   - Mechanism: the `database-schema` spec (change `schema-migrations`), with Alembic.
 
 ### Scale
