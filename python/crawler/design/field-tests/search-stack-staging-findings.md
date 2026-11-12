@@ -377,6 +377,19 @@ complex and the slow step was found by sampling `docker stats`. Proposed: OpenTe
 with a collector service in the compose file; Airflow can emit metrics and traces
 itself. Not decided.
 
+**F18 (matchmaker, search API): AI Mode failed on every question, then worked**
+(@weber, 2026-11-12). After the build with patch 0001 (AI Mode without login), each
+chat ended in "Something went wrong while searching"; plain search worked. Cause, from
+`.claude/field-tests/matchmaker-check.sh`: the page named the model `cesnet/agentic` in
+every request, the search API took it over its `DEFAULT_LLM_MODEL` (Blablador) and
+failed with "Missing credentials" (no CESNET key); its error path then raised
+`UnboundLocalError: used_model`, so the page got no error event (backlog, "Sync with
+upstream"). Our end-to-end chat test sent no model and passed. Fixed by patch 0002 (the
+model only with the model selector on, decision 194; b5c1d0a), with an end-to-end check
+that the page's request names no model. After `dc build matchmaker && dc up -d --no-deps
+matchmaker`, about 12:15 UTC, @weber: "it works, and super well!!", still with the
+partial index (indexing under way).
+
 ## Review of the staging changes, 2026-11-11
 
 By an agent that did not write them (f2171b6..1bc2bc5: the staging override and scripts,
