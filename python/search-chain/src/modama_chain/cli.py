@@ -103,6 +103,33 @@ def cmd_status(args) -> int:
     return 0
 
 
+def cmd_browse(args) -> int:
+    """The browser on args.bind:args.port (change chain-browse); settings from the environment (README)."""
+    from werkzeug.serving import run_simple
+
+    from .browse import Browser, Settings
+    from .upstream import Upstream
+
+    env = os.environ.get
+    stores = stores_from_env()
+    upstream = Path(env("MODAMA_BROWSE_UPSTREAM", "/upstream"))
+    snapshots = env("MODAMA_BROWSE_SNAPSHOTS")
+    app = Browser(
+        Settings(
+            stores=stores,
+            upstream=Upstream(
+                upstream / "metadata-crawlers" / "harvester",
+                upstream / "metadata-warehouse",
+            ),
+            config=args.config,
+            host_root=env("MODAMA_BROWSE_HOST_ROOT", str(stores.root)),
+            snapshots=Path(snapshots) if snapshots else None,
+        )
+    )
+    run_simple(args.bind, args.port, app, threaded=True)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="modama-chain",
@@ -122,6 +149,16 @@ def main(argv: list[str] | None = None) -> int:
         help="the last crawl, harvest and indexing run, and the freshness time T",
     )
     p.set_defaults(func=cmd_status)
+    p = sub.add_parser(
+        "browse",
+        help="a local web page: the data tree, and each stage's view of a file, stored and live",
+    )
+    p.add_argument(
+        "--config", type=Path, help="the crawl's TOML file (formats, exclusions)"
+    )
+    p.add_argument("--bind", default="localhost", help="address to listen on")
+    p.add_argument("--port", type=int, default=7655)
+    p.set_defaults(func=cmd_browse)
     args = parser.parse_args(argv)
     try:
         return args.func(args)

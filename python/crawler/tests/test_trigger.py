@@ -243,7 +243,7 @@ KILLS = pytest.mark.parametrize(
 def _crawl(tree, formats, monkeypatch) -> tuple[int, float]:
     """Crawl in this process with the given formats; the exit status and the seconds it took."""
     monkeypatch.setattr(
-        cli, "_configure", lambda args: (selection.Config(), formats, "r1")
+        cli, "configure", lambda args: (selection.Config(), formats, "r1")
     )
     handler = signal.getsignal(signal.SIGTERM)
     start = time.monotonic()
@@ -330,7 +330,7 @@ def test_a_crawl_stopped_by_sigterm_during_the_walk(
     terminating = _Terminating(kill)
     formats = Collection("t", [terminating]).formats
     monkeypatch.setattr(
-        cli, "_configure", lambda args: (selection.Config(), formats, "r1")
+        cli, "configure", lambda args: (selection.Config(), formats, "r1")
     )
     real_walk = walk_module._walk
 

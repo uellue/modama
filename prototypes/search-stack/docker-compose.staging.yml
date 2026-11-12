@@ -55,6 +55,43 @@ services:
       - --at
       - "19:00"
 
+  # modama-chain browse (change chain-browse), as the user the crawler reads the tree as, with
+  # the crawl's formats and exclusions; the path on the server is STAGING_DATA + the path.
+  # Snapshots go into the checkout's .claude/field-tests/browse/ (gitignored), which must exist
+  # (the runbook creates it, so that Docker does not create it as root). Started alone, never
+  # by ./upstaging.sh (profile browse): `dc --profile browse up -d --no-deps browse` (the
+  # runbook, "Browse").
+  browse:
+    profiles: [browse]
+    user: ${STAGING_USER:?see staging.env in the runbook}
+    group_add:
+      - ${STAGING_GROUP:?see staging.env in the runbook}
+    command:
+      - modama-chain
+      - browse
+      - --bind
+      - 0.0.0.0
+      - --config
+      - /stagingconf/${STAGING_CRAWL_CONFIG:?see staging.env in the runbook}
+    environment:
+      MODAMA_BROWSE_HOST_ROOT: ${STAGING_DATA:?see staging.env in the runbook}
+    volumes:
+      - type: bind
+        source: ${STAGING_DATA:?see staging.env in the runbook}
+        target: /data
+        read_only: true
+        bind:
+          create_host_path: false
+          recursive: readonly
+      - ./stagingconf:/stagingconf:ro
+      - type: bind
+        source: ../../.claude/field-tests/browse
+        target: /field-tests/browse
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:17655:7655"
+
   # Owners' names from the real directory, no test directory here; a missing file stops
   # the start instead of creating a directory. Healthy once it names the user the crawler
   # reads the tree as, which a crawl checks too before it stores.

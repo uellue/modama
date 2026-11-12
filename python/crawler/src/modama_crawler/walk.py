@@ -107,9 +107,16 @@ def walk(
     previous: Previous | None = None,
     threads: int = DEFAULT_THREADS,
     processes: int = 0,
+    top: str | None = None,
 ) -> Result:
     """Recognise the tree under root.
 
+    With `top`, a folder relative to root ("/a/b", or "/" for root alone), that one folder as the
+    crawl of the whole tree would recognise it: the pre-order call of each
+    folder from root down to top's parent, ending with the dataset of the
+    first that collapses, else top recognised without entering its
+    subfolders (no children, so no adoption); no datasets if top is
+    excluded, a symlink or not a folder (change chain-browse, D5).
     `progress`, if given, is called after each directory is listed with the
     numbers of directories and files listed so far. With `previous`, the last
     crawl under the same rules, a directory whose listing and those of all
@@ -148,6 +155,7 @@ def walk(
                 previous,
                 pool,
                 None if matchers is None else mime.match_in(matchers),
+                None if top is None else "/" + top.strip("/"),
             )
         )
     finally:  # also on an error or a signal: queued work is dropped
@@ -165,6 +173,7 @@ async def _walk(
     previous: Previous | None,
     pool: ThreadPoolExecutor,
     match: Callable | None,
+    top: str | None = None,
 ) -> Result:
     loop = asyncio.get_running_loop()
     result = Result()
@@ -245,8 +254,8 @@ async def _walk(
         try:
             entries = await entries_of(dirpath, rel, notes)
         except OSError as e:
-            if rel == "/":
-                raise  # the root itself: the caller asked for it, so it is an error
+            if rel == (top or "/"):
+                raise  # the root or top itself: the caller asked for it, so it is an error
             result.skipped.append((rel, f"cannot list directory: {e.strerror}"))
             log.info("%s: skipped, cannot list directory: %s", rel, e.strerror)
             # Unchanged if it could not be listed last time either; its entry
@@ -292,7 +301,7 @@ async def _walk(
         children = [
             asyncio.create_task(visit(e.path, e.rel))
             for e in entries
-            if e.kind == "dir"
+            if e.kind == "dir" and top is None  # one folder alone with top (D5)
         ]
         subtree: list[Dataset] = []
         unchanged = same
@@ -351,7 +360,32 @@ async def _walk(
         datasets, adoptions = await io(run_post, post, active, SLOW, BYTE_BUDGET)
         return datasets, adoptions, warnings + post.warnings, retry or post.retry
 
-    result.datasets = sorted((await visit(root, "/"))[0], key=lambda d: d.anchor)
+    async def above() -> list[Dataset] | None:
+        """The pre-order calls of the folders above top, root first, as the crawl makes them on its way down.
+
+        The first collapsed dataset, or [] when the crawl would not reach
+        top (excluded, a symlink, not a folder), or None to walk top.
+        """
+        rel, dirpath = "/", root
+        for name in [p for p in top.split("/") if p]:
+            entries = await entries_of(dirpath, rel, Result())
+            st = await io(os.lstat, dirpath)
+            pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
+            collapsed = await io(run_pre, pre, formats_for(rel), SLOW, BYTE_BUDGET)
+            result.warnings.extend(pre.warnings)
+            if collapsed is not None:
+                return [replace(collapsed, stamp=_digest(st, entries), parent=None)]
+            child = next((e for e in entries if e.name == name), None)
+            if child is None or child.kind != "dir":
+                return []
+            rel, dirpath = child.rel, child.path
+        return None
+
+    if top is None:
+        found = (await visit(root, "/"))[0]
+    elif (found := await above()) is None:
+        found = (await visit(os.path.join(root, top.lstrip("/")), top))[0]
+    result.datasets = sorted(found, key=lambda d: d.anchor)
     result.warnings.sort()
     result.skipped.sort()
     result.listings = dict(sorted(result.listings.items()))
