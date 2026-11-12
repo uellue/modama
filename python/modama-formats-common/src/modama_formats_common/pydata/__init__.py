@@ -15,8 +15,9 @@ from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
-from . import hdf5, matlab, notebook, npy, script
-from .values import start
+# The readers' modules import h5py, NumPy, SciPy and nbformat (0.2 s): in the
+# extractors only, so that recognition and the other commands start without them
+from .values import HDF5, ZIP, start
 
 HERE = Path(__file__).parent
 
@@ -70,6 +71,8 @@ class Npy(Single):
     basis = "NumPy magic"
 
     def read(self, path):
+        from . import npy
+
         return npy.npy(path)
 
 
@@ -77,13 +80,15 @@ class Npz(Single):
     type = "application/x.npz"
     priority = 61  # before the formats that may claim a dropped file's type
     basis = "ZIP named .npz"
-    head = len(npy.ZIP)
+    head = len(ZIP)
     reason = "no ZIP signature"
 
     def fits(self, data):
-        return data == npy.ZIP
+        return data == ZIP
 
     def read(self, path):
+        from . import npy
+
         return npy.npz(path)
 
 
@@ -92,10 +97,14 @@ class Hdf5(Single):
     basis = "HDF5 signature"
 
     def read(self, path):
+        from . import hdf5
+
         original, mapped = hdf5.described(path)
         return original, mapped, hdf5.summary(original)
 
     def terms(self, original):
+        from . import hdf5
+
         return hdf5.terms(original)
 
 
@@ -103,11 +112,11 @@ class Nexus(Hdf5):
     type = "application/x.nexus"
     priority = 61  # before common/hdf5, which claims a dropped file with a user block
     basis = "HDF5 signature, named .nxs"
-    head = len(hdf5.SIGNATURE)
+    head = len(HDF5)
     reason = "no HDF5 signature at its start"
 
     def fits(self, data):
-        return data == hdf5.SIGNATURE
+        return data == HDF5
 
 
 class Hspy(Nexus):
@@ -122,7 +131,7 @@ class Hspy(Nexus):
     reason = "no HDF5 signature at its start, or no HyperSpy in its first 4096 bytes"
 
     def fits(self, data):
-        return data.startswith(hdf5.SIGNATURE) and b"HyperSpy" in data
+        return data.startswith(HDF5) and b"HyperSpy" in data
 
 
 class Matlab(Single):
@@ -137,6 +146,8 @@ class Matlab(Single):
         return data.startswith(b"MATLAB") or 0 in data[:4]
 
     def read(self, path):
+        from . import matlab
+
         return matlab.described(path)
 
 
@@ -151,6 +162,8 @@ class Notebook(Single):
         return data.removeprefix(b"\xef\xbb\xbf").lstrip().startswith(b"{")
 
     def read(self, path):
+        from . import notebook
+
         return notebook.described(path)
 
 
@@ -158,6 +171,8 @@ class Python(Single):
     type = "text/x-python"
 
     def read(self, path):
+        from . import script
+
         return script.described(path)
 
 

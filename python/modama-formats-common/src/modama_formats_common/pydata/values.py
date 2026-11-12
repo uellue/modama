@@ -18,6 +18,9 @@ from modama_crawler.formats.values import MAX_ITEMS, credential, textual
 # extractor's time limit, so that a file of hundreds of thousands of objects
 # on a slow NFS ends with what was found (spec formats/pydata, "The walk of an
 # HDF5 file is bounded")
+ZIP = b"PK\x03\x04"  # a ZIP's local file header (APPNOTE 4.3.7)
+HDF5 = b"\x89HDF\r\n\x1a\n"  # the HDF5 signature
+
 MAX_ENTRIES = extraction.MAX_ITEMS
 MAX_OBJECTS = 5000
 SECONDS = extraction.TIME_LIMIT / 3

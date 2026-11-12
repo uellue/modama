@@ -15,7 +15,6 @@ from numpy.lib._format_impl import _read_array_header
 
 from .values import MAX_ITEMS, Walk
 
-ZIP = b"PK\x03\x04"  # a ZIP's local file header (APPNOTE 4.3.7)
 MAX_HEADER = 1 << 20
 
 

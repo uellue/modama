@@ -26,8 +26,6 @@ from .values import (
     plain,
 )
 
-SIGNATURE = b"\x89HDF\r\n\x1a\n"
-
 # skip(dotted name, value): whether an object (with everything below it) or a
 # value is on a format's skip list; value is None when an object is asked
 Skip = Callable[[str, object], bool]
