@@ -5,6 +5,8 @@
 #   else (FAB needs edit on a DAG to start its runs, so it could pause that one DAG);
 #   the accounts crawler (harvest-trigger) and chain (Viewer), if missing. Existing
 #   accounts keep their password: to change one, delete the account and restart.
+#   the pool filemeta, with the default worker's processes (AIRFLOW__CELERY__WORKER_CONCURRENCY);
+#   the pool transform is the transform worker's own (budget.py; README, "CPU budget").
 set -euo pipefail
 DAG=warehouse_harvest_and_index
 
@@ -30,4 +32,7 @@ create() {  # name, role, name of the variable with the password
 }
 create crawler harvest-trigger MODAMA_CRAWLER_AIRFLOW_PASSWORD
 create chain Viewer MODAMA_CHAIN_AIRFLOW_PASSWORD
+airflow pools set filemeta "${AIRFLOW__CELERY__WORKER_CONCURRENCY:?}" \
+    "file-metadata batches: the default worker's processes" > /dev/null
+echo "Airflow pool filemeta: $AIRFLOW__CELERY__WORKER_CONCURRENCY slots"
 echo "Airflow accounts ready"

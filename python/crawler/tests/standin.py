@@ -11,6 +11,8 @@ does is written in the file:
   raise as the environment does (a stale NFS handle, a missing module)
 - `kill` kills its own process, `hang` sleeps, `eat` allocates 8 GiB
 - `nan`, `nul` and `big` return values the database cannot store as they are
+- `threads` imports numpy and returns its process's threads, pid and
+  `OMP_NUM_THREADS` (the cpu-budget spec)
 
 Every call is appended to `calls`, a file outside the tree, so that a test
 can count the extractor's runs across processes.
@@ -66,6 +68,24 @@ class Stand(Format):
                 return Extracted(["x" * 100_000], [], {"list": list(range(100_000))})
             case "versioned":
                 word = f"{word} v{self.extractor_version}"
+            case "threads":
+                import numpy  # noqa: F401  # starts OpenBLAS's thread pool
+
+                with open("/proc/self/status") as f:
+                    threads = next(
+                        int(line.split()[1])
+                        for line in f
+                        if line.startswith("Threads:")
+                    )
+                return Extracted(
+                    [],
+                    [],
+                    {
+                        "threads": threads,
+                        "pid": os.getpid(),
+                        "omp": os.environ.get("OMP_NUM_THREADS"),
+                    },
+                )
         return Extracted(
             summary=[f"word {word}"],
             subjects=["stand technique"],

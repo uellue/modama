@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import multiprocessing
-import os
 import re
 import resource
 import signal
@@ -26,14 +25,16 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field, replace
 
+from . import cpus
 from .formats import Dataset, Extracted, Extraction, Format, Result
 
 TIME_LIMIT = 60.0  # seconds per dataset
 CHECK_INTERVAL = 1.0  # seconds between calls of extract's check (SIGTERM)
 MAX_WORKERS = 8  # NFS latency, not the CPU, sets the pace (D1)
 # Address space per worker (RLIMIT_AS). A worker with RosettaSciIO and numpy
-# imported maps about 0.4 GiB on 8 CPUs, more with more CPUs (thread
-# buffers); readers load headers only (D7). Over it, an allocation raises
+# imported maps about 0.14 GiB with one BLAS thread, which the crawl sets
+# (R43; 0.4 GiB on 8 CPUs with OpenBLAS's default of a thread per CPU);
+# readers load headers only (D7). Over it, an allocation raises
 # MemoryError, which fails that dataset's extraction.
 MEMORY = 4 << 30
 TASKS_PER_WORKER = 100  # then the worker is replaced, so that leaks don't add up
@@ -47,7 +48,8 @@ ENVIRONMENT = (OSError, ImportError)
 
 
 def default_workers() -> int:
-    return min(os.cpu_count() or 1, MAX_WORKERS)
+    """The CPUs this process may use, at most MAX_WORKERS (R43)."""
+    return min(cpus.usable().cpus, MAX_WORKERS)
 
 
 @dataclass

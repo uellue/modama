@@ -1,0 +1,4 @@
+services:
+  crawler: {cpuset: "0,1"}
+  search-api: {cpuset: "0-2", cpus: 6}
+  airflow-worker-transform: {cpuset: "1,3,5"}

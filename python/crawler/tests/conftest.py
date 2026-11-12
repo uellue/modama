@@ -10,10 +10,10 @@ from pathlib import Path
 
 import pytest
 from lxml import etree
+from modama_crawler import migrate
 from modama_crawler.formats import Dataset
 from modama_crawler.records import build
 from modama_crawler.server import OAIServer
-from modama_crawler.store import ensure_tables
 from psycopg.conninfo import make_conninfo
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
@@ -41,9 +41,15 @@ def _mime_database(mime_database):
     return mime_database
 
 
+def conninfo_of(conn) -> str:
+    """The connection string of a test database, with its password, for subprocesses and Alembic."""
+    return make_conninfo(conn.info.dsn, password=conn.info.password or "")
+
+
 @pytest.fixture
 def conn(postgresql):
-    ensure_tables(postgresql)
+    """A fresh database migrated to the head, as `modama-crawler migrate` does it."""
+    assert migrate.upgrade(conninfo_of(postgresql)) == 0
     return postgresql
 
 
@@ -77,8 +83,7 @@ def records(add_record) -> list[str]:
 
 @pytest.fixture
 def server(conn):
-    conninfo = make_conninfo(conn.info.dsn, password=conn.info.password or "")
-    with ConnectionPool(conninfo, min_size=1, open=True) as pool:
+    with ConnectionPool(conninfo_of(conn), min_size=1, open=True) as pool:
         yield OAIServer(pool, BASE_URL, "admin@example.org", page_size=2)
 
 
@@ -137,17 +142,22 @@ EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 CRAWLER = f"{sys.executable} -m modama_crawler"
 
 
-@pytest.fixture
-def env(conn, monkeypatch):
-    """The environment that points the crawler at the test database, for subprocesses and in-process calls."""
+def database_environment(conn) -> dict[str, str]:
+    """The crawler's environment variables that point it at conn's database."""
     info = conn.info
-    values = {
+    return {
         "MODAMA_CRAWLER_DB": info.dbname,
         "POSTGRES_ADMIN": info.user,
         "POSTGRES_PASSWORD": info.password or "",
         "POSTGRES_ADDRESS": info.host,
         "POSTGRES_PORT": str(info.port),
     }
+
+
+@pytest.fixture
+def env(conn, monkeypatch):
+    """The environment that points the crawler at the test database, for subprocesses and in-process calls."""
+    values = database_environment(conn)
     for name, value in values.items():
         monkeypatch.setenv(name, value)
     return {**os.environ, **values}

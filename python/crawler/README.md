@@ -54,15 +54,19 @@ To run the full chain (crawl, OAI-PMH server, harvester, warehouse and search), 
 ## Running the crawler
 
 ```bash
+modama-crawler migrate                  # bring the database's schema to this crawler's; once for a new database
 modama-crawler crawl [--root PATH]      # crawl MODAMA_DATA_ROOT (or PATH) into the database
 modama-crawler runs [--follow]          # the last ten crawls, newest first; --follow: the running one until it ends
 modama-crawler timer --at 19:00         # crawl every day at 19:00 UTC, and at once if the last finished crawl is over a day old
 modama-crawler serve                    # OAI-PMH on port 7654
+modama-crawler cpu-budget               # the crawl's worker processes and threads on this machine, and why
 ```
 
 With `MODAMA_CRAWLER_AIRFLOW_URL` set (and `MODAMA_CRAWLER_AIRFLOW_USER`, `MODAMA_CRAWLER_AIRFLOW_PASSWORD`, an Airflow account allowed to start DAG runs), every finished crawl starts the EOSC warehouse's harvest of its own endpoint (`OAI_BASE_URL`), after its records are committed; also an unchanged crawl, so that a harvest covers it and the search's freshness time moves on. If the harvest cannot be started, the crawl still counts as finished, and the command exits with status 3. On SIGTERM (`docker stop`) a crawl records its run as failed and exits with 143; the timer passes SIGTERM on to its running crawl. `/prototypes/search-stack/` runs both, the timer and the trigger.
 
-At its end a crawl logs its extraction counts and stores them with its run, for example `extraction: 2 run, 0 reused, 1 failed; 12 directories unchanged; time per format: em/dm 3.2 s`. Extraction uses `MODAMA_CRAWLER_EXTRACT_WORKERS` processes, by default the number of CPUs up to 8, each with an address space of `MODAMA_CRAWLER_EXTRACT_MEMORY` MiB, by default 4096 (a worker with RosettaSciIO loaded maps about 400 MiB on 8 CPUs), and replaced after 100 datasets; `records` extracts too, without reusing anything.
+At its end a crawl logs its extraction counts and stores them with its run, for example `extraction: 2 run, 0 reused, 1 failed; 12 directories unchanged; time per format: em/dm 3.2 s`. Extraction uses `MODAMA_CRAWLER_EXTRACT_WORKERS` processes, by default the CPUs the crawler may use up to 8, each with an address space of `MODAMA_CRAWLER_EXTRACT_MEMORY` MiB, by default 4096 (a worker with RosettaSciIO loaded maps about 140 MiB), and replaced after 100 datasets; `records` extracts too, without reusing anything.
+
+The CPUs the crawler may use are those of its affinity (a cpuset included), and no more than its cgroup v2 CPU quota, rounded up (a container started with `--cpus 4` counts 4); not the machine's CPU count, and `PYTHON_CPU_COUNT` has no effect. The worker processes start with `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and `MKL_NUM_THREADS` at 1, so that a reader that loads numpy starts no thread pool of its own; otherwise OpenBLAS starts one thread per CPU in every worker, and their buffers count against the address space (R43). Before the walk, `crawl` and `records` log the budget on stderr, for example `CPU budget: 8 worker processes, 1 math thread each; 8 CPUs usable (affinity 8, no quota)`, or `set by MODAMA_CRAWLER_EXTRACT_WORKERS`; `records --verbose` does not. `modama-crawler cpu-budget` prints the same line with its inputs, without crawling. How the crawler's budget fits with the search stack's services: `/prototypes/search-stack/README.md`, "CPU budget".
 
 The walk keeps many file system requests in flight, which is what makes it fast on NFS: listings, stats, reads and format calls run in `MODAMA_CRAWLER_WALK_THREADS` threads (default 32; 1 does one thing at a time), and the magic matching of files without a decisive name runs in `MODAMA_CRAWLER_EXTRACT_WORKERS` processes, started when first needed (the same number as extraction's, which comes after the walk; `MODAMA_CRAWLER_EXTRACT_MEMORY` limits only the extraction processes). The result does not depend on either number.
 
@@ -93,7 +97,61 @@ exclude = ["scratch/", "!scratch/keep/"]   # gitignore syntax
 
 Select and ignore work as in ruff: the more specific id wins, and on a tie ignore wins. If nothing is selected, everything installed is enabled.
 
-There are no schema migrations yet. After a schema change, drop and recreate the database.
+## The database schema
+
+The schema of the crawler's database is changed by migrations, so that a change reaches an existing database with its datasets, extractions, records, datestamps and run history (R42). We use [Alembic](https://alembic.sqlalchemy.org/), as the EOSC metadata warehouse does. The migrations are in `src/modama_crawler/migrations/versions/`, one file per revision, named after its id. `0001_baseline` creates the tables as the crawler made them before there were migrations, so a database made then is taken over as it is.
+
+`modama-crawler migrate` is the only command that changes the schema. It applies the missing revisions in one transaction and exits:
+
+```
+INFO Running upgrade  -> 0001_baseline, baseline: the tables as the crawler made them before migrations
+INFO schema migrated from none to 0001_baseline
+```
+
+Run again, it says `INFO schema up to date at 0001_baseline` at once, also while a crawl runs. On a database made before migrations it first says `INFO tables made before migrations found: adopted as 0001_baseline`. The search stack runs it as the service `crawler-migrate` before `crawler` and `crawl-timer` start. `crawl`, `runs`, `timer` and `serve` only check the version, and exit with status 2 when it does not fit. What you see, and what to do:
+
+| You see | Step |
+|---|---|
+| `ERROR the database has no schema version, this crawler needs 0001_baseline: run modama-crawler migrate` | `modama-crawler migrate` |
+| `ERROR the database schema is at 0001_baseline, this crawler needs 0002_…: run modama-crawler migrate` | `modama-crawler migrate` |
+| `ERROR the database schema is at 0002_…, which this crawler does not know: a newer crawler migrated it; use that crawler, or downgrade with it first (README)` | the newer crawler, or its downgrade ("Upgrade" below) |
+| `INFO waiting for the crawl lock (a crawl or another migration holds it)`, from `migrate` | wait until the crawl ends, then it migrates; Ctrl-C ends the wait and changes nothing |
+| `ERROR migration 0002_… failed, the database is unchanged at 0001_baseline: …`, exit status 1 | the database's error follows the colon; nothing was changed. Ending in `another transaction held a table for more than 10 s: run migrate again`: run `migrate` again. Otherwise, report the error to the developers |
+| `ERROR migration 0001_baseline failed, the database is unchanged at none: the existing tables lack directories.retry or have them with another type: they were made by a crawler older than e35e4b4; recreate the database (README)` | a development database made before e35e4b4 cannot be taken over: drop it, create it empty, `migrate`, crawl again |
+| `NotImplementedError: no downgrade from 0001_baseline: restore the dump taken before the upgrade (README, Upgrade)`, from `alembic downgrade` | restore the dump ("Upgrade" below); nothing was changed |
+
+A migration that has something to do holds the crawl lock, so it never runs during a crawl or next to another migration: a crawl started meanwhile exits with `another crawl is running on this database`.
+
+### Upgrade
+
+Before an upgrade whose code brings a new file in `migrations/versions/`, take a dump of the database: `pg_dump -Fc`. Restoring it is the way back from anything a downgrade cannot undo. Then upgrade the code and run `migrate`. In the search stack, `/prototypes/search-stack/README.md`, section "Upgrade", has the commands.
+
+Every revision has a `downgrade()`. Where the older code reads the result correctly, it undoes the revision; otherwise it refuses with the message above and changes nothing. A downgrade needs the newer code, so run it before going back to the older one, with Alembic's command line and this directory's `alembic.ini`; from the repository root:
+
+```bash
+alembic -c python/crawler/alembic.ini current           # the database's version; takes no lock
+alembic -c python/crawler/alembic.ini downgrade 0001_baseline
+```
+
+Alembic's command line reads the connection as the crawler does, from the environment or `python/crawler/.env`.
+
+### Adding a migration
+
+A schema change is a new revision, never an edit of a revision that has shipped (a database that has run it would not run it again), and never DDL in `store.py`. From `python/crawler/`:
+
+```bash
+alembic revision -m "crawl_runs scope" --rev-id 0002_crawl_runs_scope
+```
+
+This writes `src/modama_crawler/migrations/versions/0002_crawl_runs_scope.py`. The id has at most 32 characters (Alembic's `version_num` column; a test checks it). Then:
+
+- Write `upgrade()` with Alembic's operations (`op.add_column("crawl_runs", sa.Column("scope", sa.Text()))`) or `op.execute` with SQL text, whichever fits. There are no models.
+- No `IF NOT EXISTS` after `0002`: on a database that drifted from the chain, a migration should fail loudly.
+- Write `downgrade()` to undo `upgrade()` where the older code then reads the database correctly. Otherwise keep the generated body, which refuses with the step to restore the dump. Think of the rows, not only the columns: dropping a column that tells two kinds of rows apart makes the older code misread them, so delete those rows first or refuse.
+- Set `HEAD` in `src/modama_crawler/schema.py` to the new id. `tests/test_migrations.py` fails until you do.
+- `uvx ruff format` and `uvx ruff check --fix` on the new file, from the repository root.
+
+The tests build every database by the migrations, so `pytest` runs the new one. `tests/test_migrations.py` also checks that each `downgrade()` either undoes its revision or refuses.
 
 ## Adding a file format
 
@@ -103,7 +161,7 @@ When choosing a MIME type, use an existing one if possible. Look at freedesktop.
 
 ## Tests
 
-- `tests/` covers the OAI-PMH protocol (including real client libraries: `sickle`, `oaipmh`, and `oaipmh-scythe`, which the EOSC harvester uses), the walk, the format runner, selection, MIME detection, rendering, records and the CLI. Responses are validated against the OAI-PMH XSDs. Matching the spec and working with real clients turned out to be different things, so we test both.
+- `tests/` covers the OAI-PMH protocol (including real client libraries: `sickle`, `oaipmh`, and `oaipmh-scythe`, which the EOSC harvester uses), the walk, the format runner, selection, MIME detection, rendering, records, the CLI and the schema migrations (`test_migrations.py`, with a database made before migrations from `tests/migrations/before_migrations.sql`). Responses are validated against the OAI-PMH XSDs. Matching the spec and working with real clients turned out to be different things, so we test both.
 - Each collection's `tests/` holds fixture trees and their expected recognition results, run by the pytest plugin in `testing.py`. After an intended change, re-record the expectations with `pytest --regen-expected <collection dir>` and review the diff before committing.
 - `pytest --cov` reports coverage.
 - Lint and format run from the repository root, as CI and the commit hook do: `uvx ruff format --check --diff && uvx ruff check`.

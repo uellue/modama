@@ -1,0 +1,37 @@
+A pool for each kind of mapped batch: transform and filemeta
+
+The mapped batches of an indexing run are all queued at once when the DAG's
+task limits allow it, but a worker runs only as many as it has processes. A
+batch that waits in the broker's queue longer than the scheduler's
+task_queued_timeout (600 s by default) is retried and then failed; a long run
+with many batches per process loses the batches at the back. A pool with as
+many slots as the worker's processes keeps the rest scheduled, not queued,
+where the timeout does not apply, and shows the limit in Airflow's UI. The
+pools must exist; the modama search stack creates both (init-airflow.sh) and
+the transform worker sets `transform` to its process count at start.
+
+Against metadata-warehouse v1.10.0; applied with `patch -p1` in the image build
+(modama search stack, warehouse-airflow.Dockerfile; change cpu-budget, D6).
+
+diff --git a/airflow/dags/transform_index.py b/airflow/dags/transform_index.py
+index 3f13467..1216f8d 100644
+--- a/airflow/dags/transform_index.py
++++ b/airflow/dags/transform_index.py
+@@ -70,6 +70,9 @@ def transform_index() -> None:
+         expect_airflow=False,
+         expect_pendulum=False,
+         queue='transform',
++        # as many slots as the transform worker runs processes: batches beyond them wait in the scheduler,
++        # where task_queued_timeout does not apply
++        pool='transform',
+         retries=2,
+         retry_delay=timedelta(minutes=1),
+         execution_timeout=timedelta(hours=1),
+@@ -102,6 +105,7 @@ def transform_index() -> None:
+         python=TRANSFORM_PYTHON,
+         expect_airflow=False,
+         expect_pendulum=False,
++        pool='filemeta',  # as many slots as the default queue's worker runs processes
+         retries=2,
+         retry_delay=timedelta(minutes=1),
+         execution_timeout=timedelta(hours=1),

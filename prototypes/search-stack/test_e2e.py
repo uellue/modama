@@ -353,6 +353,35 @@ def test_the_frontend_serves_its_page(tree):
     assert "<title>EOSC Data Commons</title>" in page, page[:500]
 
 
+def test_the_chat_page_needs_no_login(tree):
+    # patches/matchmaker/: the chat page's code, as its page loads it, has no login gate
+    with urllib.request.urlopen(FRONTEND + "/chat", timeout=30) as response:
+        page = response.read().decode()
+    chunk = re.search(r"/assets/ChatPage-[\w-]+\.js", page)
+    assert chunk, page[:500]
+    with urllib.request.urlopen(FRONTEND + chunk[0], timeout=30) as response:
+        code = response.read().decode()
+    assert "Authentication Required" not in code
+    assert "Conversations are kept only with an account" in code
+
+
+def test_the_chat_page_leaves_the_model_to_the_search_api(tree):
+    # patches/matchmaker/0002: the chat page's request names no model, so that the
+    # search API's DEFAULT_LLM_MODEL applies (keys.env); upstream's page sent
+    # "cesnet/agentic", which failed without a CESNET key (staging 2026-11-12). The
+    # chat test below sends what the page sends, so this check keeps the two alike.
+    with urllib.request.urlopen(FRONTEND + "/chat", timeout=30) as response:
+        page = response.read().decode()
+    requests = []
+    for path in sorted(set(re.findall(r"/assets/[\w-]+\.js", page))):
+        with urllib.request.urlopen(FRONTEND + path, timeout=30) as response:
+            code = response.read().decode()
+        # the request body, minified: `{items:messages.filter(…).map(…)}` up to its `;`
+        requests += re.findall(r"=\{items:[^;]*\};\w+&&\(\w+\.thread_id=", code)
+    assert len(requests) == 1, requests
+    assert "model" not in requests[0], requests[0]
+
+
 def test_the_frontend_finds_the_file(tree):
     # the route the frontend's search page calls (matchmaker's src/lib/api.ts), which its
     # server proxies to the search API
@@ -383,6 +412,8 @@ def test_chat_answers_with_a_search(tree):
     # The chat agent searches with its tool and answers; one short question, so that a
     # run costs a few requests to the language model service in keys.env. runtest.sh sets
     # E2E_CHAT: 1 run, 0 skipped on request, "missing:…" no key, which fails (README).
+    # Through matchmaker's proxy without a login, the route its chat page calls
+    # (src/lib/api.ts), so that one run also shows AI Mode works for visitors.
     chat = os.environ.get("E2E_CHAT", "")
     if chat == "0":
         pytest.skip("WARNING: chat not tested, E2E_CHAT=0")
@@ -401,7 +432,7 @@ def test_chat_answers_with_a_search(tree):
         ]
     }
     request = urllib.request.Request(
-        f"{SEARCH}/chat",
+        f"{FRONTEND}/api/search/chat",
         data=json.dumps(question).encode(),
         headers={"Content-Type": "application/json"},
     )

@@ -8,6 +8,7 @@
 #                         it sees exactly what that user sees; NFS squashes root
 #   STAGING_GROUP         one more group of that user, needed for parts of the tree
 #   STAGING_CRAWL_CONFIG  the crawl's TOML file (formats, exclusions), in stagingconf/
+#   AIRFLOW_TASK_LIMIT    Airflow's task limits, read by docker-compose.yml (16 here)
 #
 # The tree is always mounted whole, and a first crawl of a subtree uses exclusions,
 # so that identifiers (relative to the data root) stay the same for the full crawl.
@@ -45,11 +46,9 @@ services:
       - --at
       - "19:00"
 
-  # Four indexing batches at once instead of upstream's one (@weber, 2026-11-10, field-test
-  # finding F9): a batch is mostly single-threaded, each process loads its own copy of the
-  # embedding model, and retries are safe (upserts, disjoint ranges).
-  airflow-worker-transform:
-    command: celery worker --queues transform --concurrency 4
+  # The transform worker's processes come from its CPU budget (README, "CPU budget"), capped
+  # on this shared machine by AIRFLOW_TASK_LIMIT in staging.env (16, @weber 2026-11-12); the
+  # --concurrency 4 of 2026-11-10 (finding F9) is gone.
 
   airflow-api-server:
     ports:

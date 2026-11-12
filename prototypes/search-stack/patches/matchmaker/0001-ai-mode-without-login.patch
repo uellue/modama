@@ -1,0 +1,224 @@
+AI Mode without login
+
+The search API answers POST /chat without a login (optional_auth; it stores the
+conversation only for a logged-in user), but the frontend asks for one: the chat
+page covers itself with "Authentication Required", and the AI Mode toggle on the
+landing and results pages starts a login instead of turning on. Give anonymous
+visitors AI Mode, and say what needs an account:
+
+- SearchInput: the AI Mode toggle works without login; the isLoggedIn prop is
+  left in place, ignored, so that the pages passing it stay unchanged.
+- ChatPage: no login gate. Without login, the sidebar says that conversations are
+  kept only with an account (they live in the page's run store until a reload)
+  and offers the login; deleting one only drops it from the page (nothing is
+  stored, and the API's DELETE /conversations needs a login); a stored
+  conversation's address answered with 401 goes to a new conversation.
+- ChatExportPage: exports a conversation of this visit (in the run store) without
+  login too; a stored one still asks for it.
+
+Still need an account, unchanged: the conversation history (GET /conversations,
+GET /conversation/{id}), the profile with API keys, the Data Player.
+
+Upstream's tests of the gate (SearchInput.test.tsx, ChatPage.test.tsx,
+ChatExportPage.test.tsx) are not changed; our image build does not run them.
+
+Applies to matchmaker v0.14.0 (e7138c898926ebb79e45dd7d20cbf838dcf5dbe5).
+
+--- a/src/components/SearchInput.tsx
++++ b/src/components/SearchInput.tsx
+@@ -2,7 +2,7 @@
+ import {ArrowRight, Search, Sparkles, X} from "lucide-react";
+ import {ModelSelector} from "./ModelSelector.tsx";
+ import {getSearchHistory} from "../lib/history.ts";
+-import {loginForAiMode, returnedFromAiModeLogin} from "../lib/authRedirect.ts";
++import {returnedFromAiModeLogin} from "../lib/authRedirect.ts";
+ import type {SearchOrigin} from "../lib/analytics.ts";
+ import useMatomo from "../hooks/useMatomo";
+ import {useMediaQuery} from "../hooks/useMediaQuery.ts";
+@@ -40,6 +40,7 @@
+     clearOnSearch?: boolean;
+     buttonText?: React.ReactNode;
+     disableHistory?: boolean;
++    // Ignored: AI mode needs no login (modama's patch).
+     isLoggedIn?: boolean;
+     showAiToggle?: boolean;
+     // Whether AI mode starts on for a signed-in user. The landing page uses the default;
+@@ -61,7 +62,6 @@
+                                 clearOnSearch = false,
+                                 buttonText = "Search",
+                                 disableHistory = false,
+-                                isLoggedIn = false,
+                                 showAiToggle = false,
+                                 initialAiMode = true,
+                                 inputRef
+@@ -79,7 +79,7 @@
+     const {trackEvent} = useMatomo();
+
+     // No toggle (the chat composer) means no AI mode, whatever the default.
+-    const effectiveAiMode = showAiToggle && isLoggedIn && aiMode;
++    const effectiveAiMode = showAiToggle && aiMode;
+
+     // The leading icon and the submit button leave ~190px for text on a phone,
+     // which truncates the full placeholders mid-phrase.
+@@ -151,14 +151,7 @@
+         }
+     };
+
+-    // Logged-out users get sent to login rather than a dead disabled control, so the
+-    // chip explains what AI mode is worth instead of just refusing the click.
+     const handleAiModeClick = () => {
+-        if (!isLoggedIn) {
+-            // loginForAiMode reports the login start itself.
+-            loginForAiMode();
+-            return;
+-        }
+         const next = !aiMode;
+         setAiMode(next);
+         trackEvent('AI Mode', 'toggled', next ? 'on' : 'off');
+@@ -236,13 +229,6 @@
+                                     <Sparkles className="h-4 w-4"/>
+                                     <span className="hidden sm:inline">AI Mode</span>
+                                 </button>
+-
+-                                {!isLoggedIn && (
+-                                    <div
+-                                        className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+-                                        Sign in to use AI Mode
+-                                    </div>
+-                                )}
+                             </div>
+                         </>
+                     )}
+--- a/src/pages/ChatExportPage.tsx
++++ b/src/pages/ChatExportPage.tsx
+@@ -87,7 +87,8 @@
+     const title = titleFromState(location.state) ?? conversation?.title ?? 'Conversation';
+     const messages = conversation?.messages ?? NO_MESSAGES;
+     const answering = messages.some(message => message.isStreaming);
+-    const ready = signedIn && messages.length > 0 && !answering;
++    // A conversation of this visit is in the run store, logged in or not.
++    const ready = (signedIn || hasRun) && messages.length > 0 && !answering;
+     // Only whether to add the name travels in the address; the name comes from the session.
+     const author = searchParams.get('byline') === '1' ? getPublicName(user) : undefined;
+     const origin = typeof window !== 'undefined' ? window.location.origin : '';
+@@ -138,14 +139,14 @@
+     };
+
+     // The sign-in card is counted once per appearance, not once per render behind it.
+-    const gated = !userLoading && !signedIn;
++    const gated = !userLoading && !signedIn && !hasRun;
+     useEffect(() => {
+         if (gated) trackEvent('Auth', 'gate_shown', 'export');
+     }, [gated, trackEvent]);
+
+     const status = (() => {
+         if (userLoading) return 'Preparing the export…';
+-        if (!signedIn) return null;
++        if (!signedIn && !hasRun) return null;
+         if (failed) return 'This conversation could not be loaded. Go back to it and try again.';
+         if (!conversation) return 'Preparing the export…';
+         if (messages.length === 0) return 'This conversation has no messages to export yet.';
+--- a/src/pages/ChatPage.tsx
++++ b/src/pages/ChatPage.tsx
+@@ -18,7 +18,7 @@
+ import {buildDatasetUrlMap} from "@/lib/datasetCitations.ts";
+ import {getUserInitials} from "@/lib/userUtils.ts";
+ import dataCommonsIconBlue from '@/assets/data-commons-icon-blue.svg';
+-import {ChevronDown, ChevronUp, Menu, MessageSquare, Plus, Send, Square, User, X} from "lucide-react";
++import {ChevronDown, ChevronUp, Menu, MessageSquare, Plus, Send, Square, X} from "lucide-react";
+ import {BotMessageBody} from "@/components/BotMessageBody.tsx";
+ import {SearchInput} from "@/components/SearchInput.tsx";
+ import {DeleteConversationDialog} from "@/components/DeleteConversationDialog.tsx";
+@@ -219,6 +219,10 @@
+         setLoading(true);
+         fetch(`/api/search/conversation/${id}`)
+             .then(res => {
++                if (res.status === 401) {
++                    // Not logged in: stored conversations need an account, so start a new one.
++                    navigate('/chat', {replace: true});
++                }
+                 if (!res.ok) {
+                     throw new Error(`Failed to fetch conversation: ${res.status} ${res.statusText}`);
+                 }
+@@ -365,6 +369,15 @@
+         // Stop a run still writing into it first, or the backend stores its turn
+         // when the run ends and the conversation comes back.
+         discardRun(id);
++        if (!user) {
++            // Not logged in: nothing is stored, the run was the whole conversation.
++            if (selectedConversation?.id === id || urlId === id) {
++                setSelectedConversation(null);
++                navigate('/chat', {replace: true});
++            }
++            setDeletingId(null);
++            return;
++        }
+         try {
+             let res = await fetch('/api/search/conversations', {
+                 method: 'DELETE',
+@@ -481,12 +494,6 @@
+     const lastMessage = messages[messages.length - 1];
+     const lastMessageIsStreaming = !!lastMessage?.isStreaming && (lastMessage.blocks?.length ?? 0) > 0;
+
+-    // The login gate is counted once per appearance, not once per render behind it.
+-    const gated = !userLoading && !user;
+-    useEffect(() => {
+-        if (gated) trackEvent('Auth', 'gate_shown', 'chat');
+-    }, [gated, trackEvent]);
+-
+     return (
+         <div className="flex flex-col h-dvh bg-white overflow-hidden">
+             <DeleteConversationDialog
+@@ -494,35 +501,6 @@
+                 onClose={() => setDeletingId(null)}
+                 onConfirm={() => deletingId && handleDeleteConversation(deletingId)}
+             />
+-            {gated && (
+-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+-                    <div
+-                        className="bg-white rounded-xl shadow-xl max-w-md w-full p-8 text-center border border-gray-100">
+-                        <div
+-                            className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-5 shadow-sm">
+-                            <User className="h-8 w-8"/>
+-                        </div>
+-                        <h2 className="text-2xl font-semibold text-gray-900 mb-3">Authentication Required</h2>
+-                        <p className="text-gray-600 mb-8 leading-relaxed">
+-                            Please log in to your account to use AI Mode and see your conversations.
+-                        </p>
+-                        <div className="flex flex-col gap-3">
+-                            <button
+-                                onClick={() => loginWithReturn('gate_chat')}
+-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors shadow-sm cursor-pointer"
+-                            >
+-                                Log In to Continue
+-                            </button>
+-                            <button
+-                                onClick={() => navigate('/')}
+-                                className="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-medium py-3 px-4 rounded-lg transition-colors cursor-pointer"
+-                            >
+-                                Return to Home
+-                            </button>
+-                        </div>
+-                    </div>
+-                </div>
+-            )}
+             {/* Header */}
+             <header
+                 className="bg-white border-b border-gray-200 shrink-0 py-3 px-4 md:px-6 flex items-center gap-3 shadow-sm z-10">
+@@ -579,7 +557,15 @@
+                         </button>
+                     </div>
+                     <div className="flex-1 overflow-y-auto p-3 space-y-1">
+-                        {loading && sidebarConversations.length === 0 ? (
++                        {!userLoading && !user && (
++                            <p className="text-sm text-gray-500 text-center mt-4 mb-3 px-2">
++                                Conversations are kept only with an account; without one, they last until
++                                this page is reloaded or closed.{' '}
++                                <button onClick={() => loginWithReturn('gate_chat')}
++                                        className="text-blue-600 hover:underline cursor-pointer">Log in</button>
++                            </p>
++                        )}
++                        {user && loading && sidebarConversations.length === 0 ? (
+                             <p className="text-sm text-gray-500 text-center mt-4">Loading conversations...</p>
+                         ) : (
+                             sidebarConversations.map(convo => {
