@@ -1,14 +1,14 @@
 # Tasks
 
-Written with the leans of the brief (2026-11-12) as assumptions, changed where the smoke test showed otherwise: D4 (StartTLS off said explicitly), D5 (a lookup as the health check, no `sssctl` in the image). @weber's decisions 196 to 202 are in proposal.md (201 and 202 added the same day, superseding 199); the review's findings (`review.md`) in design.md, by number. Deadline: merged before 18:00 UTC for the crawl at 19:00 UTC (198).
+Written with the leans of the brief (2026-11-12) as assumptions, changed where the smoke test showed otherwise: D4 (StartTLS off said explicitly), D5 (a lookup as the health check, no `sssctl` in the image). @weber's decisions 196 to 208 are in proposal.md (201 supersedes 199; 207 confirms review finding 5; 208 revokes 202); the review's findings (`review.md`) in design.md, by number. Deadline: merged before 18:00 UTC for the crawl at 19:00 UTC (198).
 
-## 1. Crawler: creator, group, the check before the store
+## 1. Crawler: the creator, the check before the store
 
-- [ ] 1.1 `records.py`: `owner(uid)` (D10) instead of `user_name`, `dc_metadata`'s creator from it, `description` with `, owner's group <name>` (D11). Verify: tests of 1.3.
-- [ ] 1.2 `cli.py`: `SSSD_CHECK_USER` read in `cmd_crawl` before the run is recorded (not a uid: status 2), and looked up in `crawl_tree` before `store` (D7). Verify: `tests/test_cli.py`, one test per scenario of "A crawl stores no records while the user database cannot name its check user".
-- [ ] 1.3 `testing.py`: the fixture `fixed_owner` (D9, finding 6). `tests/test_records.py`, one test per scenario: "Dublin Core mapping": Single file, An owner without a full name, A full name with a comma, An owner without a name; "Every record carries a description": A file without an extractor, An owner without a known group; the whole-description comparisons in `test_records.py`, `test_server.py` and `modama-formats-em` (`k2is`, `dm`) with `fixed_owner` and literal strings. Verify: `pytest` in `python/crawler` and in `python/modama-formats-em`, each with the number of skipped tests.
-- [ ] 1.4 `README.md` (crawler): the description's example with the group, the creator's source and fallbacks, `SSSD_CHECK_USER`. Verify: the sentences match the specs.
-- [ ] 1.5 `design/architecture.md`: decision-log rows for 201 and 202 (and the check of D7, provisional); `design/requirements.md` 2.9 and Q22: full names and groups, not only login names, are in the records and reach the warehouse, the index and Blablador (finding 7). Verify: `git diff` shows them.
+- [ ] 1.1 `records.py`: `creator(uid)` (D10) instead of `user_name`, `dc_metadata`'s creator from it. Verify: tests of 1.3.
+- [ ] 1.2 `cli.py`: `SSSD_CHECK_USER` read in `cmd_crawl` before the run is recorded (not a uid: status 2), and looked up in `crawl_tree` before `store` (D7, 207). Verify: `tests/test_runs.py`, one test per scenario of "A crawl stores no records while the user database cannot name its check user".
+- [ ] 1.3 `tests/test_records.py`, one test per scenario of "Dublin Core mapping": Single file, An owner without a full name, A full name with a comma, An owner without a name; `tests/test_server.py`'s whole-record comparison with a fixed creator (D9). Verify: `pytest` in `python/crawler` and in `python/modama-formats-em`, each with the number of skipped tests.
+- [ ] 1.4 `README.md` (crawler): the creator's source and fallbacks, `SSSD_CHECK_USER`. Verify: the sentences match the specs.
+- [ ] 1.5 `design/architecture.md`: decision-log rows for 201 and 207 (208 revokes 202); `design/requirements.md` 2.9 and Q22: full names, not only login names, are in the records and reach the warehouse, the index and Blablador (finding 7). Verify: `git diff` shows them.
 
 ## 2. Search stack
 
@@ -21,11 +21,11 @@ Written with the leans of the brief (2026-11-12) as assumptions, changed where t
 ## 3. Documentation
 
 - [ ] 3.1 `prototypes/search-stack/README.md`: a section "Owners' names" (sssd from `deploy/`, the copy with `services = nss`, the test directory and its users, plain LDAP and why the option, staging's file, the check user, what an outage does, D7, and what the first crawl with names costs on staging, D8); `ldap` and `sssd` in the overview. Verify: the commands in it run as written in the test deployment.
-- [ ] 3.2 Staging runbook (`design/field-tests/search-stack-staging-runbook.md`): a section with @weber's commands for tonight, in order, with times (finding 10): the checkout has the change; the harvest and indexing of the last crawl have finished (`modama-chain status`) before `./upstaging.sh --build` recreates the crawler services; the check of the option names (D6); whether the recreated timer crawls at once (the last finished crawl more than a day old) or at 19:00; `./upstaging.sh --build`; `dc exec crawler python -c 'from modama_crawler.records import owner; print(owner(<uid>))'` (finding 8); after the crawl, the count of records with a number as creator; the cost of D8. Verify: read against `docker-compose.staging.yml` and `cli.py`'s timer; every command self-contained.
-- [ ] 3.3 `BACKLOG.md`: the change's state; a glossary entry for the owner's primary group in `/CONTEXT.md` (finding 11, proposed, not written). Verify: the items link this change.
+- [ ] 3.2 Staging runbook (`design/field-tests/search-stack-staging-runbook.md`): a section with @weber's commands for tonight, in order, with times (finding 10): the checkout has the change; the harvest and indexing of the last crawl have finished (`modama-chain status`) before `./upstaging.sh --build` recreates the crawler services; the check of the option names (D6); whether the recreated timer crawls at once (the last finished crawl more than a day old) or at 19:00; `./upstaging.sh --build`; `dc exec crawler python -c 'from modama_crawler.records import creator; print(creator(<uid>))'` (finding 8); after the crawl, the count of records with a number as creator; the cost of D8. Verify: read against `docker-compose.staging.yml` and `cli.py`'s timer; every command self-contained.
+- [ ] 3.3 `BACKLOG.md`: the change's state (the open item of 208 is the main session's). Verify: the item links this change.
 
 ## 4. Checks and hand-over
 
 - [ ] 4.1 `uvx ruff format --check --diff` and `uvx ruff check` from the repo root. Verify: their output.
 - [ ] 4.2 Smoke project torn down (`docker compose -p sssd-smoke-acc3 down --volumes`), only that project. Verify: `docker ps -a --filter name=sssd-smoke` empty.
-- [ ] 4.3 Archive after `em-formats-and-extraction` (its "Every record carries a description" is the requirement this change modifies), when @weber accepts. Verify: `openspec validate owner-names-in-the-search-stack` without the archive notice.
+- [ ] 4.3 Archive when @weber accepts. Verify: `openspec validate owner-names-in-the-search-stack`.
