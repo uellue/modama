@@ -410,7 +410,9 @@ Fixed in matchmaker (decision 212, not by encoding our URLs): patch
 reads a link's address as CommonMark does, with brackets in balanced pairs (nested up to
 three deep), in the page, the citation list and the Markdown export; a bracket without its
 pair makes no link. On the exported conversation, the old pattern finds the 14 ER-C links
-with 7 addresses whole (ending in `.dm4`), the new one all 14. Not yet seen on staging.
+with 7 addresses whole (ending in `.dm4`), the new one all 14. On staging since 13:58 UTC
+(`dc build matchmaker && dc up -d --no-deps matchmaker`; the build applied the patches
+afresh, `run-3/session.log`); @weber: "Looks fixed on my side".
 
 ## Review of the staging changes, 2026-11-11
 
