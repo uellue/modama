@@ -3,8 +3,12 @@
 Run with -s to see each description, its subjects and the bytes the extractor read.
 """
 
+from types import SimpleNamespace
+
+from modama_crawler.formats import Dataset
 from modama_crawler.testing import recognise
 
+from modama_formats_em import k2is
 from modama_formats_em.testing import described
 
 
@@ -105,3 +109,21 @@ def test_a_representative_capture(collection_tests, tmp_path):
     assert capture.subjects == ["Gatan K2 IS", "FEI Tecnai Remote"]
     # The .gtg read whole (26,931 bytes, tags only); the fixture's sectors are 40-byte headers
     assert capture.bytes_read < 28_000
+
+
+def test_the_groups_at_the_root_whatever_the_tag_order(monkeypatch):
+    # Groups of the same names deeper down and earlier in the tree are not the
+    # scan shape or the microscope: LiberTEM reads the root (.SI Dimensions)
+    tags = {
+        "Acquisition": {
+            "Microscope Info": {"Name": "nested"},
+            "SI Dimensions": {"Size X": 1},
+        },
+        "Microscope Info": {"Name": "FEI Tecnai Remote"},
+        "SI Dimensions": {"Size X": 35},
+    }
+    monkeypatch.setattr(k2is, "parsed", lambda path: SimpleNamespace(tags_dict=tags))
+    extracted = k2is.K2is().extract(Dataset(anchor="/X_.gtg"), "/nowhere")
+    assert extracted.subjects == ["FEI Tecnai Remote"]
+    assert "SI Dimensions.Size X 35" in extracted.summary
+    assert "SI Dimensions.Size X 1" not in extracted.summary

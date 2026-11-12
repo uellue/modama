@@ -6,7 +6,7 @@ Extraction reads the .gtg's tags through RosettaSciIO's DM reader on our own
 handle (dm.parsed); the sector files are not read.
 """
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
@@ -69,7 +69,13 @@ class K2is(Format):
     def extract(self, dataset: Dataset, root: str) -> Extracted:
         """The .gtg's scan shape and microscope tags, as the reader gives them (spec formats/k2is)."""
         tags = parsed(root + dataset.anchor).tags_dict
-        values = {group: found for group in SHOWN if (found := _group(tags, group))}
+        # At the root, as LiberTEM reads `.SI Dimensions.Size X` (_get_nav_shape):
+        # SI Image Tags holds groups of the same names
+        values = {
+            group: tags[group]
+            for group in SHOWN
+            if isinstance(tags.get(group), dict) and tags[group]
+        }
         summary = [
             f"{group}.{name} {_shown(value)}"
             for group, found in values.items()
@@ -82,21 +88,6 @@ class K2is(Format):
             else []
         )
         return Extracted(summary=summary, subjects=subjects, values=values)
-
-
-def _group(tags: dict, name: str) -> dict | None:
-    """The first tag group of that name, depth first, as the reader gives it."""
-    for key, value in _groups(tags):
-        if key == name:
-            return value
-    return None
-
-
-def _groups(tags: dict) -> Iterator[tuple[str, dict]]:
-    for key, value in tags.items():
-        if isinstance(value, dict):
-            yield key, value
-            yield from _groups(value)
 
 
 def _shown(value) -> str:
