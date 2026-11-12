@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modama-formats-common"
+description = "Common file formats for the modama crawler (images, Python data science, office, text, structured data): recognition and metadata extraction"
+license = {file = "LICENSE"}
+requires-python = ">=3.14"
+version = "0.0.1.dev0"
+dependencies = [
+    # Each part adds the libraries it reads its formats with
+    "modama-crawler",
+]
+authors = [
+    {name="Dieter Weber", email="d.weber@fz-juelich.de"},
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.entry-points."modama.formats"]
+common = "modama_formats_common:COLLECTION"
+
+[tool.setuptools.package-data]
+"*" = ["*.xml", "*.toml", "*.json", "LICENSE*"]
