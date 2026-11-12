@@ -23,7 +23,8 @@ case "${1:-}" in
         dc() { docker compose --progress quiet -p search-staging --env-file staging.env \
             -f docker-compose.yml -f docker-compose.staging.yml "$@"; }
         ;;
-    *) echo "usage: $0 [staging]" >&2; exit 2 ;;
+    -h | --help) sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 0 ;;
+    *) echo "usage: $0 [staging]   (--help: what it shows)" >&2; exit 2 ;;
 esac
 
 docker info --format 'Docker: cgroup v{{.CgroupVersion}} ({{.CgroupDriver}}), {{.NCPU}} CPUs, {{.MemTotal}} bytes of memory' \

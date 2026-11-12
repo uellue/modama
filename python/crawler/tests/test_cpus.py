@@ -267,3 +267,21 @@ def test_explained_in_a_container_with_a_quota(tmp_path, monkeypatch, capsys):
     assert "  override: none" in out
     assert any(line.startswith("  MODAMA_CRAWLER_EXTRACT_WORKERS=N ") for line in out)
     assert "  cgroup v2: yes; CPU quota: 4 CPUs (cpu.max of the own cgroup)" in out
+
+
+@pytest.mark.parametrize("value", ["-1", "0", "abc", "1.5"])
+def test_a_setting_that_is_not_a_positive_integer(monkeypatch, caplog, value):
+    # Hallway test 2026-11-12: -1 was obeyed, 0 ignored, abc a traceback
+    monkeypatch.setenv("MODAMA_CRAWLER_EXTRACT_WORKERS", value)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["cpu-budget"])
+    assert stopped.value.code == 2
+    assert (
+        f"MODAMA_CRAWLER_EXTRACT_WORKERS must be a positive integer: {value!r}"
+        in caplog.messages
+    )
+
+
+def test_one_cpu_is_singular(tmp_path, monkeypatch):
+    machine(tmp_path, monkeypatch, affinity=1)
+    assert str(cpus.usable()) == "1 CPU usable (affinity 1, no quota)"

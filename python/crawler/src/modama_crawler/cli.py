@@ -233,9 +233,18 @@ def crawl_tree(
 
 
 def _workers() -> int | None:
-    """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1); also the walk's matching processes."""
+    """MODAMA_CRAWLER_EXTRACT_WORKERS, or None for the default (D1); also the walk's matching processes.
+
+    Exits with status 2 if it is set and not a positive integer."""
     value = os.environ.get("MODAMA_CRAWLER_EXTRACT_WORKERS")
-    return int(value) if value else None
+    if not value:
+        return None
+    if not value.isdigit() or int(value) < 1:
+        log.error(
+            "MODAMA_CRAWLER_EXTRACT_WORKERS must be a positive integer: %r", value
+        )
+        raise SystemExit(2)
+    return int(value)
 
 
 def _budget(usable: cpus.Usable) -> str:

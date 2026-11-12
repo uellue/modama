@@ -353,6 +353,28 @@ def test_explain_a_malformed_quota(tmp_path, monkeypatch, capsys):
     assert "cpu.max" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("value", ["0", "abc", "-3"])
+def test_a_task_limit_that_is_not_a_positive_integer(
+    tmp_path, monkeypatch, capsys, value
+):
+    # Hallway test 2026-11-12: AIRFLOW_TASK_LIMIT=0 gave a ZeroDivisionError, abc a traceback
+    fake(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        budget, "_slots", lambda: (budget._slot(value, "max_active_tasks_per_dag"), 16)
+    )
+    assert budget.main(["explain", "transform"], {}, tmp_path) == 2
+    assert (
+        f"AIRFLOW_TASK_LIMIT) must be a positive integer: {value!r}"
+        in capsys.readouterr().err
+    )
+
+
+def test_one_cpu_and_one_core_are_singular(tmp_path, monkeypatch):
+    m = fake(tmp_path, monkeypatch, cpus=[0])
+    assert "; 1 CPU usable (affinity 1" in budget.search_api(m).line
+    assert "; 1 core usable (1 logical CPUs" in budget.transform(m, slots=NO_LIMIT).line
+
+
 def test_the_running_machine():
     # No fake: this machine's /proc and /sys parse
     m = budget.machine()

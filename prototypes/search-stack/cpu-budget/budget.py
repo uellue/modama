@@ -185,7 +185,7 @@ def transform(
         processes = min(x for x in (wanted, limit, by_memory) if x is not None)
     if threads is None:
         threads = max(1, m.cores // processes)
-    cores = f"{m.cores} cores usable ({m.affinity} logical CPUs, {m.quota_text()}"
+    cores = f"{_n(m.cores, 'core')} usable ({m.affinity} logical CPUs, {m.quota_text()}"
     cores += ")" if m.topology else "; cores are logical CPUs: no topology)"
     memory = (
         "no memory limit"
@@ -213,7 +213,7 @@ def search_api(
     threads = 1 if threads is None else threads
     line = (
         f"CPU budget: {_n(workers, 'worker')} × {_n(threads, 'thread')}; "
-        f"{m.logical} CPUs usable (affinity {m.affinity}, {m.quota_text()}); "
+        f"{_n(m.logical, 'CPU')} usable (affinity {m.affinity}, {m.quota_text()}); "
         f"{_overrides(overrides, workers * threads, m.logical, 'CPUs')}"
     )
     return Budget(workers, threads, line, overrides)
@@ -222,9 +222,20 @@ def search_api(
 def _slots() -> tuple[int, int]:
     from airflow.configuration import conf  # 3 s; only in the Airflow image
 
-    return conf.getint("core", "max_active_tasks_per_dag"), conf.getint(
-        "core", "parallelism"
+    return tuple(
+        _slot(conf.get("core", key), key)
+        for key in ("max_active_tasks_per_dag", "parallelism")
     )
+
+
+def _slot(value: str, key: str) -> int:
+    """One of Airflow's task limits, a positive integer (AIRFLOW_TASK_LIMIT sets both)."""
+    if not value.strip().isdigit() or int(value) < 1:
+        raise Malformed(
+            f"Airflow's core.{key} (AIRFLOW__CORE__{key.upper()}, from AIRFLOW_TASK_LIMIT) "
+            f"must be a positive integer: {value!r}"
+        )
+    return int(value)
 
 
 def _budget(service: str, environ, root: Path) -> tuple[Machine, Budget]:
@@ -241,6 +252,8 @@ def explain(service: str, m: Machine, b: Budget) -> str:
     lines = [b.line, f"  logical CPUs of the affinity: {m.affinity}"]
     if service == "transform":
         source = "topology" if m.topology else "no topology: logical CPUs"
+        if m.quota is not None and math.ceil(m.quota) == m.cores:
+            source += ", capped by the CPU quota"
         lines.append(f"  physical cores usable: {m.cores} ({source})")
     quota = (
         "not read"

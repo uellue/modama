@@ -3,8 +3,9 @@ threads, embedding the same kind of texts as the bench's records. An upper bound
 
 Run inside airflow-worker-transform with the transform venv (an option's code change is not needed for this, the
 script passes `threads` to fastembed itself):
-  docker compose exec -T airflow-worker-transform sh -c 'cat > /tmp/embed-bench.py' < perf/embed-bench.py
-  docker compose exec -T airflow-worker-transform /opt/airflow/transform-venv/bin/python /tmp/embed-bench.py P:T[:B] ...
+  docker compose exec -T airflow-worker-transform sh -c 'cat > ~/embed-bench.py' < perf/embed-bench.py
+  docker compose exec -T airflow-worker-transform /opt/airflow/transform-venv/bin/python /home/airflow/embed-bench.py P:T[:B] ...
+(not /tmp: a file there was gone a minute later in the running worker, 2026-11-12, cause not looked into)
 T 0 is ONNX Runtime's default (fastembed's threads=None), with the libraries' other pools at their defaults too
 (today's batch before the CPU budget); T > 0 also sets the tokenizers to T threads and BLAS to 1, as budget.py does,
 so that P:T is the budget's composition. B is fastembed's embed batch size (default 256; the stack's batches: 32).

@@ -59,7 +59,8 @@ class Usable:
             quota = "no quota"
         else:
             quota = f"quota {self.quota:g}"
-        return f"{self.cpus} CPUs usable (affinity {self.affinity}, {quota})"
+        cpus = "1 CPU" if self.cpus == 1 else f"{self.cpus} CPUs"
+        return f"{cpus} usable (affinity {self.affinity}, {quota})"
 
 
 def usable(root: Path = Path("/")) -> Usable:
