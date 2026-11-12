@@ -1,0 +1,73 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testPPT.ppt",
+      "basis": "OLE2 header",
+      "collapsed": false,
+      "format": "common/ppt",
+      "members": [
+        "/testPPT.ppt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.ms-powerpoint",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testPPT.ppt": {
+      "subjects": [],
+      "summary": [
+        "Sample Powerpoint Slide",
+        "Keith Bennett",
+        "2007-09-14T17:33:12",
+        "Microsoft PowerPoint",
+        "slides 1"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "author": "Keith Bennett",
+          "bytes": 5566,
+          "codepage": 10000,
+          "codepage_doc": 10000,
+          "company": "-",
+          "create_time": "2007-09-14T17:33:12",
+          "creating_application": "Microsoft PowerPoint",
+          "heading_pairs": [
+            "Fonts Used",
+            1,
+            "Design Template",
+            1,
+            "Slide Titles",
+            1
+          ],
+          "hidden_slides": 0,
+          "hlinks_changed": false,
+          "last_saved_by": "Keith Bennett",
+          "last_saved_time": "2007-09-14T19:16:39",
+          "links_dirty": false,
+          "mm_clips": 0,
+          "notes": 0,
+          "num_words": 13,
+          "paragraphs": 4,
+          "presentation_target": "On-screen Show",
+          "revision_number": "1",
+          "scale_crop": false,
+          "shared_doc": false,
+          "slides": 1,
+          "title": "Sample Powerpoint Slide",
+          "titles_of_parts": [
+            "Times",
+            "Blank Presentation",
+            "Sample Powerpoint Slide"
+          ],
+          "total_edit_time": 6207,
+          "version": 655624
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

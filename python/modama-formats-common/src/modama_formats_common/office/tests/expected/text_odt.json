@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testODTnotaZipFile.odt",
+      "basis": "single file; common/odt: not application/vnd.oasis.opendocument.text, no ZIP header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/testODTnotaZipFile.odt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

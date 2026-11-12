@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.docx",
+      "basis": "single file; common/docx: not application/vnd.openxmlformats-officedocument.wordprocessingml.document, no ZIP header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.docx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

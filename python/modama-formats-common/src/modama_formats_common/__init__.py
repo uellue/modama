@@ -7,9 +7,11 @@ tests each part on its own (formats/TEMPLATE.md).
 
 from modama_crawler.formats import Collection
 
+from . import office
+
 # The subpackages image, pydata, office, text and structured are added by
 # other changes, each with one import above and one entry here
-PARTS = ()
+PARTS = (office.COLLECTION,)
 
 COLLECTION = Collection(
     "common",

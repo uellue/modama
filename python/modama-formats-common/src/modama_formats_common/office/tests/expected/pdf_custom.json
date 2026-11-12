@@ -1,0 +1,93 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testPDF-custommetadata.pdf",
+      "basis": "PDF header",
+      "collapsed": false,
+      "format": "common/pdf",
+      "members": [
+        "/testPDF-custommetadata.pdf"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/pdf",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testPDF-custommetadata.pdf": {
+      "subjects": [],
+      "summary": [
+        "Document title",
+        "Document author",
+        "D:20100630140154+02'00'",
+        "Tool used to make the PDF",
+        "Apache FOP Version svn-trunk",
+        "pages 1"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": false,
+          "header": "%PDF-1.4",
+          "pages": 1
+        },
+        "original_metadata": {
+          "Info.Author": "Document author",
+          "Info.CreationDate": "D:20100630140154+02'00'",
+          "Info.Creator": "Tool used to make the PDF",
+          "Info.Custom Array": [
+            "Array Entry 1",
+            "Array Entry 2"
+          ],
+          "Info.Custom Property": "Custom Value",
+          "Info.Producer": "Apache FOP Version svn-trunk",
+          "Info.Subject": "Document subject",
+          "Info.Title": "Document title",
+          "XMP.bib:abstract": [
+            "default abstract of EP1000000A1",
+            "english abstract of EP1000000A1",
+            "german abstract of EP1000000A1",
+            "french abstract of EP1000000A1"
+          ],
+          "XMP.bib:app-date": "date of filing of EP1000000A1",
+          "XMP.bib:app-number": "application number of EP1000000A1",
+          "XMP.bib:applicant.bib:app-address": "address of the applicant",
+          "XMP.bib:applicant.bib:app-name": "name of the applicant",
+          "XMP.bib:inventors": [
+            "name of inventor 1",
+            "name of inventor n"
+          ],
+          "XMP.bib:ipc": [
+            "ipc 1",
+            "ipc n"
+          ],
+          "XMP.bib:priorities[0].bib:pri-date": "date of priority 1",
+          "XMP.bib:priorities[0].rdf:value": "number of priority 1",
+          "XMP.bib:priorities[1].bib:pri-date": "date of priority n",
+          "XMP.bib:priorities[1].rdf:value": "number of priority n",
+          "XMP.bib:pub-date": "date of publication of EP1000000A1",
+          "XMP.bib:pub-number": "EP1000000A1",
+          "XMP.bib:representative.bib:rep-address": "address of the representative",
+          "XMP.bib:representative.bib:rep-name": "name of the representative",
+          "XMP.bib:title": [
+            "default title of EP1000000A1",
+            "english title of EP1000000A1",
+            "german title of EP1000000A1",
+            "french title of EP1000000A1"
+          ],
+          "XMP.dc:creator": "Document author",
+          "XMP.dc:date": "2010-06-30T14:01:54+02:00",
+          "XMP.dc:description": "Document subject",
+          "XMP.dc:title": "Document title",
+          "XMP.pdf:PDFVersion": "1.4",
+          "XMP.pdf:Producer": "Apache FOP Version svn-trunk",
+          "XMP.xmp:CreateDate": "2010-06-30T14:01:54+02:00",
+          "XMP.xmp:CreatorTool": "Tool used to make the PDF",
+          "XMP.xmp:MetadataDate": "2010-06-30T14:01:54+02:00"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -1,0 +1,73 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testPPT_comment.pptx",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/pptx",
+      "members": [
+        "/testPPT_comment.pptx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testPPT_comment.pptx": {
+      "subjects": [],
+      "summary": [
+        "title",
+        "Allison, Timothy B.",
+        "2015-09-30T17:58:06Z",
+        "Microsoft Office PowerPoint",
+        "Slides 1"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "slides": 1
+        },
+        "original_metadata": {
+          "app.AppVersion": "15.0000",
+          "app.Application": "Microsoft Office PowerPoint",
+          "app.HeadingPairs": [
+            "Fonts Used",
+            "3",
+            "Theme",
+            "1",
+            "Slide Titles",
+            "1"
+          ],
+          "app.HiddenSlides": "0",
+          "app.HyperlinksChanged": "false",
+          "app.LinksUpToDate": "false",
+          "app.MMClips": "0",
+          "app.Notes": "0",
+          "app.Paragraphs": "2",
+          "app.PresentationFormat": "Widescreen",
+          "app.ScaleCrop": "false",
+          "app.SharedDoc": "false",
+          "app.Slides": "1",
+          "app.TitlesOfParts": [
+            "Arial",
+            "Calibri",
+            "Calibri Light",
+            "Office Theme",
+            "title"
+          ],
+          "app.TotalTime": "0",
+          "app.Words": "2",
+          "core.created": "2015-09-30T17:58:06Z",
+          "core.creator": "Allison, Timothy B.",
+          "core.lastModifiedBy": "Allison, Timothy B.",
+          "core.modified": "2015-09-30T17:58:26Z",
+          "core.revision": "1",
+          "core.title": "title"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

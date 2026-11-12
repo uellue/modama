@@ -1,0 +1,70 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testWORD_custom_props.doc",
+      "basis": "OLE2 header",
+      "collapsed": false,
+      "format": "common/doc",
+      "members": [
+        "/testWORD_custom_props.doc"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/msword",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testWORD_custom_props.doc": {
+      "subjects": [],
+      "summary": [
+        "My Title",
+        "EJ04325S",
+        "2010-10-05T09:03:00",
+        "Microsoft Office Word",
+        "num_pages 1"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "author": "EJ04325S",
+          "chars_with_spaces": 16,
+          "codepage": 1252,
+          "codepage_doc": 1252,
+          "comments": "My Comments",
+          "company": "EDF-DIT",
+          "create_time": "2010-10-05T09:03:00",
+          "creating_application": "Microsoft Office Word",
+          "heading_pairs": [
+            "Titre",
+            1
+          ],
+          "hlinks_changed": false,
+          "keywords": "My Keyword",
+          "last_saved_by": "Etienne Jouvin",
+          "last_saved_time": "2012-01-03T22:14:00",
+          "lines": 1,
+          "links_dirty": false,
+          "num_chars": 15,
+          "num_pages": 1,
+          "num_words": 2,
+          "paragraphs": 1,
+          "revision_number": "6",
+          "scale_crop": false,
+          "security": 0,
+          "shared_doc": false,
+          "subject": "My subject",
+          "template": "Normal.dotm",
+          "title": "My Title",
+          "titles_of_parts": [
+            "My Title"
+          ],
+          "total_edit_time": 23160,
+          "version": 917504
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

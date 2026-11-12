@@ -11,6 +11,14 @@ version = "0.0.1.dev0"
 dependencies = [
     # Each part adds the libraries it reads its formats with
     "modama-crawler",
+    # office: XML parts of OOXML and ODF packages and XMP, safe against entity expansion
+    "defusedxml==0.7.1",
+    # office: legacy Word, PowerPoint, Excel property sets (OleMetadata's names)
+    "olefile==0.47",
+    # office: workbook sheets and their dimensions, read-only mode (no cells)
+    "openpyxl==3.1.5",
+    # office: PDF Info and XMP; the extra brings cryptography for AES-encrypted files
+    "pypdf[crypto]==7.0.1",
 ]
 authors = [
     {name="Dieter Weber", email="d.weber@fz-juelich.de"},
