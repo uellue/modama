@@ -116,6 +116,8 @@ class Workspace(Format):
 
 ## Extracting metadata
 
+To see what a format makes of real files while you write it: `modama-chain browse` in the search stack (`python/search-chain/README.md`, "browse"). Pick a file, and the page shows its dataset, the record and how the warehouse and Matchmaker will show it, computed by the checkout's code; an edit to the format shows on the next reload, without a build or a crawl. "Save for Claude" keeps a view, with a message, for a chat about it.
+
 A format may also read metadata from its datasets' files, after recognition:
 
 ```python
