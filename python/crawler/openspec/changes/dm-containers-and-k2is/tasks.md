@@ -14,7 +14,7 @@
 
 - [x] 3.1 A representative K2IS fixture from staging, replacing the synthetic capture. Agreed 2026-11-12 (73, 79) for `libertem-test-data/Capture52`, @weber's own test data: metadata only (the `.gtg` and each sector's 40-byte block header, no pixel data, cut by `k2is/tests/cut-capture.sh`, then in `.claude/field-tests/k2is-fixture.sh`), under the package's MIT licence with no copyright line of its own; `k2is/tests/LICENSE.fixtures` says where the files come from and what was cut. Verify: fixture `capture52`; `test_a_capture_with_its_8_sectors` and `test_a_representative_capture` on it (scan 35 × 34, subjects Gatan K2 IS and FEI Tecnai Remote, the `.gtg` read whole); collection suite 45 passed, `test_coverage` included; `uvx ruff check python/` clean.
 - [ ] 3.2 Staging: the next crawl's warnings no longer list `.dmw`/`.gtg` extraction failures; K2IS captures are one record each. Verify: the findings file, with counts.
-- [ ] 3.3 A representative `.dmw` fixture from staging, with @weber's agreement for the file. Verify: `test_a_dmw_file_with_the_dm4_header` on it.
+- [x] 3.3 A representative `.dmw` fixture from staging, with @weber's agreement for the file. Verify: `test_a_dmw_file_with_the_dm4_header` on it. Done in the change `recognition-checks-content`: not from staging but a workspace @weber saved with GMS for the purpose (2026-11-12), the fixture `workspace` of the dm part, unchanged; the test passes on it.
 
 ## 4. Review (`review.md`, decisions 129 and 130 of 2026-11-12)
 

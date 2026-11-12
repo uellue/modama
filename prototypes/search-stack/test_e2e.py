@@ -309,7 +309,7 @@ def test_the_crawler_line_shows_the_datasets_basis(tree):
     stages, first = trace("/" + STRAY_TAGS)
     assert first is None
     assert stages["crawler"].detail == (
-        "dataset; basis: single file; em/k2is: not application/x.dm-gtg, no DM4 header"
+        "dataset; basis: single file; em/k2is: not application/x.dm-gtg, no DM header"
     )
     stages, _ = trace("/" + DISTINCT_FILE)
     assert stages["crawler"].detail == "dataset; basis: single file"

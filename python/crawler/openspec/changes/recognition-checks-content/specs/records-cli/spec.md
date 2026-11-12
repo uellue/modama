@@ -15,4 +15,4 @@ A single file that no format produced SHALL get no comment in the verbose docume
 
 #### Scenario: A single file whose name type was dropped
 - **WHEN** `records --verbose PATH` is run with the `em` collection enabled on a directory holding `notes.gtg` holding `hello\n` and no K2IS sector files
-- **THEN** the comment `/notes.gtg: text/plain, basis: single file; em/k2is: not application/x.dm-gtg, no DM4 header` stands directly before its record, and the closing comment counts it among the single files
+- **THEN** the comment `/notes.gtg: text/plain, basis: single file; em/k2is: not application/x.dm-gtg, no DM header` stands directly before its record, and the closing comment counts it among the single files

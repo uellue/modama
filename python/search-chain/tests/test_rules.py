@@ -214,7 +214,7 @@ def test_a_text_file_named_like_a_k2is_tag_file():
     from modama_chain.chain import crawler_detail
     from modama_chain.crawler import Holding
 
-    basis = "single file; em/k2is: not application/x.dm-gtg, no DM4 header"
+    basis = "single file; em/k2is: not application/x.dm-gtg, no DM header"
     found = Holding("/notes.gtg", False, basis)
     assert crawler_detail(found, True, True) == f"dataset; basis: {basis}"
 

@@ -16,7 +16,7 @@ Written for the search stack (`/prototypes/search-stack/`), where it is installe
 
 ## Output
 
-`trace` prints the path, then the keys the stages hold its dataset under (once, as a header), then one line per stage: stage, state, time and detail, with long details continued on indented lines. The keys: the path in the tree, the OAI identifier in the crawler and OAI-PMH, the identifier after its last `:` in the harvest, `<endpoint uuid>::<path>` in the warehouse, the record URL in the index, the dataset's path as the search query. A member file (the raw file of an EMPAD pair) is traced through the dataset that holds it. The crawler line's detail ends with that dataset's basis, for example `basis: single file; em/k2is: not application/x.dm-gtg, no DM4 header` for a text file named `notes.gtg`. `>` marks the first stage that diverges.
+`trace` prints the path, then the keys the stages hold its dataset under (once, as a header), then one line per stage: stage, state, time and detail, with long details continued on indented lines. The keys: the path in the tree, the OAI identifier in the crawler and OAI-PMH, the identifier after its last `:` in the harvest, `<endpoint uuid>::<path>` in the warehouse, the record URL in the index, the dataset's path as the search query. A member file (the raw file of an EMPAD pair) is traced through the dataset that holds it. The crawler line's detail ends with that dataset's basis, for example `basis: single file; em/k2is: not application/x.dm-gtg, no DM header` for a text file named `notes.gtg`. `>` marks the first stage that diverges.
 
 States: `ok`; `missing`; `differs` (holds another version than the stage before); `warn` (search: the dataset is a hit, but not the first); and flags in upper case:
 
