@@ -5,7 +5,9 @@ Run inside airflow-worker-transform with the transform venv (an option's code ch
 script passes `threads` to fastembed itself):
   docker compose exec -T airflow-worker-transform sh -c 'cat > /tmp/embed-bench.py' < perf/embed-bench.py
   docker compose exec -T airflow-worker-transform /opt/airflow/transform-venv/bin/python /tmp/embed-bench.py P:T[:B] ...
-T 0 is ONNX Runtime's default (fastembed's threads=None); B is fastembed's embed batch size (default 256).
+T 0 is ONNX Runtime's default (fastembed's threads=None), with the libraries' other pools at their defaults too
+(today's batch before the CPU budget); T > 0 also sets the tokenizers to T threads and BLAS to 1, as budget.py does,
+so that P:T is the budget's composition. B is fastembed's embed batch size (default 256; the stack's batches: 32).
 """
 
 import json
@@ -33,6 +35,14 @@ def texts(seed: int) -> list[str]:
 
 
 def worker(threads: int, batch: int, start_at: float) -> None:
+    # as the CPU budget sets them (budget.py): T for the tokenizers too, 1 for BLAS
+    if threads:
+        os.environ["RAYON_NUM_THREADS"] = str(threads)
+        os.environ.update(
+            dict.fromkeys(
+                ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"), "1"
+            )
+        )
     from fastembed import TextEmbedding
 
     model = TextEmbedding(

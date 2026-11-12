@@ -5,6 +5,9 @@ Run inside airflow-worker-transform after a bench run (it reads the last closed 
   docker compose exec -T airflow-worker-transform sh -c 'cat > /tmp/phase-timer.py' < perf/phase-timer.py
   docker compose exec -T -w /opt/airflow/project airflow-worker-transform \
       /opt/airflow/transform-venv/bin/python /tmp/phase-timer.py [BATCH]
+`docker compose exec` does not get the variables budget.py sets before it starts Celery: for a batch process's
+threads, add -e EMBEDDING_THREADS=T -e RAYON_NUM_THREADS=T -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1
+-e MKL_NUM_THREADS=1 (README, "CPU budget").
 It calls the same functions as transform.transform_core.transform_batch_impl, in the same order, per step for the
 whole batch, and prints wall and CPU seconds per step.
 """

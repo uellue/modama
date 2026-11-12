@@ -18,6 +18,8 @@ mkdir -p "$out"
 out=$(cd "$out" && pwd)
 : "${MODAMA_SECRETS_DIR:?set MODAMA_SECRETS_DIR (see README.md)}"
 export COMPOSE_FILE="$stack/docker-compose.yml:$stack/docker-compose.override.yml:$here/docker-compose.perf.yml"
+export COMPOSE_PROJECT_NAME=search-stack  # never another project (staging runs as search-staging)
+rm -f "$out"/cpu-*.txt "$out"/*.raw  # a reused OUT keeps nothing of an earlier run
 cd "$stack"
 dc() { docker compose "$@"; }
 sql() { dc exec -T airflow-postgres psql -U airflow -d airflow -At -F'|' -c "$1"; }
@@ -28,6 +30,7 @@ spy() {  # name, target service, command run in the py-spy container (sh -c)
 }
 SPY="/home/airflow/.local/bin/py-spy record --idle --nonblocking --rate 100 --format raw"
 docker rm -f perf-spy-api perf-spy-harvester > /dev/null 2>&1 || true
+trap 'docker rm -f perf-spy-api perf-spy-harvester > /dev/null 2>&1 || true' EXIT
 
 dc exec -T crawler python3 - "$n" < "$here/seed.py" >&2
 dc ps --format '{{.ID}} {{.Service}}' | while read -r id service; do
@@ -48,7 +51,9 @@ load=$(cut -d' ' -f1-3 /proc/loadavg)
 t0=$(date +%s.%N)
 say "crawl (load $load)"
 dc exec -T crawler modama-crawler crawl 2>&1 | tail -2 >&2
+deadline=$(($(date +%s) + ${BENCH_TIMEOUT:-7200}))
 while :; do
+    if [ "$(date +%s)" -gt "$deadline" ]; then say "timeout waiting for the harvest task"; exit 1; fi
     row=$(sql "select ti.state, extract(epoch from ti.start_date), extract(epoch from ti.end_date) from task_instance ti
                join dag_run dr on dr.dag_id = ti.dag_id and dr.run_id = ti.run_id
                where ti.task_id = 'harvest_independent' and dr.start_date >= to_timestamp($t0)")

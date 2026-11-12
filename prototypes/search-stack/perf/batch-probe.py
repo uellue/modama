@@ -6,11 +6,14 @@ Run inside airflow-worker-transform, reading this file from stdin (standard libr
 It watches for processes of the transform venv's Python (one per batch, `@task.external_python`), polls each
 one's threads every POLL seconds, and attaches `py-spy record` to the PROFILE_NTH batch process (default 2:
 the first may pay for cold caches). It stops when the file OUT/stop exists (the bench creates it when the
-indexing run has ended) or after MAX_HOURS, and then writes OUT/batches.json and OUT/profile.txt.
+indexing run has ended) or after MAX_HOURS, and then writes OUT/batches.json (with each batch's thread variables
+from its /proc/PID/environ, which a probe started with `docker compose exec` does not see otherwise), and
+OUT/profile.raw and OUT/py-spy.log.
 """
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -67,6 +70,28 @@ def memory(pid: int) -> dict[str, int]:
     }
 
 
+THREAD_VARIABLES = (
+    "EMBEDDING_THREADS",
+    "RAYON_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+)
+
+
+def environ(pid: int) -> dict[str, str]:
+    """The thread variables of the CPU budget in pid's environment (README, "CPU budget")."""
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as f:
+            pairs = (
+                item.decode(errors="replace").partition("=")
+                for item in f.read().split(b"\0")
+            )
+            return {k: v for k, _, v in pairs if k in THREAD_VARIABLES}
+    except OSError:
+        return {}
+
+
 def threads(pid: int) -> dict[int, tuple[float, str, str]]:
     """tid -> (cpu seconds, comm, allowed CPUs) of every thread of pid."""
     out = {}
@@ -108,6 +133,7 @@ while not os.path.exists(f"{OUT}/stop") and time.monotonic() < deadline:
                 "n": len(order) + 1,
                 "start": now - age,
                 "seen_after_s": round(age, 3),
+                "environ": environ(pid),
             }
             order.append(pid)
             if rec["n"] == PROFILE_NTH and spy is None:
@@ -156,7 +182,10 @@ if spy is not None:
     try:
         spy.wait(timeout=30)
     except subprocess.TimeoutExpired:
-        spy.terminate()
+        spy.send_signal(
+            signal.SIGINT
+        )  # py-spy writes its output on SIGINT, not on SIGTERM
+        spy.wait()
 
 batches = []
 for pid in order:

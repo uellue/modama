@@ -73,6 +73,9 @@ events = [
     for i, e in ((i, real[i % len(real)]) for i in range(n))
 ]
 del real
+# the peak so far is the load of every closed run, more than a batch holds: start the peak (VmHWM) again here
+with open("/proc/self/clear_refs", "w") as f:
+    f.write("5")
 print(
     f"loaded {len(events):>4}",
     st(),
@@ -98,8 +101,9 @@ core.get_embedding_text_from_fields = text_with_fill
 
 if threads:
     _init = core.TextEmbedding.__init__
+    # over the threads patch 0002 passes from EMBEDDING_THREADS, if the image has it
     core.TextEmbedding.__init__ = lambda self, *a, **k: _init(
-        self, *a, threads=threads, **k
+        self, *a, **{**k, "threads": threads}
     )
 
 

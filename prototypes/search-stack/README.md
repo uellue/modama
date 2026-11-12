@@ -8,7 +8,7 @@ crawler (OAI-PMH) ◀───────────────────�
   └─ crawler-db
 ```
 
-It is our own composition of the upstream images (EOSC metadata-warehouse `v1.10.0` in `../EOSC-Data-Commons/metadata-warehouse`, built from there; data-commons-search `0.10.2`, with the patches in `patches/search-api/` applied by `search-api.Dockerfile`: its keyword search queries the root copies of the nested title, description and subject fields; matchmaker `0.14.0`, upstream's image, pinned by digest), shaped like `deploy/` so that it can move there:
+It is our own composition of the upstream images (EOSC metadata-warehouse `v1.10.0` in `../EOSC-Data-Commons/metadata-warehouse`, built from there, its Airflow image with the patches in `patches/warehouse/` applied by `warehouse-airflow.Dockerfile` on top of upstream's image, which the build-only service `airflow-upstream` builds unchanged; data-commons-search `0.10.2`, with the patches in `patches/search-api/` applied by `search-api.Dockerfile`: its keyword search queries the root copies of the nested title, description and subject fields; matchmaker `0.14.0`, upstream's image, pinned by digest), shaped like `deploy/` so that it can move there:
 
 - **Secrets as files**, from `MODAMA_SECRETS_DIR`, which must be set; `./uptest.sh` writes a `.env` (gitignored, as `deploy/.env`) that points it at the throwaway test values in `testconf/secrets/`. One file per concern, and each service gets only the files it needs: the crawler has no warehouse credentials; `modama-chain` reads with a read-only database role and an Airflow Viewer account; the search API has its own role, owner of its database `appdb` only; the crawler's Airflow account (only in `crawl-timer`) has a role `harvest-trigger` that may start and read runs of the harvest DAG and nothing else (Airflow needs edit on that DAG to start its runs, so it could pause that one DAG).
 - **One-shot init services** instead of scripts on the host, idempotent, run on every start and restarted on failure: `warehouse-init` (`init-warehouse.sh`: databases, schema, index, our endpoint as the only active one, the roles) `airflow-init` (Airflow's database and admin), and `airflow-accounts` (`init-airflow.sh`, once the dag-processor has written the DAGs, since Airflow's per-DAG permissions exist only then: the crawler's role and the two accounts, created when missing; to change a password, delete the account and restart).
@@ -35,6 +35,35 @@ export MODAMA_SECRETS_DIR=~/.config/modama/e2e-secrets
 `docker-compose.override.yml` (loaded automatically, as in `deploy/`) makes it a test deployment: ports on 127.0.0.1 (crawler 7654, Airflow 8081, search API 8000, matchmaker 3000, OpenSearch 9200), a volume `testdata` as the data tree, and for the end-to-end test this folder mounted into the crawler at `/e2e` and the crawler's Airflow account in the crawler too.
 
 The end-to-end test (`test_e2e.py`, run by `./runtest.sh e2e` inside the crawler container) builds a tree from the crawler's fixture generators, crawls it, waits for the harvest the crawl started, and traces every record through all stages with `modama-chain`. It searches through the search API and through matchmaker's server (its page, and the search route its page calls; no browser runs). Then an incremental harvest, and faults the trace must find: a datestamp set back (`BEFORE-HARVEST-WINDOW`), a deleted index document (`SYNCED-WITHOUT-DOCUMENT`), a renamed file (`STALE`), a stopped warehouse database, and a failed harvest, which may block the endpoint (metadata-warehouse#158), so start the next run with `./downtest.sh --reset`.
+
+## CPU budget
+
+Every service that runs several processes counts, at its start, what its container may use on this machine and sizes its processes and threads from it, so that by default they do not oversubscribe the CPUs; no numbers per machine in the compose files (requirements-pipeline 2.4, "CPU budget" and "The operator stays in control"; change `cpu-budget` in `python/crawler/openspec/changes/`). The math libraries would otherwise each start a thread pool for the whole machine in every process: on 48 CPUs about 119 threads per indexing batch (`docs/research/cpu-oversubscription.md`).
+
+| Service | Counts | Starts, by default | Override |
+|---|---|---|---|
+| `crawler`, `crawl-timer` (a crawl, `records`) | the logical CPUs of its affinity (a cpuset included), at most its cgroup v2 CPU quota | that many matching and extraction processes, at most 8; BLAS and OpenMP with 1 thread in each | `MODAMA_CRAWLER_EXTRACT_WORKERS` |
+| `airflow-worker-transform` (`cpu-budget/budget.py`) | the physical cores among those CPUs, the same quota; Airflow's task slots; the memory limit, if the container has one (1.7 GB per batch process) | P batch processes (Celery's `--concurrency`), the smallest of the three; T = cores ÷ P threads each for ONNX Runtime and the tokenizers; BLAS 1; Airflow's pool `transform` set to P | `TRANSFORM_PROCESSES` (P), `EMBEDDING_THREADS` (T) |
+| `search-api` (`cpu-budget/budget.py`) | the logical CPUs, as the crawler | one uvicorn worker per CPU, 1 embedding thread each (a query is tens of tokens) | `WORKERS`, `EMBEDDING_THREADS` |
+| scheduler and workers of Airflow | — | `max_active_tasks_per_dag` and `parallelism` at 1024, a ceiling no machine of ours reaches, so that the worker's budget governs | `AIRFLOW_TASK_LIMIT` (both at once) |
+
+Math pools (ONNX Runtime, tokenizers) count physical cores, the crawler's and the search API's I/O-bound pools logical CPUs (@weber, 2026-11-12). Each service logs its budget once at start; an active override is named in it:
+
+```
+INFO CPU budget: 8 worker processes, 1 math thread each; 8 CPUs usable (affinity 8, no quota)
+CPU budget: 8 processes × 1 thread; 8 cores usable (8 logical CPUs, no quota); no memory limit; 1024 task slots (max_active_tasks_per_dag 1024, parallelism 1024); no override
+CPU budget: 8 workers × 1 thread; 8 CPUs usable (affinity 8, no quota); no override
+```
+
+(the crawler's on stderr of each crawl, the others first in `docker compose logs airflow-worker-transform` and `search-api`). `./cpu-budget.sh` (`./cpu-budget.sh staging` for staging) shows, before a start, what each of the three will choose on this machine and why: the cgroup version Docker reports, the inputs, the expected memory of the batches, the CPU weight, the active overrides and how to set each. It runs the services' own code in throwaway containers started like the services, so a limit or an override in the compose files or the env file shows up there. A file the count cannot parse (`cpu.max`, `memory.max`, a topology list) or an override that is not a positive integer stops the service's start with a message naming it; the container then restarts in a loop, and `./cpu-budget.sh` prints the same message.
+
+**Priority.** The background services, `crawler`, `crawl-timer`, `airflow-worker`, `airflow-worker-transform` and `transform`, run with `cpu_shares: 512`, below Docker's default; the search API and matchmaker, which answer users, keep the default (@weber, 2026-11-12). A weight only acts when the CPUs are contended and reserves nothing. In the VM (cgroup v2, runc 1.1.15) that is `cpu.weight` 20 against 100; `./cpu-budget.sh` prints each service's.
+
+**Overrides, and when to use them.** For a measurement (`perf/indexing-bench.sh`, `perf/embed-bench.py`), set them in the service's environment, for example in an extra compose file; for the operator of a shared machine, set the task limit in the deployment's env file: on the dev server `AIRFLOW_TASK_LIMIT=16` in `staging.env` leaves cores for PostgreSQL, OpenSearch and the devvms (@weber, 2026-11-12: "here (devvms running etc) we restrict it. 16 sounds sensible"). A CPU limit for a service (`cpus:` or `cpuset:` in its compose entry) or a memory limit (`mem_limit:`) needs no override: the count follows it. The search API on all CPUs means one model per worker, about 0.45 GB each (48 workers on 48 CPUs, about 22 GB); `WORKERS` lowers it.
+
+**Not done by the stack:** the weight of the whole stack against the rest of the machine. Under cgroup v2 a container's weight competes with its siblings in `system.slice`; libvirt's VMs (the devvms) are in `machine.slice`. To give them precedence over the whole stack, the host needs a slice of the stack's own with a lower `CPUWeight` and the services `cgroup_parent:` set to it: a one-time setup by the operator, not tried here (`python/crawler/BACKLOG.md`, CPU budget). Under cgroup v1 the quota is not read; the log lines and `./cpu-budget.sh` say so.
+
+**A new embedding model** (`EMBEDDING_MODEL`) needs a new measurement of the memory per batch process (`perf/batch-memory.py`): the 1.7 GB are for bge-small-en-v1.5 at its 512 tokens, with the sub-batch of 32 texts of `patches/warehouse/0002`.
 
 ## Looking around
 

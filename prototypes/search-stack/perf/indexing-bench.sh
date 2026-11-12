@@ -34,8 +34,13 @@ out=$(cd "$out" && pwd)
 export COMPOSE_FILE="$stack/docker-compose.yml:$stack/docker-compose.override.yml:$here/docker-compose.perf.yml"
 [ "${PERF_TODAY:-}" = 1 ] && COMPOSE_FILE+=":$here/docker-compose.today.yml"
 export CELERY_BATCH_SIZE=$batch PERF_CONCURRENCY=$conc
+# the reset below must never reach another project (staging runs as search-staging)
+export COMPOSE_PROJECT_NAME=search-stack
 cd "$stack"
 dc() { docker compose "$@"; }
+# on any exit: stop the host sampler and the probe in the worker, which would run on
+stop() { touch "$out/.stop"; dc exec -T airflow-worker-transform touch /tmp/perf-probe/stop 2> /dev/null || true; }
+trap stop EXIT
 sql() { dc exec -T airflow-postgres psql -U airflow -d airflow -At -F'|' -c "$1"; }
 say() { echo "[$(date -u +%T)] $*" >&2; }
 
@@ -70,6 +75,9 @@ rm -f "$out/.stop"
         while read -r id service; do
             u=$(sed -n 's/^usage_usec //p' "/sys/fs/cgroup/system.slice/docker-$id.scope/cpu.stat" 2>/dev/null) || continue
             printf '%s\t%s\t%s\n' "$t" "$service" "$u"
+            # waiting for a CPU: PSI's total stall time in µs (R6, per container)
+            p=$(sed -n 's/^some .*total=//p' "/sys/fs/cgroup/system.slice/docker-$id.scope/cpu.pressure" 2>/dev/null) &&
+                printf '%s\t%s\t%s\n' "$t" "$service" "$p" >> "$out/pressure.tsv"
         done < "$out/containers.txt"
         printf '%s\t%s\n' "$t" "$(cut -d' ' -f1 /proc/loadavg)" >> "$out/load.tsv"
         sleep 2
@@ -115,13 +123,15 @@ sql "select ti.dag_id, ti.task_id, ti.map_index, ti.state, extract(epoch from ti
      from task_instance ti join dag_run dr on dr.dag_id = ti.dag_id and dr.run_id = ti.run_id
      where dr.start_date >= to_timestamp($t0) order by ti.start_date" > "$out/tasks.txt"
 curl -s 'http://127.0.0.1:9200/test_datacite/_count' > "$out/count.json"
-dc exec -T airflow-worker-transform bash < "$stack/../../.claude/field-tests/batch-times.sh" > "$out/batch-times.txt" 2>&1 || true
-dc exec -T airflow-worker-transform grep -rh -e 'Transform resources ready' -e 'Transformed batch' /opt/airflow/logs \
-    > "$out/batch-log.txt" || true
+# the transform batches' log lines only (the file-metadata batches log "Transformed batch" too)
+dc exec -T airflow-worker-transform sh -c "find /opt/airflow/logs -path '*task_id=run_transform_batch*' -type f \
+    -exec grep -h -e 'Transform resources ready' -e 'Transformed batch' {} +" > "$out/batch-log.txt" || true
 cat > "$out/meta.env" <<EOF
 n=$n
 batch=$batch
 conc=$conc
+threads=${PERF_THREADS:-}
+today=${PERF_TODAY:-}
 t0=$t0
 crawl_end=$crawl_end
 load=${load// /,}
@@ -129,7 +139,5 @@ prewarm_s=$prewarm
 crawl_summary=${crawl_summary// /_}
 EOF
 
-echo "== batch-times.sh (last log lines)"
-cat "$out/batch-times.txt"
 echo "== summary ($out)"
 python3 "$here/report.py" "$out"

@@ -5,6 +5,8 @@
 # pool `transform`, which budget.py would set, is set to the 1 process here.
 services:
   airflow-worker-transform:
+    environment:
+      EMBEDDING_THREADS: ""  # ONNX Runtime's default, whatever PERF_THREADS says
     command:
       - bash
       - -c

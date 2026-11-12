@@ -13,6 +13,14 @@ from pathlib import Path
 out = Path(sys.argv[1])
 meta = dict(line.split("=", 1) for line in (out / "meta.env").read_text().split())
 t0 = float(meta["t0"])
+# the worker's real concurrency, from its command line (the bench's PROCESSES may be empty: the budget)
+command = (
+    (out / "worker-command.txt").read_text()
+    if (out / "worker-command.txt").exists()
+    else ""
+)
+found = re.search(r"--concurrency (\d+)", command)
+concurrency = int(found.group(1)) if found else None
 
 
 def rows(name: str) -> list[list[str]]:
@@ -34,8 +42,12 @@ h_start, h_end, h_state = runs["warehouse_harvest_and_index"]
 t_start, t_end, t_state = runs.get("warehouse_transform_index", (None, None, "missing"))
 count = json.loads((out / "count.json").read_text()).get("count")
 print(
-    f"run: N={meta['n']} CELERY_BATCH_SIZE={meta['batch']} concurrency={meta['conc']}  load at start: {meta['load']}"
+    f"run: N={meta['n']} CELERY_BATCH_SIZE={meta['batch']} concurrency={concurrency} "
+    f"(PROCESSES={meta['conc'] or 'budget'} PERF_THREADS={meta.get('threads') or 'budget'} "
+    f"PERF_TODAY={meta.get('today') or 0})  load at start: {meta['load']}"
 )
+if (out / "budget.txt").exists():
+    print((out / "budget.txt").read_text().strip())
 print(f"model pre-warm (download into the empty cache): {meta['prewarm_s']} s")
 print(f"crawl: {float(meta['crawl_end']) - t0:.1f} s ({meta['crawl_summary']})")
 print(f"harvest DAG: {h_state}; transform DAG: {t_state}")
@@ -58,12 +70,12 @@ for task in ("run_transform_batch", "run_filemeta_batch"):
     ts = sorted(tasks.get(task, []), key=lambda t: t[1])
     print(f"{task}: task durations (s) {stats([e - s for _, s, e, _ in ts])}")
     print(f"  queued -> started (s) {stats([s - q for q, s, _, _ in ts])}")
-    if ts and task == "run_transform_batch" and t_end:
+    if ts and task == "run_transform_batch" and t_end and concurrency:
         busy = sum(e - s for _, s, e, _ in ts)
         span = max(e for *_, e, _ in ts) - min(s for _, s, _, _ in ts)
         print(
             f"  first start -> last end {span:.1f} s; task-seconds / (span x concurrency) = "
-            f"{busy / (span * int(meta['conc'])):.0%} of the worker's slots busy"
+            f"{busy / (span * concurrency):.0%} of the worker's slots busy"
         )
 log = (out / "batch-log.txt").read_text()
 ready = [
@@ -84,9 +96,8 @@ for line in (out / "cpu.tsv").read_text().splitlines():
     samples[service].append((float(t), int(usec) / 1e6))
 
 
-def usage_at(service: str, t: float) -> float:
-    """The last sample at or before t (the first one if none)."""
-    xs = samples[service]
+def usage_at(xs: list[tuple[float, float]], t: float) -> float:
+    """The last sample of xs at or before t (the first one if none)."""
     best = xs[0][1]
     for ts, u in xs:
         if ts > t:
@@ -104,7 +115,7 @@ totals = defaultdict(float)
 for service in sorted(samples):
     cells = []
     for w, a, b in windows:
-        d = usage_at(service, b) - usage_at(service, a)
+        d = usage_at(samples[service], b) - usage_at(samples[service], a)
         totals[w] += d
         cells.append(d)
     if max(cells) >= 1:
@@ -114,6 +125,18 @@ print(
     "  cores busy on average:   "
     + "".join(f"{totals[w] / max(b - a, 1e-9):11.2f}" for w, a, b in windows)
 )
+if (out / "pressure.tsv").exists():
+    stalls = defaultdict(list)  # service -> [(t, stall s)]: cpu.pressure "some" total
+    for line in (out / "pressure.tsv").read_text().splitlines():
+        t, service, usec = line.split("\t")
+        stalls[service].append((float(t), int(usec) / 1e6))
+    print(
+        "CPU pressure per container (seconds some task waited for a CPU, cpu.pressure):"
+    )
+    for service, xs in sorted(stalls.items()):
+        cells = [usage_at(xs, b) - usage_at(xs, a) for _, a, b in windows]
+        if max(cells) >= 0.5:
+            print(f"  {service:26}" + "".join(f"{c:11.1f}" for c in cells))
 if (out / "load.tsv").exists():
     loads = [
         tuple(map(float, line.split("\t")))
@@ -140,6 +163,10 @@ if (probe / "batches.json").exists():
     print(f"  main thread CPU (s) {stats([b['main_thread_cpu_s'] for b in bs])}")
     print(f"  other threads CPU (s) {stats([b['other_threads_cpu_s'] for b in bs])}")
     print(f"  threads at most: {sorted({b['max_threads'] for b in bs})}")
+    envs = sorted({json.dumps(b.get("environ", {}), sort_keys=True) for b in bs})
+    print(f"  thread variables (from /proc/PID/environ): {', '.join(envs)}")
+    mib = [b["VmHWM_kb"] / 1024 for b in bs if "VmHWM_kb" in b]
+    print(f"  peak RSS, VmHWM (MiB) {stats(mib)}")
     task_s = sum(e - s for _, s, e, _ in tasks.get("run_transform_batch", []))
     life_s = sum(b["life_s"] for b in bs)
     print(
