@@ -27,10 +27,12 @@ from werkzeug.exceptions import (
 from werkzeug.routing import Map, Rule
 from werkzeug.wrappers import Request, Response
 
-from . import chain, crawler, upstream, views
+from . import chain, crawler, live, upstream, views
 
 # The header a live or snapshot request must carry: another site cannot make the browser send it (D14)
 SNAPSHOT_HEADER = "X-Modama-Browse"
+# The page's tab: a live request ends only its own tab's running or queued one (D3, @weber 301)
+TAB_HEADER = "X-Modama-Browse-Tab"
 # Host names the page answers to, the port aside (DNS rebinding; D14)
 LOCAL = frozenset({"localhost", "127.0.0.1"})
 CACHED = 16  # paths whose views are kept for a snapshot
@@ -160,6 +162,7 @@ class Settings:
     config: Path | None  # the crawl's TOML
     host_root: str  # the data tree's path on the server (D11)
     snapshots: Path | None  # the snapshot folder, shown by its name ("browse/…")
+    at_once: int = live.AT_ONCE  # live computations at once (D3)
 
 
 class Browser:
@@ -174,9 +177,11 @@ class Browser:
                 Rule("/api/list", endpoint="list"),
                 Rule("/api/stored", endpoint="stored"),
                 Rule("/api/live", endpoint="live"),
+                Rule("/api/waiting", endpoint="waiting"),
                 Rule("/api/snapshot", endpoint="snapshot", methods=["POST"]),
             ]
         )
+        self.slots = live.Slots(settings.at_once)
         self.lock = threading.Lock()
         self.cache: OrderedDict[str, dict] = (
             OrderedDict()
@@ -266,12 +271,18 @@ class Browser:
         views.check_sync(entry["stored"].views, self.s.stack)
         return entry["stored"]
 
-    def live(self, path: str) -> list[views.View]:
+    def live(self, path: str, tab: str | None) -> list[views.View]:
         entry = self._cached(path)
         before = entry.get("stored") or self.stored(path)
         entry["live"] = views.check_sync(
             views.live_views(
-                self.s.stores, self.s.upstream, path, self.s.config, before
+                self.s.stores,
+                self.s.upstream,
+                path,
+                self.s.config,
+                before,
+                self.slots,
+                tab,
             ),
             self.s.stack,
         )
@@ -297,7 +308,12 @@ class Browser:
     def on_live(self, request: Request) -> Response:
         self._own_page(request)  # it ends a running computation and starts one (D3)
         path = self._file(request)
-        return self._json({"path": path, "views": views.as_dicts(self.live(path))})
+        live_views = self.live(path, request.headers.get(TAB_HEADER))
+        return self._json({"path": path, "views": views.as_dicts(live_views)})
+
+    def on_waiting(self, request: Request) -> Response:
+        """How many live requests wait ahead of the tab's, for the page's "waiting, k ahead"; null when it waits for none."""
+        return self._json({"ahead": self.slots.ahead(request.headers.get(TAB_HEADER))})
 
     def on_snapshot(self, request: Request) -> Response:
         self._own_page(request)
@@ -306,7 +322,7 @@ class Browser:
         path = self._file(request)
         entry = self._cached(path)
         before = entry.get("stored") or self.stored(path)
-        live = entry.get("live") or self.live(path)
+        live = entry.get("live") or self.live(path, request.headers.get(TAB_HEADER))
         now = datetime.now(UTC)
         name = snapshot_name(path, now)
         body = request.get_json(silent=True)
