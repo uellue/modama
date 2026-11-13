@@ -30,15 +30,19 @@ Within a group, external links sorted by their names' bytes whose target paths a
 - **THEN** its 12 links are one entry, from `data_000001` to `data_000012`
 
 ### Requirement: Links are counted
-The extractor of an HDF5 file with links to other files SHALL give in `mapped_metadata` the number of external links (`external_links`) and of mappings onto other files (`virtual_sources`), and by distinct target file other than itself: `found`, a regular file of that name in the file's folder; `dangling`, none; `elsewhere`, named with a relative folder part or a `%` pattern, never looked up. An absolute target counts by its last component. Names SHALL be looked up with `lstat` only.
+The extractor of an HDF5 file with links to other files SHALL give in `mapped_metadata` `external_links` and `virtual_sources` (mappings onto other files), and by distinct target name other than its own: `found`, a regular file of that name in the file's folder; `dangling`, none; `elsewhere`, a relative path with a folder part or a `%` pattern. An absolute target SHALL count by its last part. The folder SHALL be listed once, nothing opened; a listing error SHALL fail the extraction.
 
 #### Scenario: A master whose data files are all missing
 - **WHEN** `scan_master.h5` of `linked_scan` is crawled alone in a folder
 - **THEN** it is a dataset of `common/hdf5` with `external_links 12` and `dangling 12`
 
 #### Scenario: Targets in other folders
-- **WHEN** an HDF5 file links `../raw/a.h5`, `sub/c.h5` and `/acquisition/pc/b.h5`, and the files `c.h5` and `b.h5` are in its folder
-- **THEN** `elsewhere` is 2 and `found` 1, and `c.h5` is a dataset of its own
+- **WHEN** an HDF5 file links `../raw/a.h5`, `sub/c.h5`, `./c.h5`, `/acquisition/pc/b.h5` and `/other/pc/b.h5`, and the files `c.h5` and `b.h5` are in its folder
+- **THEN** `elsewhere` is 3 and `found` 1, and `c.h5` is a dataset of its own
+
+#### Scenario: A Windows path
+- **WHEN** an HDF5 file links `C:\data\x.h5`, and `x.h5` is in its folder
+- **THEN** `dangling` is 1, and `x.h5` is a dataset of its own
 
 ### Requirement: Dangling links are no error
 A link whose target is not in the folder SHALL NOT be a warning or an error: it is counted (requirement "Links are counted"), as for a stopped acquisition.
@@ -48,7 +52,7 @@ A link whose target is not in the folder SHALL NOT be a warning or an error: it 
 - **THEN** the master's dataset has `external_links 12`, `found 3` and `dangling 9` in `mapped_metadata`, and neither the dataset nor the crawl has a warning about the links
 
 ### Requirement: HDF5 files linked by a file of their folder are one dataset
-A file of type `application/vnd.hdfgroup.hdf5` whose links name other HDF5 files of its folder that h5py opens (its targets), which no other file names but a target whose only target it is, and which is not one of two files each the other's only target, SHALL anchor one dataset of the format `common/hdf5links` with its targets as members, whatever its name.
+A file named `*.h5` of type `application/vnd.hdfgroup.hdf5` whose links name other HDF5 files of its folder (its targets), which no other `*.h5` file names but a target whose only target it is, and which is not one of two such files each the other's only target, SHALL anchor one dataset of the format `common/hdf5links` with its targets as members, whatever the rest of its name. Links of other files SHALL NOT be listed in recognition.
 
 #### Scenario: An acquisition with its master
 - **WHEN** `linked_scan` is crawled
@@ -60,7 +64,15 @@ A file of type `application/vnd.hdfgroup.hdf5` whose links name other HDF5 files
 
 #### Scenario: A NeXus file is no anchor
 - **WHEN** the master of `linked_scan` is named `scan.nxs`
-- **THEN** it is a dataset of `common/nexus` and each data file a dataset of its own
+- **THEN** it is a dataset of `common/nexus`, each data file a dataset of its own, and recognition reads nothing of `scan.nxs`
+
+#### Scenario: An .emd file is not listed
+- **WHEN** a folder holds `a.emd`, an HDF5 file with an external link to `d1.h5`, and `d1.h5`
+- **THEN** recognition reads nothing of `a.emd`, and each is a dataset of `common/hdf5` of its own
+
+#### Scenario: A generic name linked by an absolute path
+- **WHEN** a folder holds `scan.h5`, with an external link to `/calibration/shared/flatfield.h5`, and an unrelated `flatfield.h5`, and `/calibration/shared/flatfield.h5` exists in the test's tree
+- **THEN** `scan.h5` anchors a dataset with the folder's `flatfield.h5`, as HDF5 would find it when the absolute path does not exist, and nothing under `/calibration/shared/` is opened
 
 #### Scenario: A virtual dataset over files of the folder
 - **WHEN** a folder holds `vds.h5`, whose virtual dataset is mapped onto `part_001.h5` to `part_004.h5`, and those four files
@@ -101,7 +113,7 @@ Recognition and extraction SHALL compare a target name with the names of the fol
 - **THEN** `m.h5` anchors a dataset with the folder's `x.h5`, `elsewhere` is 1, and `../../outside/x.h5` is not opened
 
 ### Requirement: Recognition of links is bounded
-`common/hdf5links` SHALL list links in worker processes (the core's inspection) only in a folder with two to 200 HDF5 files, within a byte budget of 32 MiB per folder, at most 5,000 objects and links per file, and a deadline of 45 s per file checked between objects, inside the core's outside limit of 60 s; a limit that cuts SHALL be named in a warning.
+`common/hdf5links` SHALL list links in worker processes (the core's inspection) only in a folder with two to 200 HDF5 files, at least one of them `*.h5`, with at most 5,000 objects and links and 4 MiB read per file, and no time limit but the core's outside limit of 60 s, so that the same files give the same datasets on every crawl; a limit that cuts SHALL be named in a warning.
 
 #### Scenario: One HDF5 file alone is not opened
 - **WHEN** a folder holds one HDF5 file and a text file
@@ -115,9 +127,13 @@ Recognition and extraction SHALL compare a target name with the names of the fol
 - **WHEN** a file has at its root an external link `c` to `c.h5` of its folder and a group `deep` holding 6,000 empty groups and one group with an external link to `d.h5` of its folder
 - **THEN** it anchors a dataset with `c.h5`, `d.h5` is a dataset of its own, and the dataset has a warning saying its links were listed up to 5,000 objects
 
-#### Scenario: A listing past its deadline
-- **WHEN** the listing of a file reaches its deadline after its link to `c.h5` and before its link to `d.h5`
-- **THEN** it anchors a dataset with `c.h5`, and the dataset has a warning saying its links were listed up to the time limit
+#### Scenario: A file over its budget
+- **WHEN** the listing of a master would read more than 4 MiB
+- **THEN** it is a dataset of `common/hdf5` of its own, its data files too, and the folder has a warning naming the file and the budget, the same on every crawl
+
+#### Scenario: A listing that times out
+- **WHEN** the listing of `scan_master.h5` of `linked_scan`, crawled for the first time, does not end within the outside limit
+- **THEN** each file of the folder is a dataset of its own, the folder has a warning naming the master and the limit, and the folder is recognised again next crawl
 
 #### Scenario: Recognition in a process of its own ends cleanly
 - **WHEN** `linked_scan` is recognised by `modama-crawler records` in a subprocess
