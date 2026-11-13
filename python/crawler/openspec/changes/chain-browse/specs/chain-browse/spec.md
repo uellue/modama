@@ -57,7 +57,7 @@ The live views SHALL be computed in a new process for each request, with an envi
 - **THEN** the second request's live record shows the new description
 
 ### Requirement: Live work is bounded
-A live computation SHALL list and recognise only the selected file's folder and the folders above it, SHALL extract only the dataset holding the file, with one worker under the crawler's time limit and memory budget, and SHALL be ended with all its processes after twice the crawler's extraction time limit, the view saying so. At most N (`MODAMA_BROWSE_LIVE`, default 4) SHALL run at once across the page's tabs, further ones SHALL wait first in, first out, and the page SHALL show how many wait ahead; a new request of a tab SHALL end that tab's running one or take its waiting one out of the queue, and requests without a tab id SHALL count as one tab. Selecting a folder SHALL start none (design D3, D5).
+A live computation SHALL list and recognise only the selected file's folder and the folders above it, SHALL extract only the dataset holding the file, with one worker under the crawler's time limit and memory budget, and SHALL be ended with all its processes after twice the crawler's extraction time limit, the view saying so. Selecting a folder SHALL start none (design D3, D5).
 
 #### Scenario: A file next to a large subfolder
 - **WHEN** a file's folder has a subfolder of many files, and the file's live views are requested
@@ -66,6 +66,9 @@ A live computation SHALL list and recognise only the selected file's folder and 
 #### Scenario: A computation over the limit
 - **WHEN** a live computation runs longer than its limit
 - **THEN** its process group is gone and the view names the limit
+
+### Requirement: Live computations per tab
+At most N live computations (`MODAMA_BROWSE_LIVE`, default 4) SHALL run at once across the page's tabs; further ones SHALL wait first in, first out, and the page SHALL show how many wait ahead. A new request of a tab SHALL end that tab's running computation or take its waiting one out of the queue. Requests without a tab id SHALL count as one tab (design D3, decision 301).
 
 #### Scenario: A newer request of the same tab
 - **WHEN** a tab's live computation runs and the same tab requests another
@@ -81,7 +84,7 @@ A live computation SHALL list and recognise only the selected file's folder and 
 
 #### Scenario: A newer request of a waiting tab
 - **WHEN** a tab's live request waits in the queue and the same tab requests another
-- **THEN** the waiting one leaves the queue at once without starting a process, answered "ended by a newer request", and the newer one waits in its place at the end of the queue
+- **THEN** the waiting one leaves the queue at once without starting a process, answered "ended by a newer request", and the newer one waits at the end of the queue
 
 #### Scenario: A request without a tab id
 - **WHEN** live computations are requested without the tab header, one while another runs
