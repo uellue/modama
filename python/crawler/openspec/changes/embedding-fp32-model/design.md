@@ -4,96 +4,166 @@
 
 See proposal.md, "Why". Current state:
 
-- **The warehouse's Airflow image** is upstream's, built unchanged as `search-stack-airflow-upstream:3.3.2`, with our patches `patches/warehouse/0001` to `0003` applied in a busybox stage and copied over it (`prototypes/search-stack/warehouse-airflow.Dockerfile`). Patch 0002 passes `threads` to `TextEmbedding` and embeds the texts in order of length in sub-batches of 32 (`src/transform/transform_core.py`, `src/utils/embedding_utils.py`). Each patch starts with a header: what it does and why, with the numbers measured; `Against metadata-warehouse v1.10.0 with … applied; applied with patch -p1 in the image build (modama search stack, warehouse-airflow.Dockerfile; change …, decision …)`; and "Unset, nothing changes" where a variable switches it.
-- **The model file** is not in the image. fastembed 0.8.0 downloads `qdrant/bge-small-en-v1.5-onnx-q` (`model_optimized.onnx`, 66 MB) on first use into the volume `fastembed-airflow` (`FASTEMBED_CACHE_DIR=/opt/airflow/cache/fastembed`, `docker-compose.yml`, `airflow-worker-transform`). The transform venv (`/opt/airflow/transform-venv`, Python 3.13) has fastembed 0.8.0, onnxruntime 1.24.4, tokenizers 0.22.2 and numpy 2.4.4, and no `onnx` (read from `search-stack-airflow:3.3.2` on 2026-11-13).
-- **fastembed can load a local folder:** `TextEmbedding(..., specific_model_path=<dir>)` keeps the registered description of `BAAI/bge-small-en-v1.5` (its model file name `model_optimized.onnx`, its pooling and normalisation) and loads from that folder without downloading (`fastembed/common/model_management.py:402-404`, `fastembed/text/onnx_embedding.py:209,251`, in the image). The tokenizer files are read from the same folder.
-- **The query side** is different. The search API embeds each query with its own fastembed 0.7.4 and onnxruntime 1.23.2, from its own download of the same model (change `cpu-budget`, design.md, "Search API"). So index and query vectors already come from two runtime versions. Nobody has measured how far apart they are.
+- **The warehouse's Airflow image** is upstream's, built unchanged as `search-stack-airflow-upstream:3.3.2`. Our patches `patches/warehouse/0001` to `0003` are applied in a busybox stage and copied over it (`prototypes/search-stack/warehouse-airflow.Dockerfile`). Patch 0002 passes `threads` to `TextEmbedding` and embeds the texts in order of length, in sub-batches of 32.
+  - Each patch starts with a header: what it does and why, with the numbers measured.
+  - Then `Against metadata-warehouse v1.10.0 with … applied; applied with patch -p1 in the image build (modama search stack, warehouse-airflow.Dockerfile; change …, decision …)`.
+  - Where a variable switches the patch, the header says "Unset, nothing changes".
+  - The image's user is `airflow`, uid 50000, gid 0.
+- **The model file** is not in the image. On first use, fastembed 0.8.0 downloads `qdrant/bge-small-en-v1.5-onnx-q` into the volume `fastembed-airflow`. On the VM that is revision `aa8f8b060edb00e03bfdd08813a2949946c8ba55`, with these SHA-256 values (read from the volume on 2026-11-13):
+
+  | File | SHA-256 |
+  |---|---|
+  | `model_optimized.onnx` (66,465,124 bytes) | `51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431` |
+  | `tokenizer.json` | `d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66` |
+  | `tokenizer_config.json` | `0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53` |
+  | `special_tokens_map.json` | `5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a` |
+  | `config.json` | `13582bcf2effc85b7bf3d3f5532e686bc1c9ce86bb009d10f0ec33cbe92299dd` |
+
+  Staging's volume is read in task 1.1. The transform venv (Python 3.13) has fastembed 0.8.0, onnxruntime 1.24.4, tokenizers 0.22.2 and numpy 2.4.4, and no `onnx`.
+- **The graph.** Read with onnx 1.23.2 (`/var/tmp/fp32-model/graph_facts.py`, 2026-11-13):
+  - IR 6, opsets `''` 11 and `com.microsoft` 1, producer `onnxruntime.transformers` 1.16.3;
+  - 12 Attention, 12 FastGelu, 24 SkipLayerNormalization and 36 MatMul nodes, all with float16 inputs, and 149 float16 initializers;
+  - the output `last_hidden_state` is float.
+
+  It is a graph optimised for float16. ONNX Runtime's CPU provider has no float16 kernels for these operators, so it casts the activations around them on every run (E1).
+- **fastembed can load a local folder.** `TextEmbedding(..., specific_model_path=<dir>)` keeps the registered description of `BAAI/bge-small-en-v1.5` (its model file name, pooling and normalisation) and loads from the folder, tokenizer files included, without downloading (`fastembed/common/model_management.py:400-404`, `fastembed/text/onnx_embedding.py:209,251`, in the image).
+- **The query side.** The search API embeds each query with its own fastembed 0.7.4 and onnxruntime 1.23.2, from its own download of the same model (change `cpu-budget`, design.md, "Search API"). With the production file, its vectors and the warehouse's are bitwise identical (E6).
+- **The index** stores the vectors in OpenSearch's HNSW (lucene) with `encoder: sq`, scalar quantisation (`metadata-warehouse/config/opensearch_mapping.json`).
 - **The service `transform`** (the warehouse's API) also sets `EMBEDDING_MODEL`. Whether it embeds anything on the indexing path was not checked. This change touches only the Airflow image's transform batches.
 
 ## Evidence
 
-What the repository holds, and what it does not:
+- **E1. Where the time goes** (change `cpu-budget`, design.md, "Profile of one batch on long texts (249)", corrected by the review of a8dc31d9). Each run of the production file has 53 Casts. Per the review's ONNX Runtime profile of 8 texts × 512 tokens, they act on activations, not weights: 27 float16 → float and 25 float → float16 casts of [8, 512, 384] per run. Where the graph has FastGelu, the production file's profile shows Mul, Add, Tanh and FusedMatMul (11 % with the Mul/Add/Tanh). With the float32 file, FastGelu runs as one kernel and those operators are gone. The kernel time of the 8 texts fell from 4,290 to 3,739 ms (−13 %). This supersedes earlier readings:
+  - `cpu-budget`'s ("casts 53 float16 tensors", "the GELU is not fused");
+  - the research note's ("conversion of 53 fp16 weight tensors", "1 % Cast");
+  - this change's first draft ("about 1 % on long texts").
+- **E2. Size** (`docs/research/embedding-throughput.md`, section 1): 33.4 M parameters, 133 MB in float32. Measured: the converted weight file is 132,848,640 bytes and the graph 45,749 bytes. The note's expectation of "identical numbers if only the storage changes" does not hold (E6).
+- **E3. The conversion** (`perf/grace-embedding/prepare_model.py`, `to_fp32`). Every float16 initializer and Constant becomes float32, Casts to float16 now cast to float, float16 inputs and outputs become float, and `value_info` is dropped. There is no `onnx.checker` run, because LayerNormalization at opset 11 is accepted by ONNX Runtime but not by the checker. The weights go to one external file (`size_threshold=1024`). **onnx 1.23.2 writes that file with mode 0600** even under umask 0002 (reproduced on 2026-11-13: `model_optimized.onnx` 0664, `model_optimized.onnx.data` 0600). Copied as it is, the worker's user could not read it if another user owns it.
+- **E4. VM quick run of the grace benchmark** (2026-11-13 06:51 UTC). It was not in the repository; its files were copied to `/var/tmp/fp32-model/vm-quick-run/` (temporary). It used 4 cores, the load was 3.5 at the start, and each case is one sample of 2 to 4 s. On synthetic short texts, at 4 × 1, CPU per text was 37.3 ms with the production file against 32.1 and 30.5 ms with the float32 file.
+  - Per process at 4 × 1, short texts (peak RSS, PSS, USS): production file 351, 304 and 297 MB; float32 file 261, 217 and 205 MB; float32 file without pre-packing 259, 159 and 123 MB.
+  - With pre-packing on, the mapped weights are barely shared (PSS − USS 12 MB).
+- **E5. CPU per text** (review of a8dc31d9, VM, one process, T = 1, sub-batch 32, sorted, interleaved A B B A; raw files not in the repository):
 
-- **E1. Profile** (change `cpu-budget`, design.md, "Profile of one batch on long texts (249, 2026-11-13)"; VM, AMD EPYC 7F72, 8 vCPUs, AVX2): the file "computes in float32 … and each run casts 53 float16 tensors". At 512 tokens, Cast is 1.0 % of the model runs' time. The GELU shows as Mul, Add and Tanh (11 %), so it is not fused. A text of 512 tokens costs about 530 ms of CPU. The model runs are 130.0 s of a batch's 130.4 s of CPU. Listed there as "Not tested": a model file of our own, "at most about 10 % gain; it needs the `onnx` package and a check that the embeddings stay".
-- **E2. Research note** (`docs/research/embedding-throughput.md`, sections 1 and 4; ranked change 6): 33.4 M parameters, 133 MB in float32 against 67 MB in float16 (an *estimate* from `config.json`). A float32 file is "worth up to about 12 % by the profile (11 % GELU, 1 % Cast)", "with identical numbers if only the storage changes. That last point is to be verified by comparing embeddings". The note's hypothesis is that the Casts break the fusion patterns. A further estimate: the per-run Casts move about 67 MB read and 133 MB written per run.
-- **E3. The conversion** (`prototypes/search-stack/perf/grace-embedding/prepare_model.py`, `to_fp32`; README, "The model file"). Every float16 initializer and Constant becomes float32, Casts to float16 now cast to float, float16 graph inputs and outputs become float, and `value_info` is dropped. There is no `onnx.checker` run, because the file uses LayerNormalization at opset 11, which ONNX Runtime accepts and the checker does not. The weights are saved as external data in one file (`size_threshold=1024`). The docstring says ONNX Runtime 1.24.4 maps external data, copying it only if that fails (`core/framework/tensorprotoutils.cc`, `GetFileContent`). The README says the production file "stores all 149 weight tensors in float16" and is "already optimised … (fused Attention, FastGelu, SkipLayerNormalization)". **The two notes disagree on the GELU:** E1's profile shows it unfused. The float32 file's own profile will settle this (task 1.4).
-- **E4. VM quick run of the grace benchmark** (2026-11-13 06:51 UTC, run `data-management-system-crawler-20261113-065122-quick-all`). **This run is not in the repository.** Its `summary.json`, `table.txt` and `run.log` were only in a session's scratchpad, and are now copied to `/var/tmp/fp32-model/vm-quick-run/` on the VM, which is temporary too. The folders `/var/tmp/grace-bench/results/` named in its log are gone. The numbers below are copied from `table.txt` and `summary.json`. Setup: x86_64 VM, 4 of its 8 cores used, fastembed 0.8.0, onnxruntime 1.24.4, onnx 1.23.2, Python 3.13.5. The machine was not idle: the load average was 3.5, 7.9 and 8.9 at the start. Quick mode means one sample per case of 2 to 4 s (64 to 348 texts). The texts are synthetic (`gen_texts.py`). The production case runs through fastembed's `TextEmbedding`; the float32 case replaces fastembed's session with one of its own, with fastembed's options, tokenizer and post-processing.
-
-  | Short texts (median 44 tokens, max 67), sub-batch 32, sorted | texts/s | CPU ms per text | peak RSS, PSS, USS per process (MB) |
+  | Set | production file (ms per text) | float32 file (ms per text) | change |
   |---|---|---|---|
-  | production file, 1 × 1 | 28.9 | 34.4 | 348, 326, 307 |
-  | float32 file, 1 × 1 | 33.8 | 29.6 (−14 %) | 262, 240, 222 |
-  | production file, 4 × 1 | 102.4 | 37.3 | 351, 304, 297 |
-  | float32 file, 4 × 1 (two runs) | 117.5; 127.2 | 32.1 (−14 %); 30.5 (−18 %) | 261, 217, 205; 264, 217, 205 |
-  | float32 file without pre-packing, 4 × 1 | 115.7 | 32.5 (−13 %) | 259, 159, 123 |
+  | short | 33.2, 33.4 | 28.7, 28.6 | −14 % |
+  | mixed | 155.2, 157.1 | 141.3, 137.9 | −10 % |
+  | long (512 tokens) | 541.5, 539.1 | 475.5, 461.7 | −13 % |
 
-  Vectors (first 512 texts of the mixed set, median 45 tokens, 12 % at 512 tokens): minimum cosine to production's 0.9999997 for the float32 file and 0.9999996 without pre-packing. The int8 file was 0.9647. **Not measured:** whether any vector is bitwise identical, the maximum absolute difference, the float32 file on mixed and long texts, 8 to 16 processes, and real records through the worker's own batch path.
+  Repeats were within 3 %. Peak VmHWM at 512 tokens was 1,322 MB with the production file and 1,245 MB with the float32 file.
+- **E6. Vectors and ranking** (review of a8dc31d9; raw files not in the repository).
+  - **Today's spread is zero.** The production file in the search API's runtime (onnxruntime 1.23.2) against the warehouse's (1.24.4), and one text embedded alone against the same text in a sorted batch of 32: 832 of 832 vectors bitwise identical.
+  - **Float32 file against production file:**
+    - short: 0 of 512 identical, largest component difference 5.35e-4, minimum cosine 0.99999963;
+    - long: 0 of 64 identical, 4.71e-4, 0.99999974.
+    - The index's `sq` encoder moves a component by up to about 3e-3, by a rough 7-bit stand-in.
+  - **Ranking.** 192 synthetic near-tie queries, each embedded alone, against 832 records:
+    - float vectors, float32 file against production file: the same top-10 sets for every query, and the same order in 97 %;
+    - the 7-bit stand-in alone (production against itself, quantised against not): overlap 0.970, same order 26 %;
+    - both quantised, float32 file against production file: overlap 0.997.
 
-So the brief's "about 20 % less CPU on short texts" is the upper end of 14 to 18 % from one noisy quick run: the two runs of the same float32 case differ by 8 %, about half the effect. Its "identical vectors" means a minimum cosine of 0.9999997 on 512 texts, which is not identity. A cosine computed in float32 over 384 components may itself be off by that much, so it cannot tell identity from a small difference. Memory per process was lower with the float32 file, not higher. With pre-packing on (ONNX Runtime's default, which fastembed keeps), PSS is only 12 MB above USS, so most of the weights end up in private pre-packed copies, and mapping the file saves little across processes.
+  So the change of file moves results less than the index's own quantisation does.
 
 ## Goals / Non-Goals
 
-**Goals:** less CPU per indexed record on the x86 staging and production host, with vectors that agree with the upstream file's to a stated bound, a guard against drift, and a way back without a rebuild.
+**Goals:**
+- less CPU per indexed record on the x86 staging and production host;
+- vectors within a stated cosine of the upstream file's;
+- a guard against drift and against the wrong folder;
+- a way back without a rebuild.
 
-**Non-Goals:** changing the vectors on purpose (int8, another model); graph optimisation beyond the change of storage type; the search API; the GPU and aarch64.
+**Non-Goals:**
+- changing the vectors on purpose (int8, another model);
+- graph optimisation beyond the change of storage type;
+- the search API;
+- the GPU and aarch64.
 
 ## Decisions
 
-**D1. The conversion happens once, at image build, from the pinned upstream file.** In a build stage `FROM search-stack-airflow-upstream:3.3.2 AS model`, the transform venv's `huggingface_hub` downloads `model_optimized.onnx` and the tokenizer files (`tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`, `config.json`) of `qdrant/bge-small-en-v1.5-onnx-q` at a pinned revision (a commit of the Hub repository). The stage then checks each file's SHA-256 against the pin and stops on a mismatch. A throwaway venv in the same stage gets `onnx` and converts the file (D2), and the transform venv runs the vector check (D4). The final image copies only the folder with the float32 graph, its weight file and the tokenizer files, to `/opt/modama/models/bge-small-en-v1.5-fp32/`, and sets `ENV EMBEDDING_MODEL_PATH` to it. **The final stage copies from the check's output**, because BuildKit skips stages the target does not use, and a check nobody depends on would never run. The pin is the file the VM and staging use today, read from their `fastembed-airflow` volumes (the snapshot folder's name is the Hub revision). That way the conversion starts from the file that made the current index.
-Alternatives: convert at the worker's start (needs `onnx` in the running image, and every batch process or a lock would race for it); commit the converted file (133 MB in git); a separate model image or volume (one more artifact to version, for no gain at one consumer); ONNX Runtime's `optimized_model_filepath` (no `onnx` needed, but it saves the graph after the provider's own transformations; whether it keeps float16 initializers and Casts, and how portable such a file is across versions, was not checked).
+**D1. The conversion happens at image build, from pinned upstream files.** A build stage `FROM search-stack-airflow-upstream:3.3.2 AS model` does the following:
+- It fetches the five files of the table above with `ADD --checksum=sha256:<pin> https://huggingface.co/qdrant/bge-small-en-v1.5-onnx-q/resolve/aa8f8b060edb00e03bfdd08813a2949946c8ba55/<file>`. BuildKit checks each hash, and no download code of our own is needed. Docker on the VM is 26.1.5; task 2.1 confirms its Dockerfile frontend accepts `--checksum` for HTTP sources.
+- A throwaway venv in the stage gets `onnx==1.23.2` and converts the graph (D2). The script writes the marker (D3) and sets every file to mode 0644 (E3).
+- The transform venv runs the check (D4).
 
-**D2. The conversion is `prepare_model.py`'s `to_fp32`, as a script of the stack.** It goes in a new script with two commands, `convert` (E3's steps) and `check` (D4), for example `prototypes/search-stack/embedding-model/fp32.py`. `prepare_model.py` stays as it is, so that the grace folder remains a self-contained copy. Once, the two outputs for the same input are compared by SHA-256 (task 1.2). If they are equal, the grace numbers on the float32 file are numbers on the built file.
+The final stage copies the folder from the check's output to `/opt/modama/models/bge-small-en-v1.5-fp32/`, so BuildKit cannot skip the check, which it would for a stage nobody depends on. It sets `ENV EMBEDDING_MODEL_PATH` to the folder. Then a `RUN`, as the image's user (uid 50000), opens the graph in an ONNX Runtime session: this is the scenario "The worker's user reads the files". The check runs whenever the stage's cache is invalidated: on a change of a pin, the script, the upstream image or the stage.
 
-**D3. The warehouse loads the file through fastembed (patch 0004).** `0004-embedding-model-file.patch` adds `specific_model_path=os.environ.get('EMBEDDING_MODEL_PATH') or None` to the `TextEmbedding` call that 0002 shaped, and names the folder, or "fastembed's download", in the existing log line `Setting up embedding transformer with model …`. The log line follows requirements-pipeline 2.4, "The operator stays in control": what a running service chose is in its log. The header follows 0002's form: what, why with E4's numbers and then the staging numbers, "Unset or empty, nothing changes", and "Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; … change embedding-fp32-model, decision 283".
-Alternatives: `TextEmbedding.add_custom_model` (it needs a new model name and a download source, and loading a local file still needs `specific_model_path`); ONNX Runtime directly (our own tokenisation, pooling and normalisation in place of fastembed's: code of our own where the library already does it, and a second place for the pre- and post-processing to drift).
+Alternatives:
+- Convert at the worker's start: needs `onnx` in the running image, and the batch processes would race for the file.
+- Commit the converted file: 133 MB in git.
+- A model image or volume of its own: one more artifact to version, for one consumer.
+- One file without external data (it fits under protobuf's 2 GB): avoids the separate file's mode, but ONNX Runtime then reads the weights rather than mapping them, and E4's memory numbers are for external data. Not taken unless task 3.3 shows that the mapping gains nothing.
+- Making the CPU provider run the float16 graph without the casts: it has no float16 kernels for these operators, and no session option changes that. The float32 file is the route.
 
-**D4. "Identical" made precise, and the guard.** Two vectors are compared per component, as the float32 values the bulk body stores. The measures are (a) how many of the vectors are bitwise identical, (b) the largest absolute difference of a component, and (c) the minimum cosine, computed in float64. Three fixed sets of texts are used: short, mixed and long, 512 each, made by `gen_texts.py` with a fixed seed so that they are the same in every build. Before the bound is chosen, two things are measured once (task 1.3): the float32 file against the production file in the same runtime (onnxruntime 1.24.4), and, as the yardstick the stack already lives with, the production file in the warehouse's runtime against the same file in the search API's (onnxruntime 1.23.2). **The bound** (Q2): bitwise identity if (a) is 1,536 of 1,536. Otherwise, the largest difference of the yardstick, rounded up to the next power of ten. The build check applies it on every build, and the spec's scenario "A file that changes the vectors" checks that the check fails on the int8 file. **Re-index** (Q3): not needed if the float32 file is within the yardstick. Old and new vectors then differ less than the queries and the index already do, and the next full re-index brings every record onto the float32 file anyway.
+**D2. The conversion is `prepare_model.py`'s `to_fp32`, as a script of the stack.** It goes in `prototypes/search-stack/embedding-model/fp32.py`, with the commands `convert` (E3, the marker, the modes) and `check` (D4). Its test is `test_fp32.py` next to it, run with pytest in `/var/tmp/fp32-model/venv`. That venv is made from `perf/grace-embedding/requirements-cpu.in` (production's fastembed 0.8.0, onnxruntime 1.24.4, tokenizers and numpy, plus onnx 1.23.2) and pytest. Not from the `.txt` lock next to it, which is compiled for aarch64. The crawler's pytest has neither onnx nor ONNX Runtime. The test fetches the pinned graph from the Hub. Without the network it fails and says so (AGENTS.md, "Fail, don't skip"). `prepare_model.py` stays as it is, so that the grace folder remains a self-contained copy. Once, the two outputs for the same input are compared by SHA-256 (task 1.2).
+
+**D3. The warehouse loads the file through fastembed (patch 0004).** `0004-embedding-model-file.patch` does three things:
+- It adds `specific_model_path=os.environ.get('EMBEDDING_MODEL_PATH') or None` to the `TextEmbedding` call that 0002 shaped.
+- When the path is set, it first reads the folder's marker, `modama-model.json`. The marker names the model, the source repository, the revision, each upstream file's SHA-256 and the onnx version. The patch raises an error naming both models if the marker's model is not `EMBEDDING_MODEL` (review S3; scenario "Another model configured").
+- It names the folder, or "fastembed's download", in the existing log line `Setting up embedding transformer with model …` (requirements-pipeline 2.4, "The operator stays in control").
+
+The header follows 0002's form, with E5's numbers, "Unset or empty, nothing changes", and "Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; … change embedding-fp32-model, decision 283".
+
+Alternatives:
+- `TextEmbedding.add_custom_model`: it needs a new model name and a download source, and a local file still needs `specific_model_path`.
+- ONNX Runtime directly: our own tokenisation, pooling and normalisation in place of fastembed's. That is code of our own where the library already does it, and the review's cosine of 0.9999996 shows that fastembed's pre- and post-processing are the same either way.
+
+**D4. "Agree", made precise.** The vectors cannot be bitwise identical: the float32 file runs other kernels (E1), and 0 of 576 vectors were identical (E6). Today's spread between runtimes and batch compositions is zero, so it cannot serve as the bound. The bound is set against what matters downstream.
+- **The build's criterion:** every pair's cosine at least 0.99999, computed in float64. The measured minimum is 0.99999963, so the bound leaves a margin of about 27 times in 1 − cosine. That margin covers a build host whose instruction set differs from staging's: ONNX Runtime picks its kernels by CPU, for example AVX-512 against staging's AVX2. The int8 file (0.9647) fails it. The grace benchmark's 0.9999 is looser.
+- **Reported, not gated:** the bitwise-identical count, and the largest component difference against the index's `sq` step of about 3e-3 (E6).
+- **The build's texts:** 32 to 64 per set (short, mixed, long; `gen_texts.py` with a fixed seed), so that the check costs tens of seconds. The full sets (512 short, 512 mixed, 64 long) and the ranking test of E6 run once, in task 1.3.
+- **Re-index (Q3, open for @weber):** the lean is not to re-index. The basis is E6's ranking result (the change moves results less than `sq` does), not a yardstick of zero. Records indexed before keep the production file's vectors, and the next full re-index brings every record onto the float32 file.
 
 **D5. The disadvantages, weighed.**
 
-| What | Known | Not known; how it is measured |
+| What | Known | Still to measure |
 |---|---|---|
-| Disk: about 133 MB in the image (E2's estimate; 66 MB today, in the volume) | 2.82 GB image, so about +5 %. The float16 file stays in the volume `fastembed-airflow`, unused by the batches. Staging's disk is watched (`monitor.sh` warns above 90 %). | The real size of the built folder (task 2.2). |
-| RAM per batch process | Lower in E4: USS 205 MB against 297 at 4 × 1 on short texts. With pre-packing on, the mapping is barely shared (PSS − USS 12 MB); without it, 36 MB. | 8 and 16 processes, and long texts, where the activations dominate (about 1.3 GB per process at 512 tokens, E4's production rows). Task 3.2. The 1.6 GiB per batch process of the CPU budget is for the production file at 512 tokens (`README`, "CPU budget"), and needs a measurement for a new file. |
-| Build time | One more stage: download 66 MB, convert, embed 1,536 texts twice. | Measured in task 2.2. An estimate from E1's 530 ms per long text: the 512 long texts alone take about 2 × 270 s of CPU on one core, so the long set may need fewer texts (Q2). |
-| A new build dependency, **`onnx`** | 1.23.2, pinned in `perf/grace-embedding/requirements-cpu.txt` and checked on PyPI on 2026-11-13; only in the discarded stage. | Its current release, licence and wheels for the image's Python 3.13, looked up again when the stage is written (AGENTS.md: ask before a new dependency). |
-| Drift from upstream | The Hub repository or fastembed's description can change: when the metadata-warehouse upgrades fastembed, or when Qdrant updates the file. The build then stops (spec: "The build stops when the upstream file has moved"). The search API downloads the file unpinned at its first start, so after a Hub update its queries would use the new file and the index the pinned one. This holds today too, between the two volumes. | Nothing to measure. The README's "Upgrade" gets one line: a stopped build means re-pinning, D4's measurement again, and the decision on a re-index. |
-| Long texts (512 tokens) | Cast is 1.0 % of the model's time there (E1), so the gain may be about 1 %, unless the float32 file lets the GELU fuse (11 %). | The float32 file's ONNX Runtime profile at 512 tokens (`perf/wrap/cpu.py`, `ORT_PROFILE=1`, `ortsum.py`), task 1.4; CPU per record at FILL 500, tasks 3.1 and 4.2. |
-| Mixed texts | In sorted sub-batches, the short ones gain as short texts and the long ones as long texts. Staging's length mix is not known (`cpu-budget` design.md, H1). | `perf/wrap/lengths.py` on staging's sample, task 4.2. |
+| Disk | +132.9 MB in the image (2.82 GB today, about +5 %). The float16 file stays in the volume, unused by the batches. Staging's disk is watched (`monitor.sh`). | The built folder's size, task 2.3 |
+| RAM per batch process | Lower: USS 205 against 297 MB at 4 × 1 on short texts (E4); peak at 512 tokens 1,245 against 1,322 MB (E5). The CPU budget's 1.6 GiB stays (Q8). | 8 processes on the VM (task 3.3), 16 on staging (task 4.2) |
+| Build time | One more stage: fetch 66 MB, convert, embed the check's texts twice, open the file once. | Task 2.3 |
+| A new build dependency, **`onnx` 1.23.2** | The current PyPI release, licence Apache-2.0 (PyPI's `license_expression`, read on 2026-11-13). Only in the discarded stage and in the script's test venv. | — |
+| Drift from upstream | Pins on all five files: a changed tokenizer changes vectors too. A changed fastembed description stops the build (spec). The marker stops a batch under another `EMBEDDING_MODEL`. The search API still downloads unpinned at its first start, as today. | The README's "Upgrade" gets the steps for a stopped build: re-pin, task 1.3 again, decide on a re-index |
+| File modes | onnx writes the weight file 0600 (E3). The script sets 0644, and the build opens the file as uid 50000. | — |
+| Long and mixed texts | −13 % and −10 % CPU per text (E5). | Staging's own mix, task 4.2 |
 
-So far, none of these is a distinct disadvantage in @weber's sense (item 283). Memory goes down, and the disk and the dependency are small and confined to the build. The open points are the size of the gain on staging's own records and the vector bound.
+None of these is a distinct disadvantage in @weber's sense (item 283). Memory and CPU go down, and the disk and the dependency are small and confined to the build.
 
-**D6. Measurement.** First on the VM (tasks 3.x), then on staging (tasks 4.x), with the same image and the same batch, and only `EMBEDDING_MODEL_PATH` switched (empty means before, the image's value means after). That way the before and after differ in the file alone. The instruments are `cpu-budget`'s: `perf/batch-memory.py` (one whole transform batch in a throwaway container, as the DAG runs it, without writing), `perf/wrap/run.sh` and `cpu.py` (wall and process CPU time), `embcmp.py` (the two bulk bodies' embeddings) and `lengths.py` (token lengths). Two gaps in them were found while planning (AGENTS.md, "Own instruments first": a gap is a finding):
-- `batch-memory.py` loads every closed harvest run's events before it picks N, which is fine for the VM's 19 records and not for staging's 1.45 million. It gets an opt-in fixed sample: the first N non-deleted events of the newest closed run, by event id (Q7).
-- `embcmp.py` prints the identical count and the cosine. It gets the largest absolute difference (D4 (b)), and `batch-memory.py`'s memory line gets PSS and USS from `/proc/self/smaps_rollup`.
+**D6. Measurement.** The VM numbers exist (E5). Staging confirms them rather than gating the change: on staging's own records the mix differs, and the build host's CPU is not the VM's.
+- **Before and after:** the same image and the same sample. Only `EMBEDDING_MODEL_PATH` is switched: empty for before, the image's value for after.
+- **Order and repeats:** cases run in the order A B B A B A, so three repeats each; the median is reported, with the spread.
+- **Go rule:** go if the mixed set's gain is at least 5 % and more than twice the spread between repeats.
+- **Instruments:** `cpu-budget`'s `perf/batch-memory.py`, `perf/wrap/run.sh`, `cpu.py`, `embcmp.py` and `lengths.py`. Gaps found while planning (AGENTS.md, "Own instruments first"):
+  - `batch-memory.py` loads every closed harvest run's events before it picks N; on staging that is 1.45 M records. It gets an opt-in fixed sample: N non-deleted events ordered by a hash of their event id (representative and repeatable, review S7), and `MAX_TOKENS` for the short set.
+  - Its memory line gets PSS and USS from `/proc/self/smaps_rollup`.
+  - `embcmp.py` gets the largest absolute difference.
+- **Sets:** short (`MAX_TOKENS=64`), mixed (the sample as it is), long (FILL 500). N = 250, T = 1, the image's sub-batch of 32.
+- **On staging, @weber runs the commands**, and only while `dc exec crawler modama-chain status` shows no harvest and no indexing running. No `up`, image start or measurement container runs during either. The build waits for the same window.
 
-The sets are as follows. **Short**: the sample's records of at most 64 tokens (the same extension, `MAX_TOKENS`). **Mixed**: the sample as it is, which on staging is the real mix. **Long**: FILL 500, 512 tokens. Each case runs with N = 250, T = 1 and the image's sub-batch of 32, twice, interleaved before, after, before, after, because one sample is not a trend. The result is CPU seconds per record (the process's CPU ÷ N, as in `cpu-budget`, imports and load included) and `transform_batch_impl`'s time. Memory is measured at 8 processes (VM, `perf/wrap/par.sh 8 1 …`) and at 16 (staging, its budget with `AIRFLOW_TASK_LIMIT=16`). **On staging @weber runs the commands, and only while `dc exec crawler modama-chain status` shows no harvest and no indexing running**: no image start, no `up`, and no measurement container during either, since they would compete with the run and skew both. Building the image does not touch running containers, but it waits for the same window, so that staging's next `up` takes nothing half-measured.
-
-**D7. The grace benchmark.** `perf/grace-embedding/` measures the float32 file on aarch64 (CPU step F at the best layout, step G memory at 1, 8 and 72 processes) and on the GPU, against the float16 file. The CPU kernels there are different (MLAS on Neoverse V2, and bf16 fast math as a variant), so its numbers neither confirm nor rule out x86's. This change is for the x86 staging and production host and does not wait for grace. What grace adds when it comes: the vector agreement of the same conversion on a second architecture, and whether the file is worth it there if the indexing ever moves to grace. On the GPU the float16 file computes in float16, and the float32 file would be the wrong choice; that is the grace benchmark's question, not this change's.
+**D7. The grace benchmark.** `perf/grace-embedding/` measures the float32 file on aarch64 (CPU steps F and G) and on the GPU. The CPU kernels there are different, so its numbers neither confirm nor rule out x86's. This change does not wait for it. When grace's results come, they add the same conversion's vector agreement on a second architecture. On the GPU the float16 file computes in float16; that is grace's question.
 
 ## Risks / Trade-offs
 
-- [The gain on staging's real mix is small, because long records dominate the CPU] → Measured before acceptance (task 4.2). If the mixed set's gain is within the noise of the interleaved repeats, the change stops after task 4.2. The cost so far is a branch, not a deployment.
-- [The vectors are not bitwise identical, and a mixed index gives slightly different neighbours] → D4: the bound comes from the difference the stack already has between index and query runtimes; the e2e test's search checks run on the new image.
-- [The check stage makes every build of the Airflow image slower] → It is measured (task 2.2). If it takes more than a minute or two, the long set shrinks (Q2); the hash check stays in full.
-- [A BuildKit cache hides a changed upstream file] → The download runs at a pinned revision and is checked by hash on every run of the stage. The cache can only reuse a stage whose inputs, and with them the pin, are unchanged.
-- [Pre-packing keeps most of the weights private, so the hoped-for sharing does not happen] → E4: the float32 file is still smaller per process than today's. Turning pre-packing off needs a session option that fastembed does not expose (Q4).
+- [Staging's mix gains less than the VM's] → The go rule of D6. If it fails, the branch stays unmerged and BACKLOG says why.
+- [A mixed index, with old vectors from the production file and new ones from the float32 file] → E6: the change moves results less than `sq` does. Q3 is open for @weber.
+- [The query side stays on the production file] → That is the agreement D4 bounds and E6 measured (queries embedded alone, with the production file's runtime behaviour).
+- [A build host with another instruction set fails the check] → The margin of D4. A failure names the set and the cosine.
+- [The weight file is unreadable at run time] → The modes are set in the script, and the build opens the file as uid 50000.
+- [A BuildKit cache hides a moved upstream file] → `ADD --checksum` checks at every fetch, and a changed pin invalidates the stage.
 
 ## Migration Plan
 
-1. VM: build with the main session's OK (shared image tags), run tasks 3.x, then `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e`.
-2. Staging, after @weber's go: in an idle window (D6), `./upstaging.sh --build`. The batches of the next indexing use the float32 file, and the records already indexed keep their vectors (Q3).
-3. The way back, without a rebuild: `EMBEDDING_MODEL_PATH=` (empty) for `airflow-worker-transform` in a compose file of the deployment, then `dc up -d airflow-worker-transform` in an idle window. With a rebuild: revert the patch and the stage.
+1. VM, with the main session's OK (the image tags are shared): build, tasks 3.x, then `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e`.
+2. Staging, after @weber's go: `./upstaging.sh --build` in an idle window (D6). The next indexing's batches use the float32 file, and indexed records keep their vectors unless Q3 decides otherwise.
+3. The way back without a rebuild: `EMBEDDING_MODEL_PATH=` (empty) for `airflow-worker-transform` in a compose file of the deployment, then `dc up -d airflow-worker-transform` in an idle window.
 
 ## Open Questions
 
-Each with the agent's lean, which the tasks assume until @weber answers.
+The reviewer's answers are recorded as leans, and the tasks assume them. Q3 is open for @weber.
 
-- **Q1. Load through fastembed or ONNX Runtime directly?** Lean: fastembed's `specific_model_path` (D3). It is one line in a patch, with fastembed's own tokenisation, pooling and normalisation, and it is verified in the image's source.
-- **Q2. The bound for "agree", and the size of the check's sets.** Lean: bitwise identity if task 1.3 finds 1,536 of 1,536 identical. Otherwise the yardstick's largest difference (warehouse runtime against search API runtime, same float16 file), rounded up to the next power of ten. At build: 512 short, 512 mixed and 32 long texts (instead of 512), if the full long set takes more than a minute. The number goes to @weber before task 2.1 fixes it.
-- **Q3. Re-index after the switch?** Lean: no, if the float32 file is within the yardstick. Staging's next full re-index, for whatever reason, brings every record onto the new file.
-- **Q4. Pre-packing off?** Lean: leave it on. fastembed exposes no such session option (only `enable_cpu_mem_arena`), and E4's saving is about 80 MB of USS per process (205 against 123 MB), about 1.3 GB at 16 processes. Turning it off would mean our own session or a patch of fastembed. To be revisited if memory, not cores, sets P on a machine.
-- **Q5. Where `EMBEDDING_MODEL_PATH` is set.** Lean: in the Dockerfile (`ENV`), because the folder is part of the image. Compose sets it only for the way back (empty) and for the before-measurement (`-e EMBEDDING_MODEL_PATH=`).
-- **Q6. The search API's query embedding too?** Lean: not in this change. Keeping the query side on the float16 file is exactly what D4 guards, and a query's 17 ms with 1 thread (`README`, "CPU budget", measured in the VM) is where the per-run Casts weigh most. If staging's numbers hold, a follow-up change with its own latency measurement (`perf/embedlat.py`, `searchlat.sh`).
-- **Q7. The fixed sample in `batch-memory.py`.** Lean: an opt-in variable for "the first N non-deleted events of the newest closed harvest run, by event id", plus `MAX_TOKENS` for the short set. On the VM, unset, it behaves as today.
-- **Q8. The CPU budget's 1.6 GiB per batch process.** Lean: unchanged, unless task 3.2 shows a higher peak with the float32 file at 512 tokens. A lower constant would be a separate decision with its own measurement.
+- **Q1. Load the file through fastembed or ONNX Runtime directly?** Lean, and the reviewer's answer: fastembed's `specific_model_path` (D3).
+- **Q2. The bound.** Lean, and the reviewer's answer: a minimum cosine of 0.99999 (float64) gates the build, and the largest difference against `sq`'s step is reported (D4).
+- **Q3. Re-index after the switch? Open, for @weber.** The main session's lean, and the reviewer's: no. The basis is E6's ranking result.
+- **Q4. Pre-packing off?** Lean, and the reviewer's answer: leave it on. fastembed exposes no option for it, and the saving is about 80 MB of USS per process (E4).
+- **Q5. Where `EMBEDDING_MODEL_PATH` is set.** Lean, and the reviewer's answer: `ENV` in the Dockerfile, with the marker guard of D3. Compose sets it only empty, for the way back and the before-measurement.
+- **Q6. The search API's query embedding too?** Lean, and the reviewer's answer: not in this change; a follow-up with its own latency measurement.
+- **Q7. The fixed sample in `batch-memory.py`.** Lean, and the reviewer's answer: opt-in, ordered by a hash of the event id, plus `MAX_TOKENS`.
+- **Q8. The CPU budget's 1.6 GiB per batch process.** Lean, and the reviewer's answer: keep it (peak 1,322 MB with the production file, 1,245 MB with the float32 file).
