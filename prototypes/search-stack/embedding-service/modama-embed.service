@@ -1,0 +1,32 @@
+# The embedding service on grace (README.md next to this file; change embedding-service-grace,
+# design D5): /etc/systemd/system/modama-embed.service, as root.
+[Unit]
+Description=modama embedding service: bge-small-en-v1.5 on the GPU for the search stack's warehouse, 127.0.0.1:7656
+After=network.target
+
+[Service]
+Type=simple
+User=modama-embed
+Group=modama-embed
+# root's file, mode 0600; the service reads $CREDENTIALS_DIRECTORY/token
+LoadCredential=token:/etc/modama-embed/token
+Environment=MODAMA_EMBED_CACHE=/opt/modama-embed/cache
+# the model file the warehouse's local path loads, by the warehouse's setting of the same
+# name: empty, the pinned download in the cache (`server.py fetch`); once the change
+# embedding-fp32-model lands, its float32 folder, made by the same script and pin (README.md)
+Environment=EMBEDDING_MODEL_PATH=
+# bytes per worker for ONNX Runtime's arena on the GPU: twice what measure.py reports
+# (design Q9). Empty: the service refuses to start.
+Environment=MODAMA_EMBED_MEM_LIMIT=
+ExecStart=/opt/modama-embed/venv/bin/python /opt/modama-embed/server.py serve --host 127.0.0.1 --port 7656 --workers 2
+Restart=always
+RestartSec=30s
+# writes only to its cache (CUDA's kernel cache); no home, no new privileges
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/modama-embed/cache
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

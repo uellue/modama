@@ -115,6 +115,22 @@ broker_consumer_timeout() {
     [ "$got" = "{consumer_timeout,$want}" ] || { echo "broker: $got, broker.conf: $want"; return 1; }
 }
 
+# The embedding service's token reaches the transform worker only, never the search API, which
+# would send it to EGI (change embedding-service-grace, spec "The token reaches only the
+# transform worker"); the worker has one exactly when embed.env holds one. No value is printed.
+embed_token_only_in_the_worker() {
+    local secrets want api worker
+    secrets="${MODAMA_SECRETS_DIR:-$(sed -n 's/^MODAMA_SECRETS_DIR=//p' .env)}"
+    want=$(sed -n 's/^EMBED_API_KEY=//p' "$secrets/embed.env" 2> /dev/null)
+    api=$(dc exec -T search-api sh -c 'test -n "$EMBED_API_KEY" && echo set')
+    worker=$(dc exec -T airflow-worker-transform sh -c 'test -n "$EMBED_API_KEY" && echo set')
+    [ -z "$api" ] || { echo "search-api has EMBED_API_KEY"; return 1; }
+    [ "$worker" = "${want:+set}" ] || {
+        echo "airflow-worker-transform: ${worker:-no token}; $secrets/embed.env: ${want:+a token}"
+        return 1
+    }
+}
+
 check "every service is running" all_running
 check "every service with a health check is healthy" all_healthy
 check "the init services have finished" inits_done
@@ -128,6 +144,7 @@ assert creator(10001) == 'Alice Anderson', creator(10001)"
 check "the crawler's Airflow account has the role harvest-trigger" crawler_role
 check "the harvest DAG is unpaused (seen with the crawler's account)" harvest_dag_unpaused
 check "the crawler is the only active endpoint" only_our_endpoint_active
+check "the embedding service's token reaches the transform worker only" embed_token_only_in_the_worker
 check "modama-chain status reaches every store with read-only accounts" \
     dc exec -T crawler modama-chain status
 check "the browser lists the data tree (modama-chain browse)" \
