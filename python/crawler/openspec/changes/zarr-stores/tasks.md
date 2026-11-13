@@ -1,6 +1,6 @@
 # Tasks
 
-Each scenario of `specs/formats/pydata-zarr/spec.md` has one test of the same name in `python/modama-formats-common/src/modama_formats_common/pydata/tests/test_zarr.py`, written before the code. Held until @weber answers Q1–Q6 (317–320, 322, 323).
+Each scenario of `specs/formats/pydata-zarr/spec.md` has one test of the same name in `python/modama-formats-common/src/modama_formats_common/pydata/tests/test_zarr.py`, written before the code. Q5 (322) and Q6 (323) are answered; the code is held until @weber answers Q1–Q4 (317–320).
 
 ## 1. Fixtures and tests first
 
@@ -11,12 +11,13 @@ Each scenario of `specs/formats/pydata-zarr/spec.md` has one test of the same na
 ## 2. Code
 
 - [ ] 2.1 `common/zarr` and `common/zspy` in `pydata/__init__.py` (D4). Verify: the scenarios of "A Zarr store is a described collapsed dataset" and "A HyperSpy Zarr store is typed by name and content".
-- [ ] 2.2 `pydata/zarrstore.py`: the walk (D1–D3: `lstat` before open, `fstat` after, the room rule, the depth bound, `RecursionError`/`MemoryError` per node), bounds, the skip list (the root's `zarr_format` kept; Q5 as @weber answers), the summary line; HyperSpy's skip list moved to `values.py`. Verify: the remaining scenarios; the `.hspy` tests unchanged.
+- [ ] 2.2 `pydata/zarrstore.py`: the walk (D1–D3: `lstat` before open, `fstat` after, the room rule, the depth bound, `RecursionError`/`MemoryError` per node), bounds, the skip list (the root's `zarr_format` kept; a `.zspy` array's storage parameters kept, 322), the summary line; the reasons for reading the JSON ourselves in the module's docstring (323); HyperSpy's skip list moved to `values.py`. Verify: the remaining scenarios; the `.hspy` tests unchanged.
 - [ ] 2.3 Bytes read: the test of "A store of many chunks" compares the `rchar` delta of `/proc/self/io` with the sum of the metadata files' sizes (TEMPLATE.md, "Testing a format"); `strace -f -e trace=openat,newfstatat` of an extraction of the staging sample `AB-graphene.zarr` (its two `zarr.json` read, the 177 MB chunk never opened). Verify: the command and its output in the hand-over.
 
 ## 3. Package, documentation, suites
 
-- [ ] 3.1 `zarr` pinned in the package's `[test]` extra (3.4.2, current on PyPI, pure Python); README rows for Zarr and `.zspy`; TEMPLATE.md, "Extracting metadata": the extractor of a collapsed dataset reads below its anchor (A7); BACKLOG "Zarr attributes" replaced by the stamp limit (A7, Q3); with Q6 agreed, a decision-log row and zarr-python's three behaviours under "Sync with upstream". Verify: the diff.
-- [ ] 3.2 The crawler's CLI tests that name `zarr/zarr` for a store (`tests/test_cli.py`: five fail with `common` installed, 2026-11-13) name the format independently of what else is installed. Verify: the crawler suite.
+- [ ] 3.1 `zarr` pinned in the package's `[test]` extra (3.4.2, current on PyPI, pure Python); README rows for Zarr and `.zspy`; TEMPLATE.md, "Extracting metadata": the extractor of a collapsed dataset reads below its anchor (A7); BACKLOG "Zarr attributes" replaced by the stamp limit (A7, Q3). Verify: the diff.
+- [x] 3.1a Decision-log rows for 322 (storage parameters kept) and 323 (the JSON read ourselves) in `design/architecture.md`; nothing filed upstream (main's, separately). Verify: the diff.
+- [x] 3.2 The crawler's CLI tests that assumed the core's `zarr/zarr` claims a store (`tests/test_cli.py`: five failed with the draft's `common/zarr` installed, 2026-11-13) are independent of the installed format packages: the selection tests (`test_per_path_ignores_from_the_config`, `test_ignore_overrides_selection`, `test_comma_separated_ids`) and `test_dataset_warnings_are_reported_without_verbose` select only the crawler's collections they need (`--select core,zarr`, `core,collapse,zarr`); `test_verbose_diagnostics_travel_with_the_records` names any installed Zarr format (`application/x-zarr by …/zarr`) and counts the warnings from the warning comments. Only these tests changed. Verify: `pytest tests/test_cli.py` with the draft installed and with the main checkout's packages (without `common/zarr`).
 - [ ] 3.3 Suites in an own venv, temporary files under `/var/tmp/zarr-stores/`: `pytest src` in `modama-formats-common` (also with `TZ=Europe/Berlin`), `modama-formats-em`, the crawler; `uvx pre-commit run --all-files` after `git add`. Verify: their outputs, with the number of skipped tests.
 - [ ] 3.4 `modama-crawler records --verbose` on the fixtures and on the staging sample. Verify: the summary lines in the hand-over.
