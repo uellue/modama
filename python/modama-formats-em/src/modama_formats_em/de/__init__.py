@@ -12,7 +12,8 @@ mapping of it second (D4); no other member is read.
 
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +73,24 @@ def read_info(path: str) -> dict[str, str]:
     return entries
 
 
+def owner(name: str, stems) -> str | None:
+    """The longest stem that name starts with, or None (D3).
+
+    A stem ends in "_" (the info file's name without `info.txt`), so only the
+    prefixes of name that end in "_" are looked up: each file once, whatever the
+    number of acquisitions in its folder (review of 2026-11-13, M2), and the
+    longest stem wins, so that 20241021_00405_x_info.txt keeps
+    20241021_00405_x_movie.mrc from 20241021_00405_info.txt.
+    """
+    found = None
+    end = name.find("_")
+    while end != -1:
+        if name[: end + 1] in stems:
+            found = name[: end + 1]
+        end = name.find("_", end + 1)
+    return found
+
+
 def skipped(key: str) -> bool:
     return key in SKIPPED or key.endswith(SKIPPED_ENDINGS)
 
@@ -95,19 +114,62 @@ def plain(value):
     return value
 
 
+class _Collected(logging.Handler):
+    """The messages of a logger's records, for a warning of our own."""
+
+    def __init__(self):
+        super().__init__(logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+@contextmanager
+def collected(name: str) -> Iterator[list[str]]:
+    """The warnings of the logger `name` while the block runs, kept from its own handlers.
+
+    RosettaSciIO's logger writes to stderr in colour, with the file's full path
+    (rsciio._logger.ColoredFormatter); its messages go into our log instead
+    (review of 2026-11-13, nit).
+    """
+    logger = logging.getLogger(name)
+    handler = _Collected()
+    propagate = logger.propagate
+    logger.addHandler(handler)
+    logger.propagate = False
+    try:
+        yield handler.messages
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = propagate
+
+
 def mapping(path: str, anchor: str) -> tuple[dict, list] | None:
     """RosettaSciIO's mapping of the info file, its metadata flat under dotted names and its axes; None, with a warning, where it has none (D4, Q3).
 
     read_de_metadata_file opens the file itself (a text file under MAX_INFO,
     checked by read_info first). It is not handed the scan coordinate file: for
-    a scan that is not a raster it raises a ValueError.
+    a scan that is not a raster it raises a ValueError. Any error of it leaves
+    the mapping out, not the extraction (review of 2026-11-13, M1: a
+    ZeroDivisionError for a frame rate, a sum count or a gain of 0, a TypeError
+    for a scan time missing on a STEM raster). Its own warnings are logged as
+    ours, the file's path replaced by the anchor.
     """
     from rsciio.mrc._api import read_de_metadata_file
 
-    try:
-        _, metadata, axes, _, _ = read_de_metadata_file(path)
-    except ValueError as e:
-        log.warning("%s: no mapping by RosettaSciIO: %s", anchor, e)
+    with collected("rsciio.mrc._api") as messages:
+        try:
+            _, metadata, axes, _, _ = read_de_metadata_file(path)
+        except Exception as e:  # noqa: BLE001  the reader's error must not cost the original
+            log.warning(
+                "%s: no mapping by RosettaSciIO: %s: %s", anchor, type(e).__name__, e
+            )
+            metadata = None
+    for message in messages:
+        text = " ".join(message.replace(path, anchor).split())
+        log.warning("%s: RosettaSciIO: %s", anchor, text)
+    if metadata is None:
         return None
     flat = {k: plain(v) for k, v in tag_paths(metadata) if textual(plain(v))}
     kept = [
@@ -137,24 +199,21 @@ class De(Format):
                 infos.append(e)
             else:
                 d.not_of_type(e, "no DE-Server first line")
-        files = [e for e in d.entries if e.kind == "file"]
-        taken = set()
-        # The longest stem first, so that 20241021_00405_x_info.txt keeps
-        # 20241021_00405_x_movie.mrc from 20241021_00405_info.txt (D3)
-        for info in sorted(infos, key=lambda e: -len(e.name)):
-            stem = info.name[: -len("info.txt")]
-            mine = [
-                f.rel for f in files if f.rel not in taken and f.name.startswith(stem)
-            ]
-            taken.update(mine)
-            # Files of the stem a format before this one claimed: named for
-            # review, the acquisition built of the others (decision 344)
-            for name in sorted(n for n in d.claimed if n.startswith(stem)):
-                d.claimed_elsewhere(info.rel, name)
+        stems = {e.name[: -len("info.txt")]: e for e in infos}
+        members: dict[str, list[str]] = {stem: [] for stem in stems}
+        for f in d.entries:
+            if f.kind == "file" and (stem := owner(f.name, stems)) is not None:
+                members[stem].append(f.rel)
+        # Files of a stem a format before this one claimed: named for review at
+        # their own acquisition, the acquisition built of the others (decision 344)
+        for name in sorted(d.claimed):
+            if (stem := owner(name, stems)) is not None:
+                d.claimed_elsewhere(stems[stem].rel, name)
+        for stem, info in stems.items():
             yield Dataset(
                 anchor=info.rel,
-                members=tuple(mine),
-                basis=f"DE-Server info, {len(mine)} file(s) {stem}*",
+                members=tuple(members[stem]),
+                basis=f"DE-Server info, {len(members[stem])} file(s) {stem}*",
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
@@ -162,8 +221,10 @@ class De(Format):
         path = root + dataset.anchor
         entries = read_info(path)
         name = os.path.basename(dataset.anchor)
-        dataset_name = entries.get("Dataset Name", "")
-        if not name.startswith(f"{dataset_name}_"):
+        dataset_name = entries.get("Dataset Name")
+        if not dataset_name:
+            log.warning("%s: no Dataset Name entry", dataset.anchor)
+        elif not name.startswith(f"{dataset_name}_"):
             log.warning(
                 "%s: Dataset Name %s differs from the file name %s",
                 dataset.anchor,

@@ -26,6 +26,16 @@ Tests first: each task writes the tests of its scenarios, sees them fail, then t
 ## 5. Acceptance
 
 - [x] 5.1 The em, common and crawler suites, also with `TZ=Europe/Berlin` for em and common; `uvx pre-commit run --all-files` after `git add`. Verify: the counts in the hand-over.
-- [ ] 5.2 Review by an agent that did not write the code (`/.claude/skills/format-collection/review-brief.md`), findings verified and answered: for the main session to start.
+- [x] 5.2 Review by an agent that did not write the code (2026-11-13, of 668fdb93: "merge after changes"); findings answered in section 6.
 - [ ] 5.3 With @weber's copy of `20200821_92978`: `modama-crawler records --verbose` on its folder before and after; browse before and after in the search stack (after merge). Verify: one record of 3 members instead of 3.
 - [x] 5.4 `openspec validate em-de --strict`.
+
+## 6. The review's findings (2026-11-13), each with a test that failed first
+
+- [x] 6.1 M1, RosettaSciIO's other errors cost the extraction: `mapping` catches any error, keeps `original_metadata` and the summary line, logs the error. Verify: `test_a_mapping_rosettasciio_cannot_make` (frame rate 0 without a scan, `ADUs Per Electron Bin1x = 0`, no `Scan - Repeat Delay (seconds)`); failed with `ZeroDivisionError` before.
+- [x] 6.2 M2, recognition quadratic in the acquisitions of a folder: each file assigned once to its longest stem (`de.owner`); the runner's `_fill` takes run_post's maps of files and children instead of building them per dataset, which made every format quadratic in the datasets of a folder. Verify: `test_many_acquisitions_in_one_folder` (16,000: 88 s before, 33 s with `owner` alone, 0.6 s after), and in the crawler's suite `test_many_datasets_in_one_directory` (20,000 single-file datasets of a test format: 22.6 s before, under 3 s after).
+- [x] 6.3 S1, a claimed file of a longer stem flagged at the shorter stem too: flagged at its own stem only, by `owner`. Verify: `test_a_claimed_file_of_a_longer_stem` (two warnings before).
+- [x] 6.4 S2, a missing Dataset Name warned as an empty one: "no Dataset Name entry". Verify: `test_an_info_file_without_a_dataset_name`.
+- [x] 6.5 Nit, RosettaSciIO's own warnings in colour with the full path on the output: collected and logged as ours. Verify: `test_a_line_rosettasciio_cannot_parse` (failed before: the message had the full path and no anchor).
+- [x] 6.6 Nit, "the extraction reports a warning": the spec says the worker logs it. Verify: `openspec validate em-de --strict`.
+- [x] 6.7 Nit, D1's count: 7 DE info files in v0.15.0 (the review said 8; the tag's tree lists 7), all 7 parse as RosettaSciIO parses them; the 4 not yet used are fixtures now. Verify: `test_fixture[tem_272]`, `[tem_diffracting_272]`, `[stem_272]`, `[roi_random_275]`, `test_an_acquisition_without_a_scan`.

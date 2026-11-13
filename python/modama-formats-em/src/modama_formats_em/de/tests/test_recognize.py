@@ -1,7 +1,11 @@
 """Direct Electron recognition (spec formats/de), one test per scenario."""
 
+import time
+
+from modama_crawler.formats import BYTE_BUDGET, SLOW, Directory, Entry, run_post
 from modama_crawler.testing import recognise
 
+from modama_formats_em.de import INFO
 from modama_formats_em.testing import claimed_first
 
 ACQUISITION = {
@@ -91,6 +95,58 @@ def test_the_sum_claimed_by_another_format(collection_tests, tmp_path):
             ),
         )
     ]
+
+
+def test_a_claimed_file_of_a_longer_stem(collection_tests, tmp_path):
+    # Review, S1: flagged at the acquisition whose stem it belongs to, the
+    # longest, as membership is decided; not at the shorter stem too
+    result = claimed_first(
+        collection_tests, "nested_stems", tmp_path, "20241021_00405_x_movie.mrc"
+    )
+    by_anchor = {d.anchor: d for d in result.datasets}
+    assert set(by_anchor["/20241021_00405_info.txt"].members) == {
+        "/20241021_00405_info.txt",
+        "/20241021_00405_movie.mrc",
+    }
+    assert by_anchor["/20241021_00405_x_info.txt"].members == (
+        "/20241021_00405_x_info.txt",
+    )
+    assert result.all_warnings() == [
+        (
+            "/20241021_00405_x_info.txt",
+            (
+                "em/de: 20241021_00405_x_movie.mrc is claimed by probe/claim; "
+                "two formats want it"
+            ),
+        )
+    ]
+
+
+def test_many_acquisitions_in_one_folder(collection_tests, tmp_path):
+    # Review, M2: recognition grew with the square of the acquisitions in a
+    # folder (16,000: about 90 s); each file is now assigned to its stem once
+    n = 16_000
+    entries = []
+    for i in range(n):
+        for kind, mime, text in (
+            ("info.txt", INFO, b"Server Software Version = 2.7.4\n"),
+            ("movie.mrc", "application/octet-stream", b""),
+        ):
+            name = f"20241021_{i:05}_{kind}"
+            path = tmp_path / name
+            path.write_bytes(text)
+            entries.append(
+                Entry(name, str(path), f"/{name}", "file", len(text), 1.0, 1.0, 7, mime)
+            )
+    d = Directory("/", str(tmp_path), entries, [], "post", uid=7, mtime=1.0)
+    start = time.monotonic()
+    datasets, _ = run_post(d, collection_tests.collection.formats, SLOW, BYTE_BUDGET)
+    elapsed = time.monotonic() - start
+    print(f"{n} acquisitions recognised in {elapsed:.2f} s")
+    assert len(datasets) == n
+    assert all(len(ds.members) == 2 for ds in datasets)
+    assert d.warnings == []
+    assert elapsed < 5
 
 
 def test_another_programs_files_with_a_date_prefix(collection_tests, tmp_path):

@@ -29,12 +29,20 @@ When a directory holds a file named `<8 digits>_<anything>_info.txt` that starts
 - **WHEN** a directory holds `20241021_00405_info.txt` with `20241021_00405_movie.mrc`, and `20241021_00405_x_info.txt` with `20241021_00405_x_movie.mrc`
 - **THEN** the result has two DE datasets of 2 members each, the `_x_` movie in the `_x_` acquisition
 
+#### Scenario: Many acquisitions in one folder
+- **WHEN** a directory holds 16,000 acquisitions of an info file and a movie each
+- **THEN** they are 16,000 DE datasets of 2 members each, recognised in a time that grows with the number of files, not its square (under 5 s on the development VM)
+
 ### Requirement: A file of the stem claimed by another format is flagged
-A file with an acquisition's stem that a format of higher priority claimed SHALL NOT be a member of the acquisition; the crawl SHALL warn at the info file that two formats want it (spec `recognition`, "A file two formats want is flagged for review"), and the acquisition SHALL be built of its other files.
+A file with an acquisition's stem that a format of higher priority claimed SHALL NOT be a member of the acquisition; the crawl SHALL warn at the info file of the acquisition it would belong to, by the longest stem as for members, that two formats want it (spec `recognition`, "A file two formats want is flagged for review"), and the acquisition SHALL be built of its other files.
 
 #### Scenario: The sum claimed by another format
 - **WHEN** a format of higher priority claims `20241021_00405_final.mrc` of the acquisition `20241021_00405`
 - **THEN** the DE dataset has the other 5 files as members, and the crawl warns at `20241021_00405_info.txt`: `em/de: 20241021_00405_final.mrc is claimed by <that format>; two formats want it`
+
+#### Scenario: A claimed file of a longer stem
+- **WHEN** a directory holds the nesting acquisitions `20241021_00405_` and `20241021_00405_x_`, and a format of higher priority claims `20241021_00405_x_movie.mrc`
+- **THEN** the crawl warns at `20241021_00405_x_info.txt` only, and `20241021_00405_` keeps its 2 members
 
 ### Requirement: An info file of another program is not a DE info file
 A file named like a DE info file that does not start with the key `Server Software Version` SHALL get the type it has without its name, with the reason in its basis, and SHALL NOT group any file. Files sharing a date prefix without a DE info file SHALL stay as they are, without a warning from the DE format.
@@ -80,8 +88,23 @@ The description SHALL start with the summary line: `Camera Model` and `Image Pro
 - **WHEN** the acquisition `20241021_00405` of DE-Server 2.7.4 is crawled
 - **THEN** its record's description starts with `DESim, Integrating, Instrument Accelerating Voltage (V) 300000, Exposure Time (seconds) 0.045712, Frames Per Second 700, Raster, Scan - Size X 8, Scan - Size Y 4, Mon Oct 21 14:36:50 2024`, and its subjects carry `DESim`
 
+#### Scenario: An acquisition without a scan
+- **WHEN** an info file of DE-Server 2.7.2 says `Scan - Enable = Disable`
+- **THEN** its description starts with `CeleritasXS, Integrating, Exposure Time (seconds) 0.3325952, Frames Per Second 40000;`, without the scan's entries
+
 ### Requirement: RosettaSciIO's mapping is a second, labelled section
-The extractor SHALL keep RosettaSciIO's mapping of the info file (its metadata and axes) as `mapped_metadata`, separate from `original_metadata`, and SHALL NOT hand it any other member. Where RosettaSciIO cannot map the info file, the dataset SHALL keep its `original_metadata` and summary line, without `mapped_metadata`, and the extraction SHALL report RosettaSciIO's message as a warning.
+The extractor SHALL keep RosettaSciIO's mapping of the info file (its metadata and axes) as `mapped_metadata`, separate from `original_metadata`, and SHALL NOT hand it any other member. Where RosettaSciIO cannot map the info file, whatever its error, the dataset SHALL keep its `original_metadata` and summary line, without `mapped_metadata`, and the extraction worker SHALL log RosettaSciIO's error as a warning (in its log only; BACKLOG, "Merlin and EMPAD values").
+
+#### Scenario: A mapping RosettaSciIO cannot make
+- **WHEN** an info file has `Frames Per Second = 0` with the scan disabled, or `ADUs Per Electron Bin1x = 0`, or a STEM raster scan without `Scan - Repeat Delay (seconds)` (RosettaSciIO 0.15.0 raises a `ZeroDivisionError` or a `TypeError`)
+- **THEN** its values have `original_metadata` and no `mapped_metadata`, its summary line is as for any info file, and a warning names RosettaSciIO's error
+
+### Requirement: RosettaSciIO's own warnings go into the worker's log as text
+RosettaSciIO's warnings while it maps the info file SHALL be logged by the extraction worker as plain text, with the dataset's anchor instead of the file's path, and SHALL NOT be written to the output by RosettaSciIO's own handler.
+
+#### Scenario: A line RosettaSciIO cannot parse
+- **WHEN** the info file holds a line `Note = a = b`
+- **THEN** the values carry `Note` `a = b`, a warning `<anchor>: RosettaSciIO: Could not parse line: Note = a = b …` is logged without colour codes or the file's path, and RosettaSciIO writes nothing to the output
 
 #### Scenario: A raster scan
 - **WHEN** the acquisition `20241021_00405` is extracted
@@ -89,11 +112,15 @@ The extractor SHALL keep RosettaSciIO's mapping of the info file (its metadata a
 
 #### Scenario: A scan that is not a raster
 - **WHEN** the acquisition `20250429_06699` (`Scan - Type = XY File`) is extracted
-- **THEN** its values have `original_metadata` and no `mapped_metadata`, its description starts with `DESim, Integrating, Instrument Accelerating Voltage (V) 300000, Exposure Time (seconds) 30, Frames Per Second 1, XY File, Scan - Size X 5, Scan - Size Y 5`, the extraction reports a warning, and the scan coordinate file is not read
+- **THEN** its values have `original_metadata` and no `mapped_metadata`, its description starts with `DESim, Integrating, Instrument Accelerating Voltage (V) 300000, Exposure Time (seconds) 30, Frames Per Second 1, XY File, Scan - Size X 5, Scan - Size Y 5`, a warning is logged, and the scan coordinate file is not read
 
 ### Requirement: The Dataset Name is checked against the file name
-When the info file's `Dataset Name` does not start its file name, the extraction SHALL report a warning naming both, and SHALL keep the values.
+When the info file's `Dataset Name` does not start its file name, the extraction worker SHALL log a warning naming both; when the info file has no `Dataset Name` (or an empty one), a warning that the entry is missing. The values SHALL be kept.
 
 #### Scenario: A renamed info file
 - **WHEN** an info file holding `Dataset Name = 20241021_00405` is named `20241021_00406_info.txt`
-- **THEN** the extraction reports a warning naming `20241021_00405` and `20241021_00406_info.txt`, and the values are kept
+- **THEN** a warning naming `20241021_00405` and `20241021_00406_info.txt` is logged, and the values are kept
+
+#### Scenario: An info file without a Dataset Name
+- **WHEN** an info file has no `Dataset Name` line
+- **THEN** the warning `<anchor>: no Dataset Name entry` is logged, and the values are kept

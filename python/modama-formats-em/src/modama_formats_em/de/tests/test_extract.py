@@ -7,9 +7,10 @@ import logging
 import os
 import shutil
 
+from modama_crawler.testing import bytes_read
 from modama_crawler.walk import walk
 
-from modama_formats_em.testing import described, rchar, recorded_reads
+from modama_formats_em.testing import described, recorded_reads
 
 from .generate import ACQUISITION
 
@@ -77,9 +78,7 @@ def test_the_movie_is_not_read(collection_tests, tmp_path):
     (d,) = walk(tree, collection_tests.collection.formats).datasets
     (fmt,) = collection_tests.collection.formats
     fmt.extract(d, str(tree))  # once first: imports
-    before = rchar()
-    fmt.extract(d, str(tree))
-    read = rchar() - before
+    _, read = bytes_read(lambda: fmt.extract(d, str(tree)))
     print(f"{read} bytes read of {d.size}")
     assert read <= 2 * os.path.getsize(info) + (64 << 10)
     with recorded_reads(tree) as reads:
@@ -126,6 +125,88 @@ def test_a_renamed_info_file(collection_tests, tmp_path, caplog):
         and "20241021_00406_info.txt" in r.getMessage()
         for r in caplog.records
     )
+
+
+def edited(ct, tmp_path, edit) -> tuple:
+    """acquisition_274's info file alone, its text changed by edit; the dataset and its extraction."""
+    tree = tmp_path / "edited"
+    tree.mkdir(parents=True)
+    name = "20241021_00405_info.txt"
+    text = (ACQUISITION / name).read_text()
+    (tree / name).write_text(edit(text))
+    (d,) = walk(tree, ct.collection.formats).datasets
+    (fmt,) = ct.collection.formats
+    return d, fmt.extract(d, str(tree))
+
+
+def line(key: str, value: str) -> str:
+    """An info file's line as DE-Server pads it."""
+    return f"{key:<64}= {value}\n"
+
+
+def test_a_mapping_rosettasciio_cannot_make(collection_tests, tmp_path, caplog):
+    # Review of 2026-11-13, M1: RosettaSciIO 0.15.0 divides by the frame rate
+    # and the sum count of an acquisition without a scan and by the gain
+    # (ZeroDivisionError), and adds a missing scan time's default 1 to the
+    # other's text on a STEM raster (TypeError)
+    edits = {
+        "frame rate 0": lambda t: t.replace(
+            line("Scan - Enable", "Enable"), line("Scan - Enable", "Disable")
+        ).replace(line("Frames Per Second", "700"), line("Frames Per Second", "0")),
+        "gain 0": lambda t: t + line("ADUs Per Electron Bin1x", "0"),
+        "no repeat delay": lambda t: t.replace(
+            line("Scan - Repeat Delay (seconds)", "3"), ""
+        ),
+    }
+    for case, edit in edits.items():
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="modama_formats_em.de"):
+            _, extracted = edited(collection_tests, tmp_path / case, edit)
+        assert list(extracted.values) == ["original_metadata"], case
+        assert extracted.summary[0] == "DESim", case
+        assert [
+            r.getMessage() for r in caplog.records if "RosettaSciIO" in r.getMessage()
+        ], case
+
+
+def test_an_info_file_without_a_dataset_name(collection_tests, tmp_path, caplog):
+    # Review, S2: the entry is said to be missing, not compared as empty
+    with caplog.at_level(logging.WARNING, logger="modama_formats_em.de"):
+        edited(
+            collection_tests,
+            tmp_path,
+            lambda t: t.replace(line("Dataset Name", "20241021_00405"), ""),
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages == ["/20241021_00405_info.txt: no Dataset Name entry"]
+
+
+def test_a_line_rosettasciio_cannot_parse(collection_tests, tmp_path, caplog, capfd):
+    # Review, nit: RosettaSciIO warns of a line with two "=" on its own
+    # handler, in colour and with the full path; it goes into our log as text,
+    # with the dataset's anchor. Our parse keeps the line, split at the first "="
+    with caplog.at_level(logging.WARNING, logger="modama_formats_em.de"):
+        _, extracted = edited(
+            collection_tests, tmp_path, lambda t: t + "Note = a = b\n"
+        )
+    assert extracted.values["original_metadata"]["Note"] == "a = b"
+    (message,) = [r.getMessage() for r in caplog.records]
+    assert message.startswith(
+        "/20241021_00405_info.txt: RosettaSciIO: Could not parse line: Note = a = b"
+    )
+    assert "\x1b" not in message and str(tmp_path) not in message
+    out, err = capfd.readouterr()
+    assert "RosettaSciIO" not in out + err
+
+
+def test_an_acquisition_without_a_scan(collection_tests, tmp_path):
+    # Spec formats/de, the summary line: no scan entries when the scan is disabled
+    (acq,) = described(collection_tests, "tem_272", tmp_path)
+    assert acq.description.startswith(
+        "CeleritasXS, Integrating, Exposure Time (seconds) 0.3325952, "
+        "Frames Per Second 40000; "
+    )
+    assert [a["name"] for a in values(acq)["axes"]] == ["time", "y", "x"]
 
 
 def test_an_info_file_of_de_server_2_7_2(collection_tests, tmp_path):

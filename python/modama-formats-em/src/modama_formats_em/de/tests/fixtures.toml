@@ -16,6 +16,30 @@ validity = "vendor-written, renamed: an acquisition of DE-Server 2.7.5.10756 wit
 licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
 source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/Custom_info.txt (sha256 0bbe5961e4dce56f8dbf01c865852eef2d64e5fc962f5c6f870904123f5140f5), Custom_movie.mrc (4d91c16ccce7b2bab77ce39f7b89b1bf62406c0291f12e703bb78f95d5c8c414), Custom_scan_coordinates.csv (4f46d3cbc6d956433d474dcaef7802795a0e63142e55d8cd4256ffa288911157)"
 
+[tem_272]
+purpose = "representative"
+validity = "vendor-written, renamed: an info file of DE-Server 2.7.2.9048 with CeleritasXS, scan disabled, TEM mode (Instrument Project TEMorSTEM Mode 0, camera length -1), unchanged but named 20230925_01497_info.txt after its Dataset Name instead of RosettaSciIO's 3DTEM_scan_info.txt"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/3DTEM_scan_info.txt (sha256 fc78bf35c73a0ba5e65bfdf466aa813e729fd57280d81f8a8ed00c72039777b3)"
+
+[tem_diffracting_272]
+purpose = "representative"
+validity = "vendor-written, renamed: as tem_272, but with a camera length of 10 cm (diffracting), unchanged but named 20230925_01497_info.txt instead of RosettaSciIO's 3DTEMDiffracting_scan_info.txt"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/3DTEMDiffracting_scan_info.txt (sha256 a4424ac228fb62bf701b46425cdfdcf081de54c73cfdd4745a1ec349fef48a7b)"
+
+[stem_272]
+purpose = "representative"
+validity = "vendor-written, renamed: as tem_272, but in STEM mode (Instrument Project TEMorSTEM Mode 1, camera length 20 cm) with the scan disabled, unchanged but named 20230925_01497_info.txt instead of RosettaSciIO's 3DSTEM_scan_info.txt"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/3DSTEM_scan_info.txt (sha256 b5d80109dd36664975c6460f5191e87fc5c9e9bbef30ec143053f51d5f02cfdd)"
+
+[roi_random_275]
+purpose = "representative"
+validity = "vendor-written, renamed: an info file of DE-Server 2.7.5.10756 with DESim, a scan of type Random with an ROI, unchanged but named 20250429_06688_info.txt after its Dataset Name instead of RosettaSciIO's ROI_Random_Scan_info.txt; its movie and scan coordinates not taken"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/ROI_Random_Scan_info.txt (sha256 4eda23dc2e6fe5821479706fd732923660b2dd17b40e184c12930b7ce2bf5192)"
+
 [with_suffix]
 purpose = "reproducer"
 validity = "renamed: acquisition_274's info file, movie and sum named with a filename suffix, 20241021_00405_sampleA_*, as DE-Server's Autosave Filename Suffix inserts it (RosettaSciIO's documentation: uniqueid_suffix_movie.mrc); no file with a suffix written by DE-Server is public"
