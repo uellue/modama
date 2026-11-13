@@ -14,7 +14,9 @@ context: |
   Priorities are the XDG 0..100 model. Type identifiers are valid MIME strings. The unit is a "format" (id collection/format), its code parts a recognizer and an extractor; packages are modama-formats-*.
   Test files have two purposes (testing.md): representative files from the
   wild, at least one per file-specific rule, and reproducers for invalid or
-  incomplete files. Synthetic files only in the core's rule-processing tests.
+  incomplete files. Synthetic files (testing.md, A3 and A4) only in the core's
+  rule-processing tests; a file written at test time by the software that
+  writes the format (A1) is representative (formats/TEMPLATE.md, "Fixtures").
   Per-handler tests run offline; the fixture layout and companion records are
   in testing.md (preliminary).
   Reviewers (@weber, @clausen, @shanker) comment inline in Markdown files on

@@ -91,7 +91,8 @@ A library (a package of collections):
    package passes. The first run records `expected/*.json` and fails: read them, then
    run again. A recorded `"error"` is right only for a fixture that is
    invalid-by-design; otherwise delete the file and fix the code first.
-6. A row in the package's README; the dependency, if any, in its `pyproject.toml`.
+6. A row in the package's README; the dependency, if any, in its `pyproject.toml`;
+   the format's item in `python/crawler/BACKLOG.md`, if it has one.
 7. "Testing a format" below, all of it; then the review and the hand-over (the skill).
 
 **(b) A new library**: as (a), but first the package: copy the layout of
@@ -257,7 +258,7 @@ class Pair(Format):
         return Extracted(
             # "key value" phrases, the start of dc:description
             summary=["scan 256 x 256", "exposure 1 ms"],
-            subjects=["4D-STEM"],  # short terms for dc:subject
+            subjects=["4D-STEM"],  # short terms for dc:subject; required, [] if none
             values={"scan": [256, 256], "exposure_s": 0.001},  # stored, not rendered
         )
 ```
@@ -290,7 +291,10 @@ to its recognition result, so a change of output shows as a diff to review.
 Every file-specific rule you write needs at least one *representative*
 fixture: a realistic file as found in the wild, or one written at test time
 by the software that writes the format in practice. Reproducers for invalid or
-incomplete files are the only exception from realism. A wild file too large or
+incomplete files are the only exception from realism. A broken or misnamed file is
+a fixture of its own too, with `validity = "invalid-by-design: <why>"`
+(`em/mrc`'s `misnamed`), not bytes built inside a test, so that its recorded result
+is reviewed with the others. A wild file too large or
 not to be published whole may be cut to the bytes your rules and extractor read,
 with the cut in `validity` and the tool that cut it beside the manifest
 (`modama-formats-em`'s K2IS `capture52`). A generated fixture must come out the
@@ -308,6 +312,10 @@ source = "where it came from, or what generated it"
 generator = "package.tests.generate:pair"   # optional: writes the fixture into the given directory
 ```
 
+A sha256 in `source` says which file it is of: the download (an archive, a whole
+file before the cut) or the fixture file as committed, each named
+(`modama_formats_em/mrc/tests/fixtures.toml`).
+
 Run `pytest <name>/tests` once: a fixture without a recorded result is recorded
 and its test fails asking for a review; review `expected/*.json`, commit. From
 then on `pytest` compares against them, checks the manifest both ways, and
@@ -317,7 +325,9 @@ representative fixture. After a rule change, `pytest --regen-expected
 diff gets reviewed before it is committed. Your tests run with your definitions
 and the core's only, whatever else is installed.
 
-Try a directory by hand: `modama-crawler records --verbose PATH`.
+Try a directory by hand: `modama-crawler records --verbose PATH`. A generated
+fixture is not on disk in `fixtures/`; after `pytest --basetemp /var/tmp/<you>/pytest`
+it is in `/var/tmp/<you>/pytest/test_fixture_<name>_0/<name>/`.
 
 ## Testing a format
 
@@ -367,7 +377,7 @@ A checklist for every new format, from what `modama-formats-em` taught (where ea
 - [ ] **The summary line**: a few chosen entries as found (Merlin's line of five: `Frames in Acquisition (Number) 1, frame 256, 256, Counter Depth (number) 6, Merlin Quad, 15/04/2021 14:43:23`), text bare, a number after its name (`Exposure Time (s) 2.0`), a 0 left out only where the format writes 0 for "no value" (GMS's `STEM Camera Length`, `dm` `test_a_placeholder_zero`; a block file's `Scan_rotation`), kept where 0 is a value (a mode or a code: MRC's `mode 0` is int8), decided per entry and named in the spec (the skeleton's `phrase` drops every 0, right for its made-up header only), no words or units of ours, with these exceptions: a number whose reader gives no unit says so, "(unit unknown)" (@weber, 2026-11-11; EM README, "Values and units"; EMPAD's exposure time); a document whose metadata can't be read because it is encrypted has the summary line "(encrypted)" (@weber, 2026-11-12, 242b; office: PDF, OpenDocument); an HDF5 file's links to other files are counted at the end of its line, `external_links 441, dangling 396` (also `virtual_sources`, `elsewhere`; 0 left out), and listed in its values as runs, `entry.data.data_000001 … data_000441.external_link: ["scan_00026_data_000001.h5 … scan_00026_data_000441.h5", "/entry/data/data"]`: the counts' names, the key's ` … ` and `external_link`/`virtual_sources` are ours, the names and paths as written (@weber, 2026-11-13, 331: "pointing out dangling ones is clearer"; change hdf5-links, `common/hdf5links`). It is the only positive list. (`dm.HEADLINE`; 228, 231)
 - [ ] **The values become the record's second description**, one `name: value` line each, sorted by name, empty values left out there: names and values must read well that way. (234, change `tags-in-the-record`)
 - [ ] **A text file that stands for itself gives its text instead** (`values["text"]`, through `modama_formats_common.written`: as written up to 4,096 characters, else head and tail, a line that may hold a credential left out); the record's second description is then the text, not the tag lines. (change `text-as-written`)
-- [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. - [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. Count the bytes read in a test (`modama_crawler.testing.bytes_read`). (@weber 2026-11-12; block files: the header plus one buffer)
+- [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. Count the bytes read in a test (`modama_crawler.testing.bytes_read`). (@weber 2026-11-12; block files: the header plus one buffer)
 - [ ] **Time-zone independent output**: a date and time as the file writes it, without a reader's conversion to the local time zone, and a test under another `TZ`. (`modama_formats_em.blockfile`, `test_the_acquisition_time_as_written`)
 - [ ] **Recognition by content where names lie**: a glob plus magic, a subtype (`sub-class-of`) where one exists, and `d.not_of_type` to fall back to the type the file has without its name rule. ("A file that is not of its name's type" above; DM by header whatever the name, `.blo` without `IMGBLO`)
 - [ ] **Fixtures**: public test data with licence and source in `fixtures.toml`, or generated at test time by the software that writes the format; small (cut to what the rules and extractor read if need be, the cut in `validity`); no copyrighted content without a licence. (Fixtures above; @weber 2026-11-12: "Use publicly available test data")
@@ -377,7 +387,7 @@ A checklist for every new format, from what `modama-formats-em` taught (where ea
 
 From the common formats (night of 2026-11-12; the reviews of the changes `common-*` in `python/crawler/openspec/changes/`):
 
-- [ ] **"Read-only" libraries that read the whole file**: some readers read everything to parse a little: pypdf's recovery of a file without `%%EOF` at its end, openpyxl's shared strings, Pillow's EPS and WEBP readers. Found by measuring (`rchar`, strace: `python/crawler/benchmark/README.md`, "Profiling"), not by reading their code. Bound the input before you call such a reader, or leave the format without extraction and say so in the README. (`modama-formats-common` README, PDF, Office Open XML, EPS, WEBP rows)
+- [ ] **"Read-only" libraries that read the whole file**: some readers read everything to parse a little: pypdf's recovery of a file without `%%EOF` at its end, openpyxl's shared strings, Pillow's EPS and WEBP readers. A reader's own bounded mode is measured too: mrcfile's `header_only` still reads, and first allocates, the whole extended header (909 kB in an EPU file), so `em/mrc` reads the bytes it needs itself and hands mrcfile an `io.BytesIO`. Found by measuring (`rchar`, strace: `python/crawler/benchmark/README.md`, "Profiling"), not by reading their code. Bound the input before you call such a reader, or leave the format without extraction and say so in the README. (`modama-formats-common` README, PDF, Office Open XML, EPS, WEBP rows)
 - [ ] **YAML 1.1**: PyYAML reads `10:30` as 630, `NO` as False and a timestamp as a date in another zone. Use the package's loader that keeps plain values as written (`modama_formats_common/yamldoc.py`), never the full loader.
 - [ ] **No encoding detector**: decide a text's encoding from a byte order mark, then ASCII, then UTF-8, else the one fixed fallback; a statistical detector named one in nine short German notes wrongly. (`modama_formats_common/text/head.py`)
 - [ ] **Never read outside the file**: no link, include or reference followed to another file (HDF5 external storage, virtual datasets and external links; XML entities, through defusedxml; reStructuredText includes). A record is seen by more people than the file, and the crawl must not depend on other files. A link may be listed as written (its name, the target's name and path), never followed; a file a link names is read only as a member of your dataset, opened by its own path, and a name from a file's content is only compared with the folder's names, never joined into a path that is opened. Open files through `files.regular` (no symlink, regular files only), and an HDF5 file through a file object of it, never by path with HDF5's own driver, which opens an absolute external link's target if anything dereferences it. (the review's blocker in change `common-pydata`, its proposal, "Applied"; change hdf5-links, design D4; `modama_formats_common/pydata/hdf5.py`, `links.py`)
