@@ -188,4 +188,17 @@ Ran on PostgreSQL 17: the statement takes an ACCESS EXCLUSIVE lock on the table 
 - F17 is read from `design/field-tests/search-stack-staging-findings.md` on the `crawler` branch (commit b18a40a2), which is newer than this change's base and not in this worktree. Since then (2026-11-12) read again in the main checkout: fixed by the 48-hour acknowledgement timeout (M5, update).
 - That Airflow starts a triggered DAG run beyond `max_active_runs` once the active one ends (queued, not rejected): documented Airflow behaviour, not run here.
 - Docker Compose's recreate on `up --build` and the signals that `exec`'d processes get (M8): documented behaviour, not run here.
+- M8 since checked (task 4.2, 2026-11-13, test deployment): `docker compose run --rm crawl-timer modama-crawler crawl --path notes` left the timer container as it was (same id, started 06:40:46 before and after), and `docker kill -s TERM` of a one-off `crawl --path notes` container ended it with 143 and the run `failed  …  /data  notes  terminated (SIGTERM)`.
 - The count of about 170,000 DM records (D7, Non-Goals) is the design's own. Run 3 reports 177,166 extractions over all formats.
+
+## Review of the code (2026-11-13, task 5.1)
+
+Range 0786930f..ceade922, by an agent that did not write it, started by the coordinating session; its verdict: safe to merge after finding 1. H1 to H3 and M1 to M8 of the review above confirmed resolved (each fix reverted, its test failed). Findings as the coordinating session passed them on, with its decisions; outcomes in 08cd80be.
+
+| # | Finding | Decision | Outcome |
+|---|---|---|---|
+| 1 | (should) `assert multiprocessing.active_children() == []` slid from the end of the @KILLS test `test_a_crawl_stopped_by_sigterm_during_extraction` into `test_a_subtree_crawl_does_not_make_the_timer_wait` | put back, add to the subtree SIGTERM test, remove from the timer test | done |
+| 2 | (nit) a folder stored as collapsed that no longer is (`.zgroup` removed), then `crawl --path` below it: the old collapsed dataset stays and the subtree's datasets are added beside it until the next full crawl | refuse after the lock, naming the dataset and the way out | requirement "A subtree crawl does not enter a stored collapsed dataset", `store.collapsed_above`, test seen failing first |
+| 3 | (nit) the configuration compared `select` and `ignore` as ordered lists | sets for those two; exclusions keep their order (gitignore `!`) | `cli._comparable`; scenarios "The same configuration from another file", "Exclusions in another order"; tests seen failing first |
+| 4 | (nit) "its configuration none differs from … none, in select" says too little | name both values | "in select ([] here, ['t/stand'] in the last crawl of the whole tree)"; test seen failing first |
+| 5 | older than this change: a folder that fails to list during a crawl loses its datasets and records, and the run ends with status 0 | not for this change: a backlog item, @weber decides (page 271) | `BACKLOG.md`, "Next: a folder that fails to list loses its records" |
