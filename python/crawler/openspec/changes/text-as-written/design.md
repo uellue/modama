@@ -138,7 +138,8 @@ A record reaches everyone who can search; the file only those who can read it (R
 
 ## D7 Encoding, line ends, cutting
 
-- The text is decoded as the area decides today: the text area by the bytes (BOM, ASCII, UTF-8, else Windows-1252; `common-text` D1); the structured area UTF-8, else Latin-1. A text that is not text (a NUL byte) has no `text`.
+- The text is decoded as the text area decides (BOM, ASCII, UTF-8, else Windows-1252; `common-text` D1), the structured files' text too (changed while applying: their readers keep UTF-8, else Latin-1; the text area's rule also reads UTF-16 with a BOM). A text that is not text (a NUL byte) has no `text`.
+- A file typed by its content gets no tail read (while applying): such files keep the 64 KiB bound of `common-text` D2, being many and rarely documents; a longer one shows its head and the gap only.
 - Line ends become line feeds, as Python reads text files (`newline=None`): a CRLF file would otherwise carry `&#13;` in the XML of every line, and DataCite joins lines with spaces anyway. A BOM is not part of the text.
 - C cuts at line breaks: the head's last complete line within its half, the tail's first line that starts within its half; a line longer than a half is cut at a character. The marker between them counts the bytes of the file not shown, computed from the file's size and the byte offsets of the cuts, so it is right also for the unread middle of a large file. The tail of a large file is read from `size − 16 KiB` and its first, partial line dropped, so that a UTF-8 sequence cut by the read is never decoded.
 - Markers use `…` and thousands separators, as `records.py` cuts a long value with `…`: `… (111,467 more characters)` (B, a text shortened), `"… (5,984 more items)"`, `"… (20,000 characters left out)"`, `… 113,441 bytes left out …`, the credential markers of D6. No other word of ours enters the text.
