@@ -163,12 +163,14 @@ def test_a_lone_tag_file_that_cannot_be_read(
 ):
     # Code review finding 1: a stray notes.gtg that cannot be read (stale handle, or
     # moved away after the listing) keeps its type, and the capture next to it stands
-    from modama_crawler import formats, mime
+    from modama_crawler import files, mime
 
     tree = collection_tests.materialise("capture52", tmp_path)
     (tree / "notes.gtg").write_text("hello\n")
-    where = formats if module == "format's read" else mime
-    monkeypatch.setattr(where, "open", stale("notes.gtg"), raising=False)
+    if module == "format's read":  # d.read opens through files.regular
+        monkeypatch.setattr(files, "regular", stale("notes.gtg", files.regular))
+    else:
+        monkeypatch.setattr(mime, "open", stale("notes.gtg"), raising=False)
     result = walk(tree, collection_tests.collection.formats)
     datasets = {d.anchor: d for d in result.datasets}
     assert set(datasets) == {"/Capture52_.gtg", "/notes.gtg"}

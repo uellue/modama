@@ -14,9 +14,10 @@ from modama_crawler.testing import CollectionTests
 from modama_crawler.walk import walk
 
 
-def stale(name: str):
-    """An open() that fails for files of that name, as on a stale NFS handle, for monkeypatching a module's open."""
-    real = open
+def stale(name: str, real=open):
+    """An open() that fails for files of that name, as on a stale NFS handle, for
+    monkeypatching a module's open; with `real=files.regular`, for monkeypatching
+    `modama_crawler.files.regular`, through which a format's `d.read` opens."""
 
     def fake(path, *args, **kwargs):
         if os.path.basename(path) == name:

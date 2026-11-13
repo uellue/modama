@@ -456,14 +456,23 @@ def test_a_virtual_dataset(collection_tests, tmp_path):
 
 
 def test_external_links_are_not_followed(collection_tests, tmp_path):
-    with h5py.File(tmp_path / "other.h5", "w") as f:
+    # In another folder: an HDF5 file beside it would be a member (change hdf5-links)
+    other, tree = tmp_path / "other", tmp_path / "tree"
+    other.mkdir()
+    tree.mkdir()
+    with h5py.File(other / "other.h5", "w") as f:
         f.create_dataset("counts", data=numpy.arange(3)).attrs["units"] = "counts"
         f.attrs["other_file"] = "yes"
-    with h5py.File(tmp_path / "master.h5", "w") as f:
-        f["linked"] = h5py.ExternalLink("other.h5", "/counts")
+    with h5py.File(tree / "master.h5", "w") as f:
+        f["linked"] = h5py.ExternalLink("../other/other.h5", "/counts")
         f.attrs["master_file"] = "yes"
-    x, _ = extracted(collection_tests, tmp_path, "master.h5")
-    assert original(x) == {"master_file": "yes"}
+    opened = Opened(other / "other.h5")
+    x, _ = extracted(collection_tests, tree, "master.h5")
+    assert original(x) == {
+        "master_file": "yes",
+        "linked.external_link": ["../other/other.h5", "/counts"],
+    }
+    assert not opened.seen()
 
 
 # HyperSpy

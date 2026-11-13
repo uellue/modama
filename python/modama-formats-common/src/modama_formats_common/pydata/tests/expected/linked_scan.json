@@ -1,0 +1,72 @@
+{
+  "datasets": [
+    {
+      "anchor": "/scan_master.h5",
+      "basis": "external links to 3 HDF5 files of this folder",
+      "collapsed": false,
+      "format": "common/hdf5links",
+      "members": [
+        "/scan_data_000001.h5",
+        "/scan_data_000002.h5",
+        "/scan_data_000003.h5",
+        "/scan_master.h5"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.hdfgroup.hdf5",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/scan_master.h5": {
+      "subjects": [],
+      "summary": [
+        "Test detector 4M",
+        "entry.data.data_000001 [2, 8, 6] <u4",
+        "entry.instrument.detector.detectorSpecific.flatfield [8, 6] <f4",
+        "entry.instrument.detector.detectorSpecific.pixel_mask [8, 6] <u4",
+        "external_links 12",
+        "dangling 9"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "dangling": 9,
+          "elsewhere": 0,
+          "external_links": 12,
+          "found": 3,
+          "virtual_sources": 0
+        },
+        "original_metadata": {
+          "entry.NX_class": "NXentry",
+          "entry.data.NX_class": "NXdata",
+          "entry.data.data_000001 \u2026 data_000012.external_link": [
+            "scan_data_000001.h5 \u2026 scan_data_000012.h5",
+            "/entry/data/data"
+          ],
+          "entry.data.data_000001.dtype": "<u4",
+          "entry.data.data_000001.shape": [
+            2,
+            8,
+            6
+          ],
+          "entry.instrument.NX_class": "NXinstrument",
+          "entry.instrument.detector.NX_class": "NXdetector",
+          "entry.instrument.detector.description": "Test detector 4M",
+          "entry.instrument.detector.detectorSpecific.NX_class": "NXcollection",
+          "entry.instrument.detector.detectorSpecific.flatfield.dtype": "<f4",
+          "entry.instrument.detector.detectorSpecific.flatfield.shape": [
+            8,
+            6
+          ],
+          "entry.instrument.detector.detectorSpecific.pixel_mask.dtype": "<u4",
+          "entry.instrument.detector.detectorSpecific.pixel_mask.shape": [
+            8,
+            6
+          ]
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

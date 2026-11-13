@@ -111,6 +111,65 @@ def matlab73_refs(target: Path) -> None:
         f.write(HEADER_73)
 
 
+BITSHUFFLE = 32008  # the filter of the Eiger data files, registered with the HDF Group
+
+
+def scan_data(path: Path, first: int = 1) -> None:
+    """A detector's data file after an Eiger 4M's (names and shapes only):
+    `/entry/data/data` `[2, 8, 6] <u4`, chunked per frame, with the bitshuffle
+    filter in its pipeline. Set as optional, so that HDF5 writes the chunks
+    unfiltered without the plugin and the pipeline still lists it."""
+    with h5py.File(path, "w", libver="latest", track_times=False) as f:
+        entry = f.create_group("entry")
+        entry.attrs["NX_class"] = numpy.bytes_("NXentry")
+        data = entry.create_group("data")
+        data.attrs["NX_class"] = numpy.bytes_("NXdata")
+        dcpl = h5py.h5p.create(h5py.h5p.DATASET_CREATE)
+        dcpl.set_chunk((1, 8, 6))
+        dcpl.set_filter(BITSHUFFLE, h5py.h5z.FLAG_OPTIONAL, (0, 2))
+        dcpl.set_obj_track_times(False)
+        space = h5py.h5s.create_simple((2, 8, 6))
+        dsid = h5py.h5d.create(data.id, b"data", h5py.h5t.STD_U32LE, space, dcpl=dcpl)
+        ds = h5py.Dataset(dsid)
+        ds[...] = numpy.arange(96, dtype="<u4").reshape(2, 8, 6)
+        ds.attrs["image_nr_low"] = numpy.int32(first)
+        ds.attrs["image_nr_high"] = numpy.int32(first + 1)
+
+
+def scan_master(path: Path, links: int = 12, prefix: str = "scan_data_") -> None:
+    """A master file after the structure of a real Eiger 4M master (names and shapes
+    only, made-up values): `links` external links `entry/data/data_000001` … to
+    `/entry/data/data` of `<prefix>000001.h5` …, stored densely (libver latest,
+    more than 8 links), a detector with a description and two calibration arrays,
+    no title."""
+    with h5py.File(path, "w", libver="latest", track_times=False) as f:
+        entry = f.create_group("entry")
+        entry.attrs["NX_class"] = numpy.bytes_("NXentry")
+        data = entry.create_group("data")
+        data.attrs["NX_class"] = numpy.bytes_("NXdata")
+        for i in range(1, links + 1):
+            data[f"data_{i:06d}"] = h5py.ExternalLink(
+                f"{prefix}{i:06d}.h5", "/entry/data/data"
+            )
+        instrument = entry.create_group("instrument")
+        instrument.attrs["NX_class"] = numpy.bytes_("NXinstrument")
+        detector = instrument.create_group("detector")
+        detector.attrs["NX_class"] = numpy.bytes_("NXdetector")
+        detector["description"] = numpy.bytes_("Test detector 4M")
+        specific = detector.create_group("detectorSpecific")
+        specific.attrs["NX_class"] = numpy.bytes_("NXcollection")
+        specific.create_dataset("flatfield", data=numpy.ones((8, 6), dtype="<f4"))
+        specific.create_dataset("pixel_mask", data=numpy.zeros((8, 6), dtype="<u4"))
+
+
+def linked_scan(target: Path) -> None:
+    """A master of 12 external links and its first three data files: nine dangle."""
+    target.mkdir(parents=True)
+    scan_master(target / "scan_master.h5")
+    for i in range(1, 4):
+        scan_data(target / f"scan_data_{i:06d}.h5", first=2 * i - 1)
+
+
 def python2(target: Path) -> None:
     """A Python 2 script."""
     target.mkdir(parents=True)
