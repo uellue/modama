@@ -220,13 +220,49 @@ def test_a_file_next_to_a_large_subfolder(tree):
     assert result["report"].startswith("extraction: 1 run,")
 
 
-def test_a_folder_has_no_live_views(tree):
-    response = client(tree).get(
+def live_of(root, path):
+    response = client(root).get(
         "/api/live",
-        query_string={"path": "/scan"},
+        query_string={"path": path},
         headers={**LOCAL, SNAPSHOT_HEADER: "1"},
     )
-    assert response.status_code == 400
+    assert response.status_code == 200, response.get_data(as_text=True)
+    return {v["key"]: v for v in response.json["views"]}
+
+
+def test_a_normal_folder(tree, monkeypatch):
+    # only the collapse check of the folders down to it: none of its files, nor the files above, is read
+    from modama_crawler import walk as walk_module
+
+    (tree / "top.txt").write_text("t")
+    detected = []
+    real = walk_module.mime.detect_with_tie
+    monkeypatch.setattr(
+        walk_module.mime,
+        "detect_with_tie",
+        lambda path, **kw: detected.append(path) or real(path, **kw),
+    )
+    assert live.compute(str(tree), "/notes", None, OAI, None)["dataset"] is None
+    assert detected == []
+    live.compute(str(tree), "/notes/readme.txt", None, OAI, None)
+    assert detected  # the count works: a file's folder is sniffed
+    got = live_of(tree, "/notes")
+    assert list(got) == ["dataset"]
+    assert got["dataset"]["note"].startswith("a folder: no live views")
+
+
+def test_an_open_zarr_store(tree):
+    store = tree / "scan" / "s.zarr"
+    (store / "0").mkdir(parents=True)
+    (store / "zarr.json").write_text('{"zarr_format": 3, "node_type": "array"}')
+    (store / "0" / "0").write_bytes(b"x")
+    got = live_of(tree, "/scan/s.zarr")
+    dataset = json.loads(got["dataset"]["text"])
+    assert dataset["anchor"] == "/scan/s.zarr" and dataset["collapsed"]
+    assert dataset["format"] == "zarr/zarr"
+    assert "<dc:title>/scan/s.zarr</dc:title>" in got["record"]["text"]
+    assert json.loads(got["document"]["text"])["titles"] == [{"title": "/scan/s.zarr"}]
+    assert got["entry"]["entry"]["title"] == "/scan/s.zarr"
 
 
 def test_another_site_cannot_start_a_live_computation(tree):
