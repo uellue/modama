@@ -21,7 +21,7 @@ The Dublin Core mapping onto a file system is approximate. For example, the file
 
 ## Getting started
 
-We develop in a Debian 13 VM made with [devvm](https://github.com/modama-rdm/devvm). The VM shares the host checkout at `/workspaces/data-management-system`, and its provisioning (`/.devvm/provision.sh`) installs Docker, `uv` and `pre-commit`. The same steps should work on any Debian 13 machine with those. Set up once:
+We develop in a Debian 13 VM made with [devvm](https://github.com/modama-rdm/devvm). The VM shares the host checkout at `/workspaces/data-management-system`, and its provisioning (`/.devvm/config.env`, `/.devvm/provision.sh`) installs Docker, `uv`, `pre-commit`, Node.js with the OpenSpec CLI, Rust with a C linker, `jq`, `tmux`, `htop` and `rsync`, and sets the kernel limit OpenSearch needs. The same steps should work on any Debian 13 machine with those. Set up once:
 
 ```bash
 sudo mkdir -p /etc/postgresql-common/createcluster.d
