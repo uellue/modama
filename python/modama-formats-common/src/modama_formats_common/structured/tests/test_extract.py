@@ -11,6 +11,7 @@ from random import Random
 
 import pytest
 import yaml
+from modama_crawler.formats import Dataset
 from modama_crawler.records import build
 
 from modama_formats_common.structured import LIMIT
@@ -753,9 +754,9 @@ def test_a_document_of_many_keys_is_rendered_once(
 def test_a_file_that_grows_past_the_bound(collection_tests, tmp_path, monkeypatch):
     from modama_formats_common import structured
 
-    tree = tmp_path / "tree"
-    tree.mkdir()
-    (tree / "growing.json").write_text(json.dumps(list(range(2_000_000))))
+    (tmp_path / "growing.json").write_text(json.dumps(list(range(2_000_000))))
+    # The extraction alone sees the size of before the file grew (fstat), the
+    # recognition the real one
     real = os.fstat
     small = os.stat_result((0,) * 6 + (LIMIT,) + (0,) * 3)
     monkeypatch.setattr(
@@ -768,11 +769,13 @@ def test_a_file_that_grows_past_the_bound(collection_tests, tmp_path, monkeypatc
         "shown",
         lambda data, *a, **k: heads.append(len(data)) or shown(data, *a, **k),
     )
-    d = described_tree(collection_tests, tree.resolve())["/growing.json"]
-    assert d.mapped["not_parsed_larger_than_bytes"] == LIMIT
+    extracted = structured.Json().extract(
+        Dataset(anchor="/growing.json"), str(tmp_path)
+    )
+    assert extracted.values["mapped_metadata"]["not_parsed_larger_than_bytes"] == LIMIT
     # Its first 64 KiB as the head of its text, as for any file over the bound
     assert heads and max(heads) <= 65536
-    assert len(text_of(d)) <= 4096
+    assert len(extracted.values["text"]) <= 4096
 
 
 def test_a_very_deep_document(collection_tests, tmp_path):
