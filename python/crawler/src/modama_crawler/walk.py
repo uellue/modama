@@ -139,6 +139,17 @@ def _digest(st: os.stat_result, entries: list[Entry]) -> str:
     return hashlib.sha256(json.dumps(state).encode()).hexdigest()
 
 
+def _stamped(collapsed: Dataset, digest: str, path: str, formats) -> Dataset:
+    """A collapsed dataset stamped with its folder's listing (`digest`, the D3 limit for
+    collapsed trees: nothing below is read), and with what its format says of the files
+    below that its extractor reads (Format.collapsed_state; change zarr-stores, 319)."""
+    fmt = next((f for f in formats if f.id == collapsed.format), None)
+    below = fmt.collapsed_state(path) if fmt is not None else None
+    if below is not None:
+        digest = hashlib.sha256(f"{digest} {below}".encode()).hexdigest()
+    return replace(collapsed, stamp=digest)
+
+
 def _io(pool: ThreadPoolExecutor) -> Callable[..., asyncio.Future]:
     """io(fn, *args): run fn in the thread pool, started now, awaited later; in the running loop."""
     loop = asyncio.get_running_loop()
@@ -514,13 +525,13 @@ async def _walk(
             if pre.unanswered is not None and kept is not None:
                 # whatever the formats answered without that read (D2, review 12)
                 return keep(unanswered(rel, *pre.unanswered, whole=True))
-            if collapsed is not None:
-                # Nothing below is read: the stamp is the listing's (the D3 limit for collapsed trees)
-                collapsed = replace(collapsed, stamp=digest)
             pre_warnings = pre.warnings
             pre_retry = pre.retry
         result.warnings.extend(pre_warnings)
         if collapsed is not None:
+            # Stamped again also when taken over: what its format reads below
+            # the folder may have changed under an unchanged listing
+            collapsed = await io(_stamped, collapsed, digest, dirpath, active)
             log.debug("%s collapsed by %s", rel, collapsed.format)
             result.listings[rel] = Listing(digest, tuple(pre_warnings), retry=pre_retry)
             result.unchanged += same
@@ -626,7 +637,11 @@ async def _walk(
             collapsed = await io(run_pre, pre, formats_for(rel), SLOW, BYTE_BUDGET)
             result.warnings.extend(pre.warnings)
             if collapsed is not None:
-                return [replace(collapsed, stamp=_digest(st, entries), parent=None)]
+                formats_here = formats_for(rel)
+                collapsed = await io(
+                    _stamped, collapsed, _digest(st, entries), dirpath, formats_here
+                )
+                return [replace(collapsed, parent=None)]
             child = next((e for e in entries if e.name == name), None)
             if child is None or child.kind != "dir":
                 return []

@@ -121,6 +121,34 @@ def test_a_collapsed_dataset_is_stamped_with_its_listing(tmp_path):
     assert stamps[0] != stamps[1]
 
 
+class Stated(Series):
+    """Series, whose collapsed datasets are stamped also with a file deep below them."""
+
+    def collapsed_state(self, path):
+        return Path(path, "deep", "er", "state").read_text()
+
+
+def test_a_file_deep_below_a_collapsed_directory_changes(conn, tmp_path):
+    # crawl spec, "A collapsed directory is stamped with what its format reads
+    # below it" (Format.collapsed_state; change zarr-stores, 319): also when the
+    # folder is taken over
+    formats = Collection("t", [Stated(), Bundle()]).formats
+    (tmp_path / "boring" / "deep" / "er").mkdir(parents=True)
+    (tmp_path / "boring" / "COLLAPSE").write_text("")
+    state = tmp_path / "boring" / "deep" / "er" / "state"
+    state.write_text("one")
+    first = walk(tmp_path, formats)
+    store(conn, first, {}, start_run(conn, str(tmp_path)), "r1")
+    with open(state, "r+") as f:  # in place: no folder's listing changes
+        f.write("two")
+    second = walk(tmp_path, formats, previous=previous(conn, "r1"))
+    assert second.unchanged == 2  # / and /boring taken over
+    (before,) = [d for d in first.datasets if d.collapsed]
+    (after,) = [d for d in second.datasets if d.collapsed]
+    assert before.stamp != after.stamp
+    assert second.listings["/boring"] == first.listings["/boring"]
+
+
 def test_dataset_size_is_the_total_of_its_members(tmp_path):
     # From the walk's stat, for the description (D4); no file is opened for it
     (tmp_path / "s").mkdir()
