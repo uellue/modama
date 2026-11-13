@@ -95,7 +95,7 @@ src/modama_crawler/
 ├── migrate.py      # modama-crawler migrate with Alembic: look first, then upgrade in one transaction; the only module that imports Alembic
 ├── migrations/     # Alembic: env.py (the crawl lock, the lock timeout), script.py.mako, versions/NNNN_name.py (0001_baseline: the tables before migrations)
 ├── server.py       # OAI-PMH WSGI app (werkzeug), reads the records table only; 503 while a crawl writes records
-└── testing.py      # pytest plugin: fixtures, manifest, expected results, coverage rule
+└── testing.py      # pytest plugin: fixtures, manifest, expected results, coverage rule; bytes_read, the one helper that measures reads
 ```
 
 The detailed behaviour of the walk, records, selection and configuration is in `openspec/specs/`; read the capability you are changing before you change it.

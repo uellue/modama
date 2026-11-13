@@ -6,11 +6,10 @@ import resource
 from pathlib import Path
 
 import numpy as np
-from modama_crawler.testing import recognise
+from modama_crawler.testing import bytes_read, recognise
 from modama_crawler.walk import walk
 
 from modama_formats_em.mrc import HEADER_BYTES
-from modama_formats_em.testing import rchar
 
 from .generate import write
 
@@ -246,9 +245,8 @@ def test_only_the_header_is_read(collection_tests, tmp_path):
     with (tree / "one.mrc").open("ab") as f:
         f.truncate(1 << 30)  # 1 GiB, sparse
     extracted(collection_tests, tree)  # once first: imports count too
-    before = rchar()
-    extracted(collection_tests, tree)
-    assert rchar() - before <= HEADER_BYTES + 4096
+    _, read = bytes_read(lambda: extracted(collection_tests, tree))
+    assert read <= HEADER_BYTES + 4096
 
 
 def test_only_the_first_record_is_read(collection_tests, tmp_path):
@@ -259,9 +257,8 @@ def test_only_the_first_record_is_read(collection_tests, tmp_path):
     with (tree / EPU).open("ab") as f:
         f.truncate(1 << 30)
     extracted(collection_tests, tree)  # once first: imports count too
-    before = rchar()
-    extracted(collection_tests, tree)
-    assert rchar() - before <= HEADER_BYTES + FEI2_RECORD + 4096
+    _, read = bytes_read(lambda: extracted(collection_tests, tree))
+    assert read <= HEADER_BYTES + FEI2_RECORD + 4096
 
 
 def test_an_extended_header_of_2_gib(collection_tests, tmp_path):

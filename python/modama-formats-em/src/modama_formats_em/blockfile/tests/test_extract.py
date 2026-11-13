@@ -6,10 +6,10 @@ Run with -s to see each description, its subjects and the bytes the extractor re
 import os
 import time
 
-from modama_crawler.testing import recognise
+from modama_crawler.testing import bytes_read, recognise
 from modama_crawler.walk import walk
 
-from modama_formats_em.testing import described, rchar
+from modama_formats_em.testing import described
 
 SCAN = (
     "NX 3, NY 2, SX 64.0, SY 64.0, DP_SZ 5, Beam_energy 200000, Camera_length 2000, "
@@ -142,7 +142,6 @@ def test_the_header_not_the_data(collection_tests, tmp_path):
     # zeros after the scan, sparse)
     tree = collection_tests.materialise("scan", tmp_path / "large")
     os.truncate(tree / "test2.blo", 16 << 20)
-    extracted(collection_tests, tree)  # once first: rchar counts the imports' reads too
-    before = rchar()
-    extracted(collection_tests, tree)
-    assert rchar() - before < 1 << 20
+    extracted(collection_tests, tree)  # once first: the imports' reads count too
+    _, read = bytes_read(lambda: extracted(collection_tests, tree))
+    assert read < 1 << 20
