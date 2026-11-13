@@ -1,4 +1,4 @@
-"""modama-chain trace PATH | status. The only place that reads the environment (D9)."""
+"""modama-chain trace PATH | status | browse | review. The only place that reads the environment (D9)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import sys
 import textwrap
 from pathlib import Path
 
-from .chain import Stage, Stores, diverging, status, trace, when
+from . import crawler, review
+from .chain import Stage, Stores, connect, diverging, status, trace, when
 from .warehouse import Unreachable
 
 
@@ -105,6 +106,25 @@ def cmd_status(args) -> int:
     return 0
 
 
+def cmd_review(args) -> int:
+    """The flagged files as Markdown on stdout, a line per group on stderr (design D17)."""
+    try:
+        with connect(stores_from_env().crawler_db, "crawler database") as conn:
+            found = review.groups(*crawler.flagged(conn))
+    except Unreachable as e:
+        print(f"modama-chain: cannot reach the {e}", file=sys.stderr)
+        return 2
+    found = {
+        (kind, fmt): entries
+        for (kind, fmt), entries in found.items()
+        if args.marker in (None, kind) and args.format in (None, fmt)
+    }
+    limit = None if args.all else args.limit
+    print("\n".join(review.markdown(found, args.browse, limit)), flush=True)
+    print("\n".join(review.summary(found)), file=sys.stderr)
+    return 0
+
+
 def cmd_browse(args) -> int:
     """The browser on args.bind:args.port (change chain-browse); settings from the environment (README)."""
     from werkzeug.serving import run_simple
@@ -174,6 +194,33 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--bind", default="localhost", help="address to listen on")
     p.add_argument("--port", type=int, default=7655)
     p.set_defaults(func=cmd_browse)
+    p = sub.add_parser(
+        "review",
+        help="the files the crawl flagged (stored warnings, failed extractions) as Markdown links into browse",
+    )
+    p.add_argument(
+        "--marker",
+        metavar="KIND",
+        choices=review.KINDS,
+        help=f"one kind only: {', '.join(repr(k) for k in review.KINDS)}",
+    )
+    p.add_argument("--format", metavar="ID", help="one format only, e.g. em/merlin")
+    shown = p.add_mutually_exclusive_group()
+    shown.add_argument(
+        "--limit",
+        metavar="N",
+        type=int,
+        default=review.LIMIT,
+        help=f"entries listed per group (default {review.LIMIT})",
+    )
+    shown.add_argument("--all", action="store_true", help="every entry")
+    p.add_argument(
+        "--browse",
+        metavar="URL",
+        default="http://localhost:7655/",
+        help="where the reader opens browse (default %(default)s; staging's tunnel: http://localhost:17655/)",
+    )
+    p.set_defaults(func=cmd_review)
     args = parser.parse_args(argv)
     try:
         return args.func(args)

@@ -259,7 +259,8 @@ def test_an_open_zarr_store(tree):
     got = live_of(tree, "/scan/s.zarr")
     dataset = json.loads(got["dataset"]["text"])
     assert dataset["anchor"] == "/scan/s.zarr" and dataset["collapsed"]
-    assert dataset["format"] == "zarr/zarr"
+    # the core's zarr/zarr, or common/zarr when modama-formats-common is installed (zarr-stores)
+    assert dataset["format"] in ("zarr/zarr", "common/zarr")
     assert "<dc:title>/scan/s.zarr</dc:title>" in got["record"]["text"]
     assert json.loads(got["document"]["text"])["titles"] == [{"title": "/scan/s.zarr"}]
     assert got["entry"]["entry"]["title"] == "/scan/s.zarr"

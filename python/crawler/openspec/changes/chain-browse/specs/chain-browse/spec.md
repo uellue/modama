@@ -118,3 +118,53 @@ The service SHALL be published on 127.0.0.1 only, SHALL refuse requests whose `H
 #### Scenario: A cross-site form
 - **WHEN** a snapshot is requested by a POST without the header
 - **THEN** the answer is 403 and nothing is written
+
+### Requirement: Flagged files are listed as links into the browser
+`modama-chain review` SHALL read, read-only, the stored warnings and failed extractions of the whole index and print them on stdout as Markdown (design D17, @weber 354), by kind (`extraction failed`, `two formats want it`, `not inspected`, `other warnings`), then by format (else `no format named`), each group with its count and its first entries by path, each entry a link into the browser with its text, and one summary line per group on stderr.
+
+#### Scenario: Files two formats want
+- **WHEN** the index holds the warning `em/merlin: acq_2.mib is claimed by em/empad; two formats want it` at `/scan/acq.hdr`
+- **THEN** stdout has the heading `two formats want it`, under it `em/merlin (1)` and the entry ``[`/scan/acq.hdr`](http://localhost:7655/?path=%2Fscan%2Facq.hdr): em/merlin: acq_2.mib is claimed by em/empad; two formats want it``, stderr has the line `two formats want it, em/merlin: 1`, and the exit status is 0
+
+#### Scenario: A failed extraction
+- **WHEN** the extraction of the dataset `/a/b.dm4` by `em/dm4` failed with `OSError(5, 'Input/output error')`
+- **THEN** it is listed under `extraction failed`, `em/dm4 (1)`, with that error as its text
+
+#### Scenario: Files not inspected
+- **WHEN** the index holds a warning with the marker `not inspected`
+- **THEN** it is listed under `not inspected` and under no other kind
+
+#### Scenario: Other warnings, with and without a format
+- **WHEN** the index holds `common/text failed: ValueError()` at a folder and `type is ambiguous between a, b; using a` at a file
+- **THEN** both are listed under `other warnings`, the first under `common/text`, the second under `no format named`
+
+#### Scenario: A path with brackets and spaces
+- **WHEN** a flagged path is `/SI data (20)/a+b #1.dm4`
+- **THEN** its link holds the path percent-encoded, brackets included, so that a Markdown link cannot end early (finding F19), and the link's query parameter `path` decodes to that path
+
+#### Scenario: Another address of the browser
+- **WHEN** the command runs with `--browse http://localhost:17655/` (staging's tunnel)
+- **THEN** every link starts with `http://localhost:17655/?path=`
+
+#### Scenario: Nothing flagged
+- **WHEN** the index holds no warning and no failed extraction
+- **THEN** stdout says `Nothing flagged.`, stderr `nothing flagged`, and the exit status is 0
+
+#### Scenario: A closed pipe
+- **WHEN** the output is piped into `head -1`
+- **THEN** the command ends with status 0 and without a traceback
+
+#### Scenario: The database unreachable
+- **WHEN** the crawler's database cannot be reached
+- **THEN** stderr names the crawler database and the exit status is 2, as for `trace`
+
+### Requirement: The review list can be narrowed
+`modama-chain review` SHALL list the first 20 entries of each group, `--limit N` the first N, `--all` every one, with the group's whole count either way; `--marker KIND` SHALL keep the groups of one kind, `--format ID` those of one format, and both together their intersection (design D17).
+
+#### Scenario: More entries than the limit
+- **WHEN** a group has 25 entries
+- **THEN** the first 20 by path are listed, then the line `- 5 more: --all lists them`; with `--limit 3` the first 3 and `- 22 more: --all lists them`; with `--all` all 25; and the counts say 25 each time
+
+#### Scenario: One kind, one format
+- **WHEN** the index holds warnings of two kinds and two formats, and the command runs with `--marker 'two formats want it'`, with `--format em/k2is`, and with both
+- **THEN** each run lists only the groups of that kind, of that format, or of both
