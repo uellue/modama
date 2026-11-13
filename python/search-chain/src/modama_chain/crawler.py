@@ -104,7 +104,7 @@ class Holding:
     """The dataset that holds a path, as the crawler stored it."""
 
     anchor: str
-    member: bool  # path is a member of the dataset, not its anchor
+    member: bool  # path is a member of the dataset, or below its collapsed anchor; not its anchor
     basis: str  # why the crawler recognised it, with the notes of dropped name types
     extractor: str | None = None  # the format whose extractor produced its description
     identity: str | None = None  # the extractor identity it was produced under
@@ -129,7 +129,20 @@ def dataset_of(conn: psycopg.Connection, path: str) -> Holding | None:
         " WHERE m.path = %s",
         (path,),
     ).fetchone()
+    if row is None:
+        # below a collapsed directory, whose contents the crawler doesn't list (248)
+        row = conn.execute(
+            f"SELECT d.anchor, d.basis, {extraction} FROM datasets d"
+            " WHERE d.collapsed AND d.anchor = ANY(%s) ORDER BY length(d.anchor) LIMIT 1",
+            (_ancestors(path),),
+        ).fetchone()
     return Holding(row[0], True, *row[1:]) if row else None
+
+
+def _ancestors(path: str) -> list[str]:
+    """The directories above path: /a/b/c gives /a and /a/b."""
+    parts = path.strip("/").split("/")
+    return ["/" + "/".join(parts[:i]) for i in range(1, len(parts))]
 
 
 _DATASET_COLUMNS = (
@@ -140,10 +153,7 @@ _DATASET_COLUMNS = (
 
 def stored_dataset(conn: psycopg.Connection, path: str) -> dict | None:
     """The stored dataset holding path (its anchor, a member, or below a collapsed anchor), shaped as the crawler's Dataset (browse, D6)."""
-    ancestors = []
-    parts = path.strip("/").split("/")
-    for i in range(1, len(parts)):
-        ancestors.append("/" + "/".join(parts[:i]))
+    ancestors = _ancestors(path)
     # extractor_version before the extractor identity (0002_extractor_identity): the label
     identity = (
         "extractor_identity"

@@ -311,6 +311,14 @@ def test_the_raw_file_of_an_empad_pair(tree):
     assert stages["index"].key.endswith(f"/scan/{header.name}")
 
 
+def test_a_file_inside_a_collapsed_environment(tree):
+    # Spec chain-trace, "A file inside a collapsed environment" (248)
+    stages, first = trace("/env/env/pyvenv.cfg")
+    assert first is None
+    assert stages["crawler"].detail == "member of /env/env; basis: contains pyvenv.cfg"
+    assert stages["index"].key.endswith("/env/env")
+
+
 def test_the_crawler_line_shows_the_datasets_basis(tree):
     # Spec chain-trace, "A text file named like a K2IS tag file" and "A plain file"
     stages, first = trace("/" + STRAY_TAGS)

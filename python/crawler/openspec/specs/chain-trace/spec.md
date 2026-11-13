@@ -21,11 +21,15 @@ A stage's state SHALL be `ok`; `missing`; `differs` when the stage holds another
 - **THEN** the harvest line shows `differs`
 
 ### Requirement: A member is traced through its dataset
-When PATH has no record of its own but is a member of a dataset, the trace SHALL say which dataset holds it and SHALL trace that dataset from the crawler stage on.
+When PATH has no record of its own but is a member of a dataset, or lies inside a collapsed directory (whose contents the crawler doesn't list), the trace SHALL say which dataset holds it and SHALL trace that dataset from the crawler stage on.
 
 #### Scenario: The raw file of an EMPAD pair
 - **WHEN** the raw file of the e2e tree's EMPAD pair is traced
 - **THEN** the crawler line names the XML header's dataset as the one holding it, and the following lines trace that dataset
+
+#### Scenario: A file inside a collapsed environment
+- **WHEN** a file inside the e2e tree's Python environment (`/env/env/pyvenv.cfg`) is traced
+- **THEN** the crawler line reads `member of /env/env; basis: contains pyvenv.cfg`, and the following lines trace the environment's dataset (@weber, 248, 2026-11-13: on staging the trace said `missing` for a file in a conda install)
 
 ### Requirement: The first diverging stage is marked
 The trace SHALL mark the first stage at which the item is missing or differs from the stage before it.
