@@ -6,10 +6,12 @@
 
   <!-- NumPy's own format (numpy.lib.format): the magic string \x93NUMPY, then
        the version. Named as PRONOM fmt/2112 names it; file(1) calls it
-       application/x-numpy-data. -->
+       application/x-numpy-data, silx's desktop file image/x-silx-numpy (Debian's
+       MimeTypesSupport/PackageList, 2026-11-13, decision 308); Tika has none. -->
   <mime-type type="application/x-npy">
     <comment>NumPy array</comment>
     <alias type="application/x-numpy-data"/>
+    <alias type="image/x-silx-numpy"/>
     <magic priority="60">
       <match type="string" offset="0" value="\223NUMPY"/>
     </magic>
