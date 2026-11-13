@@ -304,6 +304,21 @@ def test_a_newer_request(started, tree):
 
 
 def live_views(tree: Path, path: str, record=None) -> dict[str, views.View]:
+    # Fail, don't skip: without upstream's files the views after the record are
+    # empty, and an assertion on empty text does not say why
+    needed = {
+        "metadata-crawlers": UPSTREAM.harvester / "dc_to_datacite.xsl",
+        "metadata-warehouse": UPSTREAM.warehouse / "config" / "schema.json",
+    }
+    missing = [
+        f"prototypes/EOSC-Data-Commons/{s}"
+        for s, f in needed.items()
+        if not f.is_file()
+    ]
+    assert not missing, (
+        f"submodule not checked out: {', '.join(missing)}; from the repository root: "
+        f"git submodule update --init {' '.join(missing)}"
+    )
     before = views.Stored([], record=record, repo="ERC")
     found = views.live_views(stores(tree), UPSTREAM, path, None, before)
     return {v.key: v for v in found}
