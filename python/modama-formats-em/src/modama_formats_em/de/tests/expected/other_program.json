@@ -1,0 +1,32 @@
+{
+  "datasets": [
+    {
+      "anchor": "/20240619_1736_HAADF.mrc",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/20240619_1736_HAADF.mrc"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/octet-stream",
+      "warnings": []
+    },
+    {
+      "anchor": "/20240619_1736_info.txt",
+      "basis": "single file; em/de: not application/x.de-info, no DE-Server first line",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/20240619_1736_info.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
