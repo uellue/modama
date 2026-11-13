@@ -162,7 +162,7 @@ The tests build every database by the migrations, so `pytest` runs the new one. 
 
 ## Adding a file format
 
-Formats are grouped into *collections*: the crawler's own under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`), others in packages of their own that register an entry point, such as `em` in `/python/modama-formats-em/` (EMPAD, Digital Micrograph, Merlin). Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one. The `em` collection is the most complete example of multi-file formats with metadata extraction.
+Formats are grouped into *collections*: the crawler's own under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`), others in packages of their own that register an entry point: `em` in `/python/modama-formats-em/` (EMPAD, Digital Micrograph with its workspaces, K2IS, Merlin, NanoMegas block files) and `common` in `/python/modama-formats-common/` (images, notebooks and other Python data-science files, office documents, plain text, structured data). Each package's README has the table of its formats. Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one. The `em` collection is the most complete example of multi-file formats with metadata extraction.
 
 When choosing a MIME type, use an existing one if possible. Look at freedesktop.org, Debian's package list, or reader libraries such as LiberTEM and HyperSpy. Otherwise use an unofficial `application/x.…` type, never a misleading generic one.
 
