@@ -44,7 +44,7 @@ Why each step is there:
 Then, from `python/crawler/`:
 
 ```bash
-pytest                                  # the whole suite, under a minute
+pytest                                  # the whole suite, about 5 minutes on 8 CPUs
 modama-crawler records tests/           # the records a crawl of this directory would publish, no database
 modama-crawler records --verbose PATH   # the same, with why each dataset was recognised, as XML comments
 ```
