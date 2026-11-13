@@ -16,6 +16,7 @@ from modama_crawler.formats import (
     run_post,
     run_pre,
 )
+from modama_crawler.testing import bytes_read
 
 
 def entry(name, mime="text/plain", kind="file", mtime=1.0, uid=7):
@@ -273,16 +274,16 @@ def test_read_budget(tmp_path):
         d.read(entry("other.txt"), 1)
 
 
-def test_read_fetches_only_what_is_asked(tmp_path, bytes_read):
+def test_read_fetches_only_what_is_asked(tmp_path):
     # Field-test finding F12: see test_mime.test_sniffing_reads_only_the_magic
     size = 4 << 20
     (tmp_path / "a.raw").write_bytes(bytes(size))
     e = Entry("a.raw", str(tmp_path / "a.raw"), "/a.raw", "file", size, 1, 1, 7, None)
     d = directory([e])
     d._budget = size
-    before = bytes_read()
-    assert d.read(e, 100) == bytes(100)
-    assert bytes_read() - before < 64 * 1024
+    data, read = bytes_read(lambda: d.read(e, 100))
+    assert data == bytes(100)
+    assert read < 64 * 1024
 
 
 def test_format_over_budget_is_skipped(tmp_path):

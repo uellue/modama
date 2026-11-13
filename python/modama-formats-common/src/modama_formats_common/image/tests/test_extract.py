@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import tifffile
 from modama_crawler import extraction
-from modama_crawler.testing import recognise
+from modama_crawler.testing import bytes_read, recognise
 from modama_crawler.walk import walk
 from PIL import Image
 
@@ -25,15 +25,6 @@ FORMATS = {f.id: f for f in image.COLLECTION.formats}
 @pytest.fixture(autouse=True)
 def mime_types(collection_tests):
     """This part's MIME database, for the tests on files of their own too."""
-
-
-def rchar() -> int:
-    """Bytes this process has read so far, from /proc/self/io (Linux)."""
-    for line in Path("/proc/self/io").read_text().splitlines():
-        key, _, value = line.partition(":")
-        if key == "rchar":
-            return int(value)
-    raise RuntimeError("no rchar in /proc/self/io")
 
 
 def extracted(ct, fixture: str, tmp_path: Path):
@@ -61,9 +52,7 @@ def of_file(path: Path):
 def read_by(path: Path) -> tuple[object, int]:
     """The extraction of a file and the bytes it read (the second of two runs: imports are read in the first)."""
     of_file(path)
-    before = rchar()
-    result = of_file(path)
-    return result, rchar() - before
+    return bytes_read(lambda: of_file(path))
 
 
 # Image files are datasets of their format

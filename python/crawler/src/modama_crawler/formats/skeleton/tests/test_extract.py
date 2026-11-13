@@ -6,17 +6,8 @@ A real collection names its tests after its spec's scenarios.
 from pathlib import Path
 
 from modama_crawler.formats.skeleton import MAX_HEADER
-from modama_crawler.testing import recognise
+from modama_crawler.testing import bytes_read, recognise
 from modama_crawler.walk import walk
-
-
-def rchar() -> int:
-    """Bytes this process has read so far (Linux)."""
-    for line in Path("/proc/self/io").read_text().splitlines():
-        key, _, value = line.partition(":")
-        if key == "rchar":
-            return int(value)
-    raise RuntimeError("no rchar in /proc/self/io")
 
 
 def extracted(ct, tree: Path):
@@ -89,6 +80,5 @@ def test_only_the_header_is_read(collection_tests, tmp_path):
     with (tree / "acq.skf").open("ab") as f:
         f.truncate(1 << 30)  # 1 GiB, sparse
     extracted(collection_tests, tree)  # once first: imports count too
-    before = rchar()
-    extracted(collection_tests, tree)
-    assert rchar() - before <= MAX_HEADER + 4096
+    _, read = bytes_read(lambda: extracted(collection_tests, tree))
+    assert read <= MAX_HEADER + 4096
