@@ -34,6 +34,10 @@ Celery workers (compose)                                 embeddings service
   a `nologin` account on grace whose key may only forward to `127.0.0.1:7656`.
 - **The ports:** `7656` on grace, next to the crawler's 7654 (OAI-PMH) and browse's 7655;
   `17656` on the staging host, after staging's 1xxxx host ports (17654, 17655, 18081, ...).
+- **A second forward, for chat:** grace's `127.0.0.1:11434` (Ollama's port, a language
+  model running on grace) to `172.17.0.1:11434` on the staging host, in the same unit
+  (@weber, 2026-11-13). AI Mode's chat could then use a local model instead of an external
+  API; switching it over is a decision of its own, not part of this setup.
 - **The containers** can't reach the staging host's `127.0.0.1`. The forward therefore
   listens on Docker's bridge address (usually `172.17.0.1`), as the beatepi unit binds to
   its bridge addresses, and the containers reach it as `host.docker.internal`
@@ -51,6 +55,7 @@ Celery workers (compose)                                 embeddings service
 
 ```bash
 ss -ltn | grep -E ':7656\b|:17656\b'   # on grace and on the staging host: empty means free
+ss -ltn | grep -E ':11434\b'           # on grace: the model's server listening; on the staging host: empty
 ip -4 addr show docker0                # on the staging host: the bridge address, usually 172.17.0.1
 ```
 
@@ -60,11 +65,11 @@ ip -4 addr show docker0                # on the staging host: the bridge address
 sudo useradd --system --create-home --shell /usr/sbin/nologin embedtunnel
 sudo install -d -m 700 -o embedtunnel -g embedtunnel ~embedtunnel/.ssh
 # ~embedtunnel/.ssh/authorized_keys (mode 600, owner embedtunnel), one line:
-#   restrict,port-forwarding,permitopen="127.0.0.1:7656" ssh-ed25519 AAAA... staging-embed-tunnel
+#   restrict,port-forwarding,permitopen="127.0.0.1:7656",permitopen="127.0.0.1:11434" ssh-ed25519 AAAA... staging-embed-tunnel
 ```
 
 `restrict` turns off everything (shell, agent and X11 forwarding, PTY), then
-`port-forwarding` allows forwarding again, and `permitopen` limits it to the one address.
+`port-forwarding` allows forwarding again, and `permitopen` limits it to the two addresses.
 So the key opens nothing but this tunnel, even if the account's shell were changed by
 mistake. The option names are written from memory; the change `embedding-service-grace`
 checks them against sshd(8) and corrects this page.
@@ -83,13 +88,13 @@ sudo ssh-keygen -t ed25519 -N '' -C staging-embed-tunnel -f /var/local/sshvpn/st
 
 ```ini
 [Unit]
-Description=SSH tunnel: 172.17.0.1:17656 -> grace 127.0.0.1:7656 (embedding service)
+Description=SSH tunnel to grace: 172.17.0.1:17656 -> 127.0.0.1:7656 (embedding), 172.17.0.1:11434 -> 127.0.0.1:11434 (chat model)
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ssh -o ServerAliveInterval=60 -o ExitOnForwardFailure=yes -N -L 172.17.0.1:17656:127.0.0.1:7656 -i /var/local/sshvpn/staging-embed-tunnel embedtunnel@<grace>
+ExecStart=/usr/bin/ssh -o ServerAliveInterval=60 -o ExitOnForwardFailure=yes -N -L 172.17.0.1:17656:127.0.0.1:7656 -L 172.17.0.1:11434:127.0.0.1:11434 -i /var/local/sshvpn/staging-embed-tunnel embedtunnel@<grace>
 Restart=always
 RestartSec=30s
 
@@ -121,7 +126,13 @@ docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl -sI
 ```
 
 `HTTP/1.0 200 OK` means that the tunnel, the bind address and the staging host's firewall
-are all right. No answer at all with the unit running usually means a firewall between
+are all right. The chat forward, with the model's server running on grace:
+
+```bash
+docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl -s http://host.docker.internal:11434/v1/models
+```
+
+It lists the models the server offers (Ollama answers OpenAI's `/v1/models`). No answer at all with the unit running usually means a firewall between
 containers and the host; `curl -sI http://172.17.0.1:17656/` on the host itself tells the
 two apart.
 
