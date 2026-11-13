@@ -6,11 +6,11 @@ Status: alpha, on the `crawler` branch. The work goes in three steps: the OAI-PM
 
 ## Start here
 
-For a person new to the crawler, the format collections or the search stack, in this order:
+For a person new to the crawler, the format collections or the search stack, in this order (a path starting with `/` in these docs, such as `/prototypes/search-stack/`, starts at the repository root):
 
 1. "How it works" below (10 minutes): walk, extract, store, serve.
 2. "Getting started": the VM, one install line, `pytest`, then `modama-crawler records --verbose tests/`, the first instrument: what the crawler makes of a folder, and why.
-3. The search stack, `/prototypes/search-stack/README.md`, "Test deployment": `./uptest.sh && ./runtest.sh e2e`. Then open the browser on port 7655 (`http://localhost:7655/?path=/`), pick a file, and read "Looking around" there.
+3. The search stack, `/prototypes/search-stack/README.md`, "Test deployment": `./uptest.sh && ./runtest.sh e2e`. Then open the browser on port 7655 (`http://localhost:7655/?path=/`), pick a file, and read "Looking around" there. Without Docker or a free stack (one per VM), go on with 4: `records --verbose` needs neither.
 4. To write formats: `src/modama_crawler/formats/TEMPLATE.md`, all of it, and the skeleton collection beside it. Then one real area as the model: `modama_formats_common/structured` is small, `modama_formats_em/dm` the most complete.
 5. "Seeing what happens" and "What to look out for" below, before your first run on real data.
 6. Look the rest up when you need it: why something is as it is, in the decision log at the end of `design/architecture.md`; what is next, in `BACKLOG.md`, "Next"; how it must behave, in `openspec/specs/`; what real data did, in `design/field-tests/`.
@@ -185,14 +185,16 @@ When choosing a MIME type, use an existing one if possible, otherwise an unoffic
 
 ## Running tests
 
-| Suite | Where, command | Tests | Time, temporary files | Needs |
-|---|---|---|---|---|
-| crawler | `python/crawler`: `pytest` | 451 | 5 to 7 min, 390 MB | the PostgreSQL binaries; both format packages installed |
-| formats, common | `python/modama-formats-common`: `pytest src`, then `TZ=Europe/Berlin pytest src` | 276 | 25 s, 320 MB | its `[test]` extra |
-| formats, EM | `python/modama-formats-em`: `pytest src`, also with `TZ=Europe/Berlin` | 135 | 25 s, 130 MB | |
-| search chain | `python/search-chain`: `pytest` | 74 | 25 s to 1 min | the `[browse]` extra; the EOSC submodules checked out |
-| end to end | `prototypes/search-stack`: `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e` | 29 checks | about 6 min on a fresh stack | Docker; a secrets folder with a language model key (its README, "Secrets for the end-to-end test") |
-| lint | the repository root: `uvx pre-commit run --all-files`, as CI runs it (ruff pinned in `.pre-commit-config.yaml`; its check leaves out `prototypes/`). It checks only files Git tracks: `git add` new files first, or they pass unchecked | | seconds | for `prototypes/` too: `uvx ruff check`, with 7 known errors in notebooks (`BACKLOG.md`) |
+| Suite | Where, command | Time, temporary files | Needs |
+|---|---|---|---|
+| crawler | `python/crawler`: `pytest` | 5 to 7 min, 390 MB | the PostgreSQL binaries; both format packages installed |
+| formats, common | `python/modama-formats-common`: `pytest src`, then `TZ=Europe/Berlin pytest src` | 25 s, 320 MB | its `[test]` extra |
+| formats, EM | `python/modama-formats-em`: `pytest src`, also with `TZ=Europe/Berlin` | 25 s, 130 MB | |
+| search chain | `python/search-chain`: `pytest` | 25 s to 1 min | the `[browse]` extra; the EOSC submodules checked out |
+| end to end | `prototypes/search-stack`: `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e` | about 6 min on a fresh stack | Docker; a secrets folder with a language model key (its README, "Secrets for the end-to-end test") |
+| lint | the repository root: `uvx pre-commit run --all-files`, as CI runs it (ruff pinned in `.pre-commit-config.yaml`; its check leaves out `prototypes/`). It checks only files Git tracks: `git add` new files first, or they pass unchecked | seconds | for `prototypes/` too: `uvx ruff check`, with 7 known errors in notebooks (`BACKLOG.md`) |
+
+A suite passes when every test passes and none is skipped: a missing prerequisite fails, naming what is missing (`AGENTS.md`, "Fail, don't skip"). The table gives no test counts, since they grow with every change.
 
 Times measured on 2026-11-13 in the VM (8 vCPUs), each suite alone; with other coding agents' suites running at the same time they take longer (the crawler's 6.5 min next to a second suite). Keep temporary files out of the shared `/tmp`: `pytest --basetemp /var/tmp/<you>/pytest` and `TMPDIR=/var/tmp/<you>/tmp`. While you iterate, run the tests the change most likely affects first, one run per case (`AGENTS.md`, standing rules); before a merge and after every merge into `crawler`, all suites, since one package's change can move another's results (a format package installed changes the crawler's tests: TEMPLATE.md, "Core requirements", 11). No CI job runs these suites or the end-to-end test yet (R13); for the crawler's area CI runs the pre-commit hooks only (`/.github/workflows/ci.yml`).
 
