@@ -62,6 +62,56 @@ def info(text: str) -> tuple[dict, int] | None:
     return {m[1]: m[2] for m in found}, len(lines) - len(found)
 
 
+# Hitachi's header, the .txt sidecar's block, in a TIFF's description (spec
+# formats/image, "Hitachi's header in a TIFF's description"; change em-hitachi)
+HITACHI = "[SemImageFile]"
+HITACHI_TAGS = frozenset({270, 65500})  # ImageDescription, Hitachi's private tag
+# An item of Hitachi's tag 65500: "@<group>"<key>=<value>, the value up to the
+# next item or line end (one item is glued to the one before it in real files)
+HITACHI_ITEM = re.compile(r'"@([^"]+)"([^="\r\n]+)=([^"\r\n]*)')
+
+
+def sections(text: str) -> dict[str, dict[str, str]]:
+    """An INI-like header as {section: {key: value}}: each line split at its first `=`,
+    keys and values as written, a key met twice keeping its last value.
+
+    Our own few lines: configparser strips values and refuses a whole header for
+    one indented line (change em-hitachi, design D2).
+    """
+    found: dict[str, dict[str, str]] = {}
+    section = found.setdefault("", {})
+    for line in text.splitlines():
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = found.setdefault(line[1:-1], {})
+            continue
+        key, _, value = line.partition("=")
+        section[key] = value
+    return {name: keys for name, keys in found.items() if keys}
+
+
+def tag_items(text: str) -> dict[str, dict[str, str]] | None:
+    """Hitachi's tag 65500 as {"@group": {key: value}}, a key met twice keeping its last value; None if no item."""
+    found: dict[str, dict[str, str]] = {}
+    for group, key, value in HITACHI_ITEM.findall(text):
+        found.setdefault(f"@{group}", {})[key] = value
+    return found or None
+
+
+def hitachi(page) -> list[tuple[str, object]] | None:
+    """Hitachi's header and tag 65500 as entries, if the description is Hitachi's."""
+    description = page.tags.get(270)
+    if description is None or not str(description.value).startswith(HITACHI):
+        return None
+    found: list[tuple[str, object]] = list(sections(description.value).items())
+    private = page.tags.get(65500)
+    if private is not None:
+        parsed = tag_items(str(private.value))
+        found.append(("65500", parsed if parsed is not None else private.value))
+    return found
+
+
 def fei(path: str) -> tuple[str, ...]:
     """A name in FEI's metadata block, under either of its tags."""
     return (f"FEI_HELIOS.{path}", f"FEI_SFEG.{path}")
@@ -81,6 +131,13 @@ HEADLINE = (
     ("CZ_SEM.ap_actualkv",),
     ("CZ_SEM.ap_mag",),
     ("CZ_SEM.ap_pixel_size",),
+    ("SemImageFile.Instrument name",),
+    ("SemImageFile.Signal name",),
+    ("SemImageFile.Operation mode",),
+    ("SemImageFile.Accelerating voltage",),
+    ("SemImageFile.Magnification",),
+    ("SemImageFile.PixelSize",),
+    ("SemImageFile.SampleName",),
     ("ImageWidth",),
     ("ImageLength",),
     ("BitsPerSample",),
@@ -90,12 +147,25 @@ HEADLINE = (
     fei("User.Time"),
     ("CZ_SEM.ap_date",),
     ("CZ_SEM.ap_time",),
+    ("SemImageFile.Date",),
+    ("SemImageFile.Time",),
 )
-UNIT_UNKNOWN = frozenset(fei("Beam.HV"))
+UNIT_UNKNOWN = frozenset(
+    (*fei("Beam.HV"), "SemImageFile.Accelerating voltage", "SemImageFile.PixelSize")
+)
+# A number as Hitachi's header writes one, as text (spec formats/image, "A
+# number written as text in a Hitachi summary phrase")
+NUMBER = re.compile(r"[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?")
 
 
 def say(name: str, value) -> str | None:
-    """A summary phrase; a Zeiss entry [label, value, unit] as `label value unit`, or its value if that is text."""
+    """A summary phrase; a Zeiss entry [label, value, unit] as `label value unit`, or its value if that is text;
+    a Hitachi number written as text after its key."""
+    if name.startswith("SemImageFile.") and NUMBER.fullmatch(value):
+        if float(value) == 0:
+            return None
+        text = f"{name.partition('.')[2]} {value}"
+        return f"{text} (unit unknown)" if name in UNIT_UNKNOWN else text
     if name.startswith("CZ_SEM.") and isinstance(value, list) and len(value) >= 2:
         label, number, *unit = value
         if isinstance(number, str):
@@ -119,12 +189,16 @@ def extract(path: str) -> Extracted:
         page = tif.pages.first
         # ImageJ's description and IJMetadata as tifffile parses them, from the first page
         imagej = tif.imagej_metadata if page.is_imagej else None
+        # Hitachi's header and tag 65500 as entries, in place of the two texts
+        vendor = hitachi(page)
         items = [
             (tag.name, tag.value)
             for tag in page.tags
             if tag.valuebytecount <= MAX_TAG_BYTES
             and not (imagej is not None and tag.code in IMAGEJ_SOURCES)
+            and not (vendor is not None and tag.code in HITACHI_TAGS)
         ]
+        items.extend(vendor or ())
         mapped = {
             "first_page_shape": list(page.shape),
             "dtype": None if page.dtype is None else str(page.dtype),

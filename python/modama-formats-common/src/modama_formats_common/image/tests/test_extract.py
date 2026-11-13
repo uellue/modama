@@ -466,6 +466,105 @@ def test_an_svg_file_with_one_large_element(tmp_path):
     assert result.values["original_metadata"]["title"] == "A test drawing"
 
 
+# Hitachi's header in a TIFF's description (change em-hitachi)
+
+
+def hitachi(tmp_path: Path, description=None, **tags) -> Path:
+    """A Hitachi TIFF of the generator's, its description's lines changed or added by key."""
+    path = tmp_path / "grid2_0007.tif"
+    if description is None:
+        description = "\r".join(generate.hitachi_lines(path.name, **tags))
+    generate.hitachi_tif(path, description)
+    return path
+
+
+def test_every_line_of_the_header(collection_tests, tmp_path):
+    found = original(collection_tests, "hitachi_tif", tmp_path)
+    header = {k: v for k, v in found.items() if k.startswith("SemImageFile.")}
+    assert len(header) == len(generate.HITACHI_HEADER) == 40
+    assert header["SemImageFile.Accelerating voltage"] == "300000"
+    assert header["SemImageFile.Stage position R"] == "0"
+    assert header["SemImageFile.File name"] == "grid2_x50.0k_HAADF_0007.tif"
+    assert "ImageDescription" not in found
+
+
+def test_an_entry_nobody_has_seen_in_the_header(tmp_path):
+    path = hitachi(tmp_path, **{"Detector temperature": "-25"})
+    found = of_file(path).values["original_metadata"]
+    assert found["SemImageFile.Detector temperature"] == "-25"
+
+
+def test_values_in_the_header_as_written(tmp_path):
+    path = hitachi(
+        tmp_path, **{"Image comment": "  two spaces before", "Key without value": None}
+    )
+    found = of_file(path).values["original_metadata"]
+    assert found["SemImageFile.Image comment"] == "  two spaces before"
+    assert found["SemImageFile.Key without value"] == ""
+
+
+def test_another_programs_description(collection_tests, tmp_path):
+    found = original(collection_tests, "tifffile_tiff", tmp_path)
+    assert found["ImageDescription"] == '{"shape": [3, 48, 64]}'
+    assert not [k for k in found if k.startswith("SemImageFile.")]
+
+
+def test_tag_65500s_items_one_glued_to_the_one_before_it(collection_tests, tmp_path):
+    found = original(collection_tests, "hitachi_tif", tmp_path)
+    assert {k: v for k, v in found.items() if k.startswith("65500")} == {
+        "65500.@Fld.FldImgPropReserveDbl1": "-1",
+        "65500.@Fld.FldImgPropReserveDbl2": "2",
+        "65500.@Fld.FldImgPropModeID": "7",
+        "65500.@Fld.FldImgPropSubmodeID": "3",
+        "65500.@Confidential.ScanTimeX": "0.02",
+        "65500.@Confidential.ScanTimeY": "12.5",
+        "65500.@Confidential.Stage tilt axis": "Y",
+    }
+
+
+def test_another_programs_private_tag(tmp_path):
+    path = tmp_path / "script.tif"
+    generate.hitachi_tif(path, "made by a script", tag_65500='"@Fld"A=1')
+    found = of_file(path).values["original_metadata"]
+    assert found["65500"] == '"@Fld"A=1'
+    assert found["ImageDescription"] == "made by a script"
+
+
+def test_tag_65501_is_left_out(collection_tests, tmp_path):
+    found = original(collection_tests, "hitachi_tif", tmp_path)
+    assert not [k for k in found if k.startswith("65501")]
+
+
+def test_the_summary_line_of_a_lone_hitachi_tiff(collection_tests, tmp_path):
+    assert extracted(collection_tests, "hitachi_tif", tmp_path).summary == [
+        "HF3300",
+        "HAADF",
+        "Analysis",
+        "Accelerating voltage 300000 (unit unknown)",
+        "Magnification 50000",
+        "PixelSize 0.5 (unit unknown)",
+        "Au on C",
+        "ImageWidth 64",
+        "ImageLength 96",
+        "BitsPerSample 8",
+        "2024/01/15",
+        "09:30:00",
+    ]
+
+
+def test_a_voltage_of_0(tmp_path):
+    result = of_file(hitachi(tmp_path, **{"Accelerating voltage": "0"}))
+    assert not [p for p in result.summary if p.startswith("Accelerating voltage")]
+    assert (
+        result.values["original_metadata"]["SemImageFile.Accelerating voltage"] == "0"
+    )
+
+
+def test_a_sample_named_by_a_number(tmp_path):
+    result = of_file(hitachi(tmp_path, SampleName="1234"))
+    assert "SampleName 1234" in result.summary
+
+
 def test_a_broken_small_svg_file(tmp_path):
     # Read to its end: a parse error is the file's, and the extraction fails
     path = tmp_path / "broken.svg"
