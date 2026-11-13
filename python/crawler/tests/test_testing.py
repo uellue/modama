@@ -154,7 +154,9 @@ class Thr(Format):
             yield Dataset(anchor=e.rel, basis="*.thr")
 
     def extract(self, dataset, root):
-        text = Path(root + dataset.anchor).read_bytes()[:12].decode(errors="replace")
+        if os.environ.get("THR_FAIL"):  # stands in for a bug, or a file invalid by design
+            raise ValueError("cannot read")
+        text =Path(root + dataset.anchor).read_bytes()[:12].decode(errors="replace")
         # THR_READER stands in for the version of a reader the format uses
         return Extracted([f"start {text!r}"], [], {"reader": os.environ.get("THR_READER", "1")})
 
@@ -185,3 +187,43 @@ def test_a_dependency_changes_a_fixtures_output(pytester, extracting, monkeypatc
     result = run(pytester, test="test_fixture")
     result.assert_outcomes(failed=1)
     assert "/noext extraction (values.reader '1' -> '2')" in result.stdout.str()
+
+
+INVALID_BY_DESIGN = MANIFEST.replace('"representative"', '"reproducer"').replace(
+    '"parser-only: made up', '"invalid-by-design: made up'
+)
+REPRODUCER = MANIFEST.replace('"representative"', '"reproducer"')
+REFUSED = "not recorded: the extraction of reproducer good fails (/a.thr: ValueError"
+
+
+def test_first_run_records_an_extraction_error(pytester, extracting, monkeypatch):
+    (extracting / "tests" / "fixtures.toml").write_text(INVALID_BY_DESIGN)
+    monkeypatch.setenv("THR_FAIL", "1")
+    result = run(pytester, test="test_fixture")
+    result.assert_outcomes(failed=1)
+    out = result.stdout.str()
+    assert "recorded an ERROR as the expected result for good" in out
+    assert "intended only for a fixture that is invalid-by-design" in out
+    assert "for a reproducer, delete the file and fix the code first" in out
+    recorded = (extracting / "tests" / "expected" / "good.json").read_text()
+    assert '"error": "ValueError"' in recorded
+    run(pytester, test="test_fixture").assert_outcomes(passed=1)
+
+
+def test_a_reproducers_error_is_not_recorded(pytester, extracting, monkeypatch):
+    (extracting / "tests" / "fixtures.toml").write_text(REPRODUCER)
+    expected = extracting / "tests" / "expected" / "good.json"
+    monkeypatch.setenv("THR_FAIL", "1")
+    result = run(pytester, test="test_fixture")
+    result.assert_outcomes(failed=1)
+    assert REFUSED in result.stdout.str()
+    assert not expected.exists()
+    # Nor with regeneration, over a result recorded before
+    monkeypatch.delenv("THR_FAIL")
+    run(pytester, test="test_fixture")  # records
+    before = expected.read_text()
+    monkeypatch.setenv("THR_FAIL", "1")
+    result = run(pytester, "--regen-expected", test="test_fixture")
+    result.assert_outcomes(failed=1)
+    assert REFUSED in result.stdout.str()
+    assert expected.read_text() == before

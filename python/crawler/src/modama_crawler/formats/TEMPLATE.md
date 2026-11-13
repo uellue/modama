@@ -89,7 +89,8 @@ A library (a package of collections):
    their licence), or generate them with the program that writes the format.
 5. Write the tests from the scenarios, then the code, until `pytest src` in the
    package passes. The first run records `expected/*.json` and fails: read them, then
-   run again.
+   run again. A recorded `"error"` is right only for a fixture that is
+   invalid-by-design; otherwise delete the file and fix the code first.
 6. A row in the package's README; the dependency, if any, in its `pyproject.toml`.
 7. "Testing a format" below, all of it; then the review and the hand-over (the skill).
 
