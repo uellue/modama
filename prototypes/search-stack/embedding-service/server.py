@@ -11,8 +11,10 @@ Environment:
   MODAMA_EMBED_MEM_LIMIT   bytes per worker for ONNX Runtime's arena on the GPU (required for
                            cuda; CUDA's own context of about 0.5 GB comes on top)
   MODAMA_EMBED_DEVICE      cuda (default) or cpu (the tests)
-  MODAMA_EMBED_MODEL_FILE  another ONNX file instead of the pinned model_optimized.onnx (the
-                           check of a file that moves the vectors; the float32 file later)
+  EMBEDDING_MODEL_PATH     the warehouse's setting of the same name (change embedding-fp32-model,
+                           patch 0004): a folder with fastembed's files for the model, its graph
+                           as model_optimized.onnx; empty or unset: the pinned download in
+                           MODAMA_EMBED_CACHE (`fetch`), the file the local path loads today
   CREDENTIALS_DIRECTORY    systemd's (LoadCredential=token:...): the token is its file `token`
 """
 
@@ -32,7 +34,7 @@ from pathlib import Path
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 # the model the warehouse names (EMBEDDING_MODEL's last part, embedding_utils.py), and the
@@ -100,16 +102,19 @@ def settings() -> Settings:
         raise ConfigError(
             "MODAMA_EMBED_MEM_LIMIT is not set: the bytes per worker on the GPU (README.md, Install)"
         )
-    folder = model_dir()
-    missing = [f for f in FILES if not (folder / f).exists()]
+    given = os.environ.get("EMBEDDING_MODEL_PATH")
+    folder = Path(given) if given else model_dir()
+    missing = [f for f in FILES if not (folder / f).is_file()]
     if missing:
-        raise ConfigError(
-            f"model files missing in {folder}: {', '.join(missing)}; run `server.py fetch` first"
+        fix = (
+            "EMBEDDING_MODEL_PATH must name a folder with them"
+            if given
+            else "run `server.py fetch` first"
         )
-    file = Path(os.environ.get("MODAMA_EMBED_MODEL_FILE") or folder / FILES[-1])
-    if not file.is_file():
-        raise ConfigError(f"MODAMA_EMBED_MODEL_FILE {file} is not a file")
-    return Settings(token, device, mem_limit, folder, file)
+        raise ConfigError(
+            f"model files missing in {folder}: {', '.join(missing)}; {fix}"
+        )
+    return Settings(token, device, mem_limit, folder, folder / FILES[-1])
 
 
 class Model:
@@ -123,6 +128,9 @@ class Model:
         from fastembed.common.preprocessor_utils import load_tokenizer
 
         if s.device == "cuda":
+            # CUDA and cuDNN from the venv's nvidia-* wheels, as the benchmark loads them
+            # (perf/grace-embedding/bench.py); ONNX Runtime does not on import (review R1)
+            ort.preload_dlls()
             options = {"use_tf32": "1" if tf32 else "0"}
             if s.mem_limit:
                 options["gpu_mem_limit"] = str(s.mem_limit)
@@ -149,7 +157,8 @@ class Model:
             raise ConfigError(
                 f"the session runs on {self.provider}, not on the GPU (ONNX Runtime fell back)"
             )
-        self.file = s.model_file.name
+        # the path: the pinned download or EMBEDDING_MODEL_PATH's folder
+        self.file = str(s.model_file)
         # one run on the device at a time in this worker; the other worker tokenizes meanwhile
         self.lock = threading.Lock()
 
@@ -169,6 +178,24 @@ class Model:
             ):
                 vectors[i] = v.tolist()
         return vectors, tokens
+
+
+def answer(model: Model, texts: list[str]) -> tuple[bytes, int]:
+    """The answer's body and the number of tokens, made in the thread pool: 2,000 vectors
+    are about 15 MB of JSON and half a second, which would hold up the worker's event loop
+    (review R10)."""
+    vectors, tokens = model.embed(texts)
+    data = [
+        {"object": "embedding", "index": i, "embedding": v}
+        for i, v in enumerate(vectors)
+    ]
+    body = {
+        "object": "list",
+        "data": data,
+        "model": MODEL,
+        "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
+    }
+    return json.dumps(body, separators=(",", ":")).encode(), tokens
 
 
 def out_of_memory(e: Exception) -> bool:
@@ -203,7 +230,7 @@ def parse(body: bytes) -> tuple[str | None, list[str] | str]:
     return str(data.get("model")), texts
 
 
-async def embeddings(request: Request) -> JSONResponse:
+async def embeddings(request: Request) -> Response:
     started = time.monotonic()
     status, texts, tokens = 200, None, None
     state = request.app.state
@@ -221,24 +248,13 @@ async def embeddings(request: Request) -> JSONResponse:
             status = 400
             return error(400, f"this service serves {MODEL}, not {model}")
         try:
-            vectors, tokens = await run_in_threadpool(state.model.embed, parsed)
+            body, tokens = await run_in_threadpool(answer, state.model, parsed)
         except Exception as e:
             if not out_of_memory(e):
                 raise
             status = 503
             return error(503, "out of memory on the device for this request")
-        data = [
-            {"object": "embedding", "index": i, "embedding": v}
-            for i, v in enumerate(vectors)
-        ]
-        return JSONResponse(
-            {
-                "object": "list",
-                "data": data,
-                "model": MODEL,
-                "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
-            }
-        )
+        return Response(body, media_type="application/json")
     except Exception:
         status = 500
         raise

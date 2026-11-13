@@ -53,7 +53,18 @@ def test_a_file_that_moves_the_vectors(tmp_path, warehouse):
         pytest.fail(
             f"{int8} is missing: FASTEMBED_CACHE_DIR={model_cache()} python ../perf/grace-embedding/prepare_model.py (README.md, Tests)"
         )
-    s = Service(tmp_path, MODAMA_EMBED_MODEL_FILE=str(int8)).start()
+    # a model folder as EMBEDDING_MODEL_PATH names one, with the int8 graph
+    folder = tmp_path / "int8"
+    folder.mkdir()
+    pinned = (
+        model_cache()
+        / "models--qdrant--bge-small-en-v1.5-onnx-q/snapshots/aa8f8b060edb00e03bfdd08813a2949946c8ba55"
+    )
+    for f in pinned.iterdir():
+        (folder / f.name).symlink_to(
+            int8 if f.name == "model_optimized.onnx" else f.resolve()
+        )
+    s = Service(tmp_path, EMBEDDING_MODEL_PATH=str(folder)).start()
     try:
         out = check(s, warehouse, "sets", "--n", "32", "--sets", "short,long")
     finally:

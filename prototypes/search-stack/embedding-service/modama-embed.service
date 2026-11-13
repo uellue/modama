@@ -11,6 +11,10 @@ Group=modama-embed
 # root's file, mode 0600; the service reads $CREDENTIALS_DIRECTORY/token
 LoadCredential=token:/etc/modama-embed/token
 Environment=MODAMA_EMBED_CACHE=/opt/modama-embed/cache
+# the model file the warehouse's local path loads, by the warehouse's setting of the same
+# name: empty, the pinned download in the cache (`server.py fetch`); once the change
+# embedding-fp32-model lands, its float32 folder, made by the same script and pin (README.md)
+Environment=EMBEDDING_MODEL_PATH=
 # bytes per worker for ONNX Runtime's arena on the GPU: twice what measure.py reports
 # (design Q9). Empty: the service refuses to start.
 Environment=MODAMA_EMBED_MEM_LIMIT=

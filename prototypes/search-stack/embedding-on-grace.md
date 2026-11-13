@@ -227,8 +227,19 @@ sudo ssh $k embedtunnel@<grace> id -un                  # This account is curren
 sudo ssh $k -tt embedtunnel@<grace> < /dev/null         # PTY allocation request failed
 sudo timeout 15 ssh $k -o ExitOnForwardFailure=yes -N -R 127.0.0.1:47656:127.0.0.1:22 embedtunnel@<grace>   # remote port forwarding failed
 sudo timeout 15 ssh $k -o ExitOnForwardFailure=yes -N -R /tmp/x.socket:127.0.0.1:22 embedtunnel@<grace>    # remote port forwarding failed
-sudo timeout 10 ssh $k -N -L 127.0.0.1:47657:127.0.0.1:22 embedtunnel@<grace> & sleep 3; curl -s -m 3 127.0.0.1:47657; echo "curl exit $?"   # not 0: refused
-sudo timeout 10 ssh $k -N -L 127.0.0.1:47658:/run/systemd/notify embedtunnel@<grace> & sleep 3; curl -s -m 3 127.0.0.1:47658; echo "curl exit $?"   # not 0: refused
+```
+
+`-L` to another port and to a Unix socket: ssh reports a refused port when something
+connects through the forward (curl's own exit says nothing: it fails on an SSH banner too);
+for a Unix socket only grace's log tells a refusal from a missing socket:
+
+```bash
+sudo timeout 8 ssh $k -N -L 127.0.0.1:47657:127.0.0.1:22 embedtunnel@<grace> 2> /tmp/fwd1.log & sleep 3; curl -s -m 3 127.0.0.1:47657 > /dev/null; wait
+grep -c 'open failed: administratively prohibited' /tmp/fwd1.log   # 1: refused
+sudo timeout 8 ssh $k -N -L 127.0.0.1:47658:/run/systemd/journal/stdout embedtunnel@<grace> & sleep 3; curl -s -m 3 127.0.0.1:47658 > /dev/null; wait
+rm /tmp/fwd1.log
+# on grace:
+sudo journalctl -u ssh --since -5min | grep -E 'but the request was denied|refused streamlocal port forward'   # one line each
 ```
 
 Nothing to undo.
@@ -267,22 +278,26 @@ Undo: `sudo systemctl disable --now modama-embed` (the rest of step 4's undo rem
 
 ```bash
 # The process is killed: back within a minute (30 s pause, then the model loads)
-sudo kill -9 "$(systemctl show -p MainPID --value modama-embed)"; sleep 45; curl -s 127.0.0.1:7656/health; echo
-# A limit too small for a batch: 503, then 200 for a small one; then the limit back
+up() { for i in $(seq 90); do curl -sf 127.0.0.1:7656/health && echo && return; sleep 1; done; echo "no answer after 90 s"; }
+sudo kill -9 "$(systemctl show -p MainPID --value modama-embed)"; sleep 5; up
+# A limit too small for a batch: 503, then 200 for a small one; then the limit back.
+# 300 MB: above the weights (66 MB), far below one sub-batch of 256 x 512 tokens (GBs)
 sudo mkdir -p /etc/systemd/system/modama-embed.service.d
-printf '[Service]\nEnvironment=MODAMA_EMBED_MEM_LIMIT=50000000\n' | sudo tee /etc/systemd/system/modama-embed.service.d/tiny.conf
-sudo systemctl daemon-reload && sudo systemctl restart modama-embed && sleep 20
+printf '[Service]\nEnvironment=MODAMA_EMBED_MEM_LIMIT=300000000\n' | sudo tee /etc/systemd/system/modama-embed.service.d/tiny.conf
+sudo systemctl daemon-reload && sudo systemctl restart modama-embed && up
 python3 -c 'import json; print(json.dumps({"model": "bge-small-en-v1.5", "input": ["beam dose tilt " * 300] * 256}))' > /tmp/long.json
 python3 -c 'import json; print(json.dumps({"model": "bge-small-en-v1.5", "input": ["ferritin"]}))' > /tmp/short.json
 t=$(sudo cat /etc/modama-embed/token)
-curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $t" -H 'Content-Type: application/json' -d @/tmp/long.json 127.0.0.1:7656/v1/embeddings    # 503
-curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $t" -H 'Content-Type: application/json' -d @/tmp/short.json 127.0.0.1:7656/v1/embeddings   # 200
+# the token through stdin (printf is a shell builtin), never on curl's command line
+printf 'header = "Authorization: Bearer %s"\n' "$t" | curl -K - -s -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' -d @/tmp/long.json 127.0.0.1:7656/v1/embeddings    # 503
+printf 'header = "Authorization: Bearer %s"\n' "$t" | curl -K - -s -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' -d @/tmp/short.json 127.0.0.1:7656/v1/embeddings   # 200
 unset t; rm /tmp/long.json /tmp/short.json
-sudo rm /etc/systemd/system/modama-embed.service.d/tiny.conf && sudo systemctl daemon-reload && sudo systemctl restart modama-embed
+sudo rm /etc/systemd/system/modama-embed.service.d/tiny.conf && sudo systemctl daemon-reload && sudo systemctl restart modama-embed && up
 ```
 
-If the tiny limit gives 500 instead of 503, send `journalctl -u modama-embed -n 30`: the
-error's text tells the service which errors are out of memory (tested on the CPU only).
+If the tiny limit gives 500 instead of 503, or the service does not start with it, send
+`journalctl -u modama-embed -n 30`: the error's text tells the service which errors are out
+of memory (tested on the CPU only).
 From another host (the staging host): `curl -m 5 http://<grace>:7656/health` must fail.
 
 **8. On the staging host: the service through the tunnel** (task 2.4):
@@ -330,8 +345,9 @@ bash field-test/index-tasks.sh > ~/embed-check/before-index-tasks.csv
 ```
 
 If the last indexing run's task logs are gone or are not of the current image: a re-index of
-the last full harvest run, 30 minutes, with the probes, then stopped in Airflow's UI (the run,
-"Mark as failed"):
+the last full harvest run (its id: `modama-chain status`, the line `indexing … harvest run
+<id>`), 30 minutes, with the probes, then stopped in Airflow's UI (the run, "Mark as
+failed"):
 
 ```bash
 dc exec airflow-api-server airflow dags trigger warehouse_transform_index -c '{"harvest_run_id": "<the harvest run>", "reuse_embeddings": false}'
@@ -356,6 +372,7 @@ dc exec -T crawler python - snapshot < embedding-service/check.py > ~/embed-chec
 **11. On the staging host: the switch** (task 5.4; design D9, step 4):
 
 ```bash
+docker compose version                                  # 2.24 or newer (env_file with `required: false`)
 echo 'EMBED_API_URL=http://host.docker.internal:17656/v1' >> staging.env
 dc up -d airflow-worker-transform                       # ends the batches it runs; Airflow retries them
 dc exec airflow-worker-transform curl -s http://host.docker.internal:17656/health; echo

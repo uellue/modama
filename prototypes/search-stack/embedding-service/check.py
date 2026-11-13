@@ -220,8 +220,9 @@ def cmd_snapshot(a) -> int:
             "check.py: MODAMA_CHAIN_WAREHOUSE_DB is not set (the read-only role; run it in the crawler's container)"
         )
     sql = (
-        "SELECT record_identifier, datestamp, embeddings FROM records "
-        "WHERE embeddings IS NOT NULL ORDER BY md5(record_identifier), record_identifier LIMIT %s"
+        # id: the primary key, endpoint and identifier (review R6)
+        "SELECT id, datestamp, embeddings FROM records "
+        "WHERE embeddings IS NOT NULL ORDER BY md5(id), id LIMIT %s"
     )
     with psycopg.connect(dsn) as conn:
         rows = conn.execute(sql, (a.n,)).fetchall()

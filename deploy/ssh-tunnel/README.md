@@ -35,19 +35,21 @@ capture the main file's lines that follow the `Include`):
 <!-- run: farend -->
 ```bash
 account=embedtunnel                          # the tunnel's account on this host
+destinations="127.0.0.1:7656 127.0.0.1:11434"    # what the key may forward to, literally
 key='ssh-ed25519 AAAA... staging-embed-tunnel'   # the client's key.pub, one line
-useradd --system --create-home --shell /usr/sbin/nologin "$account"
+getent passwd "$account" || useradd --system --create-home --shell /usr/sbin/nologin "$account"
 home=$(getent passwd "$account" | cut -d: -f6)
 install -d -m 700 -o "$account" -g "$account" "$home/.ssh"
-printf 'restrict,port-forwarding,permitopen="127.0.0.1:7656",permitopen="127.0.0.1:11434",command="/usr/sbin/nologin" %s\n' "$key" > "$home/.ssh/authorized_keys"
+permits=$(printf 'permitopen="%s",' $destinations)
+printf 'restrict,port-forwarding,%scommand="/usr/sbin/nologin" %s\n' "$permits" "$key" > "$home/.ssh/authorized_keys"
 chown "$account:$account" "$home/.ssh/authorized_keys"
 chmod 600 "$home/.ssh/authorized_keys"
-cat >> /etc/ssh/sshd_config <<EOF
+grep -q "^Match User $account\$" /etc/ssh/sshd_config || cat >> /etc/ssh/sshd_config <<EOF
 
 Match User $account
     AllowTcpForwarding local
     AllowStreamLocalForwarding no
-    PermitOpen 127.0.0.1:7656 127.0.0.1:11434
+    PermitOpen $destinations
     PermitTTY no
     X11Forwarding no
 EOF
@@ -152,13 +154,17 @@ From the client, with the instance's key, each must be refused (spec `ssh-tunnel
 opens nothing but its forwards"):
 
 ```bash
-k="-F none -i /etc/ssh-tunnel/embed/key -o UserKnownHostsFile=/etc/ssh-tunnel/embed/known_hosts"
-ssh $k embedtunnel@grace.example id -un        # This account is currently not available.
-ssh $k -tt embedtunnel@grace.example           # PTY allocation request failed
-ssh $k -N -R 127.0.0.1:47656:127.0.0.1:22 embedtunnel@grace.example   # remote port forwarding failed
-ssh $k -N -R /tmp/x.socket:127.0.0.1:22 embedtunnel@grace.example     # remote port forwarding failed
-ssh $k -N -L 127.0.0.1:9000:127.0.0.1:22 embedtunnel@grace.example    # then curl 127.0.0.1:9000: refused
+k="-F none -i /etc/ssh-tunnel/embed/key -o UserKnownHostsFile=/etc/ssh-tunnel/embed/known_hosts -o BatchMode=yes"
+ssh $k embedtunnel@grace.example id -un                    # This account is currently not available.
+ssh $k -tt embedtunnel@grace.example < /dev/null           # PTY allocation request failed
+timeout 15 ssh $k -o ExitOnForwardFailure=yes -N -R 127.0.0.1:47656:127.0.0.1:22 embedtunnel@grace.example   # remote port forwarding failed
+timeout 15 ssh $k -o ExitOnForwardFailure=yes -N -R /tmp/x.socket:127.0.0.1:22 embedtunnel@grace.example     # remote port forwarding failed
+# another destination: ssh reports the refusal when something connects through the forward
+timeout 8 ssh $k -N -L 127.0.0.1:9000:127.0.0.1:22 embedtunnel@grace.example & sleep 3; curl -s -m 3 127.0.0.1:9000 > /dev/null; wait
+# ... channel 2: open failed: administratively prohibited: open failed
 ```
+
+`ssh-keyscan` takes `-p` for a far end on another port than 22, as `SSH_OPTIONS` does.
 
 ## Test
 

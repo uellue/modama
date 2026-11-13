@@ -58,6 +58,18 @@ def test_the_texts_in_another_order(service):
     assert np.allclose(after[2], before[0], atol=1e-6)
 
 
+def test_the_order_across_sub_batches(service, local_model):
+    """300 different texts of different lengths: two sub-batches after sorting; each
+    vector belongs to its own text (review R7)."""
+    texts = [words(3 + i % 40, seed=100 + i) for i in range(300)]
+    got = vectors(service.post(texts))
+    ref = np.array(list(local_model.embed(texts)), dtype=np.float64)
+    cos = (got * ref).sum(1) / (
+        np.linalg.norm(got, axis=1) * np.linalg.norm(ref, axis=1)
+    )
+    assert cos.min() >= BOUND
+
+
 # Requirement: Texts longer than the model's window are cut at tokens
 def test_a_text_of_2000_tokens(service, local_model):
     text = words(2000, seed=1)
@@ -108,9 +120,45 @@ def test_the_health_answer(service):
     assert answer.json() == {
         "repository": "qdrant/bge-small-en-v1.5-onnx-q",
         "revision": "aa8f8b060edb00e03bfdd08813a2949946c8ba55",
-        "file": "model_optimized.onnx",
+        # the pinned download, as EMBEDDING_MODEL_PATH is not set
+        "file": str(
+            model_cache()
+            / "models--qdrant--bge-small-en-v1.5-onnx-q/snapshots"
+            / "aa8f8b060edb00e03bfdd08813a2949946c8ba55/model_optimized.onnx"
+        ),
         "provider": "CPUExecutionProvider",  # on grace: CUDAExecutionProvider
     }
+
+
+# The service loads the local path's file: EMBEDDING_MODEL_PATH's folder when it is set
+# (the float32 folder of change embedding-fp32-model)
+def test_the_model_folder_of_embedding_model_path(tmp_path):
+    folder = tmp_path / "model"
+    folder.mkdir()
+    pinned = (
+        model_cache()
+        / "models--qdrant--bge-small-en-v1.5-onnx-q/snapshots/aa8f8b060edb00e03bfdd08813a2949946c8ba55"
+    )
+    for f in pinned.iterdir():
+        (folder / f.name).symlink_to(f.resolve())
+    s = Service(tmp_path, EMBEDDING_MODEL_PATH=str(folder)).start()
+    try:
+        health = requests.get(s.url + "/health", timeout=10).json()
+        assert health["file"] == str(folder / "model_optimized.onnx")
+        assert s.post(THREE).status_code == 200
+    finally:
+        s.stop()
+    (folder / "tokenizer.json").unlink()
+    empty = Service(tmp_path, EMBEDDING_MODEL_PATH=str(folder))
+    out = subprocess.run(
+        [sys.executable, str(SERVER), "serve", "--port", str(empty.port)],
+        env=empty.env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert out.returncode == 2
+    assert "tokenizer.json; EMBEDDING_MODEL_PATH must name a folder" in out.stderr
 
 
 # Requirement: The service listens on grace's loopback only

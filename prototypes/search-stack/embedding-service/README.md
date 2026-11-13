@@ -48,14 +48,15 @@ runs one sub-batch on the GPU at a time.
 
 ## Install on grace
 
-As root, from a copy of this folder and of `../perf/grace-embedding/gen_texts.py` (for
-`check.py` and `measure.py`), for example:
+From a copy of this folder and of `../perf/grace-embedding/gen_texts.py` (for
+`check.py` and `measure.py`) in your home on grace, then as root in that folder (`sudo -s`
+keeps it), for example:
 
 ```bash
 # on a machine with the checkout:
 rsync -aR prototypes/search-stack/./embedding-service prototypes/search-stack/./perf/grace-embedding/gen_texts.py grace:modama-embed-src/
 # on grace:
-cd ~/modama-embed-src/embedding-service
+cd ~/modama-embed-src/embedding-service && sudo -s
 ```
 
 **The venv**, with grace's Python 3.12 (the lock file's; `python3.12 --version`), as for
@@ -89,7 +90,8 @@ MODAMA_EMBED_CACHE=/opt/modama-embed/cache /opt/modama-embed/venv/bin/python mea
     ~/grace-embedding/cache/variants/model-fp32.onnx /opt/modama-embed/cache/models--qdrant--bge-small-en-v1.5-onnx-q/snapshots/aa8f8b060edb00e03bfdd08813a2949946c8ba55/model_optimized.onnx
 ```
 
-Its last line, `GPU memory of one worker after 512 long texts in sub-batches of 256: N MiB`,
+(As yourself, CUDA cannot write its kernel cache in `/opt/modama-embed/cache`, which belongs to
+`modama-embed`; it compiles again instead, harmless.) Its last line, `GPU memory of one worker after 512 long texts in sub-batches of 256: N MiB`,
 gives the limit: twice N, in bytes (`limit=$((2 * N * 1024 * 1024))`), per worker (design
 Q9).
 
@@ -112,6 +114,16 @@ it to the service with `LoadCredential` (only the unit's user can read it, syste
 systemd 247 or newer, `systemctl --version`). The same token goes into staging's `embed.env`
 (`../embedding-on-grace.md`, runbook); copy it without printing it to a terminal that is
 recorded.
+
+**The model file** is the one the warehouse's local path loads (design D3), set the same
+way: `EMBEDDING_MODEL_PATH`, empty in the unit, means the pinned download above, today's
+production file. Once the change `embedding-fp32-model` (patch 0004) puts the float32 file
+into the transform worker's image under `EMBEDDING_MODEL_PATH`, the same folder, made by
+that change's script from the same pin, goes onto grace (for example
+`/opt/modama-embed/models/bge-small-en-v1.5-fp32/`, readable by `modama-embed`) and the
+unit gets `Environment=EMBEDDING_MODEL_PATH=<that folder>` in a drop-in, so that service and
+fallback run one file. The folder holds fastembed's files with the graph as
+`model_optimized.onnx`; `/health` names the file it loaded.
 
 ## Check, logs, stop
 
@@ -205,5 +217,7 @@ The tests start the service as a real process and talk to it with `requests`, th
 warehouse's client; the warehouse's tests apply `../patches/warehouse/` to the submodule's
 code in order, as the image build does. Without `MODAMA_EMBED_CACHE` and its model files they
 fail, saying so. `test_warehouse.py`'s hanging server takes about 2 minutes (4 waits of 30 s).
-With the CPU provider ONNX Runtime enforces no arena limit, so the memory test raises ONNX
+On the CPU a sub-batch of 256 texts of 512 tokens takes about 6 GB per worker (the VM's
+OOM killer took one during `check.py sets` with 512 texts per set; uvicorn started it
+again). With the CPU provider ONNX Runtime enforces no arena limit, so the memory test raises ONNX
 Runtime's out-of-memory error in place of the GPU's; the limit itself is checked on grace.

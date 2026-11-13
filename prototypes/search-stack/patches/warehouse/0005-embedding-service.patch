@@ -24,10 +24,13 @@ Same result for the local path: unchanged; lazy_load only moves the load to the 
 embed call (fastembed 0.8.0, `_embed_documents`: load_onnx_model when the session is
 missing), with the same threads.
 
-Against metadata-warehouse v1.10.0 with 0001 to 0003 applied (0004 is the number of the
-change embedding-fp32-model, not merged; this one keeps 0005); applied with `patch -p1`
+Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; applied with `patch -p1`
 in the image build (modama search stack, warehouse-airflow.Dockerfile; change
-embedding-service-grace, D2, Q7, Q8).
+embedding-service-grace, D2, Q7, Q8). 0004 (change embedding-fp32-model, not merged when
+this was written) edits the same TextEmbedding call: once it lands, the first hunk below
+becomes `lazy_load=True,` as a line after 0004's `specific_model_path=model_path,`; the
+hunks of embedding_utils.py stay as they are (both orders tried with busybox's patch,
+2026-11-13).
 
 diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
 --- a/src/transform/transform_core.py

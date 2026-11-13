@@ -97,17 +97,22 @@ check "a shell after the account's shell was changed: the forced command answers
 f usermod -s /usr/sbin/nologin embedtunnel
 check "a terminal: PTY allocation request failed" \
     c sh -c "timeout 10 ssh $k -tt embedtunnel@farend < /dev/null 2>&1 | grep 'PTY allocation request failed'"
-forward_refused() {  # local port, forward target
-    c sh -c "ssh $k -N -L 127.0.0.1:$1:$2 embedtunnel@farend & pid=\$!; sleep 2
-        out=\$(curl -s -m 5 http://127.0.0.1:$1/ 2>&1); rc=\$?; kill \$pid; [ \$rc -ne 0 ]" &&
+forward_refused() {  # local port, forward target, sshd's log line, the client's ssh's message
+    # the client's message too: the README's checks by hand and the runbook rely on it
+    c sh -c "ssh $k -N -L 127.0.0.1:$1:$2 embedtunnel@farend 2> /tmp/fwd-$1.err & pid=\$!; sleep 2
+        out=\$(curl -s -m 5 http://127.0.0.1:$1/ 2>&1); rc=\$?; sleep 1; kill \$pid
+        [ \$rc -ne 0 ] && { grep '$4' /tmp/fwd-$1.err || { cat /tmp/fwd-$1.err; exit 1; }; }" &&
         f grep -qE "$3" /var/log/sshd.log
 }
+prohibited='open failed: administratively prohibited'
 check "another destination (-L 9000:127.0.0.1:22): refused, in sshd's log" \
-    forward_refused 9000 127.0.0.1:22 'to connect to host 127.0.0.1 port 22, but the request was denied'
+    forward_refused 9000 127.0.0.1:22 'to connect to host 127.0.0.1 port 22, but the request was denied' "$prohibited"
 check "the permitted port by another name (localhost): refused" \
-    forward_refused 9002 localhost:7656 'to connect to host localhost port 7656, but the request was denied'
+    forward_refused 9002 localhost:7656 'to connect to host localhost port 7656, but the request was denied' "$prohibited"
 check "a forward to a Unix socket on the destination: refused, in sshd's log" \
-    forward_refused 9001 /run/some.socket 'refused streamlocal port forward: .* target /run/some.socket'
+    forward_refused 9001 /run/some.socket 'refused streamlocal port forward: .* target /run/some.socket' 'open failed'
+# (for a Unix socket the client says only `open failed: connect failed`, as for a missing one:
+# the far end's log tells the refusal)
 check "a remote forward: remote port forwarding failed, nothing listens on 9000" \
     sh -c "docker exec $client sh -c \"timeout 15 ssh $k -o ExitOnForwardFailure=yes -N -R 127.0.0.1:9000:127.0.0.1:22 embedtunnel@farend 2>&1\" | grep 'remote port forwarding failed for listen port 9000' &&
         ! docker exec $farend sh -c 'ss -ltn | grep -q :9000'"

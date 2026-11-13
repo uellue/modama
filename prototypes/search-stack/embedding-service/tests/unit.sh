@@ -64,6 +64,15 @@ $(block 3)
 EOF"
 
 check "systemd-analyze verify" c systemd-analyze verify modama-embed.service
+# systemd 257 in a Docker container sets CREDENTIALS_DIRECTORY but does not provide the
+# credential (the folder does not exist for the service), so here a drop-in hands the token
+# over in a folder only modama-embed can read. LoadCredential itself, with the unit's
+# hardening, was checked on the VM's own systemd 257 (2026-11-13, a transient unit as
+# `nobody`: the token readable at $CREDENTIALS_DIRECTORY/token); on grace, runbook step 6.
+c sh -ec 'install -d -m 700 -o modama-embed -g modama-embed /run/modama-embed-test
+    install -m 400 -o modama-embed -g modama-embed /etc/modama-embed/token /run/modama-embed-test/token
+    printf "[Service]\nLoadCredential=\nEnvironment=CREDENTIALS_DIRECTORY=/run/modama-embed-test\n" > /etc/systemd/system/modama-embed.service.d/container.conf
+    systemctl daemon-reload && systemctl restart modama-embed'
 up() {
     for _ in $(seq 90); do
         c curl -sf http://127.0.0.1:7656/health && return 0
@@ -93,7 +102,7 @@ check "a request with the token: 200; the journal has its line, not the text or 
 check "the process is killed: started again after 30 s, /health within a minute" \
     c sh -ec 'pid=$(systemctl show -p MainPID --value modama-embed); kill -9 "$pid"; sleep 2
         for i in $(seq 60); do curl -sf -o /dev/null http://127.0.0.1:7656/health && [ "$(systemctl show -p MainPID --value modama-embed)" != "$pid" ] && exit 0; sleep 1; done; exit 1'
-c sh -c 'rm /etc/systemd/system/modama-embed.service.d/*.conf && systemctl daemon-reload && systemctl restart modama-embed'
+c sh -c 'cd /etc/systemd/system/modama-embed.service.d && rm device.conf limit.conf && systemctl daemon-reload && systemctl restart modama-embed'
 sleep 3
 check "without a memory limit (on the GPU) it refuses to start, saying why" \
     sh -c "docker exec $p journalctl -u modama-embed --no-pager | grep 'MODAMA_EMBED_MEM_LIMIT is not set'"
