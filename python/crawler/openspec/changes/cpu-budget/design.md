@@ -139,6 +139,77 @@ So D6 (i) holds: with the pool the batches beyond P wait in the scheduler, where
 
 The budget indexes 4.6 times as fast as today, with 40 % of the CPU time per record, and the worker's CPU time stays within the CPUs it may use (5.5 of 8; the criterion of 2.4). The machine's load average reached 13.5 with the budget: it counts tasks waiting for a CPU across all containers, and the rest of the stack (harvest, PostgreSQL, OpenSearch) runs alongside; context, not the criterion. The run 4 × 2 (`TRANSFORM_PROCESSES=4 PERF_THREADS=2`) was not run (stopped to free the VM for other work, @weber: a one-off experiment): `PERF_THREADS=2 perf/indexing-bench.sh 16000 250 4`. Embedding alone (`perf/embed-bench.py`, 2,000 short texts per process, sub-batch 32): 1:8 47, 2:4 61, 4:2 108, 5:1 98, 8:1 146 texts/s; the budget's 8 × 1 is the best (task 6.1). On short texts the sub-batch of 32 is faster than fastembed's 256 (8 × 1: 128 and 134 against 120 and 121 texts/s, CPU per text 50 against 56 ms).
 
+## Profile of one batch on long texts (249, 2026-11-13)
+
+@weber (249): "Profile the embedding workers on the VM with tonight's long texts". In the VM (8 vCPUs, AMD EPYC 7F72: AVX2, no AVX-512 or VNNI), image `search-stack-airflow:3.3.2` (patches 0001 to 0003), the test deployment up and otherwise idle; one throwaway container per case, `perf/batch-memory.py` as in its header with the budget's variables (`OPENBLAS/OMP/MKL_NUM_THREADS=1`, `RAYON_NUM_THREADS=T`), started through a wrapper in the session's scratchpad that adds process CPU time (`time.process_time`, all threads, including about 3 s for imports and loading the model) to each line the runner prints. Sub-batch 0 means the image's own, 32 (patch 0002).
+
+**The VM's records are no longer short.** Since the e2e run of 2026-11-12 the warehouse holds 19 records, two of them long (321 and at least 512 tokens; the others 19 to 43). The runner repeats them in turn, so every sub-batch of 32 (and of 256) contains a long one, and fastembed pads a sub-batch to its longest text: FILL 0 and FILL 150 cost as much as FILL 500 (6.3's table). The same happens on staging wherever short and long records share a sub-batch.
+
+**Where the CPU time goes.** `sudo perf record -F 999 -g -p <pid of the container's python>` (as root; `perf_event_paranoid` stayed 3), `PYTHONPERFSUPPORT=1` in the container, its `/tmp` bind-mounted so that `/tmp/perf-1.map` could be copied to the host as `/tmp/perf-<host pid>.map`; the container's libraries copied from the image into a `--symfs`; `perf report --no-children --sort dso[,sym]`. One batch of 250, T = 1, sub-batch 32 (perf's overhead: 141.8 s against 132.1 s without):
+
+| Share of the process's samples | FILL 500 (512 tokens) | FILL 0 (the records' own text, padded to 512) |
+|---|---|---|
+| ONNX Runtime (`onnxruntime_pybind11_state…so`) | 90.9 % | 91.6 % |
+| libc: one AVX `memmove` loop (callers not resolved: ONNX Runtime and libc are stripped) | 5.4 % | 5.2 % |
+| CPython (`libpython3.13`), of it about 1.6 % the imports at start | 1.7 % | 1.7 % |
+| kernel | 1.2 % | 1.1 % |
+| tokenizer (`tokenizers.abi3.so`, Rust) | 0.65 % | 0.19 % |
+| everything else (lxml, json, numpy, psycopg …) | 0.1 % | 0.1 % |
+
+Stages (FILL 500, profiled): imports 2.6 s (CPU 2.7 s), load 0.1 s, model load 0.4 s, `transform_batch_impl` 141.8 s (CPU 141.6 s). FILL 0: 2.6 s, 0.0 s, 0.3 s, 137.2 s. ONNX Runtime's own per-operator profile (`SessionOptions.enable_profiling`, set by the wrapper; FILL 500, no perf): the 8 model runs take 130.0 s of the transform's about 130.4 s CPU, so tokenising, validation, the JSON and the bulk serialization together are about 0.4 s of a batch (0.3 %):
+
+| Operator | Share of the model runs | | Operator | Share |
+|---|---|---|---|---|
+| Attention | 38.0 % | | Add | 3.9 % |
+| MatMul | 27.7 % | | SkipLayerNormalization | 2.9 % |
+| FusedMatMul | 19.1 % | | Tanh | 1.4 % |
+| Mul | 5.9 % | | Cast (float16 → float) | 1.0 % |
+
+The model fastembed loads for `BAAI/bge-small-en-v1.5` is `qdrant/bge-small-en-v1.5-onnx-q`, `model_optimized.onnx`, but it computes in float32: the operators take float tensors, the hottest loop is `vfmadd231ps` (a float GEMM kernel), and each run casts 53 float16 tensors. The GELU is not fused (its Mul, Add and Tanh are 11 %). The `-X perf_jit` run with `--call-graph dwarf` was not made: the DSO split was already clear, and with both libraries stripped dwarf stacks would give addresses, not names; ONNX Runtime's profiler named the operators instead.
+
+**Task 6.3: sub-batch 32 against 256** (`batch-memory.py 250 FILL T SUB_BATCH`; time is `transform_batch_impl`'s, CPU the process's at the end; VmHWM in kB ÷ 10⁶, as in "Measurement of one batch"):
+
+| FILL (tokens min, median, max) | T | sub-batch 32: time, CPU, VmHWM | sub-batch 256: time, CPU, VmHWM |
+|---|---|---|---|
+| 0 (19, 34, 512) | 1 | 141.1 s, 144.0 s, 1.38 GB | 141.6 s, 144.4 s, 5.29 GB |
+| 150 (189, 204, 512) | 1 | 142.7 s, 145.5 s, 1.39 GB | 129.9 s, 132.7 s, 5.29 GB |
+| 500 (512, 512, 512) | 1 | 132.1 s, 134.8 s, 1.39 GB | 129.1 s, 131.7 s, 5.31 GB |
+| 0 | 8 | 30.0 s, 212.6 s, 1.40 GB | 30.4 s, 204.5 s, 5.27 GB |
+| 150 | 8 | 31.4 s, 221.3 s, 1.41 GB | 30.7 s, 206.0 s, 5.31 GB |
+| 500 | 8 | 44.4 s, 298.4 s, 1.40 GB; repeated: 31.1 s, 222.1 s, 1.41 GB | 28.6 s, 205.9 s, 5.32 GB |
+
+So the sub-batch of 32 costs 0 to 10 % time against 256 (T = 1: 0, 10 and 2 %; T = 8: −1, 2 and 9 % with the repeat) and keeps the peak at 1.38 to 1.41 GB against 5.3 GB: the sub-batch of 32 and the constant of 1.7 GB per process stay, P does not change, the spec's scenario "A batch of long texts" (below 1.45 GB) holds at 250 (2,000 not repeated). T = 8 makes one batch 4.3 to 4.6 times as fast for 1.5 times the CPU. With the records as they are, FILL 0 and 150 do not measure short texts (above); the cost of shorter texts is in H1.
+
+### Hypotheses tested
+
+Each stated before measuring, one case at a time, the wrapper patching the copy in the throwaway container; the repository's patches and images unchanged.
+
+**H1. Sorting the texts by length before the sub-batches removes the padding** (the profile: every sub-batch padded to its longest text; the embeddings should not change, the attention mask excludes the padding). The wrapper embeds the texts in order of their length in characters and returns the vectors in the given order; T = 1, sub-batch 32; CPU per record is the process's CPU ÷ 250:
+
+| FILL | given order: time, records/s, CPU per record | sorted: time, records/s, CPU per record | gain |
+|---|---|---|---|
+| 0 | 130.2 s, 1.9, 532 ms | 18.4 s, 13.6, 85 ms (peak 0.86 GB) | 7.1× |
+| 150 | 142.7 s, 1.8, 582 ms | 50.8 s, 4.9, 214 ms | 2.8× |
+| 500 | 132.1 s, 1.9, 539 ms | 133.0 s, 1.9, 541 ms | none |
+
+The bulk bodies (`BULK_OUT`) of FILL 0 in the given order and sorted: 250 of 250 embeddings identical. Confirmed: on mixed lengths sorting saves what the short texts now cost as long ones; on texts that are all long it saves nothing. On staging the gain depends on how many records are shorter than 512 tokens and share sub-batches with long ones; its token lengths are not known here (the runner's `tokens per text` line on a staging batch, or the records' texts, would tell). A real change: patch 0002, `src/utils/embedding_utils.py`, `_embed_locally`: embed in order of length, return in the given order (a few lines).
+
+**H2. On long texts, threads per process scale better than processes** (6.3: T = 8 costs 1.5 times the CPU of T = 1 per batch; staging runs 16 × 1). P processes at once, 250 texts at FILL 500 each:
+
+| P × T | sub-batch | all done | records/s | CPU per record |
+|---|---|---|---|---|
+| 1 × 1 | 32 | 132.1 s | 1.9 | 539 ms |
+| 1 × 8 | 32 | 31.1 s | 8.0 | 888 ms |
+| 4 × 1 | 32 | 151.6 s | 6.6 | 587 ms |
+| 4 × 2 | 32 | 106.3 s | 9.4 | 702 ms |
+| 8 × 1 | 16 (32 would need 8 × 1.4 GB, more than the 9 GB available with the stack up; lowest available during the run 3.4 GB) | 187.7 s | 10.7 | 634 ms |
+
+Rejected: 8 × 1 indexes the most (14 % more than 4 × 2, 34 % more than 1 × 8) with the least CPU per record of the compositions that fill the machine; its processes waited for a CPU (wall 171 to 182 s against CPU 152 to 163 s each). The budget's processes of one thread stay; nothing to change.
+
+**Not tested, as information.** The unfused GELU (11 % of the model's time) could be fused by ONNX Runtime's transformer optimizer into a model file of our own, at most about 10 % gain; it needs the `onnx` package and a check that the embeddings stay. An int8-quantized model (the loaded one computes in float32) would make the MatMuls cheaper but changes the embeddings and so the search results: not recommended without that decision. ONNX Runtime's other session options: fastembed already sets `ORT_ENABLE_ALL`, and the arena concerns memory, not CPU; no case suggested a gain.
+
+**What follows.** On long texts the CPU goes into the model (96 % of perf's samples with the `memmove`s, the imports included; 99.7 % of the transform by ONNX Runtime's profile), almost all of it real work at 512 tokens; Python, tokenising, validation and serialization are below 1 %. Staging's processes of one thread are the right composition. The one change worth making is H1 (sorting before the sub-batches), whose gain on staging is the share of short records' padding; the sub-batch of 32 and the 1.7 GB constant stay.
+
 ## Patch 0001 on the same records (task 3.9)
 
 After the final e2e run (2026-11-12), its 17 records, in throwaway containers of both images (`scratchpad/same-records.sh` of the session, `perf/batch-memory.py 250 0 T` and `perf/validator-check.py`):
@@ -147,7 +218,7 @@ After the final e2e run (2026-11-12), its 17 records, in throwaway containers of
 - The bulk bodies (`BULK_OUT`) of a batch of 250 from the image without 0001 and with it, the budget's thread variables both times: byte-identical, embeddings included.
 - One batch of 250, the process alone on the VM: without 0001, T = 1: 22.9 and 23.0 s; with 0001, T = 1: 15.8 and 15.8 s (1.45× on these short records; staging's longer records spent more of a batch in validation, F16); the libraries' defaults without 0001 (today's batch, 8 ONNX threads, 23 threads in all): 15.6 and 14.5 s. The budget's gain is in running P batches at once on the cores (above), not in one batch.
 
-Task 6.3 (`perf/batch-memory.py` at 190 and 512 tokens, sub-batch 32 against 256, T = 1 and 8, with patch 0002 in the image) was not run (stopped to free the VM, @weber: a one-off experiment); the command is in `perf/batch-memory.py`'s header, the earlier numbers in "Measurement of one batch".
+Task 6.3 (`perf/batch-memory.py` at 190 and 512 tokens, sub-batch 32 against 256, T = 1 and 8, with patch 0002 in the image): run on 2026-11-13, in "Profile of one batch on long texts (249, 2026-11-13)".
 
 ## Verification in the VM, and what only the dev server can settle
 
