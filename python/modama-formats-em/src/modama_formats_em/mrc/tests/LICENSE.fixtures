@@ -11,6 +11,9 @@ original and of the cut):
 - fixtures/epu_falcon/: the headers of two files of EMPIAR-12652, "TnsB strand
   transfer complex micrographs" (Tenjo-Castaño F, Sofos N, López-Méndez B et al.),
   https://www.ebi.ac.uk/empiar/EMPIAR-12652/.
+- fixtures/epu_data/: five files of one image of the same entry EMPIAR-12652: the
+  headers of the micrograph and its movie, their two XML files whole, and the
+  first 2048 bytes of the JPEG preview.
 - fixtures/epu_movie/: the header of one movie of EMPIAR-12018, "Cryo-EM of
   hMRS2-BRIL with EDTA" (He Z, Mount JW, Zhang J et al.),
   https://www.ebi.ac.uk/empiar/EMPIAR-12018/.
@@ -33,7 +36,8 @@ Please cite the entries' authors as a matter of good scientific practice.
   whose README says: "fei-extended.mrc was contributed (along with permission for
   public distribution) by Kevin Savage at Diamond Light Source." mrcfile's
   repository is under the BSD 3-Clause licence, "Copyright (c) 2016, Science and
-  Technology Facilities Council"; the file carries no licence of its own.
+  Technology Facilities Council"; the file carries no licence of its own. Its use
+  here was agreed by @weber on 2026-11-13 (question 298).
 
 The rest of modama-formats-em, the other fixtures here included, is
 MIT-licensed; see ../../../../LICENSE.
