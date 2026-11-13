@@ -8,7 +8,14 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 import defusedxml.ElementTree as ET
-from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
+from modama_crawler.formats import (
+    BudgetExceeded,
+    Collection,
+    Dataset,
+    Directory,
+    Extracted,
+    Format,
+)
 from modama_crawler.formats.values import textual
 
 log = logging.getLogger(__name__)
@@ -32,6 +39,8 @@ class Empad(Format):
             try:
                 root = ET.fromstring(d.read(header, 64 * 1024))
                 raw_name = PurePosixPath(root.find("raw_file").attrib["filename"]).name
+            except BudgetExceeded:
+                continue  # over the read limit: the core warned (read-limit-per-file)
             except Exception as e:  # noqa: BLE001  any unreadable header is reported, not fatal
                 d.warn(
                     header.rel, f"cannot read the raw file name from the header: {e!r}"

@@ -22,3 +22,11 @@
 - [x] 4.1 `modama-chain review`: the two markers as kinds. Verify: `test_files_recognition_read_much_of`, `test_the_markers_are_the_crawlers`.
 - [x] 4.2 TEMPLATE.md (the code sample's comment, the readers, catching per file, a checklist item), README ("What recognition reads of one file", the hdf5links wording), search-chain README, decision log row, BACKLOG. Verify: read.
 - [x] 4.3 Suites: crawler, em, common (also `TZ=Europe/Berlin`), search-chain; `uvx pre-commit run --all-files`; `openspec validate read-limit-per-file --strict`.
+
+## 5. The review's follow-ups
+
+- [x] 5.1 `em/de`: an info file not read (an error, or over the read limit) still owns its stem's files, so that they don't join a shorter stem's acquisition; it makes no dataset and no "two formats want it" warning. Verify: `test_an_unread_info_file_of_a_longer_stem` (failed before: the `_x_` files were members of `20241021_00405`).
+- [x] 5.2 `common/zspy` reads a v3 store's `zarr.json` once: the core's `zarr/zarr` hands its parsed document to `Zarr.described`, which `common/zspy` overrides. Verify: `test_the_zarr_json_of_a_zspy_store_is_read_once` (failed before: `read more than 64 KiB of zarr.json` for 40 KiB of attributes); BACKLOG item removed.
+- [x] 5.3 `em/empad`: a refusal gives the core's warning only. Verify: `test_a_header_over_the_read_limit_is_warned_once` (failed before: a second warning, `cannot read the raw file name from the header: BudgetExceeded(…)`).
+- [x] 5.4 `READ_MUCH` derived from `FLAG_PER_FILE`; `review.py` keeps the text (it needs no crawler installed), compared by `test_the_markers_are_the_crawlers`. "Byte budget" in `inspection.py` and `files.py` in the new wording. Verify: the suites.
+- [ ] 5.5 Archive after `hdf5-links` and `recognition-checks-content`: all three modify "Plain data in, no reach outside the directory", and this change's version of it holds the other two's (their description sentences and scenarios), so archived last it leaves the requirement whole; archived earlier, a later one would put back the old wording. Likewise after `parallel-walk`, which adds "A byte budget bounds every format call" (and `recognition-checks-content` modifies it), which this change removes.

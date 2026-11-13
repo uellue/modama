@@ -47,7 +47,7 @@ NOT_INSPECTED = "not inspected"
 # with the marker OVER_LIMIT (change read-limit-per-file)
 LIMIT_PER_FILE = 1 << 20
 FLAG_PER_FILE = 64 << 10
-READ_MUCH = "read more than 64 KiB"
+READ_MUCH = f"read more than {FLAG_PER_FILE >> 10} KiB"
 OVER_LIMIT = "over its read limit"
 
 

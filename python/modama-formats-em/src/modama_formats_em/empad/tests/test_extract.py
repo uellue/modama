@@ -22,6 +22,29 @@ def test_a_companion_claimed_by_another_format_is_named_as_such(
     ]
 
 
+def test_a_header_over_the_read_limit_is_warned_once(
+    collection_tests, tmp_path, monkeypatch
+):
+    # Review of read-limit-per-file: the core's warning only, not a second one
+    from modama_formats_em.empad import Empad
+
+    monkeypatch.setattr(Empad, "read_limit", 100)
+    result = walk(
+        collection_tests.materialise("pair", tmp_path),
+        collection_tests.collection.formats,
+    )
+    assert {d.format for d in result.datasets} == {""}
+    assert result.all_warnings() == [
+        (
+            "/SCA2_rings.xml",
+            (
+                "em/empad: SCA2_rings.xml over its read limit of 100 bytes "
+                "(65536 asked for after 0); not read further"
+            ),
+        )
+    ]
+
+
 def test_a_representative_empad_acquisition(collection_tests, tmp_path):
     (scan,) = described(collection_tests, "scan_v1_2_2", tmp_path)
     assert scan.description.startswith(

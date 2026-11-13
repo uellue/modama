@@ -188,18 +188,23 @@ class De(Format):
     reacts_to = frozenset({INFO})
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
-        infos = []
+        stems, unread = {}, set()
         for e in d.of_type(INFO):
+            stem = e.name[: -len("info.txt")]
             try:
                 first = d.read(e, len(FIRST))
             except OSError as error:
+                # Not read (an error, or over the read limit): it still owns its
+                # stem's files, so that they don't join a shorter stem's
+                # acquisition, but makes none (review of read-limit-per-file)
                 d.cannot_read(e, error)
+                stems[stem] = e
+                unread.add(stem)
                 continue
             if first == FIRST:
-                infos.append(e)
+                stems[stem] = e
             else:
                 d.not_of_type(e, "no DE-Server first line")
-        stems = {e.name[: -len("info.txt")]: e for e in infos}
         members: dict[str, list[str]] = {stem: [] for stem in stems}
         for f in d.entries:
             if f.kind == "file" and (stem := owner(f.name, stems)) is not None:
@@ -207,9 +212,11 @@ class De(Format):
         # Files of a stem a format before this one claimed: named for review at
         # their own acquisition, the acquisition built of the others (decision 344)
         for name in sorted(d.claimed):
-            if (stem := owner(name, stems)) is not None:
+            if (stem := owner(name, stems)) is not None and stem not in unread:
                 d.claimed_elsewhere(stems[stem].rel, name)
         for stem, info in stems.items():
+            if stem in unread:
+                continue
             yield Dataset(
                 anchor=info.rel,
                 members=tuple(members[stem]),
