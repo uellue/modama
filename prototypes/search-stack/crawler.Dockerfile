@@ -9,10 +9,11 @@ RUN apt-get update \
 COPY . /src
 # editable, so that the fixture files outside the package data stay available to the e2e test
 RUN pip install --no-cache-dir -e "/src[test]"
-COPY --from=em . /em
-RUN pip install --no-cache-dir -e /em
+# common before em: em's Hitachi format reads TIFFs with common's image area
 COPY --from=common . /common
 RUN pip install --no-cache-dir -e /common
+COPY --from=em . /em
+RUN pip install --no-cache-dir -e /em
 COPY --from=chain . /chain
 # with modama-chain's extra `browse` (the warehouse's xmltodict and jsonschema pins) in the
 # crawler too: the extractor identity is a digest of the whole installation, so the browser's

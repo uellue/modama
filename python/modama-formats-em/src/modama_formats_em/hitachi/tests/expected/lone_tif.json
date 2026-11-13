@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/grid2_x50.0k_HAADF_0007.tif",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/grid2_x50.0k_HAADF_0007.tif"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "image/tiff",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
