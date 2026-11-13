@@ -1,0 +1,94 @@
+{
+  "datasets": [
+    {
+      "anchor": "/EMD-3197.map",
+      "basis": "MAP at byte 208",
+      "collapsed": false,
+      "format": "em/mrc",
+      "members": [
+        "/EMD-3197.map"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.mrc",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/EMD-3197.map": {
+      "subjects": [],
+      "summary": [
+        "nx 20",
+        "ny 20",
+        "nz 20",
+        "mode 2",
+        "ispg 1",
+        "cella.x 228.0",
+        "cella.y 228.0",
+        "cella.z 228.0",
+        "mx 20",
+        "my 20",
+        "mz 20",
+        "::::EMDATABANK.org::::EMD-3197::::"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "data_type": "float32",
+          "kind": "volume",
+          "voxel_size": [
+            11.399999618530273,
+            11.399999618530273,
+            11.399999618530273
+          ]
+        },
+        "original_metadata": {
+          "cella.x": 228.0,
+          "cella.y": 228.0,
+          "cella.z": 228.0,
+          "cellb.alpha": 90.0,
+          "cellb.beta": 90.0,
+          "cellb.gamma": 90.0,
+          "dmax": 5.576736927032471,
+          "dmean": 0.7836120128631592,
+          "dmin": -4.1337456703186035,
+          "exttyp": "",
+          "ispg": 1,
+          "label[10]": "",
+          "label[1]": "::::EMDATABANK.org::::EMD-3197::::",
+          "label[2]": "",
+          "label[3]": "",
+          "label[4]": "",
+          "label[5]": "",
+          "label[6]": "",
+          "label[7]": "",
+          "label[8]": "",
+          "label[9]": "",
+          "machst": "0x44 0x41 0x00 0x00",
+          "map": "MAP ",
+          "mapc": 1,
+          "mapr": 2,
+          "maps": 3,
+          "mode": 2,
+          "mx": 20,
+          "my": 20,
+          "mz": 20,
+          "nlabl": 1,
+          "nsymbt": 0,
+          "nversion": 0,
+          "nx": 20,
+          "nxstart": -2,
+          "ny": 20,
+          "nystart": 0,
+          "nz": 20,
+          "nzstart": 0,
+          "origin.x": 0.0,
+          "origin.y": 0.0,
+          "origin.z": 0.0,
+          "rms": 2.3999528884887695
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

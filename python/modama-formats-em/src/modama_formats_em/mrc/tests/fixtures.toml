@@ -1,0 +1,18 @@
+[emdb_map]
+purpose = "representative"
+validity = "vendor-written: EMDB's map of entry EMD-3197 (a sub-tomogram average, 20x20x20 float32, space group 1), the smallest map in EMDB on 2016-11-02; read by mrcfile 1.5.4 on 2026-11-13"
+licence = "CC0-1.0 (EMDB data; LICENSE.fixtures beside this file)"
+source = "mrcfile's test data at tag v1.5.4, tests/test_data/EMD-3197.map (sha256 351d5090d4c56eb5fc41796842ad64abecc238b8da6181f8857be5844dbbc262), https://github.com/ccpem/mrcfile/raw/v1.5.4/tests/test_data/EMD-3197.map; fetched by mrcfile's authors from EMDB, https://www.ebi.ac.uk/emdb/EMD-3197; unchanged"
+
+[written_by_mrcfile]
+purpose = "representative"
+validity = "parser-only: written at test time by mrcfile 1.5.4, the field's reader and writer: stack.mrcs (3 frames of 16x16 int16, an image stack, one label) and image.mrc (one 16x16 float32 image)"
+licence = "MIT"
+source = "modama_formats_em.mrc.tests.generate:written_by_mrcfile"
+generator = "modama_formats_em.mrc.tests.generate:written_by_mrcfile"
+
+[misnamed]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named program.map as a linker writes it, without the MRC map word"
+licence = "MIT"
+source = "written by hand"

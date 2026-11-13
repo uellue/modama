@@ -1,0 +1,10 @@
+fixtures/emdb_map/EMD-3197.map is the map of the EMDB entry EMD-3197
+(https://www.ebi.ac.uk/emdb/EMD-3197), taken unchanged from mrcfile's test data
+(https://github.com/ccpem/mrcfile, tests/test_data/, at its tag v1.5.4), whose
+README says it was fetched from the EMDB. The wwPDB core archives, EMDB among
+them, are made available under CC0 1.0 (https://www.wwpdb.org/about/usage-policies;
+EMBL-EBI: https://www.ebi.ac.uk/licencing). Please cite the entry's authors as a
+matter of good scientific practice.
+
+The rest of modama-formats-em, the other fixtures here included, is
+MIT-licensed; see ../../../../LICENSE.
