@@ -1,0 +1,9 @@
+# The CPU path: production's versions (metadata-warehouse v1.10.0, uv.lock). aarch64 wheels on PyPI for
+# Python 3.11 to 3.14 (checked 2026-11-13).
+fastembed==0.8.0
+onnxruntime==1.24.4
+tokenizers==0.22.2
+numpy==2.4.4
+huggingface-hub==1.8.0
+# not production's: prepare_model.py writes the float32 and int8 model files with it
+onnx==1.23.2

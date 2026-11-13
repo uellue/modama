@@ -397,6 +397,54 @@ def test_runs_left_over_from_an_experiment(conn, env, dm4_tree):
     assert f"em/dm4 2 datasets stored under {identity.short(old)}" in run.stderr
 
 
+# "The runs command says what the next crawl will extract for the first time" (280)
+
+NO_EXTRACTION = (
+    "UPDATE datasets SET extractor = NULL, extractor_identity = NULL, extracted = NULL,"
+    " extract_error = NULL, extract_seconds = NULL"
+)
+
+
+def test_runs_for_a_format_extracted_for_the_first_time(conn, env, dm4_tree):
+    current, _ = crawled(conn, env, dm4_tree)
+    # As stored by a crawl when em/dm4 had no extractor yet
+    conn.execute(f"{NO_EXTRACTION} WHERE anchor LIKE '/one/%%'")
+    conn.commit()
+    run = shell(f"{CRAWLER} runs", env)
+    assert run.returncode == 0
+    assert run.stderr.startswith(
+        f"note: extraction identity {identity.short(current)} is installed; the next crawl "
+        "extracts for the first time em/dm4 2 datasets; under a minute on "
+    )
+    assert len(run.stderr.splitlines()) == 1
+
+
+def test_runs_estimate_covers_both(conn, env, dm4_tree):
+    shutil.copy(DM4, dm4_tree / "two/d.dm4")
+    current, ingredients = crawled(conn, env, dm4_tree)
+    old, before = older(ingredients)
+    conn.execute(
+        "UPDATE crawl_runs SET identity = %s, identity_ingredients = %s",
+        (old, Jsonb(before)),
+    )
+    conn.execute(
+        "UPDATE datasets SET extractor_identity = %s, extract_seconds = 600"
+        " WHERE anchor LIKE '/one/%%'",
+        (old,),
+    )
+    conn.execute(f"{NO_EXTRACTION} WHERE anchor LIKE '/two/%%'")
+    conn.commit()
+    # 2 x 600 s stored, 2 x 600 s by the stored mean, on 2 processes
+    run = shell(f"{CRAWLER} runs", {**env, "MODAMA_CRAWLER_EXTRACT_WORKERS": "2"})
+    assert run.returncode == 0
+    assert run.stderr == (
+        f"note: extraction identity {identity.short(current)} is installed; the next crawl "
+        f"extracts again em/dm4 2 datasets stored under {identity.short(old)} "
+        "(rosettasciio 0.14.0 -> 0.15.0), and for the first time em/dm4 2 datasets; "
+        "about 20 minutes on 2 processes\n"
+    )
+
+
 def test_runs_when_nothing_changed(conn, env, dm4_tree):
     crawled(conn, env, dm4_tree)
     run = shell(f"{CRAWLER} runs", env)
