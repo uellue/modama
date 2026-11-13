@@ -44,6 +44,7 @@ from .store import (
     previous,
     progress_run,
     recent_runs,
+    single_files_of,
     start_run,
     store,
     try_crawl_lock,
@@ -878,16 +879,13 @@ def _next_crawl_note(conn: psycopg.Connection) -> str | None:
     and for the first time because stored datasets of an installed format with an extractor have no extraction (280).
 
     Only the stored formats count: a stored dataset that the installed formats would now recognise as another
-    format (a single file by type that a new collection claims) is not seen."""
+    format (a single file by type that a new collection claims) is only estimated, by its stored type (290)."""
     current, ingredients = _installed()
     groups = other_identities(conn, current)
     extracting = [
-        f.id
-        for c in selection.discover().values()
-        for f in c.formats
-        if f.has_extractor
+        f for c in selection.discover().values() for f in c.formats if f.has_extractor
     ]
-    first, mean = first_extractions(conn, extracting)
+    first, mean = first_extractions(conn, [f.id for f in extracting])
     if not groups and not first:
         return None
     parts, seconds = [], 0.0
@@ -914,10 +912,17 @@ def _next_crawl_note(conn: psycopg.Connection) -> str | None:
         when = "under a minute"
     else:
         when = f"about {round(minutes)} minutes"
-    return (
+    note = (
         f"note: extraction identity {identity.short(current)} is installed; the next crawl "
         f"{what}; {when} on {workers} processes"
     )
+    # An estimate outside the time: also files an installed format declined (290)
+    by_type = single_files_of(
+        conn, sorted({t for f in extracting for t in f.reacts_to})
+    )
+    if by_type:
+        note += f", plus single files a format may now claim: about {by_type} by type"
+    return note
 
 
 def cmd_runs(args) -> int:
