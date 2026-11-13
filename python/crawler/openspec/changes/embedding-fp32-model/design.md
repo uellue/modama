@@ -111,7 +111,7 @@ Alternatives:
 - **The build's criterion:** every pair's cosine at least 0.99999, computed in float64. The measured minimum is 0.99999963, so the bound leaves a margin of about 27 times in 1 − cosine. That margin covers a build host whose instruction set differs from staging's: ONNX Runtime picks its kernels by CPU, for example AVX-512 against staging's AVX2. The int8 file (0.9647) fails it. The grace benchmark's 0.9999 is looser.
 - **Reported, not gated:** the bitwise-identical count, and the largest component difference against the index's `sq` step of about 3e-3 (E6).
 - **The build's texts:** 32 to 64 per set (short, mixed, long; `gen_texts.py` with a fixed seed), so that the check costs tens of seconds. The full sets (512 short, 512 mixed, 64 long) and the ranking test of E6 run once, in task 1.3.
-- **Re-index (Q3, open for @weber):** the lean is not to re-index. The basis is E6's ranking result (the change moves results less than `sq` does), not a yardstick of zero. Records indexed before keep the production file's vectors, and the next full re-index brings every record onto the float32 file.
+- **Re-index (Q3, decided: none):** @weber, 343, 2026-11-13: "Doesn't matter I think, just shifts search results around a bit. Not an exact science anyways". E6's ranking result supports this: the change moves results less than `sq` does. Records indexed before keep the production file's vectors, and the next full re-index, done for whatever reason, brings every record onto the float32 file.
 
 **D5. The disadvantages, weighed.**
 
@@ -143,7 +143,7 @@ None of these is a distinct disadvantage in @weber's sense (item 283). Memory an
 ## Risks / Trade-offs
 
 - [Staging's mix gains less than the VM's] → The go rule of D6. If it fails, the branch stays unmerged and BACKLOG says why.
-- [A mixed index, with old vectors from the production file and new ones from the float32 file] → E6: the change moves results less than `sq` does. Q3 is open for @weber.
+- [A mixed index, with old vectors from the production file and new ones from the float32 file] → E6: the change moves results less than `sq` does. No re-index (Q3, @weber, 343).
 - [The query side stays on the production file] → That is the agreement D4 bounds and E6 measured (queries embedded alone, with the production file's runtime behaviour).
 - [A build host with another instruction set fails the check] → The margin of D4. A failure names the set and the cosine.
 - [The weight file is unreadable at run time] → The modes are set in the script, and the build opens the file as uid 50000.
@@ -152,16 +152,16 @@ None of these is a distinct disadvantage in @weber's sense (item 283). Memory an
 ## Migration Plan
 
 1. VM, with the main session's OK (the image tags are shared): build, tasks 3.x, then `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e`.
-2. Staging, after @weber's go: `./upstaging.sh --build` in an idle window (D6). The next indexing's batches use the float32 file, and indexed records keep their vectors unless Q3 decides otherwise.
+2. Staging, after @weber's go: `./upstaging.sh --build` in an idle window (D6). The next indexing's batches use the float32 file, and indexed records keep their vectors (Q3).
 3. The way back without a rebuild: `EMBEDDING_MODEL_PATH=` (empty) for `airflow-worker-transform` in a compose file of the deployment, then `dc up -d airflow-worker-transform` in an idle window.
 
 ## Open Questions
 
-The reviewer's answers are recorded as leans, and the tasks assume them. Q3 is open for @weber.
+The reviewer's answers are recorded as leans, and the tasks assume them. @weber decided Q3.
 
 - **Q1. Load the file through fastembed or ONNX Runtime directly?** Lean, and the reviewer's answer: fastembed's `specific_model_path` (D3).
 - **Q2. The bound.** Lean, and the reviewer's answer: a minimum cosine of 0.99999 (float64) gates the build, and the largest difference against `sq`'s step is reported (D4).
-- **Q3. Re-index after the switch? Open, for @weber.** The main session's lean, and the reviewer's: no. The basis is E6's ranking result.
+- **Q3. Re-index after the switch? Decided: no** (@weber, 343, 2026-11-13: "Doesn't matter I think, just shifts search results around a bit. Not an exact science anyways"). This was the main session's and the reviewer's lean too, on the basis of E6's ranking result.
 - **Q4. Pre-packing off?** Lean, and the reviewer's answer: leave it on. fastembed exposes no option for it, and the saving is about 80 MB of USS per process (E4).
 - **Q5. Where `EMBEDDING_MODEL_PATH` is set.** Lean, and the reviewer's answer: `ENV` in the Dockerfile, with the marker guard of D3. Compose sets it only empty, for the way back and the before-measurement.
 - **Q6. The search API's query embedding too?** Lean, and the reviewer's answer: not in this change; a follow-up with its own latency measurement.

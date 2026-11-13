@@ -1,6 +1,6 @@
 # Tasks
 
-The tasks assume the leans of design.md, Q1 to Q8 (the reviewer's answers); an answer from @weber, above all to Q3, changes the tasks named with it. Image builds and stack runs on the VM wait for the main session's OK (AGENTS.md, "Parallel coding agents"). Scratch files and venvs go under `/var/tmp/fp32-model/`. On staging, @weber runs every command, and only while `dc exec crawler modama-chain status` shows no harvest and no indexing running (design D6). Every spec scenario is cited by the task that tests it.
+The tasks assume the leans of design.md, Q1 to Q8 (the reviewer's answers); an answer from @weber changes the tasks named with it. Q3 is decided: no re-index (@weber, 343, 2026-11-13). Image builds and stack runs on the VM wait for the main session's OK (AGENTS.md, "Parallel coding agents"). Scratch files and venvs go under `/var/tmp/fp32-model/`. On staging, @weber runs every command, and only while `dc exec crawler modama-chain status` shows no harvest and no indexing running (design D6). Every spec scenario is cited by the task that tests it.
 
 ## 1. The file and its vectors, before any image change
 
@@ -53,7 +53,7 @@ The tasks assume the leans of design.md, Q1 to Q8 (the reviewer's answers); an a
 
 - [ ] 4.1 The commands for @weber in `design/field-tests/search-stack-staging-runbook.md`: the idle check, the build, the measurement containers with staging's network and volume names, the sample variable, and `perf/wrap/lengths.py` on the sample. Verify: @weber's run of the idle check reads as the runbook says.
 - [ ] 4.2 @weber runs 3.2's cases and 3.3's memory at 16 processes on staging's own sample, in an idle window; the agent reads the recording. Verify: the tables in design.md with staging's medians, spreads and the sample's token lengths; D6's go rule applied.
-- [ ] 4.3 The decision. The numbers go to @weber with a verdict and the strongest argument against, together with Q3. On a yes: the decision-log row in `design/architecture.md`, then `./upstaging.sh --build` in an idle window. On a no: the branch stays unmerged and BACKLOG says why. Verify: the row or the BACKLOG entry; after the deploy, the first indexing batch's log names the float32 folder.
+- [ ] 4.3 The decision. The numbers go to @weber with a verdict and the strongest argument against. On a yes: the decision-log row in `design/architecture.md`, then `./upstaging.sh --build` in an idle window. On a no: the branch stays unmerged and BACKLOG says why. Verify: the row or the BACKLOG entry; after the deploy, the first indexing batch's log names the float32 folder.
 
 ## Workflow follow-up
 

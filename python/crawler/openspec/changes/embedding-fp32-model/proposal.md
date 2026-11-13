@@ -14,7 +14,7 @@ The model file fastembed loads is a graph made for float16 (`onnxruntime.transfo
 - **A confirming measurement on staging**, with @weber running the commands in an idle window. The same fixed sample of staging's records is embedded with each file: CPU per record for short, mixed and long texts, memory per batch process at 16 processes, and vector agreement. The `cpu-budget` instruments (`perf/batch-memory.py`, `perf/wrap/`) are used, with small extensions (design D6).
 
 Behaviour towards the user:
-- **Searchers.** New and changed records get vectors from the float32 file, within a cosine of 0.99999 of the old file's. In the review's ranking test the difference moved fewer results than the index's own quantisation does (E6). Records indexed before keep their vectors (Q3).
+- **Searchers.** New and changed records get vectors from the float32 file, within a cosine of 0.99999 of the old file's. In the review's ranking test the difference moved fewer results than the index's own quantisation does (E6). Records indexed before keep their vectors, and nothing is re-indexed for the switch (Q3, decided by @weber, 343, 2026-11-13: "Doesn't matter I think, just shifts search results around a bit. Not an exact science anyways").
 - **Indexing.** It takes about 10 to 14 % less CPU per record on the VM (E5); staging's share is to be confirmed.
 - **Operators.**
   - The Airflow image grows by about 133 MB.
