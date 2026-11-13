@@ -439,35 +439,92 @@ def _limit_memory(memory: int | None) -> None:
 # extracted, error, seconds
 Outcome = tuple[Extracted | None, str | None, float]
 
+TIMED_OUT = "timed out after"  # the start of a task's error over the time limit
+DIED = "process died"  # in the error of a task whose process died alone
+
+
+class Pool:
+    """The worker processes of `_run`: made when first needed, killed after a task over the limit.
+
+    `_run` makes one per batch and shuts it down at the end; the walk's
+    inspections keep one for the whole crawl (`keep=True`) and shut it down
+    after the walk (change hdf5-links, design D5).
+    """
+
+    def __init__(self, workers: int, memory: int | None = MEMORY, keep: bool = False):
+        self.workers = workers
+        self.memory = memory
+        self.keep = keep
+        self._pool: ProcessPoolExecutor | None = None
+
+    @property
+    def alive(self) -> bool:
+        return self._pool is not None
+
+    def get(self) -> ProcessPoolExecutor:
+        if self._pool is None:
+            self._pool = ProcessPoolExecutor(
+                self.workers,
+                mp_context=multiprocessing.get_context("spawn"),
+                initializer=_limit_memory,
+                initargs=(self.memory,),
+                max_tasks_per_child=TASKS_PER_WORKER,
+            )
+        return self._pool
+
+    def discard(self, kill: bool) -> None:
+        """Kill the workers (a task over the limit) or wait for them (a broken pool)."""
+        if self._pool is not None:
+            if kill:
+                self._pool.kill_workers()
+            else:
+                self._pool.shutdown(wait=True, cancel_futures=True)
+            self._pool = None
+
+    def done(self) -> None:
+        """The end of a batch: shut down, unless kept."""
+        if not self.keep:
+            self.close()
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait=True, cancel_futures=True)
+            self._pool = None
+
 
 def _run(
-    tasks: list[tuple[Format, Dataset, str]],
+    tasks: list[tuple],
     workers: int,
     time_limit: float,
     memory: int | None = MEMORY,
     check: Callable[[], None] | None = None,
+    work: Callable | None = None,
+    pool: Pool | None = None,
 ) -> list[Outcome]:
     """Run the tasks in a pool of spawned processes; the time limit is enforced from outside.
 
-    At most `workers` tasks are in flight, so each starts when submitted and
-    its time counts from then. A task over the limit fails and the pool is
-    killed and recreated; the other tasks in flight start again. When a
-    process dies, the pool cannot tell whose task killed it: the tasks in
-    flight are run again one at a time, and one that kills its process when
-    alone fails.
+    Each task is the arguments of `work` (a module-level function; the
+    extractor's `_work` unless given). At most `workers` tasks are in flight,
+    so each starts when submitted and its time counts from then. A task over
+    the limit fails and the pool is killed and recreated; the other tasks in
+    flight start again. When a process dies, the pool cannot tell whose task
+    killed it: the tasks in flight are run again one at a time, and one that
+    kills its process when alone fails. Without `pool`, the batch has a pool
+    of its own.
     """
     out: list[Outcome | None] = [None] * len(tasks)
     if not tasks:
         return []
-    context = multiprocessing.get_context("spawn")
+    work = work or _work
+    pools = pool if pool is not None else Pool(workers, memory)
     queue = deque(range(len(tasks)))
     suspects: deque[int] = deque()  # run alone
     suspected: set[int] = set()
     running: dict = {}  # future -> (task index, start)
-    pool: ProcessPoolExecutor | None = None
+    pool_: ProcessPoolExecutor | None = None
 
     def submit(i: int) -> None:
-        running[pool.submit(_work, *tasks[i])] = (i, time.monotonic())
+        running[pool_.submit(work, *tasks[i])] = (i, time.monotonic())
 
     def requeue(indices: Iterable[int]) -> None:
         for i in sorted(indices, reverse=True):
@@ -475,14 +532,7 @@ def _run(
 
     try:
         while queue or suspects or running:
-            if pool is None:
-                pool = ProcessPoolExecutor(
-                    workers,
-                    mp_context=context,
-                    initializer=_limit_memory,
-                    initargs=(memory,),
-                    max_tasks_per_child=TASKS_PER_WORKER,
-                )
+            pool_ = pools.get()
             if suspects:
                 if not running:
                     submit(suspects.popleft())
@@ -512,29 +562,26 @@ def _run(
                 if len(lost) == 1:
                     out[lost[0]] = (
                         None,
-                        "the extractor's process died",
+                        f"the extractor's {DIED}",
                         time.monotonic() - next(iter(running.values()))[1],
                     )
                 else:
                     suspected.update(lost)
                     requeue(lost)
                 running.clear()
-                pool.shutdown(wait=True, cancel_futures=True)
-                pool = None
+                pools.discard(kill=False)
                 continue
             now = time.monotonic()
             late = [i for i, start in running.values() if now - start >= time_limit]
             if late:
                 for i in late:
-                    out[i] = (None, f"timed out after {time_limit:g} s", time_limit)
+                    out[i] = (None, f"{TIMED_OUT} {time_limit:g} s", time_limit)
                 requeue(i for i, _ in running.values() if i not in late)
                 running.clear()
-                pool.kill_workers()
-                pool = None
+                pools.discard(kill=True)
     finally:
-        if pool is not None:
-            if running:
-                pool.kill_workers()
-            else:
-                pool.shutdown(wait=True)
+        if running:
+            pools.discard(kill=True)
+        else:
+            pools.done()
     return out  # type: ignore[return-value]

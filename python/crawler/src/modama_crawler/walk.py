@@ -26,7 +26,7 @@ from typing import Protocol
 
 from pathspec import GitIgnoreSpec
 
-from . import mime
+from . import files, mime
 from .formats import (
     BYTE_BUDGET,
     REFUSED,
@@ -43,6 +43,7 @@ from .formats import (
     run_post,
     run_pre,
 )
+from .inspection import Inspector
 from .selection import compile_patterns, compile_per_path, path_excluded, path_ignored
 
 log = logging.getLogger(__name__)
@@ -94,9 +95,8 @@ def _opens(path: str) -> bool:
     without following a symlink it may have become (ELOOP: not readable,
     as a crawl skips symlinks).
     """
-    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_NOCTTY
     try:
-        os.close(os.open(path, flags))
+        os.close(os.open(path, files.FLAGS))
     except OSError as e:
         if e.errno in REFUSED or e.errno == errno.ELOOP:
             return False
@@ -365,6 +365,7 @@ def walk(
     top: str | None = None,
     start: str | None = None,
     kept: Kept | None = None,
+    stopping: Callable[[], bool] | None = None,
 ) -> Result:
     """Recognise the tree under root.
 
@@ -395,7 +396,11 @@ def walk(
     read and no format runs for it (D3). Every directory is still listed.
     `threads` is the number of file system calls in flight; with `processes`
     above 0, MIME magic matching runs in that many worker processes
-    (parallel-walk D5).
+    (parallel-walk D5), and the formats' inspections in as many others
+    (hdf5-links D5). `stopping`, if given, says whether the crawl is to stop
+    (SIGTERM): it is asked before and while files are inspected, and once it
+    says so no inspection runs or waits; the walk itself stops where
+    `progress` raises, or ends at once with nothing left to inspect.
     """
     # Ctrl-C is the main thread's; blocked here, it is also blocked in the
     # matching processes these threads start, from their first instruction
@@ -415,6 +420,9 @@ def walk(
         if processes
         else None
     )
+    # One pool for the crawl's inspections, made at the first (hdf5-links, D5);
+    # `stopping` (the crawl's SIGTERM flag) stops them too
+    inspector = Inspector(processes or None, stopping=stopping)
     try:
         return asyncio.run(
             _walk(
@@ -429,12 +437,17 @@ def walk(
                 None if top is None else "/" + top.strip("/"),
                 None if start is None else "/" + start.strip("/"),
                 kept,
+                inspector,
             )
         )
     finally:  # also on an error or a signal: queued work is dropped
+        # Before the threads are waited for: those inspecting or waiting to
+        # inspect a folder end within a second instead of inspecting it
+        inspector.stop()
         pool.shutdown(cancel_futures=True)
         if matchers is not None:
             matchers.shutdown(cancel_futures=True)
+        inspector.close()
 
 
 async def _walk(
@@ -449,6 +462,7 @@ async def _walk(
     top: str | None = None,
     start: str | None = None,
     kept: Kept | None = None,
+    inspector: Inspector | None = None,
 ) -> Result:
     result = Result()
     seen = [0, 0]  # directories, files
@@ -631,6 +645,7 @@ async def _walk(
             return [], {}, warnings, True, missed
         children = [d for d in subtree if d.parent is None]
         post = Directory(rel, dirpath, typed, children, "post", st.st_uid, st.st_mtime)
+        post.inspector = inspector
         datasets, adoptions = await io(run_post, post, active, SLOW, BYTE_BUDGET)
         return (
             datasets,
