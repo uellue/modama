@@ -84,8 +84,7 @@
       "subjects": [],
       "summary": [
         "Experiments.__unnamed__.data [10] <i8",
-        "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data [10] <i8",
-        "Experiments.__unnamed__.metadata.test._list_2_tuple_inside_list._tuple_1 [2] <i8"
+        "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data [10] <i8"
       ],
       "values": {
         "mapped_metadata": {},
