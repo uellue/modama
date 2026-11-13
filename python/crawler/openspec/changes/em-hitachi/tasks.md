@@ -18,7 +18,7 @@ Prerequisites: @weber's answers (2026-11-13: all leans accepted, 313; fixtures g
 - [x] 3.2 Generators for `pair`, `notes_beside_tif`, `lone_txt`, `lone_tif`, `last_suffix`; `fixtures.toml`. Verify: `test_manifest`, `test_coverage`.
 - [x] 3.3 Tests for each scenario of `formats/hitachi`, with the image and text areas' formats where a scenario needs them (TEMPLATE, rule 11). Written after the recognition code for the recognition scenarios (they passed at once; only the fixtures' recordings failed first); for the text, first: `test_the_header_as_written` and `test_a_line_that_may_hold_a_credential` failed (`KeyError: 'text'`), then passed. Verify: `pytest`.
 - [x] 3.4 `recognize` (14 bytes, `d.cannot_read` on a read error, `d.claimed_elsewhere` for a claimed `.txt`) and `extract` (the image area's TIFF extraction; the text through `written.of_head`, `credentials_left_out`). Verify: the tests of 3.3; `pytest src` of `modama-formats-em`, also under `TZ=Europe/Berlin`; `expected/*.json` reviewed (the text added to `pair` and `last_suffix`, nothing else changed).
-- [x] 3.5 The scenario "A large TIFF": 66,495 bytes read of a 1 GiB sparse TIFF and its header. Verify: `pytest -s`.
+- [x] 3.5 The scenario "A large TIFF": 66,367 bytes read of a 1 GiB sparse TIFF and its header (`modama_crawler.testing.bytes_read`: one 64 KiB buffer of the TIFF and the `.txt`). Verify: `pytest -s`.
 
 ## 4. Documents
 

@@ -10,13 +10,14 @@ from unittest import mock
 
 from modama_crawler import records
 from modama_crawler.formats import Directory
+from modama_crawler.testing import bytes_read
 from modama_crawler.walk import walk
 from modama_formats_common import image, text
 from modama_formats_common.image.tests.generate import hitachi_lines, hitachi_tif
 
 from modama_formats_em import hitachi
 from modama_formats_em.hitachi.tests import generate
-from modama_formats_em.testing import claimed_first, described, rchar
+from modama_formats_em.testing import claimed_first, described
 
 TIF = f"/{generate.TIF}"
 TXT = "/grid2_x50.0k_HAADF_0007.txt"
@@ -212,9 +213,7 @@ def test_a_large_tiff(tmp_path):
     os.truncate(tif, 1 << 30)  # sparse: nothing written
     (d,) = walk(tmp_path, hitachi.COLLECTION.formats).datasets
     fmt = hitachi.Hitachi()
-    fmt.extract(d, str(tmp_path))  # once first: rchar counts the reads of imports too
-    before = rchar()
-    fmt.extract(d, str(tmp_path))
-    read = rchar() - before
+    fmt.extract(d, str(tmp_path))  # once first: imports and caches do not count
+    _, read = bytes_read(lambda: fmt.extract(d, str(tmp_path)))
     print(f"{Path(tif).name}: {read} bytes read of {Path(tif).stat().st_size}")
     assert read < 256 * 1024
