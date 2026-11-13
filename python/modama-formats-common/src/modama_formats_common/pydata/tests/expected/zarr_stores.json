@@ -1,0 +1,180 @@
+{
+  "datasets": [
+    {
+      "anchor": "/abtem_v2.zarr",
+      "basis": ".zgroup present (Zarr v2)",
+      "collapsed": true,
+      "format": "common/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": []
+    },
+    {
+      "anchor": "/abtem_v3.zarr",
+      "basis": "zarr.json: zarr_format 3, node_type group",
+      "collapsed": true,
+      "format": "common/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": []
+    },
+    {
+      "anchor": "/nested.zarr",
+      "basis": ".zgroup present (Zarr v2)",
+      "collapsed": true,
+      "format": "common/zarr",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-zarr",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/abtem_v2.zarr": {
+      "subjects": [],
+      "summary": [
+        "shape [8, 8, 16, 16]",
+        "<f4"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "array0.chunks": [
+            8,
+            8,
+            16,
+            16
+          ],
+          "array0.compressor.blocksize": 0,
+          "array0.compressor.clevel": 5,
+          "array0.compressor.cname": "lz4",
+          "array0.compressor.id": "blosc",
+          "array0.compressor.shuffle": 1,
+          "array0.dimension_separator": ".",
+          "array0.dtype": "<f4",
+          "array0.fill_value": 0.0,
+          "array0.filters": null,
+          "array0.order": "C",
+          "array0.shape": [
+            8,
+            8,
+            16,
+            16
+          ],
+          "metadata0.axes.axis_0.label": "x",
+          "metadata0.axes.axis_0.offset": 0.0,
+          "metadata0.axes.axis_0.sampling": 0.1,
+          "metadata0.axes.axis_0.units": "\u00c5",
+          "metadata0.axes.axis_1.label": "y",
+          "metadata0.axes.axis_1.offset": 0.0,
+          "metadata0.axes.axis_1.sampling": 0.1,
+          "metadata0.axes.axis_1.units": "\u00c5",
+          "metadata0.data_origin": "abTEM_v1.0.10",
+          "metadata0.energy": 300000.0,
+          "metadata0.kwargs.sampling._type": "tuple",
+          "metadata0.kwargs.sampling._value": [
+            0.1,
+            0.1
+          ],
+          "metadata0.label": "intensity",
+          "metadata0.semiangle_cutoff": 20,
+          "metadata0.type": "DiffractionPatterns",
+          "metadata0.units": "arb. unit",
+          "zarr_format": 2
+        }
+      }
+    },
+    "/abtem_v3.zarr": {
+      "subjects": [],
+      "summary": [
+        "shape [8, 8, 16, 16]",
+        "float32"
+      ],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "array0.chunk_grid.configuration.chunk_shape": [
+            8,
+            8,
+            16,
+            16
+          ],
+          "array0.chunk_grid.name": "regular",
+          "array0.chunk_key_encoding.configuration.separator": "/",
+          "array0.chunk_key_encoding.name": "default",
+          "array0.codecs[1].configuration.endian": "little",
+          "array0.codecs[1].name": "bytes",
+          "array0.codecs[2].configuration.checksum": false,
+          "array0.codecs[2].configuration.level": 0,
+          "array0.codecs[2].name": "zstd",
+          "array0.data_type": "float32",
+          "array0.fill_value": 0.0,
+          "array0.shape": [
+            8,
+            8,
+            16,
+            16
+          ],
+          "array0.storage_transformers": [],
+          "metadata0.axes.axis_0.label": "x",
+          "metadata0.axes.axis_0.offset": 0.0,
+          "metadata0.axes.axis_0.sampling": 0.1,
+          "metadata0.axes.axis_0.units": "\u00c5",
+          "metadata0.axes.axis_1.label": "y",
+          "metadata0.axes.axis_1.offset": 0.0,
+          "metadata0.axes.axis_1.sampling": 0.1,
+          "metadata0.axes.axis_1.units": "\u00c5",
+          "metadata0.data_origin": "abTEM_v1.0.10",
+          "metadata0.energy": 300000.0,
+          "metadata0.kwargs.sampling._type": "tuple",
+          "metadata0.kwargs.sampling._value": [
+            0.1,
+            0.1
+          ],
+          "metadata0.label": "intensity",
+          "metadata0.semiangle_cutoff": 20,
+          "metadata0.type": "DiffractionPatterns",
+          "metadata0.units": "arb. unit",
+          "zarr_format": 3
+        }
+      }
+    },
+    "/nested.zarr": {
+      "subjects": [],
+      "summary": [],
+      "values": {
+        "mapped_metadata": {},
+        "original_metadata": {
+          "inner.zarr.array0.chunks": [
+            2,
+            2
+          ],
+          "inner.zarr.array0.compressor.blocksize": 0,
+          "inner.zarr.array0.compressor.clevel": 5,
+          "inner.zarr.array0.compressor.cname": "lz4",
+          "inner.zarr.array0.compressor.id": "blosc",
+          "inner.zarr.array0.compressor.shuffle": 1,
+          "inner.zarr.array0.dimension_separator": ".",
+          "inner.zarr.array0.dtype": "|i1",
+          "inner.zarr.array0.fill_value": 0,
+          "inner.zarr.array0.filters": null,
+          "inner.zarr.array0.order": "C",
+          "inner.zarr.array0.shape": [
+            2,
+            2
+          ],
+          "inner.zarr.defocus": 50,
+          "kind": "a series of simulations",
+          "zarr_format": 2
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -24,28 +24,31 @@ Same result for the local path: unchanged; lazy_load only moves the load to the 
 embed call (fastembed 0.8.0, `_embed_documents`: load_onnx_model when the session is
 missing), with the same threads.
 
-Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; applied with `patch -p1`
+Against metadata-warehouse v1.10.0 with 0001 to 0004 applied; applied with `patch -p1`
 in the image build (modama search stack, warehouse-airflow.Dockerfile; change
-embedding-service-grace, D2, Q7, Q8). 0004 (change embedding-fp32-model, not merged when
-this was written) edits the same TextEmbedding call: once it lands, the first hunk below
-becomes `lazy_load=True,` as a line after 0004's `specific_model_path=model_path,`; the
-hunks of embedding_utils.py stay as they are (both orders tried with busybox's patch,
-2026-11-13).
+embedding-service-grace, D2, Q7, Q8). Written against 0001 to 0003; its first hunk was
+regenerated when 0004 (change embedding-fp32-model) landed, which shapes the same
+TextEmbedding call: `lazy_load=True,` is now a line after 0004's
+`specific_model_path=model_path,`. The hunks of embedding_utils.py are unchanged.
 
 diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
 --- a/src/transform/transform_core.py
 +++ b/src/transform/transform_core.py
-@@ -66,8 +66,10 @@
-
-         # ONNX Runtime threads; unset: one per core, pinned to the same cores in every batch process
-         threads = int(os.environ['EMBEDDING_THREADS']) if os.environ.get('EMBEDDING_THREADS') else None
+@@ -74,11 +74,14 @@
+                 raise ValueError(
+                     f'EMBEDDING_MODEL_PATH {model_path} holds {folder_model}, not EMBEDDING_MODEL {EMBEDDING_MODEL}'
+                 )
 +        # lazy_load: the session starts on the first local embedding; with the embedding service a batch
 +        # may never need it
          self.embedding_transformer = TextEmbedding(
--            model_name=EMBEDDING_MODEL, cache_dir=FASTEMBED_CACHE_DIR, threads=threads
-+            model_name=EMBEDDING_MODEL, cache_dir=FASTEMBED_CACHE_DIR, threads=threads, lazy_load=True
+             model_name=EMBEDDING_MODEL,
+             cache_dir=FASTEMBED_CACHE_DIR,
+             threads=threads,
+             specific_model_path=model_path,
++            lazy_load=True,
          )
-         logger.info(f'Setting up embedding transformer with model {EMBEDDING_MODEL}')
+         source = model_path or "fastembed's download"
+         logger.info(f'Setting up embedding transformer with model {EMBEDDING_MODEL} from {source}')
 
 diff --git a/src/utils/embedding_utils.py b/src/utils/embedding_utils.py
 --- a/src/utils/embedding_utils.py

@@ -233,9 +233,9 @@ grep -A3 'name-of-a-large-file' trace.txt
 The first counts the calls, the second shows each one with its size: a "read-only"
 library that reads a whole file shows as a chain of full-size reads (that is how the
 office and PDF readers' whole-file reads were found, not by reading their code). The
-counts include Python's imports. In a test, count the bytes instead: the `bytes_read`
-fixture of `tests/conftest.py`, or `rchar` of `/proc/self/io`
-(`modama_formats_em.testing.rchar`).
+counts include Python's imports. In a test, count the bytes instead:
+`modama_crawler.testing.bytes_read(work)`, `rchar` of `/proc/self/io` before and after
+the work, less the read of it.
 
 **CPUs and threads:** `modama-crawler cpu-budget` prints what the crawler will use and
 why; threads per process in a running stack: `ps -eLf`, or `indexing-probe.py`

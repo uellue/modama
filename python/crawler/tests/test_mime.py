@@ -4,6 +4,7 @@ import gzip
 import pytest
 from modama_crawler import mime
 from modama_crawler.mime import detect, detect_with_tie
+from modama_crawler.testing import bytes_read
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(32)
 BINARY = bytes(range(256))
@@ -56,15 +57,15 @@ def test_tie_with_parent_candidate_resolves_to_the_parent(tmp_path):
     assert detect_with_tie(str(f)) == ("application/json", None)
 
 
-def test_sniffing_reads_only_the_magic(tmp_path, bytes_read):
+def test_sniffing_reads_only_the_magic(tmp_path):
     # Field-test finding F12: a buffered open reads a whole buffer (128 KiB in Python
     # 3.14, st_blksize = 1 MiB on NFS) for a few bytes of magic
     path = tmp_path / "frame_0001"
     path.write_bytes(PNG + bytes(4 << 20))
     detect(str(path))  # warm the caches
-    before = bytes_read()
-    assert detect(str(path)) == "image/png"
-    assert bytes_read() - before < 64 * 1024
+    mime_type, read = bytes_read(lambda: detect(str(path)))
+    assert mime_type == "image/png"
+    assert read < 64 * 1024
 
 
 # Detection can leave a type out (spec mime-database, recognition-checks-content)

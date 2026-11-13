@@ -200,6 +200,14 @@ def first_extractions(
     return groups, mean
 
 
+def single_files_of(conn: psycopg.Connection, types: list[str]) -> int:
+    """The stored single files without a format whose stored type is one of these (290)."""
+    (n,) = conn.execute(
+        "SELECT count(*) FROM datasets WHERE format = '' AND type = ANY(%s)", (types,)
+    ).fetchone()
+    return n
+
+
 @dataclass(frozen=True)
 class Run:
     run_id: int
