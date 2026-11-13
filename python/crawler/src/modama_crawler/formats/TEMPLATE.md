@@ -111,7 +111,9 @@ Single-file types go into the XML, as valid shared-mime-info rules. Name a
 type after one already used in the wild for the format (R25: an official one,
 else an established unofficial one). Look it up by extension and by the
 format's name in Debian's list (`grep -i '<ext>' /etc/mime.types`, package
-`media-types`) and in shared-mime-info, vendored here as
+`media-types`), in the types desktop applications declare
+(https://wiki.debian.org/MimeTypesSupport/PackageList: Gwyddion's EM types, silx's
+HDF5/NeXus/NumPy types and many more), and in shared-mime-info, vendored here as
 `core/freedesktop.org.xml` (`modama-crawler records --verbose` on a folder
 with a sample file shows the type it gives today in `dc:format`); a hit may be
 another format of the same extension (`.mrc` in Debian's list is
