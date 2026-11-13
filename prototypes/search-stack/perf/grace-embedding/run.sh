@@ -29,17 +29,21 @@ fi
 here="$(cd "$(dirname "$0")" && pwd)"
 venv_cpu="${VENV_CPU:-$here/venv-cpu}"
 venv_gpu="${VENV_GPU:-$here/venv-gpu}"
+# (bench.py puts Hugging Face's and CUDA's caches into it too)
 export FASTEMBED_CACHE_DIR="${FASTEMBED_CACHE_DIR:-$here/cache}"
-# Hugging Face's own cache (and its xet logs) inside the folder too
-export HF_HOME="${HF_HOME:-$here/cache/hf}"
 if [ ! -x "$venv_cpu/bin/python" ]; then
 	echo "No CPU venv at $venv_cpu: see README.md, Setup." >&2
 	exit 2
 fi
 out="${RESULTS:-$here/results}/$(hostname -s)-$(date +%Y%m%d-%H%M%S)-$mode-$parts"
 mkdir -p "$out"
-exec > >(tee -a "$out/run.log") 2>&1
+# tee -i: on Ctrl-C the log keeps the report that follows
+exec > >(tee -ia "$out/run.log") 2>&1
 echo "Results in $out"
+# the report of what ran, on every way out: done, failed, Ctrl-C, SIGTERM (timeout)
+report() { "$venv_cpu/bin/python" "$here/bench.py" report "$out" || true; }
+trap report EXIT
+trap 'exit 143' TERM
 
 for set in short:0 mixed:0.12 long:1; do
 	"$venv_cpu/bin/python" "$here/gen_texts.py" "$out/texts-${set%%:*}.jsonl" --n "$texts" --long-share "${set#*:}"
@@ -58,5 +62,4 @@ if [ "$parts" != cpu ]; then
 		gpu_status=3
 	fi
 fi
-"$venv_cpu/bin/python" "$here/bench.py" report "$out"
 exit "$gpu_status"

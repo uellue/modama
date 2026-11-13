@@ -38,6 +38,9 @@ class Empad(Format):
                 )
                 continue
             raw = d.entry(raw_name)
+            if raw_name in d.claimed:  # not missing: named (decision 344)
+                d.claimed_elsewhere(header.rel, raw_name)
+                continue
             if raw is None or raw.kind != "file":
                 d.warn(
                     header.rel, f"raw file {raw_name} named by the header is missing"
