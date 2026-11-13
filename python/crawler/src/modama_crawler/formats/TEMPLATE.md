@@ -250,7 +250,11 @@ by the software that writes the format in practice. Reproducers for invalid or
 incomplete files are the only exception from realism. A wild file too large or
 not to be published whole may be cut to the bytes your rules and extractor read,
 with the cut in `validity` and the tool that cut it beside the manifest
-(`modama-formats-em`'s K2IS `capture52`). Manifest entry:
+(`modama-formats-em`'s K2IS `capture52`). A generated fixture must come out the
+same on every run, or its recorded result changes from run to run: no times, random
+ids or unseeded randomness in what the generator writes (fixed dates, fixed seeds;
+`mrcfile.new` writes the time into a label, which the generator then overwrites).
+Manifest entry:
 
 ```toml
 [pair]
