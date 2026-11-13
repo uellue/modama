@@ -229,6 +229,42 @@ def test_runs_of_a_crawler_without_scope():
     db = Database()
     (run,) = runs(db)
     assert run.scope is None and "NULL" in db.query
+    assert run.unanswered is None  # nor the kept folders (listing-errors)
+
+
+def test_a_crawl_with_kept_folders():
+    """The status names the folders a crawl kept (change listing-errors)."""
+    kept = replace(
+        crawl(0, 5),
+        unanswered={
+            "total": 1,
+            "kept": 3,
+            "by_errno": {"EIO": 1},
+            "folders": [{"folder": "/adhoc/a", "errno": "EIO", "kept": 3}],
+        },
+    )
+    line = crawl_line(kept)
+    assert "  finished with errors " in line
+    assert line.endswith("; did not answer: 1 folder (EIO 1): /adhoc/a")
+    t, note = freshness(
+        [kept], [harvest("h1", None, 10)], [IndexRun("success", None, None, "h1")]
+    )
+    assert t == at(0)
+    assert (
+        note
+        == "except where that crawl kept the stored state: 1 folder (EIO 1): /adhoc/a"
+    )
+
+
+def test_an_older_crawler_has_no_kept_folders():
+    line = crawl_line(crawl(0, 5))
+    assert "finished  " in line and "did not answer" not in line
+    t, note = freshness(
+        [crawl(0, 5)],
+        [harvest("h1", None, 10)],
+        [IndexRun("success", None, None, "h1")],
+    )
+    assert (t, note) == (at(0), "")
 
 
 def test_no_indexed_harvest():

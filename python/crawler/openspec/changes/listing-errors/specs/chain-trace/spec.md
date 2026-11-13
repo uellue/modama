@@ -7,7 +7,7 @@ When the crawl on `modama-chain status`'s crawl line recorded folders the file s
 
 #### Scenario: A crawl with kept folders
 - **WHEN** the latest crawl kept `/adhoc/a` after `EIO`, and the chain is otherwise complete for it
-- **THEN** the crawl line shows `finished with errors` and `did not answer: 1 folder (EIO 1): /adhoc/a`, and the freshness line gives T and says `except in 1 folder kept by that crawl: /adhoc/a`
+- **THEN** the crawl line shows `finished with errors` and `did not answer: 1 folder (EIO 1): /adhoc/a`, and the freshness line gives T and adds `except where that crawl kept the stored state: 1 folder (EIO 1): /adhoc/a`
 
 #### Scenario: An older crawler
 - **WHEN** the crawler database has no record of kept folders
