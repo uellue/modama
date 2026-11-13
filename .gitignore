@@ -12,9 +12,10 @@ dist/
 .idea
 /design-handoff
 frontend_auth_spike.md
-# Claude Code's local state; the project's skills are committed
+# Claude Code's local state; the project's skills and settings (the no-inline-edits hook) are committed
 /.claude/*
 !/.claude/skills/
+!/.claude/settings.json
 cargo-git
 /deploy/testconf/secrets/CA/
 /deploy/.env
