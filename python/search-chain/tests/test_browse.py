@@ -19,6 +19,7 @@ import pytest
 from modama_chain import live, sync, upstream, views
 from modama_chain.browse import (
     SNAPSHOT_HEADER,
+    TAB_HEADER,
     BadPath,
     Browser,
     Settings,
@@ -66,8 +67,10 @@ def stores(root: Path) -> Stores:
     )
 
 
-def client(root: Path, snapshots: Path | None = None, stack: Path = STACK) -> Client:
-    app = Browser(
+def browser(
+    root: Path, snapshots: Path | None = None, stack: Path = STACK, **kw
+) -> Browser:
+    return Browser(
         Settings(
             stores=stores(root),
             upstream=UPSTREAM,
@@ -75,9 +78,13 @@ def client(root: Path, snapshots: Path | None = None, stack: Path = STACK) -> Cl
             config=None,
             host_root="/storage/er-c-data",
             snapshots=snapshots,
+            **kw,
         )
     )
-    return Client(app)
+
+
+def client(root: Path, snapshots: Path | None = None, stack: Path = STACK) -> Client:
+    return Client(browser(root, snapshots, stack))
 
 
 def get(root, url, **query):
@@ -187,6 +194,7 @@ def test_a_cross_site_form(tree, tmp_path):
 
 
 def run(root, path, **kw):
+    kw.setdefault("slots", live.Slots())
     return live.run(str(root), path, base_url=OAI, **kw)
 
 
@@ -241,7 +249,7 @@ def test_a_killed_computation_leaves_no_temporary_files(started, tmp_path, monke
         "-c",
         "import os, time; open(os.environ['TMPDIR'] + '/x', 'w'); time.sleep(60)",
     ]
-    live.run("/", "/x", base_url=OAI, limit=1.0, argv=argv)
+    run("/", "/x", limit=1.0, argv=argv)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -278,26 +286,122 @@ def started(monkeypatch):
 
 
 def test_a_computation_over_the_limit(started):
-    result = live.run("/", "/x", base_url=OAI, limit=1.0, argv=SLEEPER)
+    result = run("/", "/x", limit=1.0, argv=SLEEPER)
     assert result["error"].startswith("stopped after 1 s")
     time.sleep(0.2)
     assert gone(started[0].pid)
 
 
-def test_a_newer_request(started, tree):
-    results = []
-    older = threading.Thread(
-        target=lambda: results.append(live.run("/", "/x", base_url=OAI, argv=SLEEPER))
+ENDED = {"error": "ended by a newer request"}
+
+
+def child(seconds: float, name: str) -> list[str]:
+    """A live child that sleeps, then answers with its name."""
+    code = (
+        "import json, sys, time; sys.stdin.read(); time.sleep(float(sys.argv[1]));"
+        " print(json.dumps({'name': sys.argv[2]}))"
     )
-    older.start()
-    while not started:
-        time.sleep(0.05)
+    return [sys.executable, "-c", code, str(seconds), name]
+
+
+def names(started) -> list[str]:
+    """The names of the children started, in the order they started."""
+    return [p.args[-1] for p in started]
+
+
+def until(condition, timeout: float = 10):
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.02)
+
+
+def requested(results: dict, key: str, target=None, **kw) -> threading.Thread:
+    """A live request in a thread of its own, as the threaded server serves it; its result goes to results[key]."""
+    target = target or (lambda: run("/", "/x", **kw))
+    thread = threading.Thread(target=lambda: results.__setitem__(key, target()))
+    thread.start()
+    return thread
+
+
+@pytest.mark.parametrize("tab", ["a", None], ids=["the same tab", "no tab id"])
+def test_a_newer_request_of_the_same_tab(started, tree, tab):
+    # Fast clicks in one tab; a request without a tab id is one of a shared tab
+    slots, results = live.Slots(), {}
+    older = requested(results, "older", slots=slots, tab=tab, argv=SLEEPER)
+    until(lambda: started)
     time.sleep(0.5)
-    newer = run(tree, "/notes/readme.txt")
+    newer = run(tree, "/notes/readme.txt", slots=slots, tab=tab)
     older.join(5)
-    assert results == [{"error": "ended by a newer request"}]
+    assert results == {"older": ENDED}
     assert newer["dataset"]["anchor"] == "/notes/readme.txt"
     assert gone(started[0].pid)
+
+
+def test_two_tabs_both_get_their_result(started):
+    slots, results = live.Slots(2), {}
+    a = requested(results, "a", slots=slots, tab="a", argv=child(1, "a"))
+    until(lambda: started)
+    b = run("/", "/x", slots=slots, tab="b", argv=child(0, "b"))
+    a.join(5)
+    assert results == {"a": {"name": "a"}} and b == {"name": "b"}
+
+
+def test_the_n_plus_first_waits_then_runs(started):
+    slots, results = live.Slots(2), {}
+    threads = [
+        requested(results, t, slots=slots, tab=t, argv=child(1, t)) for t in "ab"
+    ]
+    until(lambda: len(started) == 2)
+    threads.append(requested(results, "c", slots=slots, tab="c", argv=child(0, "c")))
+    until(lambda: slots.ahead("c") == 0)
+    threads.append(requested(results, "d", slots=slots, tab="d", argv=child(0, "d")))
+    until(lambda: slots.ahead("d") == 1)
+    assert len(started) == 2 and results == {}
+    for t in threads:
+        t.join(5)
+    assert results == {t: {"name": t} for t in "abcd"}
+    assert names(started)[2:] == ["c", "d"]  # first in, first out
+    assert slots.ahead("c") is None
+
+
+def test_a_newer_request_removes_the_tab_s_queued_one(started):
+    slots, results = live.Slots(1), {}
+    a = requested(results, "a", slots=slots, tab="a", argv=child(1, "a"))
+    until(lambda: started)
+    first = requested(results, "first", slots=slots, tab="b", argv=child(0, "first"))
+    until(lambda: slots.ahead("b") == 0)
+    second = requested(results, "second", slots=slots, tab="b", argv=child(0, "second"))
+    first.join(5)
+    assert results == {"first": ENDED}  # at once, while a runs
+    a.join(5)
+    second.join(5)
+    assert results["a"] == {"name": "a"} and results["second"] == {"name": "second"}
+    assert names(started) == ["a", "second"]
+
+
+def test_the_page_s_tab_id_and_what_it_waits_for(started, tree):
+    app = browser(tree, at_once=1)
+    results = {}
+    other = requested(
+        results,
+        "other",
+        lambda: live.run(
+            "/", "/x", base_url=OAI, slots=app.slots, tab="x", argv=child(2, "x")
+        ),
+    )
+    until(lambda: started)
+    tab = {**LOCAL, SNAPSHOT_HEADER: "1", TAB_HEADER: "b"}
+    request = {"query_string": {"path": "/notes/readme.txt"}, "headers": tab}
+    mine = requested(results, "b", lambda: Client(app).get("/api/live", **request))
+    waiting = {"headers": {**LOCAL, TAB_HEADER: "b"}}
+    until(lambda: Client(app).get("/api/waiting", **waiting).json == {"ahead": 0})
+    other.join(5)
+    mine.join(60)
+    assert results["other"] == {"name": "x"}
+    shown = {v["key"]: v for v in results["b"].json["views"]}
+    assert json.loads(shown["dataset"]["text"])["anchor"] == "/notes/readme.txt"
+    assert Client(app).get("/api/waiting", **waiting).json == {"ahead": None}
 
 
 # A file's views show the stages, each labelled by its source
@@ -305,7 +409,7 @@ def test_a_newer_request(started, tree):
 
 def live_views(tree: Path, path: str, record=None) -> dict[str, views.View]:
     before = views.Stored([], record=record, repo="ERC")
-    found = views.live_views(stores(tree), UPSTREAM, path, None, before)
+    found = views.live_views(stores(tree), UPSTREAM, path, None, before, live.Slots())
     return {v.key: v for v in found}
 
 

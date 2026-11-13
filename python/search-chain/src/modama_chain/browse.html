@@ -75,7 +75,9 @@ const ORDER = [["entry", "Matchmaker: cited dataset, expanded"], ["dataset", "Da
   ["datacite", "DataCite (harvester)"], ["document", "Warehouse index document"], ["hit", "Search API hit"]];
 const ALWAYS_OPEN = new Set(["entry", "dataset"]);
 const unfolded = new Set();  // rows opened by a click; kept while moving from file to file
-let dir = "/", entries = [], shown = [], sel = -1, timer = null, controllers = [];
+let dir = "/", entries = [], shown = [], sel = -1, timer = null, controllers = [], polling = null;
+// This tab's live requests end only this tab's earlier one (D3, @weber 301)
+const OWN = {"X-Modama-Browse": "1", "X-Modama-Browse-Tab": crypto.randomUUID()};
 const $ = id => document.getElementById(id);
 
 function el(tag, attrs, ...children) {
@@ -182,13 +184,14 @@ function copy(text, button) {
 function views(path) {
   for (const c of controllers) c.abort();
   controllers = [];
+  clearInterval(polling);
   const host = S.hostRoot.replace(/\/$/, "") + path.replace(/\/$/, "");
   const file = !path.endsWith("/");  // a folder lists and shows its stored views, no live ones (D3)
   const saved = el("span", {class: "muted"});
   const message = el("textarea", {class: "message", rows: "2", placeholder: "A message for Claude (optional), saved at the top of the snapshot"});
   const save = el("button", {onclick: () => {
     save.disabled = true; saved.textContent = "saving…";
-    api(path, "snapshot", {method: "POST", headers: {"X-Modama-Browse": "1", "Content-Type": "application/json"},
+    api(path, "snapshot", {method: "POST", headers: {...OWN, "Content-Type": "application/json"},
                            body: JSON.stringify({message: message.value})}).then(r => {
       const b = el("button", {onclick: () => copy(r.name, b)}, "copy");
       saved.replaceChildren(el("code", {}, r.name), " ", b);
@@ -201,13 +204,15 @@ function views(path) {
     el("div", {class: "bar"}, "Path on the server:", el("code", {}, host), hostCopy),
     el("div", {class: "bar"}, info),
     ...(S.snapshots && file ? [message, el("div", {class: "bar"}, save, saved)] : []));
-  const cells = {};
+  const cells = {}, computing = [];
   const grid = el("div", {class: "grid"}, el("strong", {}, "Stored (what the chain holds now)"), el("strong", {}, "Live (the checkout's code, now)"));
   for (const [key, title] of ORDER) {
     const pair = [];
     for (const side of ["stored", "live"]) {
       const waiting = side === "stored" ? "loading…" : file ? "computing…" : "a folder: no live views";
-      cells[side + key] = el("div", {class: "cell"}, el("div", {class: "empty"}, waiting));
+      const empty = el("div", {class: "empty"}, waiting);
+      if (side === "live" && file) computing.push(empty);
+      cells[side + key] = el("div", {class: "cell"}, empty);
       pair.push(cells[side + key]);
     }
     if (!ALWAYS_OPEN.has(key)) {
@@ -236,7 +241,12 @@ function views(path) {
     const i = r.info;
     info.textContent = i.error ? i.error : `${i.size} bytes, mtime ${i.mtime}, ctime ${i.ctime}${i.readable ? "" : ", not readable"}`;
     fill("stored", r.views);
-    return file ? api(path, "live", {headers: {"X-Modama-Browse": "1"}}).then(r => fill("live", r.views)) : null;
+    if (!file) return null;
+    // While the request waits for a free slot, its place in the queue (D3)
+    const poll = polling = setInterval(() => fetch("/api/waiting", {headers: OWN}).then(r => r.json()).then(r => {
+      for (const e of computing) e.textContent = r.ahead === null ? "computing…" : `waiting, ${r.ahead} ahead`;
+    }).catch(() => {}), 1000);
+    return api(path, "live", {headers: OWN}).then(r => fill("live", r.views)).finally(() => clearInterval(poll));
   }).catch(e => { fail("stored", e); if (file) fail("live", e); });
 }
 

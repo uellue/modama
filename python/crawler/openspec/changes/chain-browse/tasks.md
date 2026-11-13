@@ -39,3 +39,8 @@ Written with the coordinator's leans of 2026-11-12 as assumptions (design D1 to 
 - [x] 6.1 `sync.py` (the actual values from the stack's Dockerfiles and patch folders, the comparison), the declarations `HIT` and `ENTRY` in `upstream.py`, `SOURCES` formatted from them. Verify: `tests/test_sync.py` passes on the repository and fails with a changed commit.
 - [x] 6.2 The page's red line and the snapshot's (`check_sync`, `browse.html`), the files mounted read-only under `/upstream/search-stack/` in `docker-compose.yml`. Verify: the scenario "An emulation out of sync" in `test_browse.py`; a screenshot with a changed commit in a copy; `docker compose config` of the test deployment and of staging (fake values).
 - [x] 6.3 README "browse", configuration, tests; spec scenario; backlog. Verify: read against the spec.
+
+## 7. Live computations per tab (D3, decision 301, @weber 2026-11-13)
+
+- [x] 7.1 `live.Slots` (N at once, first in first out, one request per tab), the tab header and `/api/waiting` in `browse.py`, `MODAMA_BROWSE_LIVE` in `cli.py`, the tab id and "waiting, k ahead" in `browse.html`. Verify: one test per scenario of "Live work is bounded" with fake children (`test_a_newer_request_of_the_same_tab` for "A newer request of the same tab" and "A request without a tab id", `test_two_tabs_both_get_their_result`, `test_the_n_plus_first_waits_then_runs`, `test_a_newer_request_removes_the_tab_s_queued_one`) and one through the app with the header and `/api/waiting`; the new ones fail on the code before; the real server with parallel curl requests by hand.
+- [x] 7.2 README "browse" (the behaviour, `MODAMA_BROWSE_LIVE` in "Configuration"), the backlog's line. Verify: read against the spec.

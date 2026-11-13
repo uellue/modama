@@ -3,8 +3,9 @@
 Run in a child process per file (`python -m modama_chain.live`), so that it
 imports the checkout's current code of the crawler and the format
 collections: an edit shows on the next request (change chain-browse, D4).
-`run` starts it with a minimal environment, at most one at a time, and ends
-it with all its processes after its time limit (D3).
+`run` starts it with a minimal environment when `Slots` gives it a turn (a
+few at once, one per tab of the page), and ends it with all its processes
+after its time limit (D3).
 """
 
 from __future__ import annotations
@@ -18,13 +19,17 @@ import subprocess
 import sys
 import tempfile
 import threading
+from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 from modama_crawler.extraction import TIME_LIMIT
 
 # Twice the crawler's time limit per extraction: the folder and one extraction
 LIMIT = 2 * TIME_LIMIT
+AT_ONCE = 4  # live computations at once across tabs; MODAMA_BROWSE_LIVE (@weber 301)
 THREADS = 4  # file system calls in flight for one folder (the crawl's 32 are for a whole tree)
 MEMBERS_SHOWN = 20  # a Merlin series has about 19,600 members (review R14)
 # The child's whole environment: no database, HTTP or Airflow setting (D4, review R2)
@@ -167,16 +172,81 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-_lock = threading.Lock()
-_running: subprocess.Popen | None = None
-
-
 def _end(proc: subprocess.Popen) -> None:
     """Kill the child's process group: the child, its extraction worker, anything they started."""
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+
+
+@dataclasses.dataclass(eq=False)
+class Turn:
+    """One live request: waiting, then its child running."""
+
+    tab: str | None
+    proc: subprocess.Popen | None = None
+    superseded: bool = False
+
+
+class Slots:
+    """Live computations across the page's tabs (D3, @weber 301).
+
+    At most `size` children run at once; further requests wait first in,
+    first out. A tab has at most one request: its newer one ends its running
+    child or takes its waiting one out of the queue. Requests without a tab id
+    share the tab None.
+    """
+
+    def __init__(self, size: int = AT_ONCE):
+        self.size = size
+        self._cond = threading.Condition()
+        self._queue: list[Turn] = []
+        self._running: set[Turn] = set()
+        self._tabs: dict[str | None, Turn] = {}
+
+    def ahead(self, tab: str | None) -> int | None:
+        """How many waiting requests are ahead of the tab's; None when it has none waiting."""
+        with self._cond:
+            turn = self._tabs.get(tab)
+            return self._queue.index(turn) if turn in self._queue else None
+
+    @contextmanager
+    def turn(self, tab: str | None, start: Callable[[], subprocess.Popen]):
+        """Waits for a free slot, then starts the child with start(); the turn is superseded when the tab asked again."""
+        turn = Turn(tab)
+        try:
+            with self._cond:
+                old = self._tabs.get(tab)
+                if old is not None:
+                    self._release(old)
+                    old.superseded = True
+                    if old.proc is not None:
+                        _end(old.proc)
+                self._tabs[tab] = turn
+                self._queue.append(turn)
+                while not turn.superseded and not (
+                    self._queue[0] is turn and len(self._running) < self.size
+                ):
+                    self._cond.wait()
+                if not turn.superseded:
+                    self._queue.remove(turn)
+                    self._running.add(turn)
+                    turn.proc = start()
+                    self._cond.notify_all()  # the next one, if a slot is still free
+            yield turn
+        finally:
+            with self._cond:
+                self._release(turn)
+
+    def _release(self, turn: Turn) -> None:
+        """Its place in the queue and its slot are free (under the lock)."""
+        if turn in self._queue:
+            self._queue.remove(turn)
+        self._running.discard(turn)
+        if self._tabs.get(turn.tab) is turn:
+            del self._tabs[turn.tab]
+        self._cond.notify_all()
 
 
 def child_env() -> dict[str, str]:
@@ -189,15 +259,16 @@ def run(
     *,
     base_url: str,
     config: Path | None = None,
+    slots: Slots,
+    tab: str | None = None,
     stored: tuple[datetime, dict] | None = None,
     limit: float = LIMIT,
     argv: list[str] | None = None,
 ) -> dict:
-    """The live dataset of the file at path, from a child process; a running one is ended first (one at a time, D3).
+    """The live dataset of the file at path, from a child process, when `slots` has a turn for it (D3).
 
     `argv` replaces the child's command (tests). An error is returned as {"error": text}.
     """
-    global _running
     cmd = argv or [
         sys.executable,
         "-m",
@@ -218,32 +289,26 @@ def run(
     # The child's temporary files (its MIME database) in a folder of this run, removed after
     # the child ended, also when it was killed (in the stack /tmp is a tmpfs, memory)
     with tempfile.TemporaryDirectory(prefix="modama-browse-") as tmp:
-        with _lock:
-            if _running is not None:
-                _running.superseded = True
-                _end(_running)
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
-                env=child_env() | {"TMPDIR": tmp},
-            )
-            proc.superseded = False
-            _running = proc
-        try:
-            out, err = proc.communicate(json.dumps(given), timeout=limit)
-        except subprocess.TimeoutExpired:
-            _end(proc)
-            proc.communicate()
-            return {"error": f"stopped after {limit:.0f} s ({__name__}.LIMIT)"}
-        finally:
-            with _lock:
-                if _running is proc:
-                    _running = None
-    if proc.superseded:
+        start = partial(
+            subprocess.Popen,
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+            env=child_env() | {"TMPDIR": tmp},
+        )
+        with slots.turn(tab, start) as turn:
+            proc = turn.proc
+            if proc is not None:
+                try:
+                    out, err = proc.communicate(json.dumps(given), timeout=limit)
+                except subprocess.TimeoutExpired:
+                    _end(proc)
+                    proc.communicate()
+                    return {"error": f"stopped after {limit:.0f} s ({__name__}.LIMIT)"}
+    if turn.superseded:
         return {"error": "ended by a newer request"}
     if proc.returncode != 0:
         tail = "\n".join(err.strip().splitlines()[-12:])

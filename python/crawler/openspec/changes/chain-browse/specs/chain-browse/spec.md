@@ -57,7 +57,7 @@ The live views SHALL be computed in a new process for each request, with an envi
 - **THEN** the second request's live record shows the new description
 
 ### Requirement: Live work is bounded
-A live computation SHALL list and recognise only the selected file's folder and the folders above it, SHALL extract only the dataset holding the file, with one worker under the crawler's time limit and memory budget, and SHALL be ended with all its processes after twice the crawler's extraction time limit, the view saying so. At most one SHALL run at a time; a new one SHALL end the running one. Selecting a folder SHALL start none (design D3, D5).
+A live computation SHALL list and recognise only the selected file's folder and the folders above it, SHALL extract only the dataset holding the file, with one worker under the crawler's time limit and memory budget, and SHALL be ended with all its processes after twice the crawler's extraction time limit, the view saying so. At most N (`MODAMA_BROWSE_LIVE`, default 4) SHALL run at once across the page's tabs, further ones SHALL wait first in, first out, and the page SHALL show how many wait ahead; a new request of a tab SHALL end that tab's running one or take its waiting one out of the queue, and requests without a tab id SHALL count as one tab. Selecting a folder SHALL start none (design D3, D5).
 
 #### Scenario: A file next to a large subfolder
 - **WHEN** a file's folder has a subfolder of many files, and the file's live views are requested
@@ -67,9 +67,25 @@ A live computation SHALL list and recognise only the selected file's folder and 
 - **WHEN** a live computation runs longer than its limit
 - **THEN** its process group is gone and the view names the limit
 
-#### Scenario: A newer request
-- **WHEN** a live computation runs and a second one is requested
-- **THEN** the first one's process group is gone and the second one's result is shown
+#### Scenario: A newer request of the same tab
+- **WHEN** a tab's live computation runs and the same tab requests another
+- **THEN** the first one's process group is gone, its answer is "ended by a newer request", and the second one's result is shown
+
+#### Scenario: Two tabs
+- **WHEN** one tab's live computation runs and another tab requests one
+- **THEN** both run and each tab gets its own result
+
+#### Scenario: More requests than slots
+- **WHEN** N live computations run and two more tabs request one each
+- **THEN** both wait, the first with 0 and the second with 1 ahead, and they run in the order they came as slots free
+
+#### Scenario: A newer request of a waiting tab
+- **WHEN** a tab's live request waits in the queue and the same tab requests another
+- **THEN** the waiting one leaves the queue at once without starting a process, answered "ended by a newer request", and the newer one waits in its place at the end of the queue
+
+#### Scenario: A request without a tab id
+- **WHEN** live computations are requested without the tab header, one while another runs
+- **THEN** they count as one tab: the running one is ended by the newer one
 
 ### Requirement: The browser writes only snapshots
 The browser SHALL write nothing but snapshot files, into its snapshot folder only, and SHALL use read-only database transactions. A snapshot SHALL be one Markdown file holding the path, the path on the server, the time, the extractor identity and every view's content, and SHALL hold no credential (design D13).
