@@ -59,7 +59,8 @@
           "steps[1].temperature_C": 300,
           "steps[2].hold_min": 5,
           "steps[2].temperature_C": 500
-        }
+        },
+        "text": "name: in-situ heating\nstarted: 2026-11-12 21:04:05.500000+01:00\ndetector:\n  model: K2 IS\n  binning:\n  - 2\n  - 2\n  exposure_s: 0.0025\nsteps:\n- temperature_C: 300\n  hold_min: 10\n- temperature_C: 500\n  hold_min: 5\nnotes: ''\nspare: null\n"
       }
     },
     "/stream.yml": {
@@ -84,7 +85,8 @@
             "gain"
           ],
           "[3].kind": "end"
-        }
+        },
+        "text": "kind: run\nid: 1\n---\nkind: run\nid: 2\ntags:\n- dark\n- gain\n---\nkind: end\n"
       }
     }
   },

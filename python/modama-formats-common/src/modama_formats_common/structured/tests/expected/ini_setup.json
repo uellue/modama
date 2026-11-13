@@ -35,7 +35,8 @@
           "Spare": {},
           "Stage.Axes": "X Y Z",
           "Stage.Limits": "-1.5\n1.5"
-        }
+        },
+        "text": "[DEFAULT]\nOperator = ER-C\n\n[Laser]\nWavelength_nm = 532\nComment = %(not interpolated)s\n\n[Stage]\nAxes = X Y Z\nLimits = -1.5\n\t1.5\n\n[Spare]\n\n"
       }
     }
   },

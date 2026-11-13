@@ -1,7 +1,10 @@
 """Values not suitable for text (formats.values.textual), one test per kind; the
 cases from real EM fixtures are in modama_formats_em/tests/test_values.py."""
 
+import time
+
 import numpy as np
+import pytest
 from modama_crawler.formats.values import MAX_CHARS, MAX_ITEMS, credential, textual
 
 
@@ -93,3 +96,77 @@ def test_an_authorization_value():
     assert credential("header", "Basic aHVudGVyMg==")
     assert credential("header", "Bearer eyJhbGciOi.eyJzdWIi.c2lnbmF0dXJl")
     assert not credential("note", "Basic settings of the stage")
+
+
+# Review of text-as-written (2026-11-13): what the file's text showed, and time
+
+
+def test_a_private_key_block():
+    for begin in ("OPENSSH PRIVATE KEY", "RSA PRIVATE KEY", "PRIVATE KEY"):
+        assert credential("note", f"-----BEGIN {begin}-----"), begin
+    assert not credential("note", "-----BEGIN CERTIFICATE-----")
+    assert not credential("note", "-----BEGIN PUBLIC KEY-----")
+
+
+def test_names_that_end_in_pass_or_pw():
+    for name in ("DB_PASS", "db_pw", "SMTP_PASSWD"):
+        assert credential(name, "x"), name
+        assert credential("line", f"{name}=hunter2"), name
+    for name in ("passport", "db_passive", "pwm_channel"):
+        assert not credential(name, "x"), name
+
+
+def test_well_known_token_prefixes():
+    # GitHub (docs.github.com, "GitHub's token formats"), GitLab (docs.gitlab.com,
+    # "Token prefixes"), Slack (docs.slack.dev, "Token types"), AWS access key
+    # IDs (docs.aws.amazon.com, IAM, "Understanding unique ID prefixes")
+    for token in (
+        "ghp_aBcD1234eFgH5678iJkL",
+        "github_pat_11ABCDEFG0123456789_abc",
+        "gho_aBcD1234eFgH5678",
+        "ghs_aBcD1234eFgH5678",
+        "glpat-aBcD1234eFgH5678",
+        "xoxb-1234-5678-aBcD",
+        "xoxp-1234-5678-aBcD",
+        "AKIAIOSFODNN7EXAMPLE",
+    ):
+        assert credential("note", f"use {token} here"), token
+    for text in ("ghp_", "the gh tool", "AKIA", "glpat-", "xoxb-"):
+        assert not credential("note", text), text
+
+
+def test_pass_and_pw_as_a_whole_name():
+    # Second review of text-as-written, S1: a document's key, not a word in prose
+    for name in ("pass", "PW", "db.pass", "users[2].pw"):
+        assert credential(name, "x"), name
+    for name in ("passes", "pw_mode", "bypass"):
+        assert not credential(name, "x"), name
+    assert not credential("note", "pass: 3 of 5 samples")
+
+
+def test_an_access_key_id_in_capitals_only():
+    # Second review, S2: AWS writes its key IDs in capitals
+    assert credential("note", "key AKIAIOSFODNN7EXAMPLE")
+    assert not credential("note", "AsiaPacificSynchrotron2024: beamtime")
+    assert not credential("note", "akiaiosfodnn7example")
+
+
+def test_a_name_that_holds_a_url_with_a_password():
+    assert credential("users.postgres://admin:hunter2key@db/x", 1)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        " --" + "pass" * 10_000,  # the option branch, 40 KB
+        "password" * 5_000,  # a secret word repeated, 40 KB
+        "://" + ":" * 40_000,  # the URL branch
+        "Bearer " * 6_000,
+        "-----BEGIN " + "A " * 20_000,
+    ],
+)
+def test_a_long_adversarial_line_costs_linear_time(line):
+    start = time.monotonic()
+    credential("line", line)
+    credential("line", line * 25)  # 1 MB
+    assert time.monotonic() - start < 0.5

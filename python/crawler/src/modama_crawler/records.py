@@ -146,6 +146,17 @@ def tags(dataset: Dataset) -> str:
     return "\n".join(lines)
 
 
+def text(dataset: Dataset) -> str:
+    """The file's text as its format shows it, `values["text"]`, "" if there is none (change text-as-written).
+
+    In the record it takes the place of the tag lines: the same content, in the
+    file's words and order (text-as-written D2).
+    """
+    extracted = dataset.extraction.extracted if dataset.extraction else None
+    found = extracted.values.get("text") if extracted else None
+    return found if isinstance(found, str) else ""
+
+
 def format_names(formats: Iterable[Format]) -> dict[str, str]:
     """Display name by format id: the format's own, else its MIME type's comment, else its id."""
     names = {}
@@ -183,8 +194,8 @@ def dc_metadata(dataset: Dataset, names: Mapping[str, str]) -> dict[str, list[st
         "identifier": [browse_url(dataset.anchor)],
         "publisher": [PUBLISHER],
     }
-    if lines := tags(dataset):
-        metadata["description"].append(lines)
+    if second := text(dataset) or tags(dataset):
+        metadata["description"].append(second)
     if terms := subjects(dataset, names):
         metadata["subject"] = terms
     if relations:
