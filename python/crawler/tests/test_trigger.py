@@ -304,6 +304,7 @@ def test_a_crawl_stopped_by_sigterm_during_extraction(
     assert killed and status == 143
     assert seconds < 5  # not after the time limit
     assert _failed_without_records(conn)
+    assert multiprocessing.active_children() == []
 
 
 def test_a_subtree_crawl_stopped_while_it_extracts(
@@ -345,6 +346,7 @@ def test_a_subtree_crawl_stopped_while_it_extracts(
         conn.execute("SELECT identifier, datestamp FROM records ORDER BY 1").fetchall()
         == before
     )
+    assert multiprocessing.active_children() == []
 
 
 def test_a_subtree_crawl_does_not_make_the_timer_wait(conn):
@@ -361,7 +363,6 @@ def test_a_subtree_crawl_does_not_make_the_timer_wait(conn):
     conn.commit()
     assert last_finished(conn) == now - timedelta(days=2)
     assert overdue(last_finished(conn), now)
-    assert multiprocessing.active_children() == []
 
 
 @KILLS

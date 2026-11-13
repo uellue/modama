@@ -83,6 +83,13 @@ A subtree crawl SHALL end with status 2, an error line naming the directory and 
 - **WHEN** the crawler cannot list `adhoc/closed` and `crawl --path adhoc/closed/session1` is run
 - **THEN** the exit status is 2, stderr names `/adhoc/closed` as not listable, and no run is recorded
 
+### Requirement: A subtree crawl does not enter a stored collapsed dataset
+A subtree crawl SHALL end with status 2, an error line naming the dataset and saying to crawl the whole tree or that dataset's folder, and no run recorded, when the index holds a collapsed dataset whose folder is above its path, also when the folder is no longer collapsed.
+
+#### Scenario: A path inside a stored collapsed dataset
+- **WHEN** `adhoc/project/data.zarr` was crawled as a Zarr store, its `.zgroup` is removed, and `crawl --path adhoc/project/data.zarr/0` is run
+- **THEN** the exit status is 2, stderr names `/adhoc/project/data.zarr` as stored as one collapsed dataset and `--path adhoc/project/data.zarr`, no run is recorded and the records are unchanged; `crawl --path adhoc/project/data.zarr` runs
+
 ### Requirement: A subtree crawl's path lies below the data root
 A subtree crawl SHALL end with status 2, an error line naming the path and the reason, and no run recorded, when its path is not valid UTF-8, leaves the data root, is the data root itself (also through a file at the top level), or does not exist below the data root; the error for a path that does not exist SHALL name the data root it is relative to.
 
@@ -117,15 +124,19 @@ A subtree crawl SHALL end with status 2, an error line, and no run recorded, whe
 - **THEN** the exit status is 2, stderr says that `--select` and `--ignore` cannot be used with `--path`, and no run is recorded
 
 ### Requirement: A subtree crawl uses the configuration of the full crawls
-A subtree crawl SHALL end with status 2, an error line naming both configuration files and the parts that differ, and no run recorded, when the last finished crawl of the whole tree recorded a configuration whose selection, per-path ignores or exclusions differ from the subtree crawl's. When that crawl recorded no configuration, the subtree crawl SHALL run and log a warning that it was not compared.
+A subtree crawl SHALL end with status 2, an error line naming both configuration files and each part that differs with both values, and no run recorded, when the last finished crawl of the whole tree recorded a configuration whose selection (`select`, `ignore`, compared as sets), per-path ignores or exclusions (in their order) differ from the subtree crawl's. When that crawl recorded no configuration, the subtree crawl SHALL run and log a warning that it was not compared.
 
 #### Scenario: Another configuration
 - **WHEN** the whole tree was crawled with a configuration that excludes `.snapshot/`, and `crawl --path adhoc/libertem/libertem-test-data` is run with a configuration that does not
-- **THEN** the exit status is 2, stderr names both configuration files and `exclude`, and no run is recorded
+- **THEN** the exit status is 2, stderr names both configuration files and `exclude` with both values, and no run is recorded
 
 #### Scenario: The same configuration from another file
-- **WHEN** the whole tree was crawled with `full.toml`, and `crawl --path adhoc/libertem/libertem-test-data --config copy.toml` is run, where `copy.toml` holds the same settings in another order and with comments
+- **WHEN** the whole tree was crawled with `full.toml`, and `crawl --path adhoc/libertem/libertem-test-data --config copy.toml` is run, where `copy.toml` holds the same settings with comments, its sections in another order and the ids of `select` and `ignore` in another order
 - **THEN** the crawl runs
+
+#### Scenario: Exclusions in another order
+- **WHEN** the whole tree was crawled with `exclude = ["tmp/", "!tmp/keep/"]`, and `crawl --path adhoc/libertem/libertem-test-data` is run with `exclude = ["!tmp/keep/", "tmp/"]`
+- **THEN** the exit status is 2: gitignore's `!` patterns depend on the order, so the exclusions differ
 
 #### Scenario: A full crawl without a recorded configuration
 - **WHEN** the last crawl of the whole tree ran before the configuration was recorded, and `crawl --path adhoc/libertem/libertem-test-data` is run

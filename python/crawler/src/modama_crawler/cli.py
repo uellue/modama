@@ -32,6 +32,7 @@ from .server import OAIError, OAIServer, parse_range
 from .store import (
     Run,
     Stored,
+    collapsed_above,
     end_run,
     get_run,
     ingredients_of,
@@ -440,30 +441,47 @@ _COMPARED = {
 }
 
 
-def _same_as_full_crawls(conn, root: str, settings: dict) -> None:
-    """Raises _Refused when the last crawl of the whole tree ran under another data root or configuration (D2)."""
+def _same_as_full_crawls(conn, root: str, scope: str, settings: dict) -> None:
+    """Raises _Refused when the last crawl of the whole tree ran under another data root, the index holds a
+    collapsed dataset above the subtree, or that crawl ran under another configuration (D2)."""
     last = last_full_crawl(conn)
-    if last is None:
-        return
-    full_root, full = last
-    if full_root != root:
+    if last is not None and last[0] != root:
         raise _Refused(
-            f"the data root is {root}, but the crawls of the whole tree ran under {full_root},"
+            f"the data root is {root}, but the crawls of the whole tree ran under {last[0]},"
             " and identifiers are relative to the data root"
         )
+    collapsed = collapsed_above(conn, scope)
+    if collapsed is not None:
+        # The folder changed since: crawled alone, the subtree would sit beside the old dataset
+        raise _Refused(
+            f"{collapsed} is stored as one collapsed dataset; crawl the whole tree,"
+            f" or --path {collapsed.lstrip('/')}"
+        )
+    if last is None:
+        return
+    full = last[1]
     if full is None:
         log.warning(
             "the configuration of the last crawl of the whole tree is not recorded"
             " (it ran before this version): not compared"
         )
         return
-    differ = [name for key, name in _COMPARED.items() if full.get(key) != settings[key]]
+    differ = [
+        f"{name} ({settings[key]!r} here, {full.get(key)!r} in the last crawl of the whole tree)"
+        for key, name in _COMPARED.items()
+        if _comparable(key, full.get(key)) != _comparable(key, settings[key])
+    ]
     if differ:
         raise _Refused(
             f"its configuration {settings['file'] or 'none'} differs from that of the last crawl"
             f" of the whole tree, {full.get('file') or 'none'}, in {', '.join(differ)};"
             " a subtree crawl uses the configuration of the crawls of the whole tree"
         )
+
+
+def _comparable(key: str, value):
+    """select and ignore are sets of ids; the order of exclusions counts (gitignore's "!" patterns)."""
+    return sorted(value or ()) if key in ("select", "ignore") else value
 
 
 def cmd_crawl(args) -> int:
@@ -508,7 +526,7 @@ def cmd_crawl(args) -> int:
             return 1
         if scope is not None:
             try:
-                _same_as_full_crawls(conn, root, settings)
+                _same_as_full_crawls(conn, root, scope, settings)
             except _Refused as e:
                 log.error("cannot crawl --path %s: %s", args.path, e)
                 return 2

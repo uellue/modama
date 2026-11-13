@@ -309,6 +309,26 @@ def test_a_path_inside_a_collapsed_directory(conn, crawl, data, caplog):
     assert runs(conn) == []
 
 
+def test_a_path_inside_a_stored_collapsed_dataset(conn, crawl, data, caplog):
+    store = data / "adhoc" / "project" / "data.zarr"
+    (store / "0").mkdir(parents=True)
+    (store / "0" / "chunk.txt").write_text("c")
+    (store / ".zgroup").write_text('{"zarr_format": 2}')
+    assert crawl() == 0
+    (store / ".zgroup").unlink()  # no longer a store, but the index still says so
+    before = records(conn)
+    refused(
+        conn,
+        crawl("--path", "adhoc/project/data.zarr/0"),
+        caplog,
+        "/adhoc/project/data.zarr is stored as one collapsed dataset",
+        "--path adhoc/project/data.zarr",
+    )
+    assert len(runs(conn)) == 1
+    assert records(conn) == before
+    assert crawl("--path", "adhoc/project/data.zarr") == 0
+
+
 def test_an_excluded_path(conn, crawl, data, tmp_path, caplog):
     (data / "scratch" / "tmp").mkdir(parents=True)
     config = tmp_path / "c.toml"
@@ -436,22 +456,46 @@ def test_another_configuration(conn, crawl, tmp_path, caplog):
         conn,
         crawl("--config", str(other), "--path", P),
         caplog,
-        f"{other} differs from that of the last crawl of the whole tree, {full}, in exclude",
+        f"{other} differs from that of the last crawl of the whole tree, {full}, in exclude"
+        " ([] here, ['.snapshot/'] in the last crawl of the whole tree)",
     )
     assert len(runs(conn)) == 1
+
+
+def test_another_selection_names_both_values(conn, crawl, caplog):
+    assert crawl("--select", "t/stand") == 0
+    refused(
+        conn,
+        crawl("--path", P),
+        caplog,
+        "its configuration none differs from that of the last crawl of the whole tree, none,"
+        " in select ([] here, ['t/stand'] in the last crawl of the whole tree)",
+    )
 
 
 def test_the_same_configuration_from_another_file(conn, crawl, tmp_path):
     full = tmp_path / "full.toml"
     full.write_text(
-        '[formats]\nignore = ["zarr"]\n[crawl]\nexclude = [".snapshot/", "tmp/"]\n'
+        '[formats]\nselect = ["t", "collapse"]\nignore = ["zarr", "collapse/git"]\n'
+        '[crawl]\nexclude = [".snapshot/", "tmp/"]\n'
     )
     copy = tmp_path / "copy.toml"
     copy.write_text(
-        '# the same\n[crawl]\nexclude = [".snapshot/", "tmp/"]\n\n[formats]\nignore = ["zarr"]\n'
+        '# the same, select and ignore in another order\n[crawl]\nexclude = [".snapshot/", "tmp/"]\n\n'
+        '[formats]\nignore = ["collapse/git", "zarr"]\nselect = ["collapse", "t"]\n'
     )
     assert crawl("--config", str(full)) == 0
     assert crawl("--config", str(copy), "--path", P) == 0
+
+
+def test_exclusions_in_another_order(conn, crawl, tmp_path, caplog):
+    # gitignore's "!" patterns depend on the order: another order is another configuration
+    full = tmp_path / "full.toml"
+    full.write_text('[crawl]\nexclude = ["tmp/", "!tmp/keep/"]\n')
+    other = tmp_path / "other.toml"
+    other.write_text('[crawl]\nexclude = ["!tmp/keep/", "tmp/"]\n')
+    assert crawl("--config", str(full)) == 0
+    refused(conn, crawl("--config", str(other), "--path", P), caplog, "in exclude (")
 
 
 def test_a_full_crawl_without_a_recorded_configuration(conn, crawl, caplog):

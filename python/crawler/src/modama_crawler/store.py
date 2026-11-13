@@ -229,6 +229,16 @@ def last_finished(conn: psycopg.Connection) -> datetime | None:
     ).fetchone()[0]
 
 
+def collapsed_above(conn: psycopg.Connection, path: str) -> str | None:
+    """The anchor of a stored collapsed dataset whose folder is above `path` ("/a/b"), or None (subtree-crawl D2)."""
+    row = conn.execute(
+        "SELECT anchor FROM datasets WHERE collapsed AND starts_with(%s, directory || '/')"
+        " ORDER BY length(directory) LIMIT 1",
+        (path,),
+    ).fetchone()
+    return row[0] if row else None
+
+
 def last_full_crawl(conn: psycopg.Connection) -> tuple[str, dict | None] | None:
     """The data root and configuration of the newest finished crawl of the whole tree, or None (subtree-crawl D2)."""
     return conn.execute(
