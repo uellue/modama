@@ -1,0 +1,165 @@
+{
+  "datasets": [
+    {
+      "anchor": "/image.mrc",
+      "basis": "MAP at byte 208",
+      "collapsed": false,
+      "format": "em/mrc",
+      "members": [
+        "/image.mrc"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.mrc",
+      "warnings": []
+    },
+    {
+      "anchor": "/stack.mrcs",
+      "basis": "MAP at byte 208",
+      "collapsed": false,
+      "format": "em/mrc",
+      "members": [
+        "/stack.mrcs"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.mrc",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/image.mrc": {
+      "subjects": [],
+      "summary": [
+        "nx 16",
+        "ny 16",
+        "nz 1",
+        "mode 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "data_type": "float32",
+          "kind": "image",
+          "voxel_size": [
+            1.5,
+            1.5,
+            1.5
+          ]
+        },
+        "original_metadata": {
+          "cella.x": 24.0,
+          "cella.y": 24.0,
+          "cella.z": 1.5,
+          "cellb.alpha": 90.0,
+          "cellb.beta": 90.0,
+          "cellb.gamma": 90.0,
+          "dmax": 0.0,
+          "dmean": 0.0,
+          "dmin": 0.0,
+          "exttyp": "",
+          "ispg": 0,
+          "label[10]": "",
+          "label[1]": "",
+          "label[2]": "",
+          "label[3]": "",
+          "label[4]": "",
+          "label[5]": "",
+          "label[6]": "",
+          "label[7]": "",
+          "label[8]": "",
+          "label[9]": "",
+          "machst": "0x44 0x44 0x00 0x00",
+          "map": "MAP ",
+          "mapc": 1,
+          "mapr": 2,
+          "maps": 3,
+          "mode": 2,
+          "mx": 16,
+          "my": 16,
+          "mz": 1,
+          "nlabl": 0,
+          "nsymbt": 0,
+          "nversion": 20141,
+          "nx": 16,
+          "nxstart": 0,
+          "ny": 16,
+          "nystart": 0,
+          "nz": 1,
+          "nzstart": 0,
+          "origin.x": 0.0,
+          "origin.y": 0.0,
+          "origin.z": 0.0,
+          "rms": 0.0
+        }
+      }
+    },
+    "/stack.mrcs": {
+      "subjects": [],
+      "summary": [
+        "nx 16",
+        "ny 16",
+        "nz 3",
+        "mode 1",
+        "stack written by mrcfile"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "data_type": "int16",
+          "kind": "image stack",
+          "voxel_size": [
+            1.5,
+            1.5,
+            1.5
+          ]
+        },
+        "original_metadata": {
+          "cella.x": 24.0,
+          "cella.y": 24.0,
+          "cella.z": 1.5,
+          "cellb.alpha": 90.0,
+          "cellb.beta": 90.0,
+          "cellb.gamma": 90.0,
+          "dmax": 767.0,
+          "dmean": 383.5,
+          "dmin": 0.0,
+          "exttyp": "",
+          "ispg": 0,
+          "label[10]": "",
+          "label[1]": "stack written by mrcfile",
+          "label[2]": "",
+          "label[3]": "",
+          "label[4]": "",
+          "label[5]": "",
+          "label[6]": "",
+          "label[7]": "",
+          "label[8]": "",
+          "label[9]": "",
+          "machst": "0x44 0x44 0x00 0x00",
+          "map": "MAP ",
+          "mapc": 1,
+          "mapr": 2,
+          "maps": 3,
+          "mode": 1,
+          "mx": 16,
+          "my": 16,
+          "mz": 1,
+          "nlabl": 1,
+          "nsymbt": 0,
+          "nversion": 20141,
+          "nx": 16,
+          "nxstart": 0,
+          "ny": 16,
+          "nystart": 0,
+          "nz": 3,
+          "nzstart": 0,
+          "origin.x": 0.0,
+          "origin.y": 0.0,
+          "origin.z": 0.0,
+          "rms": 221.7023162841797
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

@@ -6,7 +6,8 @@ tree's root and these two objects; never the pages' content. A file without
 bytes (BACKLOG, "Sync with upstream"). An encrypted file is opened with the
 empty user password, as viewers open it; one that needs a password keeps its
 header and `encrypted` only, and its summary line says `(encrypted)`. pypdf's `XmpInformation` gives named properties
-only, so the XMP packet is flattened here, every property it holds.
+only, so the XMP packet is flattened here, every property it holds; a packet
+that cannot be parsed is left out with a reader warning, the rest kept.
 
 Skip list (spec formats/office, "What is left out"): the RDF syntax of XMP
 (`rdf:about`, `xml:lang`, `rdf:parseType`, the containers `rdf:Alt`,
@@ -19,7 +20,7 @@ import os
 import re
 from collections.abc import Iterator
 
-from defusedxml import ElementTree
+from defusedxml import DefusedXmlException, ElementTree
 from modama_crawler.formats import Extracted
 from modama_crawler.formats.values import textual
 
@@ -188,11 +189,21 @@ def described(f) -> Extracted:
         info = info.get_object()
         # info[key] follows the value's own reference, plain no other
         pairs += [(f"Info.{key.lstrip('/')}", plain(info[key])) for key in info]
+    said = []
     if (metadata := catalog.get("/Metadata")) is not None:
-        pairs += xmp(metadata.get_object().get_data())
+        # A packet that is not well-formed XML (ParseError), declares an
+        # encoding Python does not know (LookupError) or entities, which
+        # defusedxml refuses: left out with a warning, the rest kept (@weber,
+        # 2026-11-13, 242c)
+        try:
+            pairs += list(xmp(metadata.get_object().get_data()))
+        except (ElementTree.ParseError, LookupError, DefusedXmlException) as error:
+            said.append(f"XMP not read: {error}")
     original = kept(pairs)
-    return Extracted(
-        summary=headline({**original, **mapped}, HEADLINE),
-        subjects=[],
-        values={"original_metadata": original, "mapped_metadata": mapped},
-    )
+    values = {"original_metadata": original, "mapped_metadata": mapped}
+    summary = headline({**original, **mapped}, HEADLINE)
+    if said:
+        # As modama_formats_common.image.pil: the warning into the record
+        summary += [f"reader warning: {text}" for text in said]
+        values["reader_warnings"] = said
+    return Extracted(summary=summary, subjects=[], values=values)

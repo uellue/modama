@@ -9,6 +9,7 @@ MIME types and the subdirectories' datasets. See design/architecture.md A, B, D.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import logging
@@ -22,6 +23,26 @@ from .. import mime
 log = logging.getLogger(__name__)
 
 DIRECTORY = "directory"  # in reacts_to: run on every directory, pre- and post-order
+
+# The file system's answers about a path: the crawler may not see it, or it is
+# gone. Every other error means it did not answer (change listing-errors, D1)
+NOT_VISIBLE = frozenset({errno.EACCES, errno.EPERM, errno.ENOENT, errno.ENOTDIR})
+REFUSED = frozenset({errno.EACCES, errno.EPERM})
+
+# The end of every warning about a file two formats want (Directory.claimed_elsewhere):
+# the marker that lists them all, to develop resolution rules (decision 344)
+WANTED_TWICE = "two formats want it"
+
+
+def not_visible(err: OSError) -> bool:
+    return err.errno in NOT_VISIBLE
+
+
+def errno_name(err: OSError) -> str:
+    """`EIO`, or the number, or `no errno`."""
+    if err.errno is None:
+        return "no errno"
+    return errno.errorcode.get(err.errno, str(err.errno))
 
 
 @dataclass(frozen=True)
@@ -83,6 +104,22 @@ class Dataset:
     extraction: Extraction | None = (
         None  # set after the walk, for formats with an extractor
     )
+    # Kept from the index because the file system did not answer; not stored (listing-errors D7)
+    kept: bool = False
+
+
+@dataclass
+class Unanswered:
+    """A folder whose stored datasets a crawl kept because the file system did not answer (listing-errors D2, D3)."""
+
+    folder: str
+    path: str  # what failed: the folder, or an entry or file in it
+    errno: str  # errno_name()
+    reason: str  # the error's text
+    whole: bool  # the folder's stored subtree is kept, else its own datasets
+    kept: int = 0  # datasets kept, set after the walk
+    # the error itself, raised when the folder is the walk's start (review of the code, 2)
+    error: OSError | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -92,7 +129,7 @@ class Listing:
     digest: str
     pre: tuple[tuple[str, str], ...] = ()  # warnings of the pre-order call
     post: tuple[tuple[str, str], ...] = ()  # of MIME detection and the post-order call
-    # Recognition met the environment (a read error, the time limit): the
+    # Recognition met the environment (a read error): the
     # directory is not taken over, the next crawl recognises it again
     retry: bool = False
 
@@ -104,6 +141,10 @@ class Result:
     skipped: list[tuple[str, str]] = field(default_factory=list)  # (path, reason)
     unchanged: int = 0  # directories whose datasets were taken over from the last crawl
     listings: dict[str, Listing] = field(default_factory=dict)  # every directory listed
+    # Folders the file system did not answer, by path (listing-errors D2, D3)
+    unanswered: list[Unanswered] = field(default_factory=list)
+    # (folder, errno name, stored datasets removed) of refused folders that had some (D10)
+    refused: list[tuple[str, str, int]] = field(default_factory=list)
 
     def all_warnings(self) -> list[tuple[str, str]]:
         """The walk's warnings and those carried by datasets, in path order."""
@@ -161,11 +202,17 @@ class Directory:
         self.warnings: list[tuple[str, str]] = []
         self._by_name = {e.name: e for e in entries}
         self._budget = 0
-        self.retry = False  # a format met a read error or the time limit
+        self.retry = False  # a format met a read error
+        # (file rel, error) of the first read the file system did not answer, whatever
+        # the format made of it: the crawl keeps the stored datasets (listing-errors D2, D3)
+        self.unanswered: tuple[str, OSError] | None = None
         # File rel -> "<format>: not <type>, <reason>", from not_of_type; goes into the basis
         self.notes: dict[str, str] = {}
         # File rel -> "<format>: <text>", from note: also into the basis, the type kept
         self.remarks: dict[str, str] = {}
+        # File name -> id of the format that claimed it, for the formats after it,
+        # which are not offered the file (bug 311, decision 344)
+        self.claimed: dict[str, str] = {}
         self._format = ""  # the id of the format being called
 
     @property
@@ -185,9 +232,19 @@ class Directory:
         if n > self._budget:
             raise BudgetExceeded(f"reading {n} bytes of {entry.rel} exceeds the budget")
         self._budget -= n
-        # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole buffer
-        with open(entry.path, "rb", buffering=0) as f:
-            return f.read(n)
+        try:
+            # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole buffer
+            with open(entry.path, "rb", buffering=0) as f:
+                return f.read(n)
+        except OSError as e:
+            # noted here, so that it counts also when the format catches it (review 3)
+            self.did_not_answer(entry.rel, e)
+            raise
+
+    def did_not_answer(self, rel: str, error: OSError) -> None:
+        """Note the first error of the "did not answer" class (listing-errors D1)."""
+        if self.unanswered is None and not not_visible(error):
+            self.unanswered = (rel, error)
 
     def not_of_type(self, entry: Entry, reason: str) -> Entry:
         """Say that a file is not of the type its name gave it; returns its entry with the type detection gives without it.
@@ -244,15 +301,21 @@ class Directory:
             "type kept",
         )
         self.retry = True
-
-    def _undrop(self, entry: Entry) -> None:
-        """Put back the entry of a file whose type a format dropped, and its note."""
-        self.entries = [entry if e.name == entry.name else e for e in self.entries]
-        self._by_name[entry.name] = entry
-        del self.notes[entry.rel]
+        self.did_not_answer(entry.rel, error)
 
     def warn(self, rel: str, text: str) -> None:
         self.warnings.append((rel, text))
+
+    def claimed_elsewhere(self, rel: str, name: str) -> None:
+        """Warn at rel that the file name, which the calling format's dataset needs, is claimed by a format that ran earlier.
+
+        In one fixed wording ending in WANTED_TWICE, so that one grep or query
+        lists every such case for review (decision 344).
+        """
+        self.warn(
+            rel,
+            f"{self._format}: {name} is claimed by {self.claimed[name]}; {WANTED_TWICE}",
+        )
 
 
 class Format:
@@ -328,6 +391,8 @@ def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Data
         else:
             d.warn(d.rel, f"{fmt.id} failed: {e!r}")
             d.retry = d.retry or isinstance(e, OSError)
+            if isinstance(e, OSError):
+                d.did_not_answer(d.rel, e)
         return []
     elapsed = time.monotonic() - start
     if elapsed > slow:
@@ -382,7 +447,9 @@ def run_post(
 
     A format may drop a file's name type (Directory.not_of_type): the formats
     after it see the new type, and the file's dataset carries the note in its
-    basis (recognition-checks-content D3, D4).
+    basis (recognition-checks-content D3, D4). A claimed file or child dataset
+    is not offered to the formats after the one that claimed it, so none of
+    them can drop its type (spec recognition, exclusive claims).
     """
     files = {e.rel: e for e in d.entries if e.kind == "file"}
     children = {c.anchor: c for c in d.children}
@@ -396,15 +463,7 @@ def run_post(
             continue
         before = set(d.notes)
         datasets = _call(fmt, d, slow, byte_budget)
-        dropped = set(d.notes) - before
-        for rel in sorted(dropped & claimed_by.keys()):  # claimed earlier: kept
-            d._undrop(files[rel])
-            d.warn(
-                rel,
-                f"{fmt.id}: {files[rel].name} is claimed by {claimed_by[rel]}; "
-                "type kept",
-            )
-        _check_order(d, order[:i], fmt, dropped - claimed_by.keys())
+        _check_order(d, order[:i], fmt, set(d.notes) - before)
         for ds in datasets:
             members = set(ds.members) | ({ds.anchor} if ds.anchor in files else set())
             parts = set(ds.parts) | ({ds.anchor} if ds.anchor in children else set())
@@ -458,8 +517,16 @@ def run_post(
             out.append(filled)
             for p in parts:
                 adoptions[p] = filled.anchor
+        # What is claimed is not offered to the formats after this one (bug 311),
+        # but they can ask who claimed a file (decision 344)
+        for e in d.entries:
+            if e.kind == "file" and e.rel in claimed_by:
+                d.claimed[e.name] = claimed_by[e.rel]
+        d.entries = [e for e in d.entries if e.name not in d.claimed]
+        d._by_name = {e.name: e for e in d.entries}
+        d.children = [c for c in d.children if c.anchor not in claimed_by]
     for e in d.entries:  # the current entries, with the types formats dropped
-        if e.kind == "file" and e.rel not in claimed_by:
+        if e.kind == "file":
             out.append(
                 Dataset(
                     anchor=e.rel,

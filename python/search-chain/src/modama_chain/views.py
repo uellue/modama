@@ -170,6 +170,8 @@ def live_views(
     path: str,
     config: Path | None,
     before: Stored,
+    slots: live.Slots,
+    tab: str | None = None,
 ) -> list[View]:
     """The live views: the crawler's code on the checkout, then the harvester's, the warehouse's, the search API's, matchmaker's."""
     started = time.monotonic()
@@ -178,6 +180,8 @@ def live_views(
         path,
         base_url=stores.oai_url,
         config=config,
+        slots=slots,
+        tab=tab,
         stored=before.record,
     )
     took = (
@@ -193,18 +197,21 @@ def live_views(
                 "dataset", "Dataset", ACTUAL, origin, note=f"{result['error']}\n{took}"
             )
         ]
+    if result["is_folder"]:
+        origin = (
+            "the checkout's crawler and formats: the pre-order calls of the folders down to"
+            " this one (walk(top=…); the collapse check, none of its files), extraction"
+            " of its collapsed dataset, records.build"
+        )
     notes = "\n".join([took, result["report"], *result["notes"]])
     dataset = result["dataset"]
     if dataset is None:
-        return [
-            View(
-                "dataset",
-                "Dataset",
-                ACTUAL,
-                origin,
-                note=f"no dataset holds this path\n{notes}",
-            )
-        ]
+        what = (
+            "a folder: no live views; no collapsed dataset is anchored at it or above it"
+            if result["is_folder"]
+            else "no dataset holds this path"
+        )
+        return [View("dataset", "Dataset", ACTUAL, origin, note=f"{what}\n{notes}")]
     views = [
         View("dataset", "Dataset", ACTUAL, origin, pretty_json(dataset), notes),
         View(

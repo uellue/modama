@@ -1,0 +1,107 @@
+The remote embedding for a service that truncates at tokens: texts whole, a timeout of
+30 s, no retry of a refused request, the local model loaded only when needed
+
+What: with EMBED_API_KEY and EMBED_API_URL set, add_embeddings_to_source sends each
+text whole (max_chars=None) instead of its first 1,000 characters; a 400 that says
+`context length` then fails at once instead of halving a cap. _embed waits 30 s instead
+of 120 s, and any 4xx but 429 fails at once instead of being retried 4 times; network
+errors, timeouts, 429 and 5xx are retried as before. Every failure falls back to local
+embedding, as before. TransformResources loads the local model lazily (lazy_load=True):
+the session starts on the first local embedding, so a batch the service embeds does not
+load it.
+
+Why: the modama search stack embeds the warehouse's texts on grace's GPU through a
+service of its own (prototypes/search-stack/embedding-service/), which tokenizes and
+truncates at the model's 512 tokens as the local path does; cut at 1,000 characters
+(about 200 to 250 tokens), every longer record would get another vector than locally. A
+wrong token or another model fails the same way four times and cost 7 s of backoff per
+batch; the search API's client retries only network errors, timeouts, 429 and 5xx too.
+In requests the timeout limits the connection and each wait for bytes, so a hanging
+service now costs about 2 minutes per batch before the fallback, not 8. Without
+lazy_load, each batch process loaded the model whether or not it embedded locally.
+
+Same result for the local path: unchanged; lazy_load only moves the load to the first
+embed call (fastembed 0.8.0, `_embed_documents`: load_onnx_model when the session is
+missing), with the same threads.
+
+Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; applied with `patch -p1`
+in the image build (modama search stack, warehouse-airflow.Dockerfile; change
+embedding-service-grace, D2, Q7, Q8). 0004 (change embedding-fp32-model, not merged when
+this was written) edits the same TextEmbedding call: once it lands, the first hunk below
+becomes `lazy_load=True,` as a line after 0004's `specific_model_path=model_path,`; the
+hunks of embedding_utils.py stay as they are (both orders tried with busybox's patch,
+2026-11-13).
+
+diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
+--- a/src/transform/transform_core.py
++++ b/src/transform/transform_core.py
+@@ -66,8 +66,10 @@
+
+         # ONNX Runtime threads; unset: one per core, pinned to the same cores in every batch process
+         threads = int(os.environ['EMBEDDING_THREADS']) if os.environ.get('EMBEDDING_THREADS') else None
++        # lazy_load: the session starts on the first local embedding; with the embedding service a batch
++        # may never need it
+         self.embedding_transformer = TextEmbedding(
+-            model_name=EMBEDDING_MODEL, cache_dir=FASTEMBED_CACHE_DIR, threads=threads
++            model_name=EMBEDDING_MODEL, cache_dir=FASTEMBED_CACHE_DIR, threads=threads, lazy_load=True
+         )
+         logger.info(f'Setting up embedding transformer with model {EMBEDDING_MODEL}')
+
+diff --git a/src/utils/embedding_utils.py b/src/utils/embedding_utils.py
+--- a/src/utils/embedding_utils.py
++++ b/src/utils/embedding_utils.py
+@@ -101,9 +101,9 @@
+     model: str,
+     prefix: str = 'search_document: ',
+     batch_size: int = 16,
+-    max_chars: int = 1000,
++    max_chars: int | None = 1000,
+     retries: int = 4,
+-    timeout: int = 120,
++    timeout: int = 30,
+ ) -> list[list[float]]:
+     """Embed a list of texts, returning one vector per text, in the same order.
+
+@@ -111,6 +111,9 @@
+             nomic needs it, and the wrong one silently degrades retrieval.
+     max_chars: the model window is 512 tokens; longer texts are cut, and cut harder if the
+                endpoint still rejects them (it ignores truncate_prompt_tokens).
++               None: texts go whole, for a server that truncates at tokens as the local model does.
++    timeout: seconds per wait for the connection and for each part of the answer (requests).
++    Network errors, timeouts, 429 and 5xx are retried; any other 4xx fails at once.
+     """
+     session = requests.Session()
+     session.headers['Authorization'] = f'Bearer {api_key}'
+@@ -124,10 +127,12 @@
+             try:
+                 response = session.post(
+                     f'{base_url}/embeddings',
+-                    json={'model': model, 'input': [prefix + text[:cap] for text in batch]},
++                    json={'model': model, 'input': [prefix + (text if cap is None else text[:cap]) for text in batch]},
+                     timeout=timeout,
+                 )
+                 if response.status_code == 400 and 'context length' in response.text:
++                    if cap is None:
++                        raise RuntimeError('Embedding server refused texts as too long; they are sent whole')
+                     cap //= 2  # too long even cut, try harder before giving up
+                     logger.info(f'Reducing max chars to {cap}')
+                     if cap == 0:
+@@ -149,6 +154,9 @@
+                         f'Response headers: {dict(response.headers)}\n'
+                         f'Response body: {response.text}'
+                     )
++                    # a wrong token or a refused request fails the same way again: no retry
++                    if 400 <= response.status_code < 500 and response.status_code != 429:
++                        raise RuntimeError(f'Embedding request refused with {response.status_code}, not retried')
+                 response.raise_for_status()
+                 # the API may answer out of order, so sort by index before taking the vectors
+                 data = sorted(response.json()['data'], key=lambda item: item['index'])
+@@ -217,6 +225,8 @@
+                 base_url=base_url,
+                 model=embedding_model_name,
+                 batch_size=len(batch),
++                # whole: the service truncates at the model's 512 tokens, as the local path does
++                max_chars=None,
+             )
+             logger.info(f'Embeddings calculated for {embedding_model_name} from with API')
+         except (requests.RequestException, RuntimeError):

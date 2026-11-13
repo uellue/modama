@@ -284,7 +284,10 @@ def extract(
     """
     by_id = {f.id: f for f in formats if f.has_extractor}
     report = Report(unchanged=result.unchanged, identity=identity)
-    wanted = [i for i, d in enumerate(result.datasets) if d.format in by_id]
+    # Datasets kept because the file system did not answer stay as stored (listing-errors D7)
+    wanted = [
+        i for i, d in enumerate(result.datasets) if d.format in by_id and not d.kept
+    ]
     earlier = stored(
         [
             result.datasets[i].anchor
@@ -375,9 +378,11 @@ def extract(
         )
     # Datasets of formats without an extractor (any more) carry none
     for i, d in enumerate(result.datasets):
-        if d.format not in by_id and d.extraction is not None:
+        if d.format not in by_id and d.extraction is not None and not d.kept:
             result.datasets[i] = replace(d, extraction=None)
     for d in result.datasets:
+        if d.kept:
+            continue
         if d.extraction is not None and d.extraction.error is not None:
             report.failed += 1
             result.warnings.append(

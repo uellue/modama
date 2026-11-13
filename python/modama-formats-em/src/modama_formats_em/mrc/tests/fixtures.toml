@@ -1,0 +1,48 @@
+[emdb_map]
+purpose = "representative"
+validity = "vendor-written: EMDB's map of entry EMD-3197 (a sub-tomogram average, 20x20x20 float32, space group 1), the smallest map in EMDB on 2016-11-02; read by mrcfile 1.5.4 on 2026-11-13"
+licence = "CC0-1.0 (EMDB data; LICENSE.fixtures beside this file)"
+source = "mrcfile's test data at tag v1.5.4, tests/test_data/EMD-3197.map (sha256 351d5090d4c56eb5fc41796842ad64abecc238b8da6181f8857be5844dbbc262), https://github.com/ccpem/mrcfile/raw/v1.5.4/tests/test_data/EMD-3197.map; fetched by mrcfile's authors from EMDB, https://www.ebi.ac.uk/emdb/EMD-3197; unchanged"
+
+[emdb_tomogram]
+purpose = "representative"
+validity = "vendor-written, cut: the first 1024 bytes (the main header, no extended header) of EMDB's map of entry EMD-66908, a cryo-electron tomogram of a synapse (700x700x357, mode 0, 8-bit), as EMDB distributes it; the voxels are cut (decision 293). Representative of what recognition and extraction read, not of the data: mrcfile rejects the cut file as too short"
+licence = "CC0-1.0 (EMDB data; LICENSE.fixtures beside this file)"
+source = "https://ftp.ebi.ac.uk/pub/databases/emdb/structures/EMD-66908/map/emd_66908.map.gz (sha256 de5bf2e624ca23a9c85a93d5d35e0c75c926b99e791c5b69c53c78dcc012e702), unpacked emd_66908.map 174931024 bytes (sha256 6109284d187f636ca3aecd5ca762e70464a95151d7c624c48cb91a8f12ec7919), fetched 2026-11-13, cut by cut-header.sh beside this file; the cut file's sha256 0ad9f278c1e82dd4f3259b64c856ca4ee83a6bb0d709a3e5e0b41522c412bbaf"
+
+[epu_falcon]
+purpose = "representative"
+validity = "vendor-written, cut: two files of an EPU 2.12.1.2782 session on a Titan Krios with a Falcon camera (2022-05), as deposited in EMPIAR-12652 under Images-Disc1/GridSquare_4530231/: the micrograph Data/FoilHole_4551046_Data_4541935_4541937_20220507_103020.mrc and the grid square image GridSquare_20220505_150431.mrc, both 4096x4096 float32 with an FEI2 extended header of 909312 bytes; of each the main header and the extended header's first record (888 bytes), the further records' space and the image cut (decision 293). Representative of what recognition and extraction read, not of the data"
+licence = "CC0-1.0 (EMPIAR data; LICENSE.fixtures beside this file)"
+source = "https://ftp.ebi.ac.uk/empiar/world_availability/12652/data/Images-Disc1/GridSquare_4530231/Data/FoilHole_4551046_Data_4541935_4541937_20220507_103020.mrc (34464768 bytes, sha256 b8d94b7a56c4194bd6edda6ec9e3035dffe4db21a5f0c06f3bd5f7944aaa7e1d; cut 1912 bytes, sha256 e90548f1ffbc8b1d9c97ca6dd1ea2a8bbb98362e12457e8fffb2c988b5b926bc) and https://ftp.ebi.ac.uk/empiar/world_availability/12652/data/Images-Disc1/GridSquare_4530231/GridSquare_20220505_150431.mrc (34464768 bytes, sha256 57e3c2df597cd9370a9ddcc314c6be415961377fe85343dbad26983858865340; cut 1912 bytes, sha256 19ab27007d0a9cc8f35a5bdfe69ff89c853fa7af076bb965ddd2f0e099fc4ef0), fetched 2026-11-13, cut by cut-header.sh beside this file"
+
+[epu_movie]
+purpose = "representative"
+validity = "vendor-written, cut: an EPU movie FoilHole_20147964_Data_20151868_20151870_20220520_172819_Fractions.mrc as deposited in EMPIAR-12018 (4096x4096x42, mode 1, 16-bit), with an FEI2 extended header of one record per frame that holds little but time stamps and the readout area; the main header and the first record (888 bytes), the further records and the frames cut (decision 293)"
+licence = "CC0-1.0 (EMPIAR data; LICENSE.fixtures beside this file)"
+source = "https://ftp.ebi.ac.uk/empiar/world_availability/12018/data/FoilHole_20147964_Data_20151868_20151870_20220520_172819_Fractions.mrc (1409324544 bytes, sha256 e499f6ee2ccc7b7b255e769f3df3c4bed5333df10683340ff3bea1adef54533d, streamed through the hash, only its first 2 MiB stored), fetched 2026-11-13, cut by cut-header.sh beside this file; the cut file 1912 bytes, sha256 bb6b7d04a181b6ce34b026ada8bd0eb8bba6d6f9f6f5d27054f0b580a38a40f7"
+
+[fei1]
+purpose = "representative"
+validity = "vendor-written, cut: fei-extended.mrc of mrcfile's test data, an image written by EPU 1.2.0.16 (\"Fei EPU\") on a Titan Krios with an energy filter's camera (EF-CCD), 3710x3838 float32, with an FEI1 extended header of 786432 bytes; the main header and the first record (768 bytes) kept, the rest cut (decision 293)"
+licence = "public distribution permitted by its contributor (mrcfile's test-data README); in mrcfile's BSD-3-Clause repository; question 298 open (LICENSE.fixtures beside this file)"
+source = "https://github.com/ccpem/mrcfile/raw/v1.5.4/tests/test_data/fei-extended.mrc (29265416 bytes, sha256 e9f168012031b3a6ea47fbed8eca8b9c8a040b4d1f4fbb2e3326bdb6d9307efe; cut 1792 bytes, sha256 5c083cdd814312136b174d49d3e3849657bdc7b72103bcef147e67d91c1ada73), fetched 2026-11-13, cut by cut-header.sh beside this file"
+
+[particle_stack]
+purpose = "representative"
+validity = "vendor-written, cut: a particle stack written by cryoSPARC (540x540x69 float32, space group 0), as deposited in EMPIAR-11898 under data/particles/; the first 1024 bytes (the main header, no extended header), the particles cut (decision 293)"
+licence = "CC0-1.0 (EMPIAR data; LICENSE.fixtures beside this file)"
+source = "https://ftp.ebi.ac.uk/empiar/world_availability/11898/data/particles/000143902881609190160_FoilHole_9904289_Data_9921494_9921496_20220611_094557_Fractions_patch_aligned_doseweighted_particles.mrcs (80482624 bytes, sha256 3e42b56e07915c043bb370ea7efdf48e7813ff0747a8f7a5ed8ff47ee23924c7; cut sha256 45eedd18b765b88d587e3849c73e4d290b5ae97f63655ea165e0fcc949ecadde), fetched 2026-11-13, cut by cut-header.sh beside this file"
+
+[written_by_mrcfile]
+purpose = "representative"
+validity = "parser-only: written at test time by mrcfile 1.5.4, the field's reader and writer: stack.mrcs (3 frames of 16x16 int16, an image stack, one label) and image.mrc (one 16x16 float32 image)"
+licence = "MIT"
+source = "modama_formats_em.mrc.tests.generate:written_by_mrcfile"
+generator = "modama_formats_em.mrc.tests.generate:written_by_mrcfile"
+
+[misnamed]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named program.map as a linker writes it, without the MRC map word"
+licence = "MIT"
+source = "written by hand"

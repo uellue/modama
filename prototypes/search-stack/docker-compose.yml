@@ -395,6 +395,10 @@ services:
       - ${MODAMA_SECRETS_DIR:?see README.md}/search-api-db.env
       - ${MODAMA_SECRETS_DIR:?see README.md}/keys.env
     environment:
+      # never the warehouse's token: the search API would send it, with the question and the
+      # hits, to its default EMBED_API_URL (EGI) on every reranked search; this overrides any
+      # env file (change embedding-service-grace, D11)
+      EMBED_API_KEY: ""
       OPENSEARCH_URL: http://opensearch:9200
       OPENSEARCH_INDEX: test_datacite
       ZENODO_SEARCH_ENABLED: "false"
@@ -574,6 +578,8 @@ services:
   # Transform tasks: budget.py counts the cores, the task slots and a memory limit if one is
   # set, logs its CPU budget, sets the pool `transform` and the threads, and starts Celery with
   # --concurrency P (README, "CPU budget"; TRANSFORM_PROCESSES and EMBEDDING_THREADS override)
+  # With EMBED_API_URL (the deployment's env file) and the token in embed.env it embeds through
+  # the embedding service on grace, and locally when that fails (README, "Embedding on grace").
   airflow-worker-transform:
     <<: *airflow-common
     command: python /opt/modama/budget.py transform -- celery worker --queues transform
@@ -583,12 +589,19 @@ services:
       - ${MODAMA_SECRETS_DIR:?see README.md}/airflow.env
       - ${MODAMA_SECRETS_DIR:?see README.md}/warehouse-db.env
       - ${MODAMA_SECRETS_DIR:?see README.md}/keys.env
+      # the embedding service's token, for this service only (after keys.env, so it wins);
+      # a secrets folder without it embeds locally
+      - path: ${MODAMA_SECRETS_DIR:?see README.md}/embed.env
+        required: false
     environment:
       <<: [*airflow-common-env, *warehouse-env]
       DUMB_INIT_SETSID: "0"
       EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
-      EMBED_API_URL: ""
+      EMBED_API_URL: ${EMBED_API_URL:-}
       FASTEMBED_CACHE_DIR: /opt/airflow/cache/fastembed
+    extra_hosts:
+      # the SSH tunnel to grace listens on the host's Docker bridge address (embedding-on-grace.md)
+      - host.docker.internal:host-gateway
     volumes:
       - airflow-logs:/opt/airflow/logs
       - fastembed-airflow:/opt/airflow/cache/fastembed

@@ -355,9 +355,7 @@ def test_a_file_an_earlier_format_claimed(tmp_path):
     result = recognised(tmp_path, {"x.tags": b"hello\n"}, Claim(), Tags())
     (d,) = result.datasets
     assert (d.type, d.format, d.basis) == (TAGS, "test/claim", "claimed")
-    assert result.all_warnings() == [
-        ("/x.tags", "test/tags: x.tags is claimed by test/claim; type kept")
-    ]
+    assert result.all_warnings() == []  # test/tags is not offered x.tags
 
 
 # A tie among the rest is warned about as the walk warns about one

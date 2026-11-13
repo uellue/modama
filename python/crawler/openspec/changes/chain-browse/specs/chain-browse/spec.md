@@ -49,6 +49,13 @@ For a file, the browser SHALL show the stored dataset holding it and its record 
 - **WHEN** `matchmaker.Dockerfile` of the search stack names another commit than the matchmaker entry's declaration
 - **THEN** the matchmaker entry's view and the snapshot carry "out of sync: emulates matchmaker <declared commit> + patches <hash>, the stack builds <commit> + patches <hash>; review the emulation", the other views carry none, and `test_sync.py` fails with the declaration to put in after the review
 
+### Requirement: An open folder that is a dataset shows the same views
+When a folder is open, the browser SHALL show the folder's views as for a file, stored and live, the live ones from the folder's collapse check: the dataset anchored at it or above it when one collapses it (a Zarr store, `.git`, an environment, `node_modules`, a Dask scratch space). A click on a folder SHALL still open it. A folder that no collapsed dataset holds SHALL show its stored views and, live, "a folder: no live views" (@weber, 2026-11-13; design D5, D11).
+
+#### Scenario: An open Zarr store
+- **WHEN** the open folder is a Zarr store and its live views are requested
+- **THEN** the live dataset is the collapsed one anchored at the store, followed by its record, DataCite, index document, search hit and matchmaker entry
+
 ### Requirement: The live views run the checkout's current code
 The live views SHALL be computed in a new process for each request, with an environment holding no database, HTTP or Airflow setting, so that an edit to a format, an extractor, `records.py` or `render.py` in the mounted checkout shows on the next request, without a rebuild, a restart or a crawl (design D4).
 
@@ -57,19 +64,42 @@ The live views SHALL be computed in a new process for each request, with an envi
 - **THEN** the second request's live record shows the new description
 
 ### Requirement: Live work is bounded
-A live computation SHALL list and recognise only the selected file's folder and the folders above it, SHALL extract only the dataset holding the file, with one worker under the crawler's time limit and memory budget, and SHALL be ended with all its processes after twice the crawler's extraction time limit, the view saying so. At most one SHALL run at a time; a new one SHALL end the running one. Selecting a folder SHALL start none (design D3, D5).
+A live computation SHALL list and recognise only the selected file's folder and the folders above it, SHALL extract only the dataset holding the file, with one worker under the crawler's time limit and memory budget, and SHALL be ended with all its processes after twice the crawler's extraction time limit, the view saying so. For an open folder, it SHALL run only the pre-order calls of the folders down to it and extract only the collapsed dataset holding it (design D3, D5).
 
 #### Scenario: A file next to a large subfolder
 - **WHEN** a file's folder has a subfolder of many files, and the file's live views are requested
 - **THEN** nothing in the subfolder is listed or read, and only the file's dataset is extracted
 
+#### Scenario: A normal folder
+- **WHEN** the open folder holds files, no collapsed dataset holds it, and its live views are requested
+- **THEN** no file in it or in the folders above it is read, and the live views say "a folder: no live views"
+
 #### Scenario: A computation over the limit
 - **WHEN** a live computation runs longer than its limit
 - **THEN** its process group is gone and the view names the limit
 
-#### Scenario: A newer request
-- **WHEN** a live computation runs and a second one is requested
-- **THEN** the first one's process group is gone and the second one's result is shown
+### Requirement: Live computations per tab
+At most N live computations (`MODAMA_BROWSE_LIVE`, default 4) SHALL run at once across the page's tabs; further ones SHALL wait first in, first out, and the page SHALL show how many wait ahead. A new request of a tab SHALL end that tab's running computation or take its waiting one out of the queue. Requests without a tab id SHALL count as one tab (design D3, decision 301).
+
+#### Scenario: A newer request of the same tab
+- **WHEN** a tab's live computation runs and the same tab requests another
+- **THEN** the first one's process group is gone, its answer is "ended by a newer request", and the second one's result is shown
+
+#### Scenario: Two tabs
+- **WHEN** one tab's live computation runs and another tab requests one
+- **THEN** both run and each tab gets its own result
+
+#### Scenario: More requests than slots
+- **WHEN** N live computations run and two more tabs request one each
+- **THEN** both wait, the first with 0 and the second with 1 ahead, and they run in the order they came as slots free
+
+#### Scenario: A newer request of a waiting tab
+- **WHEN** a tab's live request waits in the queue and the same tab requests another
+- **THEN** the waiting one leaves the queue at once without starting a process, answered "ended by a newer request", and the newer one waits at the end of the queue
+
+#### Scenario: A request without a tab id
+- **WHEN** live computations are requested without the tab header, one while another runs
+- **THEN** they count as one tab: the running one is ended by the newer one
 
 ### Requirement: The browser writes only snapshots
 The browser SHALL write nothing but snapshot files, into its snapshot folder only, and SHALL use read-only database transactions. A snapshot SHALL be one Markdown file holding the path, the path on the server, the time, the extractor identity and every view's content, and SHALL hold no credential (design D13).

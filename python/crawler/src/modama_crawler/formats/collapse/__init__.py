@@ -74,6 +74,19 @@ class Svn(NamedDirectory):
     directory_name = ".svn"
 
 
+class DaskScratch(Collapse):
+    # Dask's spill and temporary files (worker-* with storage/, lock files); the
+    # October 2026 listing: 10 such directories, 729 entries. Newer versions of
+    # dask.distributed name it `dask-scratch-space`, older ones `dask-worker-space`
+    type = "application/x.dask-scratch-space"
+    display_name = "Dask scratch space"
+
+    def basis(self, d):
+        if d.name in ("dask-worker-space", "dask-scratch-space"):
+            return f"directory is named {d.name}"
+        return None
+
+
 class Pycache(NamedDirectory):
     type = "application/x.python-cache"
     display_name = "Python bytecode cache"
@@ -88,5 +101,14 @@ class IpynbCheckpoints(NamedDirectory):
 
 COLLECTION = Collection(
     "collapse",
-    [Venv(), Conda(), NodeModules(), Git(), Svn(), Pycache(), IpynbCheckpoints()],
+    [
+        Venv(),
+        Conda(),
+        NodeModules(),
+        Git(),
+        Svn(),
+        DaskScratch(),
+        Pycache(),
+        IpynbCheckpoints(),
+    ],
 )
