@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Entries that cannot make a useful record are skipped and logged
-The crawl SHALL skip symlinks, special files, files the file system refuses to open (`EACCES`, `EPERM`) and directories the file system refuses to list or says are gone (`EACCES`, `EPERM`, `ENOENT`, `ENOTDIR`), with an info line naming the entry and the reason, and SHALL continue with the rest of the tree; a skipped entry gets no record. Names it cannot store SHALL be reported as warnings. The root itself not being readable SHALL be an error, whatever the error. Other errors of the file system below the crawl's start are covered by the requirements on what the file system did not answer.
+The crawl SHALL skip symlinks, special files, files the file system refuses to open (`EACCES`, `EPERM`) and directories the file system refuses to list or says are gone (`EACCES`, `EPERM`, `ENOENT`, `ENOTDIR`), with an info line naming the entry and the reason, and SHALL continue with the rest of the tree; a skipped entry gets no record. Names it cannot store SHALL be reported as warnings. The root itself not being readable SHALL be an error, whatever the error, also when an entry's stat or a read in its pre-order call does not answer. Other errors of the file system below the crawl's start are covered by the requirements on what the file system did not answer.
 
 #### Scenario: Permission denied
 - **WHEN** a subdirectory cannot be listed with `EACCES`, or a file cannot be opened with `EACCES`
@@ -29,6 +29,14 @@ The crawl SHALL skip symlinks, special files, files the file system refuses to o
 - **WHEN** a tree is crawled, and in the next crawl listing the data root fails with `EIO`
 - **THEN** the crawl fails with exit status 2 and an error naming the root, its run is `failed`, and every record is still there, datestamps included
 
+#### Scenario: The root's pre-order read does not answer
+- **WHEN** a tree whose root holds a file `MARK` that a test format reads in the pre-order call is crawled, and in the next crawl that read fails with `EIO`
+- **THEN** the crawl fails with exit status 2 and an error naming `MARK`, its run is `failed`, and every record and stored listing is still there
+
+#### Scenario: A file that turned into a FIFO or a symlink
+- **WHEN** `access(2)` says a regular file is not readable, and it is a FIFO or a symlink by the time `open(2)` asks again
+- **THEN** the open does not block, and a symlink makes the file not readable
+
 #### Scenario: A name that is not valid UTF-8
 - **WHEN** an entry's name cannot be decoded as UTF-8
 - **THEN** the entry is skipped with a warning naming its directory
@@ -36,7 +44,7 @@ The crawl SHALL skip symlinks, special files, files the file system refuses to o
 ## ADDED Requirements
 
 ### Requirement: A folder the file system did not answer keeps its records
-When listing a folder below the crawl's start, its own stat after the listing, or a format's read in its pre-order call fails with an error other than `EACCES`, `EPERM`, `ENOENT` and `ENOTDIR` (for example `EIO`, `ESTALE`, `ETIMEDOUT`, or no errno), the crawl SHALL keep the stored datasets of that folder and of every folder below it, with their members, extractions and records unchanged, datestamps included, SHALL NOT enter the folder, and SHALL go on with the rest of the tree.
+When listing a folder below the crawl's start, its own stat after the listing, an entry's stat or `access(2)` and `open(2)`, or a pre-order read fails with an error other than `EACCES`, `EPERM`, `ENOENT` and `ENOTDIR` (`EIO`, `ESTALE`, no errno, …), the crawl SHALL keep the stored datasets of that folder and every folder below it, records included, unchanged, SHALL NOT enter the folder, and SHALL go on with the rest.
 
 #### Scenario: A stale file handle
 - **WHEN** a tree with the datasets `adhoc/lib/test-data/dm/a.stand` and `…/b.stand` and the dataset `other/c.stand` is crawled, `other/d.stand` is added, and in the next crawl listing `adhoc/lib/test-data/dm` fails with `ESTALE`
@@ -63,7 +71,7 @@ When listing a folder below the crawl's start, its own stat after the listing, o
 - **THEN** its record is unchanged and nothing below it is listed
 
 #### Scenario: A pre-order read that did not answer
-- **WHEN** the same tree is crawled, and in the next crawl reading the store's marker file `adhoc/z.zarr/.zgroup` fails with `EIO`
+- **WHEN** the same tree is crawled, and in the next crawl reading the store's marker file `adhoc/z.zarr/zarr.json` fails with `EIO`
 - **THEN** the store's collapsed dataset and record are unchanged, and nothing below `adhoc/z.zarr` is listed
 
 #### Scenario: A lower-priority format would collapse the folder
@@ -78,12 +86,9 @@ When listing a folder below the crawl's start, its own stat after the listing, o
 - **WHEN** a tree is crawled, the rule set changes while the stand-in format stays enabled, and in the next crawl listing `adhoc/lib/test-data/dm` fails with `EIO`
 - **THEN** the records of `a.stand` and `b.stand` are unchanged
 
-### Requirement: A file the file system did not answer keeps its folder's records
-When an entry's stat or a file's `access(2)` and the `open(2)` that asks again, the MIME detection of a file, or a format's read of a file fails with an error other than `EACCES`, `EPERM`, `ENOENT` and `ENOTDIR`, also when the format catches the error itself, the crawl SHALL keep the stored datasets of that file's folder and, for an entry, the stored datasets below it, unchanged, SHALL store its other subfolders' results of this crawl, and SHALL store no listing for the folder.
-
 #### Scenario: The stat of an entry does not answer
 - **WHEN** a tree with the datasets `adhoc/x/a.stand`, `adhoc/x/b.stand` and `adhoc/x/sub/c.stand` is crawled, `adhoc/x/sub/d.stand` is added, and in the next crawl the stat of `adhoc/x/b.stand` fails with `EIO`
-- **THEN** the records of `a.stand`, `b.stand` and `c.stand` are unchanged, and `sub/d.stand` has a record
+- **THEN** the records of `a.stand`, `b.stand` and `c.stand` are unchanged, `sub/d.stand` has no record yet, and no listing is stored for `/adhoc/x` or `/adhoc/x/sub`
 
 #### Scenario: A subfolder's stat does not answer
 - **WHEN** the same tree is crawled, and in the next crawl the stat of `adhoc/x/sub` fails with `EIO`
@@ -92,6 +97,13 @@ When an entry's stat or a file's `access(2)` and the `open(2)` that asks again, 
 #### Scenario: Access does not answer
 - **WHEN** the same tree is crawled, and in the next crawl `access(2)` says `adhoc/x/b.stand` is not readable and opening it fails with `EIO`
 - **THEN** the record of `b.stand` is unchanged
+
+#### Scenario: A new store whose marker's stat does not answer
+- **WHEN** a tree is crawled, the Zarr store `adhoc/n.zarr` with `zarr.json` and a chunk `c/0` is added, and in the next crawl the stat of `zarr.json` fails with `EIO`
+- **THEN** neither the store nor `c/0` has a record; and after a crawl in which it answers, the store has one and `c/0` none
+
+### Requirement: A file the file system did not answer keeps its folder's records
+When the MIME detection of a file or a format's read of a file in the post-order call fails with an error other than `EACCES`, `EPERM`, `ENOENT` and `ENOTDIR`, also when the format catches the error itself, the crawl SHALL keep the stored datasets of that file's folder unchanged, SHALL store its subfolders' results of this crawl, and SHALL store no listing for the folder.
 
 #### Scenario: A file whose type cannot be read
 - **WHEN** a tree with the dataset `adhoc/x/a.stand`, the single file `adhoc/x/notes` (typed by its content) and `adhoc/x/sub/c.stand` is crawled, `adhoc/x/sub/d.stand` is added, and in the next crawl reading `adhoc/x/notes` for its type fails with `EIO`
@@ -103,7 +115,7 @@ When an entry's stat or a file's `access(2)` and the `open(2)` that asks again, 
 
 #### Scenario: A file that is gone during detection
 - **WHEN** reading a file for its type fails with `ENOENT`
-- **THEN** the file gets the type its name gives, or `application/octet-stream`, with a warning `cannot read` naming the error, and its folder is recognised again on the next crawl
+- **THEN** the file gets the type its name gives, or `application/octet-stream`, without a second read, with a warning `cannot read` naming the error, and its folder is recognised again on the next crawl
 
 #### Scenario: The walk's result is unchanged
 - **WHEN** `modama-crawler records --verbose` is run on a folder where reading `notes.tags` for its new type fails with `EIO`
@@ -136,11 +148,15 @@ The crawl SHALL keep the stored extraction of a dataset it kept because the file
 - **THEN** the extractor is not called for `a.stand`, and that crawl counts no failed extraction and warns about none
 
 ### Requirement: A refused folder that had datasets is named
-When listing a folder below the crawl's start fails with `EACCES` or `EPERM` and the index holds datasets at or below it, the crawl SHALL remove them as for any skipped folder, SHALL log a warning naming the folder, the error and the number of datasets removed, and SHALL exit with status 0 when nothing else went wrong.
+When listing a folder below the crawl's start, or the stat of a folder from its parent's listing, fails with `EACCES` or `EPERM` and the index holds datasets at or below it, the crawl SHALL remove them as for any skipped folder, SHALL log a warning naming the folder, the error and the number of datasets removed, and SHALL exit with status 0 when nothing else went wrong.
 
 #### Scenario: A group that the crawler lost
 - **WHEN** a tree with the datasets `groups/x/a.stand` and `groups/x/b.stand` is crawled, and in the next crawl listing `groups/x` fails with `EACCES`
 - **THEN** their records are gone, stderr has a warning naming `/groups/x`, `EACCES` and 2 datasets removed, and the exit status is 0
+
+#### Scenario: A folder whose stat is refused
+- **WHEN** the same tree is crawled, and in the next crawl the stat of `groups/x` from the listing of `groups` fails with `EACCES`
+- **THEN** stderr has a warning naming `/groups/x`, `EACCES` and 2 datasets removed
 
 #### Scenario: A folder that was refused before
 - **WHEN** listing `groups/x` fails with `EACCES` in two crawls in a row

@@ -35,5 +35,20 @@ Before the fix (`crawler` at 89e16a57 merged, the tests of `tests/test_unanswere
 ## 5. Acceptance
 
 - [x] 5.1 The crawler suite, `search-chain`'s, `modama-formats-em`'s and `modama-formats-common`'s, and CI's ruff (`uvx ruff format --check`, `uvx ruff check`) on the changed packages, with the number of skipped tests and how the environment differs from CI's. Crawler (`pytest tests src`): 542 passed, 0 skipped, 8 min; search-chain 78 passed; em 135 passed; common 276 passed; ruff: "All checks passed!", "267 files already formatted". As user `dev`, not root, so the `chmod` tests ran; the worktree's own venv; the first full run had 4 failures, three older tests that injected the error in `detect_with_tie` or denied only `access(2)` (now the read, and `open(2)` too) and the column count of `test_a_database_made_before_migrations`.
-- [ ] 5.2 Code review by an agent that did not write it, given the code, this change's specs and decision 271 (a migration is in it; AGENTS.md). Verified: `review.md` in this change.
+- [x] 5.2 Code review by an agent that did not write it (main's, of 297f0b81..493f2e63): "merge after two fixes"; the findings and main's decisions in section 6.
 - [ ] 5.3 The search stack's `./runtest.sh e2e`, only with the main session's OK (shared images).
+
+## 6. The code review's findings (main's decisions, 2026-11-13)
+
+Each new test was run against 493f2e63's code (`PYTHONPATH` on an archive of it) and failed there, and passes now (50 in `tests/test_unanswered.py`).
+
+- [x] 6.1 (finding 1) An entry whose `stat` or `access` did not answer keeps its folder whole, before the pre-order call, and the folder is not entered (D2); the D3 machinery for entries is gone. Test "A new store whose marker's stat does not answer" (the review's S5; before: the chunk had a record) and the changed "The stat of an entry does not answer".
+- [x] 6.2 (finding 2) The walk's start kept whole raises its error instead: status 2, run `failed`, nothing stored (A6). Test "The root's pre-order read does not answer" (before: status 4).
+- [x] 6.3 (finding 3) `_opens` with `O_NONBLOCK | O_NOFOLLOW | O_NOCTTY`; `ELOOP` is "not readable" (a symlink, which a crawl skips). Test with a FIFO and a symlink (before: blocked).
+- [x] 6.4 (finding 4) `since`/`crawls`: one query per recorded folder for the newest earlier run covering it, so subtree crawls elsewhere do not push it out; a folder above kept whole counts (`whole` in the record). Test "Kept below a folder kept before" (before: 1 crawl).
+- [x] 6.5 (finding 5) `modama-chain status`: the state column as wide as `finished with errors` on the crawl, harvest and indexing lines. Test in `test_rules.py` (before: failed).
+- [x] 6.6 (finding 6) The fallback after a "not visible" read uses the name alone, `mime.without_content`, without a second read. Test: one open of the file (before: two).
+- [x] 6.7 (finding 7) `EACCES` on an entry's `stat` of a folder that held datasets is counted in `refused` and warned about. Test "A folder whose stat is refused" (before: no warning).
+- [x] 6.8 (finding 8) D7, README: a kept dataset whose format is no longer enabled gets the format id in its record.
+- [x] 6.9 (finding 9) No change.
+- [x] 6.10 (finding 10) BACKLOG: `modama-chain trace` does not say that a file sits in a kept folder.

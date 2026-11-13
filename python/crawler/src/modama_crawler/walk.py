@@ -10,6 +10,7 @@ not depend on the number of threads (D2).
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import json
 import logging
@@ -87,11 +88,17 @@ def _stat(path: str) -> tuple[os.stat_result, bool] | OSError:
 
 
 def _opens(path: str) -> bool:
-    """Whether the file opens for reading; raises an error other than EACCES and EPERM."""
+    """Whether the file opens for reading; raises an error other than EACCES, EPERM and ELOOP.
+
+    Without blocking, should it have become a FIFO since its lstat, and
+    without following a symlink it may have become (ELOOP: not readable,
+    as a crawl skips symlinks).
+    """
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_NOCTTY
     try:
-        os.close(os.open(path, os.O_RDONLY))
+        os.close(os.open(path, flags))
     except OSError as e:
-        if e.errno in REFUSED:
+        if e.errno in REFUSED or e.errno == errno.ELOOP:
             return False
         raise
     return True
@@ -171,10 +178,14 @@ async def _entries(
         if isinstance(got, OSError):
             if not_visible(got):
                 notes.warnings.append((child_rel, f"cannot stat: {got.strerror}"))
+                if got.errno in REFUSED:  # loud if it held datasets (D10)
+                    notes.refused.append((child_rel, errno_name(got), 0))
             else:
                 reason = got.strerror or str(got)
                 notes.unanswered.append(
-                    Unanswered(rel, child_rel, errno_name(got), reason, whole=False)
+                    Unanswered(
+                        rel, child_rel, errno_name(got), reason, whole=True, error=got
+                    )
                 )
             continue
         st, readable = got
@@ -281,7 +292,6 @@ async def _refusal(root, names, formats, excluded, ignores, pool):
 def _restore(
     kept: Kept,
     noted: list[Unanswered],
-    entries_kept: dict[str, list[str]],
     found: list[Dataset],
 ) -> list[Dataset]:
     """The walk's datasets with the stored ones of the folders the file system did not answer, in one load (D4).
@@ -292,7 +302,6 @@ def _restore(
     """
     owns = {u.folder for u in noted if not u.whole}
     subtrees = [u.folder for u in noted if u.whole]
-    subtrees += [e for entries in entries_kept.values() for e in entries]
     stored = kept.stored(subtrees, sorted(owns))
     collapsed = {d.directory for d in stored if d.collapsed and d.directory in owns}
     if collapsed:
@@ -306,10 +315,8 @@ def _restore(
         replace(d, parent=d.parent if d.parent in anchors else None, kept=True)
         for d in stored
     ]
-    # Each kept dataset counts for the nearest noted folder above it, its entries' subtrees for it too
+    # Each kept dataset counts for the nearest noted folder above it
     owner = {u.folder: u for u in noted}
-    for folder, entries in entries_kept.items():
-        owner.update(dict.fromkeys(entries, owner[folder]))
     for d in stored:
         path = d.directory
         while path not in owner and path != "/":
@@ -337,12 +344,13 @@ def walk(
 
     With `kept`, the index, what the file system did not answer keeps its
     stored datasets (change listing-errors): a folder whose listing, own
-    stat or pre-order call did not answer keeps its stored subtree and is
-    not entered (D2); a folder where an entry's stat or a file's read did
-    not answer keeps its own stored datasets and the entry's subtree, its
-    other subfolders walked as usual (D3). Neither stores a listing. Both
-    are in `result.unanswered`; refused folders (EACCES, EPERM) that had
-    datasets in `result.refused` (D10). Without `kept`, they are skipped.
+    stat, an entry's stat or a pre-order read did not answer keeps its
+    stored subtree and is not entered (D2); a folder where a file's read in
+    the post-order call did not answer keeps its own stored datasets, its
+    subfolders walked as usual (D3). Neither stores a listing. Both are in
+    `result.unanswered`; refused folders (EACCES, EPERM) that had datasets
+    in `result.refused` (D10). The walk's start kept whole raises instead
+    (A6). Without `kept`, they are skipped.
 
     With `top`, a folder relative to root ("/a/b", or "/" for root alone), that one folder as the
     crawl of the whole tree would recognise it: the pre-order call of each
@@ -420,8 +428,6 @@ async def _walk(
     seen = [0, 0]  # directories, files
     io = _io(pool)
     noted: list[Unanswered] = []  # folders kept (listing-errors D2, D3)
-    # folder -> its entries whose stat did not answer
-    entries_kept: dict[str, list[str]] = {}
     refused: list[tuple[str, str]] = []  # (folder, errno name), D10
 
     def detect(path: str) -> tuple[str, tuple[str, ...] | None] | OSError:
@@ -431,15 +437,18 @@ async def _walk(
         except OSError as err:
             return err
 
-    def fallback(path: str) -> tuple[str, tuple[str, ...] | None]:
-        """The type without the file's content, as detection gives it after a read error."""
-        return mime.detect_with_tie(path, match=match)
-
     def unanswered(rel: str, path: str, err: OSError, whole: bool) -> Unanswered:
-        return Unanswered(rel, path, errno_name(err), err.strerror or str(err), whole)
+        reason = err.strerror or str(err)
+        return Unanswered(rel, path, errno_name(err), reason, whole, error=err)
 
     def keep(u: Unanswered) -> tuple[list, bool]:
-        """Note a folder the file system did not answer; its stored datasets come after the walk (D4)."""
+        """Note a folder the file system did not answer; its stored datasets come after the walk (D4).
+
+        The walk's start kept whole would keep every stored dataset and drop
+        every listing: it raises, as when it cannot be listed (A6).
+        """
+        if u.whole and u.folder == (top or start or "/"):
+            raise u.error
         log.info(
             "%s: the file system did not answer at %s: %s", u.folder, u.path, u.reason
         )
@@ -479,18 +488,19 @@ async def _walk(
             seen[0] += 1
             seen[1] += sum(e.kind == "file" for e in entries)
             progress(seen[0], seen[1])
-        failed = notes.unanswered  # entries whose stat did not answer (D3)
-        if failed and kept is None:  # the walk alone: skipped, as before
-            notes.warnings.extend((u.path, f"cannot stat: {u.reason}") for u in failed)
-            failed = []
+        if kept is not None:
+            refused.extend((f, e) for f, e, _ in notes.refused)
+            if notes.unanswered:
+                # an entry whose stat did not answer: the listing is incomplete, so
+                # is any answer on it, collapsed or not; kept whole (D2, code review 1)
+                return keep(notes.unanswered[0])
+        else:  # the walk alone: skipped, as before
+            notes.warnings.extend(
+                (u.path, f"cannot stat: {u.reason}") for u in notes.unanswered
+            )
         digest = _digest(st, entries)
         before = previous.listing(rel) if previous is not None else None
-        same = (
-            before is not None
-            and before.digest == digest
-            and not before.retry
-            and not failed
-        )
+        same = before is not None and before.digest == digest and not before.retry
         stored = await io(previous.datasets, rel) if same else []
         active = formats_for(rel)
         pre_retry = False
@@ -509,9 +519,6 @@ async def _walk(
                 collapsed = replace(collapsed, stamp=digest)
             pre_warnings = pre.warnings
             pre_retry = pre.retry
-        if collapsed is not None and failed:
-            # collapsed on an incomplete listing: the stored subtree stands (D2)
-            return keep(replace(failed[0], whole=True))
         result.warnings.extend(pre_warnings)
         if collapsed is not None:
             log.debug("%s collapsed by %s", rel, collapsed.format)
@@ -523,7 +530,7 @@ async def _walk(
         result.skipped.extend(notes.skipped)
         result.warnings.extend(notes.warnings)
         # Types are needed unless the whole subtree turns out unchanged: start now, while the subdirectories run
-        detections = None if same or failed else start_detection(entries)
+        detections = None if same else start_detection(entries)
         children = [
             asyncio.create_task(visit(e.path, e.rel))
             for e in entries
@@ -534,10 +541,6 @@ async def _walk(
         for datasets, child_unchanged in await asyncio.gather(*children):
             subtree.extend(datasets)
             unchanged = unchanged and child_unchanged
-        if failed:
-            # The folder's own stored datasets and the failed entries' subtrees; the rest stands (D3)
-            entries_kept[rel] = [u.path for u in failed]
-            return subtree + keep(failed[0])[0], False
         if unchanged:
             datasets = [replace(d, parent=None) for d in stored]
             adoptions = {p: d.anchor for d in datasets for p in d.parts}
@@ -584,7 +587,7 @@ async def _walk(
                 elif isinstance(got, OSError):
                     retry = True
                     warnings.append((e.rel, f"cannot read: {got.strerror}"))
-                    detected, tie = await io(fallback, e.path)
+                    detected, tie = mime.without_content(e.name)  # no second read
                 else:
                     detected, tie = got
                 if tie:
@@ -637,7 +640,7 @@ async def _walk(
     elif (found := await above()) is None:
         found = (await visit(os.path.join(root, top.lstrip("/")), top))[0]
     if noted:
-        found = await io(_restore, kept, noted, entries_kept, found)
+        found = await io(_restore, kept, noted, found)
         result.unanswered = sorted(noted, key=lambda u: u.folder)
     if refused:
         counts = await io(kept.counts, [f for f, _ in refused])

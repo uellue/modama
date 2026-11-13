@@ -258,7 +258,9 @@ def test_a_crawl_with_kept_folders():
 
 def test_an_older_crawler_has_no_kept_folders():
     line = crawl_line(crawl(0, 5))
-    assert "finished  " in line and "did not answer" not in line
+    assert "did not answer" not in line
+    # the state column as wide as `finished with errors` (code review 5)
+    assert line.startswith(f"crawl     {'finished':<20} started ")
     t, note = freshness(
         [crawl(0, 5)],
         [harvest("h1", None, 10)],

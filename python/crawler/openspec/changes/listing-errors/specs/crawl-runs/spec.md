@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: The run records the folders the file system did not answer
-When the crawl kept folders because the file system did not answer (spec `crawl`), it SHALL store its result and record its run with the outcome `finished`, the total number of such folders and of datasets kept, their number per errno, and the first 100 folders in path order, each with the path that failed, the errno's name, the number of datasets kept, the start of the first crawl in a row that kept it, and the number of those crawls. A run without such folders SHALL record none.
+When the crawl kept folders because the file system did not answer (spec `crawl`), it SHALL record its run as `finished` with the number of such folders and of datasets kept, their number per errno, and the first 100 folders in path order, each with the path that failed, the errno, the datasets kept, whether its subtree was kept, and since when and for how many crawls covering it it (or a folder above it, whole) was kept. A run without such folders SHALL record none.
 
 #### Scenario: The run records the folder
 - **WHEN** a tree with the datasets `adhoc/lib/test-data/dm/a.stand` and `…/b.stand` is crawled, and the next crawl ends after listing `adhoc/lib/test-data/dm` failed with `ESTALE`
@@ -12,6 +12,10 @@ When the crawl kept folders because the file system did not answer (spec `crawl`
 #### Scenario: Kept for two crawls
 - **WHEN** listing `adhoc/lib/test-data/dm` fails with `ESTALE` in two crawls in a row
 - **THEN** the second run records the folder with the start time of the first and 2 crawls
+
+#### Scenario: Kept below a folder kept before
+- **WHEN** a crawl kept `adhoc/lib/test-data` whole, two subtree crawls of `other` follow, and the next crawl keeps `adhoc/lib/test-data/dm`
+- **THEN** that run records `/adhoc/lib/test-data/dm` with the start time of the first crawl and 2 crawls
 
 #### Scenario: A file in recognition
 - **WHEN** a crawl kept `adhoc/x` because reading `adhoc/x/notes` for its type failed with `EIO`

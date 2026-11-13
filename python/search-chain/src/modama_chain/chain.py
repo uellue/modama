@@ -20,6 +20,9 @@ from .warehouse import Unreachable
 # updated for twice that is stale (crawl-runs spec, "A killed crawl")
 STALE_AFTER = timedelta(seconds=120)
 WITH_ERRORS = "finished with errors"  # a finished crawl that kept folders, as `modama-crawler runs` says
+STATE = len(
+    WITH_ERRORS
+)  # the state column of the status lines, as wide as the longest state
 
 OK, MISSING, DIFFERS, WARN = "ok", "missing", "differs", "warn"
 # Flags: a rule over two neighbouring stages that fired (D6); upper case so they stand out (D10)
@@ -262,7 +265,7 @@ def crawl_line(c: crawler.Run) -> str:
             )
         if c.unanswered:  # change listing-errors, D9
             counts += f"; did not answer: {kept_folders(c)}"
-    line = f"crawl     {state:<9} started {when(c.started_at)}  {end}  {counts}"
+    line = f"crawl     {state:<{STATE}} started {when(c.started_at)}  {end}  {counts}"
     return f"{line}  subtree crawl of {c.scope.lstrip('/')}" if c.scope else line
 
 
@@ -382,21 +385,21 @@ def status(stores: Stores) -> Iterator[str | tuple[datetime | None, str]]:
     if crawls:
         yield crawl_line(crawls[0])
     else:
-        yield "crawl     missing   no crawl run recorded"
+        yield f"crawl     {'missing':<{STATE}} no crawl run recorded"
 
     with connect(stores.warehouse_db, "warehouse database") as conn:
         endpoint = warehouse.endpoint(conn, stores.oai_url)
         harvests = warehouse.harvest_runs(conn, endpoint) if endpoint else []
     if harvests:
         h = harvests[-1]
-        line = f"harvest   {h.status:<9} started {when(h.started_at)}  window {when(h.from_date) or 'start'} .. {when(h.until_date)}"
+        line = f"harvest   {h.status:<{STATE}} started {when(h.started_at)}  window {when(h.from_date) or 'start'} .. {when(h.until_date)}"
         closed = [r for r in harvests if r.status == "closed"]
         finished = [c for c in crawls if c.outcome == "finished"]
         if finished and (not closed or finished[0].finished_at > closed[-1].until_date):
             line += "  latest crawl not harvested yet"
         yield line
     else:
-        yield f"harvest   missing   no harvest run of {stores.oai_url}"
+        yield f"harvest   {'missing':<{STATE}} no harvest run of {stores.oai_url}"
 
     ours = {h.id for h in harvests}
     index_runs = [
@@ -408,7 +411,7 @@ def status(stores: Stores) -> Iterator[str | tuple[datetime | None, str]]:
     ]
     if index_runs:
         r = index_runs[0]
-        yield f"indexing  {r.state:<9} started {when(r.start)}  ended {when(r.end)}  harvest run {r.harvest_run_id}"
+        yield f"indexing  {r.state:<{STATE}} started {when(r.start)}  ended {when(r.end)}  harvest run {r.harvest_run_id}"
     else:
-        yield "indexing  missing   no indexing run of this endpoint's harvests"
+        yield f"indexing  {'missing':<{STATE}} no indexing run of this endpoint's harvests"
     yield freshness(crawls, harvests, index_runs)

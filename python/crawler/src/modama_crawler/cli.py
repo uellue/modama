@@ -618,7 +618,6 @@ def _unanswered(conn: psycopg.Connection, run_id: int, result: Result) -> dict |
     if not result.unanswered:
         return None
     started = _when(get_run(conn, run_id).started_at)
-    earlier = unanswered_before(conn, run_id)
     return {
         "total": len(result.unanswered),
         "kept": sum(u.kept for u in result.unanswered),
@@ -629,22 +628,25 @@ def _unanswered(conn: psycopg.Connection, run_id: int, result: Result) -> dict |
                 "path": u.path,
                 "errno": u.errno,
                 "kept": u.kept,
-                **_history(earlier, u.folder, started),
+                "whole": u.whole,
+                **_history(
+                    unanswered_before(conn, run_id, u.folder), u.folder, started
+                ),
             }
             for u in result.unanswered[:NAMED]
         ],
     }
 
 
-def _history(earlier: list, folder: str, started: str) -> dict:
-    """Since when and for how many crawls the folder is kept: from the newest earlier run that covered it (D8)."""
-    for scope, unanswered in earlier:
-        if scope is not None and folder != scope and not folder.startswith(scope + "/"):
-            continue  # a subtree crawl elsewhere
-        for f in (unanswered or {}).get("folders", ()):
-            if f["folder"] == folder:
-                return {"since": f["since"], "crawls": f["crawls"] + 1}
-        break
+def _history(earlier: dict | None, folder: str, started: str) -> dict:
+    """Since when and for how many crawls the folder is kept, from the newest earlier run that covered it (D8).
+
+    That run kept it when it lists the folder, or a folder above it kept whole.
+    """
+    for f in (earlier or {}).get("folders", ()):
+        above = f.get("whole") and folder.startswith(f["folder"].rstrip("/") + "/")
+        if f["folder"] == folder or above:
+            return {"since": f["since"], "crawls": f["crawls"] + 1}
     return {"since": started, "crawls": 1}
 
 

@@ -258,14 +258,20 @@ def last_finished(conn: psycopg.Connection) -> datetime | None:
 
 
 def unanswered_before(
-    conn: psycopg.Connection, run_id: int
-) -> list[tuple[str | None, dict | None]]:
-    """(scope, unanswered) of the last 50 finished runs before this one, newest first: whether a folder was kept before (listing-errors D8)."""
-    return conn.execute(
-        "SELECT scope, unanswered FROM crawl_runs WHERE outcome = 'finished' AND run_id < %s"
-        " ORDER BY run_id DESC LIMIT 50",
-        (run_id,),
-    ).fetchall()
+    conn: psycopg.Connection, run_id: int, folder: str
+) -> dict | None:
+    """The folders the file system did not answer of the newest finished run before this one that covered `folder`.
+
+    Covered: a crawl of the whole tree, or a subtree crawl whose path holds
+    the folder; subtree crawls elsewhere do not count (listing-errors D8).
+    """
+    row = conn.execute(
+        "SELECT unanswered FROM crawl_runs WHERE outcome = 'finished' AND run_id < %s"
+        " AND (scope IS NULL OR scope = %s OR starts_with(%s, scope || '/'))"
+        " ORDER BY run_id DESC LIMIT 1",
+        (run_id, folder, folder),
+    ).fetchone()
+    return row[0] if row else None
 
 
 def collapsed_above(conn: psycopg.Connection, path: str) -> str | None:

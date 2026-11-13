@@ -114,6 +114,8 @@ class Unanswered:
     reason: str  # the error's text
     whole: bool  # the folder's stored subtree is kept, else its own datasets
     kept: int = 0  # datasets kept, set after the walk
+    # the error itself, raised when the folder is the walk's start (review of the code, 2)
+    error: OSError | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)

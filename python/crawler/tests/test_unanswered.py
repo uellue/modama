@@ -84,14 +84,14 @@ class Marked(Format):
 
 
 class Listed(Format):
-    """Collapses a folder with a MARK file from its listing alone, at a lower priority than Marked."""
+    """Collapses a folder with MARK and LIST files from its listing alone, at a lower priority than Marked."""
 
     type = "application/x.listed"
     priority = 10
     reacts_to = frozenset({DIRECTORY})
 
     def recognize(self, d):
-        if d.phase == "pre" and d.entry("MARK") is not None:
+        if d.phase == "pre" and d.entry("MARK") and d.entry("LIST"):
             yield Dataset(anchor=d.rel, collapsed=True, basis="MARK present")
 
 
@@ -111,6 +111,7 @@ TREE = {
     "adhoc/pair/scan.head": "scan.raw",
     "adhoc/pair/scan.raw": "raw bytes",
     "adhoc/marked/MARK": "collapse",
+    "adhoc/marked/LIST": "",
     "adhoc/marked/sub/f.txt": "inside",
 }
 
@@ -419,8 +420,76 @@ def test_the_stat_of_an_entry_does_not_answer(conn, crawl, data, monkeypatch):
     assert unchanged(
         before, after, "/adhoc/x/a.stand", "/adhoc/x/b.stand", "/adhoc/x/sub/c.stand"
     )
-    assert oai_identifier("/adhoc/x/sub/d.stand") in after
-    assert "/adhoc/x" not in listed(conn) and "/adhoc/x/sub" in listed(conn)
+    # kept whole: not entered, so the new file comes with the next crawl (code review 1)
+    assert oai_identifier("/adhoc/x/sub/d.stand") not in after
+    assert not {"/adhoc/x", "/adhoc/x/sub"} & listed(conn)
+
+
+def test_a_new_store_whose_marker_does_not_answer(conn, crawl, data, monkeypatch):
+    # The code review's S5: answered without the marker, the store is not collapsed
+    assert crawl() == 0
+    (data / "adhoc/n.zarr/c").mkdir(parents=True)
+    (data / "adhoc/n.zarr/zarr.json").write_text('{"zarr_format": 3}')
+    (data / "adhoc/n.zarr/c/0").write_text("chunk")
+    real = walk_module._stat
+    monkeypatch.setattr(
+        walk_module,
+        "_stat",
+        lambda p: error(errno.EIO, p) if p.endswith("n.zarr/zarr.json") else real(p),
+    )
+    assert crawl() == 4
+    after = records(conn)
+    # nothing stored, nothing kept (Q5): neither the store nor its chunk
+    assert oai_identifier("/adhoc/n.zarr/c/0") not in after
+    assert oai_identifier("/adhoc/n.zarr") not in after
+    monkeypatch.setattr(walk_module, "_stat", real)
+    assert crawl() == 0
+    after = records(conn)
+    assert oai_identifier("/adhoc/n.zarr") in after
+    assert oai_identifier("/adhoc/n.zarr/c/0") not in after
+
+
+def test_the_roots_pre_order_read_does_not_answer(
+    conn, crawl, data, monkeypatch, caplog
+):
+    (data / "MARK").write_text("not this one")  # read by le/marked, no collapse
+    assert crawl() == 0
+    before = aged(conn)
+    listings = listed(conn)
+    fail_read(monkeypatch, formats, data, "MARK", errno.EIO)
+    assert crawl() == 2
+    assert f"cannot read {data / 'MARK'}" in caplog.text
+    assert last_run(conn)["outcome"] == "failed"
+    assert records(conn) == before and listed(conn) == listings
+
+
+def test_a_refused_entry_that_held_datasets(conn, crawl, data, monkeypatch, caplog):
+    assert crawl() == 0
+    fail_stat(monkeypatch, data, "groups/x", errno.EACCES)
+    caplog.clear()
+    assert crawl() == 0
+    (warning,) = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING" and r.getMessage().startswith("/groups/x: refused")
+    ]
+    assert "EACCES" in warning and "2 datasets" in warning
+
+
+def test_opening_again_neither_blocks_nor_follows(tmp_path):
+    import threading
+
+    fifo, link = tmp_path / "fifo", tmp_path / "link"
+    os.mkfifo(fifo)
+    link.symlink_to(tmp_path / "missing")
+    got = []
+    t = threading.Thread(
+        target=lambda: got.append(walk_module._opens(str(fifo))), daemon=True
+    )
+    t.start()
+    t.join(5)
+    assert got == [True], "open(2) of a FIFO blocked"
+    assert walk_module._opens(str(link)) is False  # ELOOP: not readable
 
 
 def test_a_subfolders_stat_does_not_answer(conn, crawl, data, monkeypatch):
@@ -482,7 +551,14 @@ def test_a_format_that_catches_the_read_error_itself(conn, crawl, data, monkeypa
 
 def test_a_file_that_is_gone_during_detection(data, monkeypatch):
     fail_read(monkeypatch, mime, data, "adhoc/x/notes", errno.ENOENT)
+    opened = []
+    failing = mime.open
+    monkeypatch.setattr(
+        mime, "open", lambda p, *a, **k: opened.append(p) or failing(p, *a, **k)
+    )
     result = walk_module.walk(data / "adhoc/x", [])
+    # the fallback is the name's, without a second read (code review 6)
+    assert opened.count(str(data / "adhoc/x/notes")) == 1
     (notes,) = [d for d in result.datasets if d.anchor == "/notes"]
     assert notes.type == "application/octet-stream"
     assert [w for w in result.warnings if w[0] == "/notes"] == [
@@ -624,6 +700,7 @@ def test_the_run_records_the_folder(conn, crawl, data, monkeypatch):
                 "path": DM,
                 "errno": "ESTALE",
                 "kept": 2,
+                "whole": True,
                 "since": since,
                 "crawls": 1,
             }
@@ -639,6 +716,26 @@ def test_kept_for_two_crawls(conn, crawl, data, monkeypatch):
     assert crawl() == 4
     second = last_run(conn)["unanswered"]["folders"][0]
     assert (second["since"], second["crawls"]) == (first["since"], 2)
+
+
+def test_kept_below_a_folder_kept_before(conn, crawl, data, monkeypatch):
+    # A run counts when it kept a folder above, and subtree crawls elsewhere do not reset it (code review 4)
+    assert crawl() == 0
+    real = walk_module._names
+    fail_listing(monkeypatch, data, P, errno.EIO)
+    assert crawl() == 4
+    first = last_run(conn)["unanswered"]["folders"][0]
+    monkeypatch.setattr(walk_module, "_names", real)
+    for _ in range(2):
+        assert crawl("--path", "other") == 0
+    fail_listing(monkeypatch, data, P + "/dm", errno.EIO)
+    assert crawl() == 4
+    (folder,) = last_run(conn)["unanswered"]["folders"]
+    assert (folder["folder"], folder["since"], folder["crawls"]) == (
+        DM,
+        first["since"],
+        2,
+    )
 
 
 def test_a_file_in_recognition_in_the_run(conn, crawl, data, monkeypatch):
