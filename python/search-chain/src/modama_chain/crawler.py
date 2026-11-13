@@ -65,6 +65,9 @@ class Run:
     # a subtree crawl's path ("/a/b"); None for a crawl of the whole tree, and from a
     # crawler database before the subtree crawl (0003_crawl_runs_scope)
     scope: str | None = None
+    # the folders whose stored datasets the crawl kept because the file system did not
+    # answer; None without, and before the change listing-errors (0004_crawl_runs_listing_errors)
+    unanswered: dict | None = None
 
 
 def short(identity: str | None) -> str:
@@ -225,10 +228,14 @@ def runs(conn: psycopg.Connection) -> list[Run]:
         else "NULL, NULL"
     )
     scope = "scope" if _has_column(conn, "crawl_runs", "scope") else "NULL"
+    unanswered = (
+        "unanswered" if _has_column(conn, "crawl_runs", "unanswered") else "NULL"
+    )
     rows = conn.execute(
         f"""
         SELECT started_at, updated_at, finished_at, outcome, directories, files,
-            datasets, records_changed, error, now() - updated_at, {identity}, {scope}
+            datasets, records_changed, error, now() - updated_at, {identity}, {scope},
+            {unanswered}
         FROM crawl_runs ORDER BY started_at DESC, run_id DESC
         """
     ).fetchall()

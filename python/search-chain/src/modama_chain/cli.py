@@ -92,8 +92,10 @@ def cmd_status(args) -> int:
                 if t is None:
                     print(f"fresh     unknown   {reason}")
                 else:
+                    # the reason, if any, names the folders T does not hold for
                     print(
                         f"fresh     as of {when(t)}: every file with a ctime before it is in the search"
+                        + (f", {reason}" if reason else "")
                     )
             else:
                 print(line, flush=True)

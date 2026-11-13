@@ -175,6 +175,14 @@ def by_name(name: str) -> str | None:
     return str(candidates[0]) if len(candidates) == 1 else None
 
 
+def without_content(name: str) -> tuple[str, tuple[str, ...] | None]:
+    """The type and tie detection gives a file it cannot read: from its name's candidates, else `application/octet-stream`."""
+    candidates = _name_candidates(name, frozenset())
+    if candidates:
+        return _resolve(candidates)
+    return str(Mime.octet_stream), None
+
+
 def detect_with_tie(
     path: str,
     match: Callable[[bytes], Mime.MIMEtype | None] | None = None,

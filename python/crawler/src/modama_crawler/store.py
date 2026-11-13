@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
+from functools import cached_property
 
 import psycopg
 from psycopg.rows import class_row
@@ -107,8 +108,14 @@ def end_run(
     extraction: Report | None = None,
     ingredients: dict | None = None,
     error: str | None = None,
+    unanswered: dict | None = None,
+    refused: dict | None = None,
 ) -> None:
-    """Record the run's end; with `extraction`, its counts, its identity with `ingredients`, the re-extraction and the spot check."""
+    """Record the run's end; with `extraction`, its counts, its identity with `ingredients`, the re-extraction and the spot check.
+
+    `unanswered` and `refused` are the folders the file system did not
+    answer and the refused folders that had datasets (listing-errors D8).
+    """
     now = datetime.now(UTC)
     counts = (
         (
@@ -132,7 +139,7 @@ def end_run(
             records_changed = %s, extractions_run = %s, extractions_reused = %s,
             extractions_failed = %s, directories_unchanged = %s, identity = %s,
             identity_ingredients = %s, reextracted = %s, retried = %s, spot_check = %s,
-            error = %s
+            error = %s, unanswered = %s, refused = %s
         WHERE run_id = %s
         """,
         (
@@ -146,6 +153,8 @@ def end_run(
             records_changed,
             *counts,
             error,
+            None if unanswered is None else Jsonb(unanswered),
+            None if refused is None else Jsonb(refused),
             run_id,
         ),
     )
@@ -215,12 +224,16 @@ class Run:
     age: timedelta  # since the last update, by the database's clock, so that readers on other hosts agree
     # a subtree crawl's path, "/a/b"; None for a crawl of the whole tree
     scope: str | None = None
+    # the folders the file system did not answer, the refused ones (listing-errors D8)
+    unanswered: dict | None = None
+    refused: dict | None = None
 
 
 _RUN_SELECT = """SELECT run_id, root, started_at, updated_at, finished_at, outcome,
     directories, files, datasets, warnings, records_changed, extractions_run,
     extractions_reused, extractions_failed, directories_unchanged, identity,
-    reextracted, spot_check, error, now() - updated_at AS age, scope
+    reextracted, spot_check, error, now() - updated_at AS age, scope, unanswered,
+    refused
     FROM crawl_runs"""
 
 
@@ -242,6 +255,23 @@ def last_finished(conn: psycopg.Connection) -> datetime | None:
     return conn.execute(
         "SELECT max(finished_at) FROM crawl_runs WHERE outcome = 'finished' AND scope IS NULL"
     ).fetchone()[0]
+
+
+def unanswered_before(
+    conn: psycopg.Connection, run_id: int, folder: str
+) -> dict | None:
+    """The folders the file system did not answer of the newest finished run before this one that covered `folder`.
+
+    Covered: a crawl of the whole tree, or a subtree crawl whose path holds
+    the folder; subtree crawls elsewhere do not count (listing-errors D8).
+    """
+    row = conn.execute(
+        "SELECT unanswered FROM crawl_runs WHERE outcome = 'finished' AND run_id < %s"
+        " AND (scope IS NULL OR scope = %s OR starts_with(%s, scope || '/'))"
+        " ORDER BY run_id DESC LIMIT 1",
+        (run_id, folder, folder),
+    ).fetchone()
+    return row[0] if row else None
 
 
 def collapsed_above(conn: psycopg.Connection, path: str) -> str | None:
@@ -292,13 +322,20 @@ def _row(d: Dataset) -> tuple:
 
 
 class Stored:
-    """The datasets and directory listings of the last stored crawl, read as the walk asks for them (D3)."""
+    """The datasets and directory listings of the last stored crawl, read as the walk asks for them (D3).
+
+    Also what the walk keeps where the file system did not answer (walk.Kept,
+    change listing-errors D4). The listings are read on first use.
+    """
 
     def __init__(self, conn: psycopg.Connection):
         self.conn = conn
-        self._listings = {
+
+    @cached_property
+    def _listings(self) -> dict[str, Listing]:
+        return {
             path: Listing(digest, _pairs(pre), _pairs(post), retry)
-            for path, digest, pre, post, retry in conn.execute(
+            for path, digest, pre, post, retry in self.conn.execute(
                 "SELECT path, digest, pre_warnings, post_warnings, retry FROM directories"
             )
         }
@@ -307,16 +344,52 @@ class Stored:
         return self._listings.get(rel)
 
     def datasets(self, rel: str) -> list[Dataset]:
+        return self._datasets_in([rel])
+
+    def _datasets_in(self, directories: list[str]) -> list[Dataset]:
         rows = self.conn.execute(
             f"""
             SELECT {_COLUMN_LIST},
                 coalesce(array_agg(m.path ORDER BY m.path) FILTER (WHERE m.path IS NOT NULL), '{{}}')
             FROM datasets d LEFT JOIN members m USING (dataset_id)
-            WHERE d.directory = %s GROUP BY d.dataset_id
+            WHERE d.directory = ANY(%s) GROUP BY d.dataset_id
             """,
-            (rel,),
+            (directories,),
         ).fetchall()
         return [_dataset(row) for row in rows]
+
+    def _directories_under(self, folders: list[str]) -> dict[str, str]:
+        """Each stored dataset directory at or below one of the folders, with that folder.
+
+        One scan of the distinct directories, each matched by its ancestors,
+        rather than a prefix scan per folder: an outage gives thousands of
+        folders (listing-errors D4, review 11).
+        """
+        wanted = set(folders)
+        found = {}
+        for (directory,) in self.conn.execute(
+            "SELECT DISTINCT directory FROM datasets"
+        ):
+            path = directory
+            while path not in wanted and path != "/":
+                path = path.rsplit("/", 1)[0] or "/"
+            if path in wanted:
+                found[directory] = path
+        return found
+
+    def stored(self, subtrees: list[str], folders: list[str]) -> list[Dataset]:
+        directories = set(self._directories_under(subtrees)) if subtrees else set()
+        return self._datasets_in(sorted(directories | set(folders)))
+
+    def counts(self, subtrees: list[str]) -> dict[str, int]:
+        under = self._directories_under(subtrees)
+        counts: dict[str, int] = {}
+        for directory, n in self.conn.execute(
+            "SELECT directory, count(*) FROM datasets WHERE directory = ANY(%s) GROUP BY 1",
+            (list(under),),
+        ):
+            counts[under[directory]] = counts.get(under[directory], 0) + n
+        return counts
 
     def extractions(self, anchors: list[str]) -> dict[str, Extraction]:
         """The stored extractions of the datasets at these anchors."""
