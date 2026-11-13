@@ -1,4 +1,4 @@
-Embedding threads from EMBEDDING_THREADS, and sub-batches of 32 texts
+Embedding threads from EMBEDDING_THREADS, and sub-batches of 32 texts in order of length
 
 Threads. Unset, ONNX Runtime starts one intra-op thread per core and pins its
 pool threads to cores 1..n-1 in every process (on 8 vCPUs: Cpus_allowed_list 1
@@ -15,8 +15,17 @@ from 1,000 texts on (bge-small-en-v1.5); with 32 it peaks at 1.40 GB for 250 and
 1.42 GB for 2,000, at about 7 % more time (48.0 against 45.0 s for 250 texts of
 512 tokens). The bound lets a worker size its processes by memory.
 
+Order of length. fastembed pads every sub-batch to its longest text, so a short
+text in a sub-batch with one of 512 tokens costs as much as a long one. The
+texts are embedded in order of their length in characters and the vectors are
+returned in the given order. In the modama search stack's VM (8 vCPUs, one batch
+process, 1 thread), a batch of 250 of the VM's records (19 to 512 tokens) took
+18.4 instead of 130.2 s (7.1x; 85 against 532 ms CPU per record), at about 190
+tokens 2.8x, at 512 tokens throughout the same; the bulk bodies of that batch in
+the given order and sorted held the same 250 embeddings, bit for bit.
+
 Against metadata-warehouse v1.10.0 with 0001 applied; applied with `patch -p1` in the image
-build (modama search stack, warehouse-airflow.Dockerfile; change cpu-budget, D7, D9).
+build (modama search stack, warehouse-airflow.Dockerfile; change cpu-budget, D7, D9, H1).
 
 diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
 index c329889..301ace7 100644
@@ -36,17 +45,25 @@ index c329889..301ace7 100644
 
          opensearch_config = OpenSearchConfig()
 diff --git a/src/utils/embedding_utils.py b/src/utils/embedding_utils.py
-index 22d8f15..84e634a 100644
+index 22d8f15..2ea0dd9 100644
 --- a/src/utils/embedding_utils.py
 +++ b/src/utils/embedding_utils.py
-@@ -169,7 +169,9 @@ def _embed(
+@@ -169,8 +169,16 @@ def _embed(
 
  def _embed_locally(texts: list[str], embedding_model: TextEmbedding) -> list[list[float]]:
      """Embed texts using the local model, returning plain Python lists (not ndarrays)."""
 -    embeddings_ndarr = list(embedding_model.embed(texts))
+-    return [emb.tolist() for emb in embeddings_ndarr]
 +    # Sub-batches of 32 texts: fastembed's default of 256 peaks at 5.3 GB RSS for 250 texts of 512 tokens
-+    # and about 9 GB from 1,000 on; 32 at 1.4 GB for 250 and for 2,000, about 7 % slower
-+    embeddings_ndarr = list(embedding_model.embed(texts, batch_size=32))
-     return [emb.tolist() for emb in embeddings_ndarr]
++    # and about 9 GB from 1,000 on; 32 at 1.4 GB for 250 and for 2,000, about 7 % slower.
++    # In order of length: a sub-batch is padded to its longest text, so a short text next to one of 512 tokens
++    # costs 512; sorted, 250 mixed records took 18 instead of 130 s, the vectors identical, returned in given order
++    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
++    embeddings_ndarr = embedding_model.embed([texts[i] for i in order], batch_size=32)
++    vectors: list[list[float]] = [[] for _ in texts]
++    for i, emb in zip(order, embeddings_ndarr, strict=True):
++        vectors[i] = emb.tolist()
++    return vectors
 
 
+ def add_embeddings_to_source(

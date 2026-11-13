@@ -184,7 +184,7 @@ An indexing run with more transform batches than P SHALL run them all, P at a ti
 - **THEN** all 64 transform batches succeed at their first try
 
 ### Requirement: Batch processes start the threads of their budget
-Each batch process SHALL run ONNX Runtime with T intra-op threads set explicitly (so that it pins none), the tokenizer with T threads, and BLAS with 1 thread, all set before the libraries load, and SHALL embed in sub-batches of 32 texts. No thread of a batch process SHALL be pinned to fewer CPUs than the process may use.
+Each batch process SHALL run ONNX Runtime with T intra-op threads set explicitly (so that it pins none), the tokenizer with T threads, and BLAS with 1 thread, all set before the libraries load, and SHALL embed in sub-batches of 32 texts, the texts in order of their length and the vectors returned in the given order (decision 250). No thread of a batch process SHALL be pinned to fewer CPUs than the process may use.
 
 #### Scenario: A batch in the test deployment
 - **WHEN** the end-to-end test indexes its records in the VM with a budget of T = 1 and a probe lists a batch process's threads after its embedding
@@ -193,6 +193,10 @@ Each batch process SHALL run ONNX Runtime with T intra-op threads set explicitly
 #### Scenario: A batch of long texts
 - **WHEN** a batch process embeds 250 or 2,000 texts of 512 tokens each
 - **THEN** its peak RSS (`VmHWM`) stays below 1.45 GB (measured 2026-11-12: 1.40 and 1.42 GB with sub-batches of 32; 5.30 and 9.05 GB with fastembed's 256)
+
+#### Scenario: A batch of short and long texts
+- **WHEN** a batch process embeds 250 texts of mixed length, short ones (19 to 43 tokens) in the same sub-batches as long ones (321 and 512 tokens)
+- **THEN** each document gets the embedding it gets when the texts are embedded in the given order, byte for byte and in the same position of the bulk body, and the batch takes less time (measured 2026-11-13: 18.8 against 131.7 s)
 
 ### Requirement: The transform worker's budget can be set
 `TRANSFORM_PROCESSES` SHALL set P and `EMBEDDING_THREADS` SHALL set T, for measurements and for the operator; with only one set, the other SHALL be computed from it as above (T = cores ÷ P, or P = cores ÷ T within the memory and slot limits). A budget above the cores SHALL be obeyed and logged as such. 
