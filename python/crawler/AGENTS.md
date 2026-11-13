@@ -99,6 +99,6 @@ The detailed behaviour of the walk, records, selection and configuration is in `
 
 ## Environment notes for agents
 
-- Run commands with `~/.venv/bin` on `PATH` (see the README's setup); in a shell without it, `pytest` and `modama-crawler` are not found.
+- Run commands with `~/.venv/bin` on `PATH` (see the README's setup); in a shell without it, `pytest` and `modama-crawler` are not found. `~/.venv` holds editable installs of the main checkout: in a worktree, its `pytest` and `modama-crawler` run the main checkout's code, not yours. Use a venv of your own there ("Parallel coding agents" below).
 - There is no development database, `/data` volume or real-data mount in the VM. Use the end-to-end stack for anything that needs them.
 - Claude Code sessions and memory are in `~/.claude/projects/-workspaces-data-management-system/` of the VM user. Back them up with `/.devcontainer/backup-claude-home.sh` before discarding the VM; restore steps are in `/docs/working-with-claude.md`.
