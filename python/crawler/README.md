@@ -28,7 +28,8 @@ sudo mkdir -p /etc/postgresql-common/createcluster.d
 echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.d/no-main-cluster.conf
 sudo apt-get install -y --no-install-recommends postgresql-17 postgresql-client-17 shared-mime-info
 uv venv --python 3.14 ~/.venv
-uv pip install --python ~/.venv/bin/python -e "/workspaces/data-management-system/python/crawler[test]"
+cd /workspaces/data-management-system
+uv pip install --python ~/.venv/bin/python -e "python/crawler[test]" -e "python/modama-formats-common[test]" -e python/modama-formats-em -e "python/search-chain[browse]"
 # in ~/.bashrc:
 export PATH="$HOME/.venv/bin:/usr/lib/postgresql/17/bin:$HOME/.local/bin:$PATH"
 ```
@@ -38,6 +39,7 @@ Why each step is there:
 - Python 3.14 comes from `uv`, because Debian 13 ships 3.13.
 - The PostgreSQL server binaries are needed without a running cluster. The tests start their own throwaway servers through `pytest-postgresql`.
 - `shared-mime-info` provides `update-mime-database`. The crawler uses it to build its own MIME database at startup.
+- All four packages at once: the crawler's tests import both format packages (`tests/test_runs.py`), and `modama-chain` (`python/search-chain/`) is the instrument for the rest of the chain.
 
 Then, from `python/crawler/`:
 
