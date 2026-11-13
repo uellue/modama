@@ -34,6 +34,7 @@ from .store import (
     Stored,
     collapsed_above,
     end_run,
+    first_extractions,
     get_run,
     ingredients_of,
     last_finished,
@@ -726,10 +727,21 @@ def _run_line(run: Run) -> str:
 
 
 def _next_crawl_note(conn: psycopg.Connection) -> str | None:
-    """What the next crawl extracts again because stored datasets carry another identity than the installed one (D7)."""
+    """What the next crawl extracts again because stored datasets carry another identity than the installed one (D7),
+    and for the first time because stored datasets of an installed format with an extractor have no extraction (280).
+
+    Only the stored formats count: a stored dataset that the installed formats would now recognise as another
+    format (a single file by type that a new collection claims) is not seen."""
     current, ingredients = _installed()
     groups = other_identities(conn, current)
-    if not groups:
+    extracting = [
+        f.id
+        for c in selection.discover().values()
+        for f in c.formats
+        if f.has_extractor
+    ]
+    first, mean = first_extractions(conn, extracting)
+    if not groups and not first:
         return None
     parts, seconds = [], 0.0
     for before in dict.fromkeys(g[0] for g in groups):
@@ -741,12 +753,23 @@ def _next_crawl_note(conn: psycopg.Connection) -> str | None:
             f"{counts} datasets stored under {identity.short(before)} ({causes})"
         )
         seconds += sum(s for b, _, _, s in groups if b == before)
+    what = f"extracts again {'; '.join(parts)}" if parts else "extracts"
+    if first:
+        counts = ", ".join(f"{fmt} {n}" for fmt, n in first)
+        what += f"{', and' if parts else ''} for the first time {counts} datasets"
+        # no time of their own stored: the stored extractions' mean (280)
+        seconds += sum(n for _, n in first) * (mean or 0.0)
     workers = _workers() or extraction.default_workers()
     minutes = seconds / workers / 60
-    when = "under a minute" if minutes < 1 else f"about {round(minutes)} minutes"
+    if first and mean is None:
+        when = "time unknown, nothing extracted yet"
+    elif minutes < 1:
+        when = "under a minute"
+    else:
+        when = f"about {round(minutes)} minutes"
     return (
         f"note: extraction identity {identity.short(current)} is installed; the next crawl "
-        f"extracts again {'; '.join(parts)}; {when} on {workers} processes"
+        f"{what}; {when} on {workers} processes"
     )
 
 
