@@ -569,6 +569,28 @@ def test_a_credential_in_a_tiffs_tags_is_left_out(tmp_path):
     assert result.values["mapped_metadata"]["credentials_left_out"] == 2
 
 
+def test_only_text_values_are_checked_for_credentials(tmp_path, monkeypatch):
+    # Review of em-hitachi, N4: numbers and arrays of numbers are not checked
+    checked = []
+    real = tiff.credential
+
+    def spy(name, value):
+        checked.append(value)
+        return real(name, value)
+
+    monkeypatch.setattr(tiff, "credential", spy)
+    of_file(hitachi(tmp_path))
+    assert checked
+    assert not [
+        v
+        for v in checked
+        if not (
+            isinstance(v, str)
+            or (isinstance(v, list) and any(isinstance(i, str) for i in v))
+        )
+    ]
+
+
 def test_a_broken_small_svg_file(tmp_path):
     # Read to its end: a parse error is the file's, and the extraction fails
     path = tmp_path / "broken.svg"

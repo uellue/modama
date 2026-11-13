@@ -14,6 +14,13 @@ from pathlib import Path, PurePosixPath
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 
+# At the top, so that an installation without modama-formats-common fails when the
+# collection loads, not at each pair's extraction (review of em-hitachi, N3); the
+# modules import no reader (tifffile is imported in the extraction only)
+from modama_formats_common import written
+from modama_formats_common.image import tiff
+from modama_formats_common.text import head
+
 HERE = Path(__file__).parent
 TYPE = "application/x-hitachi-sem"
 TIFF = "image/tiff"
@@ -40,7 +47,8 @@ class Hitachi(Format):
                 d.claimed_elsewhere(tif.rel, name)
                 continue
             header = d.entry(name)
-            if header is None:
+            # A folder named like a header is not one (review of em-hitachi, S1)
+            if header is None or header.kind != "file":
                 continue
             try:
                 if d.read(header, len(SIGNATURE)) != SIGNATURE:
@@ -57,10 +65,6 @@ class Hitachi(Format):
     def extract(self, dataset: Dataset, root: str) -> Extracted:
         """The TIFF's values as the image area gives them, the header's text as written
         (spec formats/hitachi, "The pair's values are its TIFF's", "The pair's text is its header as written")."""
-        from modama_formats_common import written
-        from modama_formats_common.image import tiff
-        from modama_formats_common.text import head
-
         extracted = tiff.extract(root + dataset.anchor)
         path = root + next(m for m in dataset.members if m != dataset.anchor)
         found = head.read(path)
@@ -68,8 +72,11 @@ class Hitachi(Format):
             shown = written.of_head(found, path)
             extracted.values["text"] = shown.text
             if shown.credentials:
+                # The TIFF's and the header's, added (review of em-hitachi, S2)
                 mapped = extracted.values["mapped_metadata"]
-                mapped["credentials_left_out"] = shown.credentials
+                mapped["credentials_left_out"] = (
+                    mapped.get("credentials_left_out", 0) + shown.credentials
+                )
         return extracted
 
 

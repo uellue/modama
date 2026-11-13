@@ -35,7 +35,7 @@ When a TIFF's description starts with `[SemImageFile]`, the TIFF extractor SHALL
 - **THEN** `original_metadata` has no `65501` (not suitable for text, "What a TIFF's values leave out")
 
 ### Requirement: A credential in a TIFF's tags is left out
-The TIFF extractor SHALL leave out of `original_metadata`, and so of the summary line, every entry for which the shared check `modama_crawler.formats.values.credential(name, value)` is true, and SHALL count them in `mapped_metadata` as `credentials_left_out`.
+The TIFF extractor SHALL leave out of `original_metadata`, and so of the summary line, every entry whose value is a text or a list holding a text and for which the shared check `modama_crawler.formats.values.credential(name, value)` is true (numbers are not checked), and SHALL count them in `mapped_metadata` as `credentials_left_out`.
 
 #### Scenario: A password in Hitachi's header and a key in tag 65500
 - **WHEN** tag 270 has `Image comment=password: hunter2` and tag 65500 is `"@Fld"ApiKey=k1\r"@Fld"Mode=7`

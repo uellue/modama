@@ -113,6 +113,13 @@ def hitachi(page) -> list[tuple[str, object]] | None:
     return found
 
 
+def textlike(value) -> bool:
+    """A text, or a list that holds one: what the credential check looks at."""
+    return isinstance(value, str) or (
+        isinstance(value, list) and any(isinstance(v, str) for v in value)
+    )
+
+
 def fei(path: str) -> tuple[str, ...]:
     """A name in FEI's metadata block, under either of its tags."""
     return (f"FEI_HELIOS.{path}", f"FEI_SFEG.{path}")
@@ -215,7 +222,13 @@ def extract(path: str) -> Extracted:
     # The shared credential check (TEMPLATE, checklist): a description, a vendor
     # block or Hitachi's header holds free text; a record reaches more people
     # than the file (spec formats/image, "A credential in a TIFF's tags is left out")
-    secrets = [name for name, value in original.items() if credential(name, value)]
+    # Text values only: a number or an array of numbers holds no credential, and
+    # the check costs about 25 µs an entry (review of em-hitachi, N4)
+    secrets = [
+        name
+        for name, value in original.items()
+        if textlike(value) and credential(name, value)
+    ]
     if secrets:
         original = {k: v for k, v in original.items() if k not in secrets}
         mapped["credentials_left_out"] = len(secrets)

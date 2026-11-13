@@ -5,6 +5,8 @@ Run with -s to see each description and the bytes the extractor read.
 
 import errno
 import os
+import subprocess
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -134,6 +136,48 @@ def test_the_header_cannot_be_read(collection_tests, tmp_path):
     ]
 
 
+def test_a_folder_named_like_the_header(collection_tests, tmp_path):
+    # Review of em-hitachi, S1: a folder is not a header, and not a read error
+    hitachi_tif(tmp_path / "a.tif")
+    (tmp_path / "a.txt").mkdir()
+    result = walk(tmp_path, everything(collection_tests))
+    assert {a: d.format for a, d in by_anchor(result).items()} == {
+        "/a.tif": "common/tiff"
+    }
+    assert result.all_warnings() == []
+
+
+def test_two_tiffs_of_one_stem(collection_tests, tmp_path):
+    # Review of em-hitachi, N2: the header pairs with one of them, by name order
+    generate.write_pair(tmp_path, "a.tif")
+    hitachi_tif(tmp_path / "a.tiff")
+    result = walk(tmp_path, everything(collection_tests))
+    found = by_anchor(result)
+    assert {a: d.format for a, d in found.items()} == {
+        "/a.tif": "em/hitachi",
+        "/a.tiff": "common/tiff",
+    }
+    assert found["/a.tif"].members == ("/a.tif", "/a.txt")
+    assert result.all_warnings() == [
+        ("/a.tiff", "em/hitachi: /a.txt already claimed by em/hitachi")
+    ]
+
+
+def test_the_collection_needs_the_common_formats():
+    # Review of em-hitachi, N3: an installation without modama-formats-common
+    # fails when the collection loads, not at each pair's extraction
+    code = (
+        "import sys; sys.modules['modama_formats_common'] = None\n"
+        "try:\n    import modama_formats_em.hitachi\n"
+        "except ImportError as e:\n    print('ImportError', e.name)\n"
+        "else:\n    print('loaded')\n"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert out.stdout.strip() == "ImportError modama_formats_common"
+
+
 def test_the_pairs_files_are_not_offered_to_the_formats_after_it(
     collection_tests, tmp_path
 ):
@@ -203,6 +247,19 @@ def test_a_line_that_may_hold_a_credential(tmp_path):
     extracted = hitachi.Hitachi().extract(d, str(tmp_path))
     assert "hunter2" not in extracted.values["text"]
     assert extracted.values["mapped_metadata"]["credentials_left_out"] == 1
+
+
+def test_credentials_in_the_tiff_and_the_header_add_up(tmp_path):
+    # Review of em-hitachi, S2: the TIFF's and the .txt's counts are added
+    tif, _ = generate.write_pair(tmp_path, **{"Image comment": "password: hunter2"})
+    hitachi_tif(
+        tif,
+        "\r".join(hitachi_lines(tif.name, **{"Image comment": "password: hunter2"})),
+        tag_65500='"@Fld"ApiKey=k1\r"@Fld"Token=k2\r"@Fld"Mode=7',
+    )
+    (d,) = walk(tmp_path, hitachi.COLLECTION.formats).datasets
+    extracted = hitachi.Hitachi().extract(d, str(tmp_path))
+    assert extracted.values["mapped_metadata"]["credentials_left_out"] == 3 + 1
 
 
 # Only the headers are read

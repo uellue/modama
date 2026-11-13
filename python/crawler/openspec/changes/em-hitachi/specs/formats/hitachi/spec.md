@@ -31,6 +31,14 @@ The format `em/hitachi` (priority 60, reacting to `image/tiff`) SHALL make one d
 - **WHEN** a pair is recognised with the image and text areas' formats too
 - **THEN** it is the directory's only dataset, and the crawl warns of nothing (spec `recognition`, "Formats run in priority order with exclusive claims")
 
+#### Scenario: A folder named like the header
+- **WHEN** a folder `a.txt/` is next to `a.tif`
+- **THEN** `a.tif` is a `common/tiff` dataset, nothing is read of the folder, and the crawl warns of nothing
+
+#### Scenario: Two TIFFs of one stem
+- **WHEN** `a.tif`, `a.tiff` and the header `a.txt` are in one folder
+- **THEN** `a.tif` and `a.txt` are the pair (the first TIFF by name), `a.tiff` is a `common/tiff` dataset, and the crawl warns at `a.tiff`: `em/hitachi: /a.txt already claimed by em/hitachi`
+
 #### Scenario: The header claimed by another format
 - **WHEN** a format of higher priority claims the pair's `.txt` (decision 344)
 - **THEN** the crawl warns at the TIFF `em/hitachi: <name>.txt is claimed by <format>; two formats want it`, and the TIFF is left to the formats after `em/hitachi`
@@ -56,6 +64,10 @@ The extractor SHALL put the `.txt`'s text into `values["text"]` by the rules of 
 #### Scenario: A line that may hold a credential
 - **WHEN** the pair's `.txt` has the line `Image comment=password: hunter2`
 - **THEN** `hunter2` is not in the text, and `mapped_metadata` has `credentials_left_out` 1
+
+#### Scenario: Credentials in the TIFF and the header add up
+- **WHEN** three of the TIFF's entries and one line of the `.txt` may hold a credential
+- **THEN** `mapped_metadata` has `credentials_left_out` 4
 
 ### Requirement: Only the headers are read
 The extractor SHALL read the TIFF as the image area reads one (spec `formats/image`, "Only the header is read") and the `.txt` as the text area reads a text; never the TIFF's image data.
