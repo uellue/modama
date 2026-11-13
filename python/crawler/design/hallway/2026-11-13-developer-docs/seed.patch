@@ -1,0 +1,303 @@
+diff --git a/python/crawler/openspec/changes/em-formats-and-extraction/specs/formats/merlin/spec.md b/python/crawler/openspec/changes/em-formats-and-extraction/specs/formats/merlin/spec.md
+index 922de4c5..ae23e666 100644
+--- a/python/crawler/openspec/changes/em-formats-and-extraction/specs/formats/merlin/spec.md
++++ b/python/crawler/openspec/changes/em-formats-and-extraction/specs/formats/merlin/spec.md
+@@ -44,10 +44,6 @@ The extractor SHALL keep every `key<TAB>value` line of the header in `original_m
+ - **WHEN** a header has a blank line and the made-up line `Made-up line without a tab`
+ - **THEN** the extraction does not fail; `original_metadata` has `Made-up line without a tab` with an empty value, and nothing for the blank line
+ 
+-#### Scenario: A header that is not UTF-8
+-- **WHEN** a Merlin header holds a byte that is not UTF-8, as the Merlin software writes "µ" as the single byte 0xB5 (staging 2026-11-12: `Sensor Bias (V, µA)`)
+-- **THEN** the header is read as Latin-1, so that every byte decodes and µ stays µ (`original_metadata` has `Sensor Bias (V, µA)`), and its record is described as any other
+-
+ #### Scenario: The date key names its fields in another order
+ - **WHEN** a Merlin header's date key is `Time and Date Stamp (yr, mnth, day, hr, min, s)` with the value `22/02/2019 10:27:28` (staging 2026-11-12)
+ - **THEN** the key is found by its start `Time and Date Stamp`, the value is read as day/month/year as in `Time and Date Stamp (day, mnth, yr, hr, min, s)`: `acquired` in `mapped_metadata` is `2019-02-22T10:27:28`, and the summary line ends with the value as written, `22/02/2019 10:27:28`
+diff --git a/python/modama-formats-em/src/modama_formats_em/merlin/__init__.py b/python/modama-formats-em/src/modama_formats_em/merlin/__init__.py
+index 7a958ebc..278a5953 100644
+--- a/python/modama-formats-em/src/modama_formats_em/merlin/__init__.py
++++ b/python/modama-formats-em/src/modama_formats_em/merlin/__init__.py
+@@ -30,20 +30,16 @@ READOUT = "Readout System"
+ 
+ 
+ def read_header(path: str) -> dict[str, str]:
+-    """The header's `key<TAB>value` lines, as RosettaSciIO's parse_hdr_file reads them, but in Latin-1.
++    """The header's `key<TAB>value` lines, as RosettaSciIO's parse_hdr_file reads them.
+ 
+-    parse_hdr_file decodes in the locale's encoding (UTF-8), and the Merlin
+-    software writes "µ" as the single byte 0xB5 (spec formats/merlin, "A
+-    header that is not UTF-8"). Latin-1 decodes every byte, and µ stays µ;
+-    cp1252 would fail on the bytes it leaves undefined (0x81, 0x8D, 0x8F,
+-    0x90, 0x9D). Keys lose a trailing ":"; some have none ("Sensor Bias (V, µA)").
++    Keys lose a trailing ":"; some have none.
+     A blank line is skipped; a line without a tab is a key with an empty value.
+     """
+     size = os.stat(path).st_size
+     if size > MAX_HEADER:
+         raise ValueError(f"header of {size:,} bytes, over {MAX_HEADER:,}")
+     header = {}
+-    with open(path, encoding="latin-1") as f:
++    with open(path) as f:
+         for line in f:
+             if line.startswith(("HDR", "End\t")) or not line.strip():
+                 continue
+diff --git a/python/modama-formats-em/src/modama_formats_em/merlin/tests/expected/date_order.json b/python/modama-formats-em/src/modama_formats_em/merlin/tests/expected/date_order.json
+new file mode 100644
+index 00000000..9060da65
+--- /dev/null
++++ b/python/modama-formats-em/src/modama_formats_em/merlin/tests/expected/date_order.json
+@@ -0,0 +1,75 @@
++{
++  "datasets": [
++    {
++      "anchor": "/acq.hdr",
++      "basis": "1 frame file(s) acq*.mib",
++      "collapsed": false,
++      "format": "em/merlin",
++      "members": [
++        "/acq.hdr",
++        "/acq.mib"
++      ],
++      "parent": null,
++      "parts": [],
++      "type": "application/x.merlin-header",
++      "warnings": []
++    }
++  ],
++  "extractions": {
++    "/acq.hdr": {
++      "subjects": [
++        "Merlin Quad"
++      ],
++      "summary": [
++        "Frames in Acquisition (Number) 1",
++        "frame 256, 256",
++        "Counter Depth (number) 6",
++        "Merlin Quad",
++        "22/02/2019 10:27:28"
++      ],
++      "values": {
++        "mapped_metadata": {
++          "acquired": "2019-02-22T10:27:28",
++          "counter_depth": 6,
++          "frame": [
++            256,
++            256
++          ],
++          "frames": 1,
++          "readout": "Merlin Quad"
++        },
++        "original_metadata": {
++          "Acquisition Type (Normal, Th_scan, Config)": "Normal",
++          "Active Counters": "Counter 0",
++          "Assembly Size (NX1, 2X2)": "   1x1",
++          "Chip ID": "W529_F5,-,-,-",
++          "Chip Mode  (SPM, CSM, CM, CSCM)": "SPM",
++          "Chip Type (Medipix 3.0, Medipix 3.1, Medipix 3RX)": "Medipix 3RX",
++          "Counter Depth (number)": "6",
++          "DAC File": "None",
++          "DACs": "000",
++          "Dead Time File": "None",
++          "Flat Field File": "None",
++          "Frames in Acquisition (Number)": "1",
++          "Frames per Trigger (Number)": "1",
++          "Gain": "SLGM",
++          "Gap Fill Mode": "None",
++          "Humidity (%)": "Board Humidity 10.000000 ",
++          "Medipix Clock (MHz)": "120MHz",
++          "Readout System": "Merlin Quad",
++          "Sensor Bias (V, uA)": "120 V",
++          "Sensor Polarity (Positive, Negative)": "Positive",
++          "Software Version": "0.67.0.1",
++          "Temperature (C)": "Board Temp 40.000000 Deg C",
++          "Thresholds (keV)": "0.000000E+0",
++          "Time and Date Stamp (yr, mnth, day, hr, min, s)": "22/02/2019 10:27:28",
++          "Trigger Start (Positive, Negative, Internal)": "Internal",
++          "Trigger Stop (Positive, Negative, Internal)": "Internal",
++          "bpc File": "None"
++        }
++      }
++    }
++  },
++  "skipped": [],
++  "warnings": []
++}
+diff --git a/python/modama-formats-em/src/modama_formats_em/merlin/tests/expected/not_utf8.json b/python/modama-formats-em/src/modama_formats_em/merlin/tests/expected/not_utf8.json
+deleted file mode 100644
+index fe5c8e71..00000000
+--- a/python/modama-formats-em/src/modama_formats_em/merlin/tests/expected/not_utf8.json
++++ /dev/null
+@@ -1,75 +0,0 @@
+-{
+-  "datasets": [
+-    {
+-      "anchor": "/acq.hdr",
+-      "basis": "1 frame file(s) acq*.mib",
+-      "collapsed": false,
+-      "format": "em/merlin",
+-      "members": [
+-        "/acq.hdr",
+-        "/acq.mib"
+-      ],
+-      "parent": null,
+-      "parts": [],
+-      "type": "application/x.merlin-header",
+-      "warnings": []
+-    }
+-  ],
+-  "extractions": {
+-    "/acq.hdr": {
+-      "subjects": [
+-        "Merlin Quad"
+-      ],
+-      "summary": [
+-        "Frames in Acquisition (Number) 1",
+-        "frame 256, 256",
+-        "Counter Depth (number) 6",
+-        "Merlin Quad",
+-        "22/02/2019 10:27:28"
+-      ],
+-      "values": {
+-        "mapped_metadata": {
+-          "acquired": "2019-02-22T10:27:28",
+-          "counter_depth": 6,
+-          "frame": [
+-            256,
+-            256
+-          ],
+-          "frames": 1,
+-          "readout": "Merlin Quad"
+-        },
+-        "original_metadata": {
+-          "Acquisition Type (Normal, Th_scan, Config)": "Normal",
+-          "Active Counters": "Counter 0",
+-          "Assembly Size (NX1, 2X2)": "   1x1",
+-          "Chip ID": "W529_F5,-,-,-",
+-          "Chip Mode  (SPM, CSM, CM, CSCM)": "SPM",
+-          "Chip Type (Medipix 3.0, Medipix 3.1, Medipix 3RX)": "Medipix 3RX",
+-          "Counter Depth (number)": "6",
+-          "DAC File": "None",
+-          "DACs": "000",
+-          "Dead Time File": "None",
+-          "Flat Field File": "None",
+-          "Frames in Acquisition (Number)": "1",
+-          "Frames per Trigger (Number)": "1",
+-          "Gain": "SLGM",
+-          "Gap Fill Mode": "None",
+-          "Humidity (%)": "Board Humidity 10.000000 ",
+-          "Medipix Clock (MHz)": "120MHz",
+-          "Readout System": "Merlin Quad",
+-          "Sensor Bias (V, \u00b5A)": "120 V",
+-          "Sensor Polarity (Positive, Negative)": "Positive",
+-          "Software Version": "0.67.0.1",
+-          "Temperature (C)": "Board Temp 40.000000 Deg C",
+-          "Thresholds (keV)": "0.000000E+0",
+-          "Time and Date Stamp (yr, mnth, day, hr, min, s)": "22/02/2019 10:27:28",
+-          "Trigger Start (Positive, Negative, Internal)": "Internal",
+-          "Trigger Stop (Positive, Negative, Internal)": "Internal",
+-          "bpc File": "None"
+-        }
+-      }
+-    }
+-  },
+-  "skipped": [],
+-  "warnings": []
+-}
+diff --git a/python/modama-formats-em/src/modama_formats_em/merlin/tests/fixtures.toml b/python/modama-formats-em/src/modama_formats_em/merlin/tests/fixtures.toml
+index 4fa737bf..4f6cc39c 100644
+--- a/python/modama-formats-em/src/modama_formats_em/merlin/tests/fixtures.toml
++++ b/python/modama-formats-em/src/modama_formats_em/merlin/tests/fixtures.toml
+@@ -18,12 +18,12 @@ licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+ source = "modama_formats_em.merlin.tests.generate:frames_without_header, from the files of single_frame"
+ generator = "modama_formats_em.merlin.tests.generate:frames_without_header"
+ 
+-[not_utf8]
++[date_order]
+ purpose = "reproducer"
+-validity = "parser-only: composed, acq.hdr and acq.mib; the header has the lines of single_frame's header in its order with neutral values, except the lines quoted from staging's 01_ms1_3p3gK.hdr (Merlin software 0.67.0.1, error message of 2026-11-12): the key 'Time and Date Stamp (yr, mnth, day, hr, min, s)' with a day/month/year value, and 'Sensor Bias (V, µA)' without a colon and with µ as the byte 0xB5, so the header is not UTF-8; the frame file is one 256x256 frame of zeros behind a single-chip frame header"
++validity = "parser-only: composed, acq.hdr and acq.mib; the header has the lines of single_frame's header in its order with neutral values, except lines of a staging header (Merlin software 0.67.0.1, 2026-11-12): the key 'Time and Date Stamp (yr, mnth, day, hr, min, s)' with a day/month/year value, and a Sensor Bias key without a colon; the frame file is one 256x256 frame of zeros behind a single-chip frame header"
+ licence = "MIT"
+-source = "modama_formats_em.merlin.tests.generate:not_utf8, written by the generator, no file copied"
+-generator = "modama_formats_em.merlin.tests.generate:not_utf8"
++source = "modama_formats_em.merlin.tests.generate:date_order, written by the generator, no file copied"
++generator = "modama_formats_em.merlin.tests.generate:date_order"
+ 
+ [single_frame]
+ purpose = "representative"
+diff --git a/python/modama-formats-em/src/modama_formats_em/merlin/tests/generate.py b/python/modama-formats-em/src/modama_formats_em/merlin/tests/generate.py
+index d6869440..c8c70c62 100644
+--- a/python/modama-formats-em/src/modama_formats_em/merlin/tests/generate.py
++++ b/python/modama-formats-em/src/modama_formats_em/merlin/tests/generate.py
+@@ -23,14 +23,14 @@ def frames_without_header(target: Path) -> None:
+     shutil.copy(MIB, target / "acq_2.mib")
+ 
+ 
+-def not_utf8(target: Path) -> None:
+-    """acq.hdr and acq.mib, composed: a header with µ as the byte 0xB5 and the date key in the order (yr, mnth, day, ...).
++def date_order(target: Path) -> None:
++    """acq.hdr and acq.mib, composed: a header with the date key in the order (yr, mnth, day, ...).
+ 
+     The header has single_frame's lines in its order with neutral values,
+-    except the lines of a staging header quoted in an error message (Chip ID,
+-    the date, the Sensor Bias key without a colon, Readout System, Software
+-    Version). The frame file is one 256x256 frame of zeros behind a
+-    single-chip frame header with the fields RosettaSciIO's MIBProperties reads.
++    except the lines of a staging header (Chip ID, the date, the Sensor Bias
++    key without a colon, Readout System, Software Version). The frame file is
++    one 256x256 frame of zeros behind a single-chip frame header with the
++    fields RosettaSciIO's MIBProperties reads.
+     """
+     target.mkdir(parents=True)
+     lines = [
+@@ -55,7 +55,7 @@ def not_utf8(target: Path) -> None:
+         "Frames per Trigger (Number):\t1",
+         "Trigger Start (Positive, Negative, Internal):\tInternal",
+         "Trigger Stop (Positive, Negative, Internal):\tInternal",
+-        "Sensor Bias (V, µA)\t120 V",
++        "Sensor Bias (V, uA)\t120 V",
+         "Sensor Polarity (Positive, Negative):\tPositive",
+         "Temperature (C):\tBoard Temp 40.000000 Deg C",
+         "Humidity (%):\tBoard Humidity 10.000000 ",
+@@ -63,7 +63,7 @@ def not_utf8(target: Path) -> None:
+         "Readout System:\tMerlin Quad",
+         "Software Version:\t0.67.0.1",
+     ]
+-    header = "\r\n".join(lines).encode("latin-1") + b"\r\nEnd\t"
++    header = "\r\n".join(lines).encode("utf-8") + b"\r\nEnd\t"
+     (target / "acq.hdr").write_bytes(header.ljust(2048, b" "))
+     fields = [
+         "MQ1", "000001", "00384", "01", "0256", "0256", "U08", "   1x1", "01",
+diff --git a/python/modama-formats-em/src/modama_formats_em/merlin/tests/test_extract.py b/python/modama-formats-em/src/modama_formats_em/merlin/tests/test_extract.py
+index a8d13b4b..d6766b02 100644
+--- a/python/modama-formats-em/src/modama_formats_em/merlin/tests/test_extract.py
++++ b/python/modama-formats-em/src/modama_formats_em/merlin/tests/test_extract.py
+@@ -96,19 +96,8 @@ def test_a_blank_line_or_a_line_without_a_tab(collection_tests, tmp_path):
+     assert len(original) == 28
+ 
+ 
+-def test_a_header_that_is_not_utf8(collection_tests, tmp_path):
+-    (acq,) = described(collection_tests, "not_utf8", tmp_path)
+-    assert acq.description.startswith(
+-        "Frames in Acquisition (Number) 1, frame 256, 256, Counter Depth (number) 6, "
+-        "Merlin Quad, "
+-    )
+-    assert acq.subjects == ["Quantum Detectors Merlin", "Merlin Quad"]
+-    original = acq.dataset.extraction.extracted.values["original_metadata"]
+-    assert original["Sensor Bias (V, µA)"] == "120 V"
+-
+-
+ def test_the_date_key_names_its_fields_in_another_order(collection_tests, tmp_path):
+-    (acq,) = described(collection_tests, "not_utf8", tmp_path / "a")
++    (acq,) = described(collection_tests, "date_order", tmp_path / "a")
+     assert acq.description.startswith(
+         "Frames in Acquisition (Number) 1, frame 256, 256, Counter Depth (number) 6, "
+         "Merlin Quad, 22/02/2019 10:27:28; "
+@@ -120,7 +109,7 @@ def test_the_date_key_names_its_fields_in_another_order(collection_tests, tmp_pa
+ def test_a_date_in_another_form(collection_tests, tmp_path, caplog):
+     # With AM/PM appended: shown as written, not guessed at, with a warning
+     extracted = edited(
+-        collection_tests, "not_utf8", tmp_path, b"10:27:28", b"10:27:28 AM"
++        collection_tests, "date_order", tmp_path, b"10:27:28", b"10:27:28 AM"
+     )
+     assert extracted.summary[-1] == "22/02/2019 10:27:28 AM"
+     assert "acquired" not in extracted.values["mapped_metadata"]
