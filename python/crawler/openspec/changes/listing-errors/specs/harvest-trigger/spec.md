@@ -12,3 +12,7 @@ A crawl that finished with folders the file system did not answer SHALL start th
 #### Scenario: Errors and a harvest that cannot be started
 - **WHEN** a crawl kept a folder whose listing failed with `EIO`, and Airflow refuses the account
 - **THEN** stderr says that the crawl finished but the harvest could not be started, and the exit status is 4
+
+#### Scenario: A refused folder alone
+- **WHEN** a crawl with an Airflow URL set removed the datasets of a folder whose listing failed with `EACCES`, and nothing else went wrong
+- **THEN** the harvest is started and the exit status is 0
