@@ -25,7 +25,7 @@ The core SHALL let a format run a function of its own on files of its folder in 
 
 #### Scenario: An inspection that hangs
 - **WHEN** a function does not return within the time limit
-- **THEN** its worker is killed, the outcome says it timed out, the other files' inspections end as before, and the folder is recognised again next crawl
+- **THEN** its worker is killed, the outcome says it timed out, the other files' inspections end as before, the file has a warning holding `not inspected` (decision 340), and the folder is recognised again next crawl
 
 #### Scenario: An inspection that crashes its process
 - **WHEN** a function ends its worker process (a crash in a library)

@@ -8,12 +8,16 @@ Today each file of such an acquisition is a record of its own: the master's summ
 
 The real case (private sample `.claude/field-tests/samples/scan_00026_master.h5`, opened with h5py without following a link; shape and names only here): a DESY ptychography scan, Eiger 4M master of 91 MB, 684 objects (28 groups, 656 datasets), no soft links, no virtual datasets, no title and no root `file_time`; the group `/entry/data` holds 441 external links `data_000001` … `data_000441`, each to `/entry/data/data` in `scan_00026_data_000001.h5` … `scan_00026_data_000441.h5`, stored in HDF5's dense form (stored order: the names' hashes). The folder (`eiger4m_01` in the October listing) holds the master and `…_000001.h5` to `…_000045.h5`: 396 links dangle. The link messages are written at the end of the file (offsets 87.0 to 87.2 MiB of 87.2): a format reading a file's first bytes cannot see them.
 
-## Decisions (@weber, 2026-11-13, on the first version of this proposal)
+## Decisions (@weber, 2026-11-13, on the first three versions of this proposal)
 
 - **334 (Q1)**: the collection is `common`, part `pydata`.
 - **332 (Q2)**: 311 is fixed first, as a change of its own. That change also corrects the spec `recognition` to what the code does since commit 6fdd88be (`parallel-walk`): a slow call's result is logged and kept. This change depends on the corrected requirements and does not restate them.
 - **331 (Q6)**: the summary line ends with the link counts, `dangling` included: "pointing out dangling ones is clearer". `dangling` and the run notation of the values (`…` and the run's key) are words of ours: TEMPLATE.md names them as exceptions beside "(unit unknown)" and "(encrypted)".
-- **321, follow-up**: recognition lists links "with time limit, please", after LiberTEM's HDF5 dataset. The time limit is the outside kill of a worker at 60 s; the inner deadline the first revision took from LiberTEM is replaced by count bounds after the second review (M2: a deadline makes the records depend on the load), which is put to @weber again (Q15; his answer to be noted here).
+- **321, follow-up**: recognition lists links "with time limit, please", after LiberTEM's HDF5 dataset. The time limit is the outside kill of a worker at 60 s; the inner deadline the first revision took from LiberTEM is replaced by count bounds after the second review (M2: a deadline makes the records depend on the load); @weber agreed (342).
+- **339 (Q14)**: the cost of recognition as estimated: "Let's do it like this to get the results right, but earmark this to revisit if it impacts performance that much in the real world." A BACKLOG item, triggered by the staging measurement (task 6.4).
+- **340 (timeouts)**: a file whose inspection times out is a plain HDF5 file for that crawl, is tried again, and is always flagged with a fixed, documented marker, so that one query lists them all, as `two formats want it` (344) does: `not inspected` (`formats.NOT_INSPECTED`), in every warning of an inspection that failed, timed out or killed its process.
+- **341 (Q4)**: yes, an absolute target path is matched by its last part, as proposed.
+- **342 (Q15)**: count bounds, plus the outside kill; no time deadline inside.
 - **333 (Q10)**: the cost of recognition is accepted, "cost of doing business"; the estimate is revised in design D5 after the review, for @weber to see again (Q14).
 
 ## What Changes

@@ -110,7 +110,7 @@ Telling a group from a dataset needs each object's header, one read each, so a f
 | *timed out* | not done after 60 s; the worker killed | not listed; a warning; `retry` |
 | *died* | the worker process ended (a crash in libhdf5) | not listed; a warning; `retry` |
 
-A file not listed names nothing this crawl and stays a dataset of its own, of `common/hdf5`; `retry` makes the core recognise the folder again next crawl (`Directory.retry`, as for a read error), as the extraction tries every failure again (`extractor-identity`, D9). The first version treated a timeout as the file system not answering, which keeps the stored datasets: a folder crawled for the first time with one file that hangs libhdf5 would then never get records at all (second review, M3; Q13 settled).
+A file not listed names nothing this crawl and stays a dataset of its own, of `common/hdf5`; the warning of a failed, timed out or dead inspection always holds the marker `not inspected` (`formats.NOT_INSPECTED`), by which one grep or query lists them all (340), as `two formats want it` does for 344; `retry` makes the core recognise the folder again next crawl (`Directory.retry`, as for a read error), as the extraction tries every failure again (`extractor-identity`, D9). The first version treated a timeout as the file system not answering, which keeps the stored datasets: a folder crawled for the first time with one file that hangs libhdf5 would then never get records at all (second review, M3; Q13 settled).
 
 The mapping from what happened in the worker to these outcomes is a function of its own, tested apart from the processes; the counting file object is tested in the test's own process, since a monkeypatch does not reach a spawned worker (second review, S3).
 
@@ -145,7 +145,7 @@ The real master's line: `<description>, entry.data.data_000001 [N, 2167, 2070] <
 
 ## Questions for @weber (each with the lean)
 
-Answered on 2026-11-13: Q1 (334), Q2 (332), Q6 (331), Q10 (333, cost accepted; revised figure in Q14). Settled by the second review: Q13 (a timeout is retried, D5).
+Answered on 2026-11-13: Q1 (334), Q2 (332), Q6 (331), Q10 (333, cost accepted), Q4 (341: yes), Q14 (339: as estimated, revisited if staging shows it hurts), Q15 (342: count bounds and the outside kill), timeouts (340: a plain HDF5 file for that crawl, tried again, flagged `not inspected`). Settled by the second review: Q13. The rest were built on their leans, by the coordinator's go-ahead of 2026-11-13.
 
 - **Q3** A linking file in a collapsed folder: nothing changes, lean (the collapse wins; nothing inside is recognised). Against: a collapsed folder's HDF5 masters stay invisible, as everything else in it.
 - **Q4 (341)** Absolute target paths: matched by their last part in the folder, lean, as HDF5 does when the absolute path does not exist (D3, cited); the second reviewer agrees. The name is only compared, never joined into a path and opened. Against, with a scenario ("A generic name linked by an absolute path"): an `.h5` file linking `/calibration/shared/flatfield.h5`, which exists on the acquisition computer, groups an unrelated `flatfield.h5` beside it.
