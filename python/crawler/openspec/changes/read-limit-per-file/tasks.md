@@ -25,7 +25,7 @@
 
 ## 5. The review's follow-ups
 
-- [x] 5.1 `em/de`: an info file not read (an error, or over the read limit) still owns its stem's files, so that they don't join a shorter stem's acquisition; it makes no dataset and no "two formats want it" warning. Verify: `test_an_unread_info_file_of_a_longer_stem` (failed before: the `_x_` files were members of `20241021_00405`).
+- [x] 5.1 `em/de`: an info file not read (an error, or over the read limit) still owns its stem's files, so that they don't join a shorter stem's acquisition; it makes no dataset and no "two formats want it" warning. Verify: `test_an_info_file_of_a_longer_stem_that_cannot_be_read`, the scenario of that name in `em-de`'s spec `formats/de` (failed before: the `_x_` files were members of `20241021_00405`).
 - [x] 5.2 `common/zspy` reads a v3 store's `zarr.json` once: the core's `zarr/zarr` hands its parsed document to `Zarr.described`, which `common/zspy` overrides. Verify: `test_the_zarr_json_of_a_zspy_store_is_read_once` (failed before: `read more than 64 KiB of zarr.json` for 40 KiB of attributes); BACKLOG item removed.
 - [x] 5.3 `em/empad`: a refusal gives the core's warning only. Verify: `test_a_header_over_the_read_limit_is_warned_once` (failed before: a second warning, `cannot read the raw file name from the header: BudgetExceeded(…)`).
 - [x] 5.4 `READ_MUCH` derived from `FLAG_PER_FILE`; `review.py` keeps the text (it needs no crawler installed), compared by `test_the_markers_are_the_crawlers`. "Byte budget" in `inspection.py` and `files.py` in the new wording. Verify: the suites.
