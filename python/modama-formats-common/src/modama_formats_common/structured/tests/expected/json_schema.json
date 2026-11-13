@@ -37,7 +37,8 @@
           ],
           "title": "Settings",
           "type": "object"
-        }
+        },
+        "text": "{\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"title\": \"Settings\", \"type\": \"object\", \"properties\": {\"exposure\": {\"type\": \"number\", \"minimum\": 0}}, \"required\": [\"exposure\"]}"
       }
     }
   },

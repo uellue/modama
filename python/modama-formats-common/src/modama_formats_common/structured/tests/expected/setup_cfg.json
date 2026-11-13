@@ -53,7 +53,8 @@
           "metadata.name": "example",
           "metadata.version": "0.1.0",
           "options.install_requires": "\nnumpy\nscipy"
-        }
+        },
+        "text": "[metadata]\nname = example\nversion = 0.1.0\n\n[options]\ninstall_requires = \n\tnumpy\n\tscipy\n\n"
       }
     }
   },
