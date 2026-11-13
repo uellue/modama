@@ -13,12 +13,20 @@ The template `ssh-tunnel@.service` SHALL run, for an instance `NAME`, `ssh -N` t
 - **WHEN** `/etc/ssh-tunnel/embed.conf` names the destination `embedtunnel@<grace>` and the forwards `-L 172.17.0.1:17656:127.0.0.1:7656 -L 172.17.0.1:11434:127.0.0.1:11434`, and `systemctl enable --now ssh-tunnel@embed` is run
 - **THEN** `systemctl status ssh-tunnel@embed` shows `ssh -N` with both forwards, running as `ssh-tunnel`, and `172.17.0.1:17656` answers the service's `GET /health`
 
-### Requirement: The tunnel fails instead of asking
-The tunnel SHALL NOT wait for input: an unknown or changed host key, or a key that is refused, SHALL end `ssh` with an error in the journal.
+### Requirement: The tunnel fails instead of asking or hanging
+The tunnel SHALL NOT wait for input: an unknown or changed host key, or a key that is refused, SHALL end `ssh` with an error in the journal. A destination that does not answer SHALL end the attempt within 10 seconds. No user or system `ssh_config` SHALL apply.
 
 #### Scenario: An unknown host key
 - **WHEN** the instance's known-hosts file does not hold the destination's host key
 - **THEN** `ssh` ends at once, and `journalctl -u ssh-tunnel@NAME` says that the host key verification failed
+
+#### Scenario: The destination does not answer
+- **WHEN** the destination's address drops every packet
+- **THEN** `ssh` ends within 10 seconds with a connection timeout in the journal, and systemd tries again 30 seconds later
+
+#### Scenario: A system ssh_config
+- **WHEN** `/etc/ssh/ssh_config` sets another identity file or `StrictHostKeyChecking no`
+- **THEN** the tunnel uses only its instance's key and still refuses an unknown host key
 
 ### Requirement: The tunnel ends when a forward cannot be set up
 `ssh` SHALL end when one of its forwards cannot be set up, instead of running without it.
@@ -35,7 +43,7 @@ When `ssh` ends for any reason other than a stop, systemd SHALL start it again a
 - **THEN** the tunnel works again within 30 seconds of the destination's SSH server being up, without anyone acting
 
 ### Requirement: The key opens nothing but its forwards
-On the destination, the key SHALL be only in the `authorized_keys` of an account of its own whose shell is `nologin`, with `restrict,port-forwarding`, one `permitopen="HOST:PORT"` per forwarded destination and `command="/usr/sbin/nologin"`; a `Match User` block SHALL allow it local forwarding only. A shell, a command, a terminal, a remote forward and a forward elsewhere SHALL be refused.
+On the destination, the key SHALL be only in the `authorized_keys` of a `nologin` account of its own, with `restrict,port-forwarding`, one `permitopen="HOST:PORT"` per destination and `command="/usr/sbin/nologin"`; a `Match User` block SHALL allow local TCP forwards to those destinations only, no Unix-socket forwards, no TTY, no X11. Anything else SHALL be refused.
 
 #### Scenario: A shell
 - **WHEN** someone connects with the key and asks for a shell or a command
@@ -60,3 +68,26 @@ On the destination, the key SHALL be only in the `authorized_keys` of an account
 #### Scenario: A remote forward
 - **WHEN** someone connects with the key with `-N -R 127.0.0.1:9000:127.0.0.1:22`
 - **THEN** `ssh` reports `remote port forwarding failed for listen port 9000`, and nothing listens on the destination's port 9000
+
+#### Scenario: A forward to a Unix socket on the destination
+- **WHEN** someone connects with the key with `-N -L 127.0.0.1:9001:/run/some.socket`
+- **THEN** a connection through the forward is refused, and the destination's `sshd` log says so
+
+#### Scenario: A Unix socket created on the destination
+- **WHEN** someone connects with the key with `-N -R /tmp/x.socket:127.0.0.1:22`
+- **THEN** `ssh` reports that the remote forward failed, and no socket appears on the destination
+
+#### Scenario: A terminal
+- **WHEN** someone connects with the key with `ssh -tt`
+- **THEN** `ssh` reports `PTY allocation request failed`
+
+#### Scenario: What applies on the destination's sshd
+- **WHEN** `sudo sshd -T -C user=<account>` runs on the destination
+- **THEN** it shows `allowtcpforwarding local`, `allowstreamlocalforwarding no`, `permittty no`, `x11forwarding no` and `permitopen` with exactly the permitted destinations
+
+### Requirement: The tunnel's address cannot be taken while it is down
+Required before production, not for the prototype (accepted for the demo, @weber, 349): each forward SHALL listen on a port below 1024, with the template's account given `CAP_NET_BIND_SERVICE`, so that no unprivileged user can listen on that address while the tunnel is down.
+
+#### Scenario: The tunnel is stopped
+- **WHEN** the instance is stopped and an unprivileged user tries to listen on a forward's address and port
+- **THEN** it fails with "Permission denied", and the instance listens there again once started

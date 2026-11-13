@@ -18,15 +18,19 @@ The service SHALL answer `POST /v1/embeddings` with a JSON body `{"model": …, 
 - **THEN** the vector at index 0 is the one that was at index 2 before
 
 ### Requirement: The service's vectors agree with the local path's
-For any text, the vector from the service and the vector the transform worker computes locally for the same text SHALL have a cosine, computed in float64, of at least 0.99999 (the bound of change `embedding-fp32-model`; design D4).
+The service SHALL use the local path's model file. Its vector and the transform worker's local vector for the same text SHALL have a cosine (float64) of at least 0.99999; below that, a set SHALL pass only if its largest component difference is below 1e-3 and the ranking check's top-10 overlap is at least 0.997 (design D4), measured inside the worker on staging.
 
 #### Scenario: Short, mixed and long texts
-- **WHEN** the check instrument sends the fixed short, mixed and long sets (512 texts each) to the service and embeds them locally in the transform worker's image
-- **THEN** it reports the minimum cosine per set, and each is at least 0.99999
+- **WHEN** the check instrument sends the fixed short, mixed and long sets (512 texts each) to the service from inside `airflow-worker-transform` and embeds them there locally
+- **THEN** it reports per set the minimum cosine, the largest component difference and the top-10 overlap, and exits 0 only if each set passes the bound or the criterion
 
 #### Scenario: Records of staging
-- **WHEN** a sample of 1,000 of staging's records is indexed once with the service and once locally
-- **THEN** every pair of stored vectors has a cosine of at least 0.99999
+- **WHEN** the stored vectors of 1,000 of staging's records are snapshotted before the switch, and the same records are re-indexed with the service
+- **THEN** every record whose datestamp has not changed passes the bound or the criterion, compared with its snapshot
+
+#### Scenario: A file that moves the vectors
+- **WHEN** the service is started with the benchmark's int8 file instead of the local path's file
+- **THEN** the check instrument exits 1 and names the sets that fail
 
 ### Requirement: Texts longer than the model's window are cut at tokens
 The service SHALL embed a text longer than the model's 512 tokens from its first 512 tokens, special tokens included, as the local path does, and SHALL NOT refuse it.
@@ -36,8 +40,8 @@ The service SHALL embed a text longer than the model's 512 tokens from its first
 - **THEN** it answers 200, and the vector agrees within the bound with the local path's vector of the same whole text
 
 #### Scenario: Only the first 512 tokens count
-- **WHEN** two texts of over 512 tokens share their first 600 tokens and differ after them
-- **THEN** the service gives both the same vector, up to a cosine of 1 − 1e-7
+- **WHEN** two texts of over 512 tokens share their first 600 tokens and differ entirely after them, sent in the same request or in two
+- **THEN** the two vectors have a cosine of at least 0.99999, whichever sub-batches they fall into
 
 ### Requirement: The warehouse sends its texts uncut
 With the service configured, the transform worker SHALL send each record's embedding text whole, without cutting it at a number of characters.
@@ -56,6 +60,28 @@ The service SHALL refuse with 401, and embed nothing, a request whose `Authoriza
 #### Scenario: A wrong token
 - **WHEN** a request carries another token
 - **THEN** the service answers 401, and its log line names neither token
+
+### Requirement: The token reaches only the transform worker
+In the search stack the service's token SHALL be given to `airflow-worker-transform` only, from a secret file no other service reads; `search-api` SHALL have no `EMBED_API_KEY`, even when `keys.env` holds one.
+
+#### Scenario: The search API's environment
+- **WHEN** the stack runs with a token in `embed.env`
+- **THEN** `docker compose exec search-api printenv EMBED_API_KEY` prints nothing, and `docker compose exec airflow-worker-transform sh -c 'test -n "$EMBED_API_KEY" && echo set'` prints `set`
+
+#### Scenario: A token left in keys.env
+- **WHEN** `keys.env` also holds `EMBED_API_KEY=<token>` and the stack is recreated
+- **THEN** `search-api` still has an empty `EMBED_API_KEY`, and a search sends no request with that token
+
+### Requirement: No one else can listen on the service's port while it is stopped
+Required before production, not for the prototype (accepted for the demo, @weber, 349): the service SHALL listen on a port below 1024, so that while it is stopped no unprivileged user on grace can listen on its address. The same SHALL hold for the tunnel's address on the staging host.
+
+#### Scenario: The service is stopped
+- **WHEN** `modama-embed` is stopped and an unprivileged user on grace runs `python3 -m http.server <port> --bind 127.0.0.1`
+- **THEN** it fails with "Permission denied"
+
+#### Scenario: The tunnel is stopped
+- **WHEN** the tunnel is stopped and an unprivileged user on the staging host tries to listen on the tunnel's address and port
+- **THEN** it fails with "Permission denied"
 
 ### Requirement: The service serves one model
 The service SHALL refuse with 400 a request that names another model than `bge-small-en-v1.5`, the name the warehouse sends for `BAAI/bge-small-en-v1.5`, and the answer SHALL name the model it serves.
@@ -100,19 +126,23 @@ When the service's process ends without being stopped, it SHALL be started again
 - **THEN** systemd starts it again, and `GET /health` answers again within a minute
 
 ### Requirement: The warehouse embeds locally when the service fails
-When a request to the service fails after the warehouse's retries (no connection, an error status, no answer within the timeout), the transform worker SHALL embed that batch locally and index it. Each such batch SHALL be counted as a fallback by `field-test/batch-times.sh`.
+When a request to the service fails (no connection, no bytes for 30 s, a 429 or 5xx after the retries, or at once on any other 4xx), the transform worker SHALL embed that batch locally and index it. Each such batch SHALL be counted as a fallback by `field-test/batch-times.sh`.
 
 #### Scenario: The tunnel is down
 - **WHEN** a transform batch runs while nothing listens at `EMBED_API_URL`
-- **THEN** the batch is embedded locally within 10 seconds of its first attempt, indexed, and `batch-times.sh` shows it as a fallback
+- **THEN** the batch starts embedding locally within 10 seconds of its first attempt, is indexed, and `batch-times.sh` shows it as a fallback
 
 #### Scenario: The service does not answer
 - **WHEN** the service accepts the connection but sends no answer
-- **THEN** the batch is embedded locally within 3 minutes of its first attempt, indexed, and shown as a fallback
+- **THEN** the batch starts embedding locally within 3 minutes of its first attempt (4 waits of 30 s and 7 s of backoff), is indexed, and is shown as a fallback
 
 #### Scenario: A wrong token
 - **WHEN** `EMBED_API_KEY` holds another token than the service's
-- **THEN** every batch is embedded locally and shown as a fallback, and the warehouse's log shows the 401 without the token
+- **THEN** each batch makes one request, gets 401, starts embedding locally without a retry or backoff, and is shown as a fallback; the warehouse's log shows the 401 without the token
+
+#### Scenario: Another model
+- **WHEN** the service answers 400 because it serves another model
+- **THEN** the batch makes no second request and is embedded locally
 
 ### Requirement: The way back is an empty URL
 With an empty `EMBED_API_URL`, the transform worker SHALL embed locally and send no request, as before this change.
