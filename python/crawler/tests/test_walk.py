@@ -121,6 +121,60 @@ def test_a_collapsed_dataset_is_stamped_with_its_listing(tmp_path):
     assert stamps[0] != stamps[1]
 
 
+class Stated(Series):
+    """Series, whose collapsed datasets are stamped also with a file deep below them."""
+
+    def collapsed_state(self, path):
+        return Path(path, "deep", "er", "state").read_text()
+
+
+def test_a_file_deep_below_a_collapsed_directory_changes(conn, tmp_path):
+    # crawl spec, "A collapsed directory is stamped with what its format reads
+    # below it" (Format.collapsed_state; change zarr-stores, 319): also when the
+    # folder is taken over
+    formats = Collection("t", [Stated(), Bundle()]).formats
+    (tmp_path / "boring" / "deep" / "er").mkdir(parents=True)
+    (tmp_path / "boring" / "COLLAPSE").write_text("")
+    state = tmp_path / "boring" / "deep" / "er" / "state"
+    state.write_text("one")
+    first = walk(tmp_path, formats)
+    store(conn, first, {}, start_run(conn, str(tmp_path)), "r1")
+    with open(state, "r+") as f:  # in place: no folder's listing changes
+        f.write("two")
+    second = walk(tmp_path, formats, previous=previous(conn, "r1"))
+    assert second.unchanged == 2  # / and /boring taken over
+    (before,) = [d for d in first.datasets if d.collapsed]
+    (after,) = [d for d in second.datasets if d.collapsed]
+    assert before.stamp != after.stamp
+    assert second.listings["/boring"] == first.listings["/boring"]
+
+
+class Failing(Series):
+    """Series, whose collapsed_state raises."""
+
+    def collapsed_state(self, path):
+        raise RuntimeError("boom")
+
+
+def test_a_failing_collapsed_state(tmp_path):  # scenario of the same name
+    # crawl spec, "A collapsed directory is stamped with what its format reads
+    # below it" (code review of zarr-stores, M1): a format's failure is a warning
+    # naming it, never the crawl's end, and the stamp is the same on every crawl
+    formats = Collection("t", [Failing(), Bundle()]).formats
+    (tmp_path / "boring").mkdir()
+    (tmp_path / "boring" / "COLLAPSE").write_text("")
+    first, second = walk(tmp_path, formats), walk(tmp_path, formats)
+    (d,) = [d for d in first.datasets if d.collapsed]
+    (again,) = [d for d in second.datasets if d.collapsed]
+    assert d.stamp == again.stamp
+    assert first.warnings == [
+        ("/boring", "t/failing: collapsed_state failed: RuntimeError('boom')")
+    ]
+    # Not the stamp of the listing alone: what is below is unknown
+    plain = walk(tmp_path, FORMATS)
+    assert d.stamp != next(x for x in plain.datasets if x.collapsed).stamp
+
+
 def test_dataset_size_is_the_total_of_its_members(tmp_path):
     # From the walk's stat, for the description (D4); no file is opened for it
     (tmp_path / "s").mkdir()
