@@ -36,7 +36,7 @@ Before the fix (`crawler` at 89e16a57 merged, the tests of `tests/test_unanswere
 
 - [x] 5.1 The crawler suite, `search-chain`'s, `modama-formats-em`'s and `modama-formats-common`'s, and CI's ruff (`uvx ruff format --check`, `uvx ruff check`) on the changed packages, with the number of skipped tests and how the environment differs from CI's. Crawler (`pytest tests src`): 542 passed, 0 skipped, 8 min; search-chain 78 passed; em 135 passed; common 276 passed; ruff: "All checks passed!", "267 files already formatted". As user `dev`, not root, so the `chmod` tests ran; the worktree's own venv; the first full run had 4 failures, three older tests that injected the error in `detect_with_tie` or denied only `access(2)` (now the read, and `open(2)` too) and the column count of `test_a_database_made_before_migrations`.
 - [x] 5.2 Code review by an agent that did not write it (main's, of 297f0b81..493f2e63): "merge after two fixes"; the findings and main's decisions in section 6.
-- [ ] 5.3 The search stack's `./runtest.sh e2e`, only with the main session's OK (shared images).
+- [x] 5.3 The search stack's `./runtest.sh e2e`, with main's OK (2026-11-13), on 11092278: `./downtest.sh --reset && ./uptest.sh --build && ./runtest.sh && ./runtest.sh e2e`, `MODAMA_SECRETS_DIR=/home/dev/.config/modama/e2e-secrets`: `runtest.sh` 11 PASS, 0 FAIL; e2e 31 passed in 9 min 29 s; `./downtest.sh` exit 0.
 
 ## 6. The code review's findings (main's decisions, 2026-11-13)
 
