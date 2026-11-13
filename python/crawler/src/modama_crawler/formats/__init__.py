@@ -38,7 +38,8 @@ REFUSED = frozenset({errno.EACCES, errno.EPERM})
 # the marker that lists them all, to develop resolution rules (decision 344)
 WANTED_TWICE = "two formats want it"
 # In every warning about a file whose inspection failed, timed out or killed its
-# process: it is tried again next crawl (Directory.inspect, decision 340)
+# process, and only there: it is tried again next crawl (Directory.inspect,
+# decision 340). A file over its budget is not tried again and not so marked
 NOT_INSPECTED = "not inspected"
 
 
@@ -263,10 +264,15 @@ class Directory:
         (did_not_answer); a function that fails, times out or kills its
         process leaves a warning with NOT_INSPECTED, and the directory is
         recognised again next crawl (decision 340); a file over its budget
-        leaves a warning. fn is a module-level function returning plain data.
+        leaves a warning, without that marker: the same file gives the same
+        outcome, so it is not tried again. fn is a module-level function
+        returning plain data. Only in the post-order call: the pre-order call
+        has names and sizes only, and no pool of the crawl.
         """
         from ..inspection import OVER_BUDGET, RETRIED, UNANSWERED, Inspector
 
+        if self.phase != "post":
+            raise ValueError(f"{self.rel}: inspect in the post-order call only")
         for e in entries:
             if self._by_name.get(e.name) is not e:
                 raise ValueError(f"{e.rel} is not an entry of {self.rel}")
@@ -290,7 +296,7 @@ class Directory:
                 )
             elif x.kind == OVER_BUDGET:
                 self.warn(
-                    e.rel, f"{self._format}: {e.name} {NOT_INSPECTED}, {x.detail}"
+                    e.rel, f"{self._format}: {e.name} {x.detail}; not read further"
                 )
         return {e.rel: x for e, x in zip(entries, got, strict=True)}
 

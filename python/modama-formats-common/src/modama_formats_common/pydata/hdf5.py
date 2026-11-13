@@ -231,6 +231,8 @@ def walked(
             name, file = raw.decode("utf-8", "replace"), file.decode("utf-8", "replace")
             found.append((name, file, path.decode("utf-8", "replace")))
             walk.objects += 1
+        if len(found) < len(names):
+            walk.over()  # the cut is said: the counts are not complete (review, S2)
         start = 0
         ordered = sorted(found, key=lambda t: t[0].encode())
         for first, last, ffile, lfile, path, count in links.runs(found):
@@ -352,17 +354,26 @@ def structure(path: str, target: str) -> tuple[list, object] | None:
         return list(obj.shape), dtype_name(obj.dtype)
 
 
-def linked_data(values: dict, linked: Linked, members: dict[str, str]) -> None:
+def linked_data(values: dict, linked: Linked, members: dict[str, str]) -> list[str]:
     """For each run of external links, the shape and dtype of its first target that is
-    a member (name -> path), under the run's first dotted name (design D6)."""
+    a member (name -> path) and can be read, under the run's first dotted name (design
+    D6); the names of the members that could not be read, gone or replaced since
+    recognition or broken, which are skipped (code review of hdf5-links, S4)."""
+    not_read: list[str] = []
     for dotted, files_, target in linked.runs:
         for file in files_:
             name = links.matched(file)
-            if name in members:
+            if name not in members or name in not_read:
+                continue
+            try:
                 found = structure(members[name], target)
-                if found is not None and len(values) <= MAX_ENTRIES - 2:
-                    values[f"{dotted}.shape"], values[f"{dotted}.dtype"] = found
-                break
+            except (OSError, KeyError, ValueError, RuntimeError):
+                not_read.append(name)  # NotRegular (a symlink now) is an OSError
+                continue
+            if found is not None and len(values) <= MAX_ENTRIES - 2:
+                values[f"{dotted}.shape"], values[f"{dotted}.dtype"] = found
+            break
+    return not_read
 
 
 # The summary line, the one positive list (TEMPLATE.md): a NeXus entry's title,

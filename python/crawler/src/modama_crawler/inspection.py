@@ -112,6 +112,12 @@ class Inspector:
     lets one folder inspect at a time, so that killing a late worker or
     running tasks again after a crash touches that folder's files only. A
     format call waiting for the lock blocks its walk thread (design D5).
+
+    Stopping does not wait for the inspections (code review of hdf5-links,
+    M1): `check` (the crawl's SIGTERM check, as extraction's) is asked before
+    a folder's inspections start and every second while they run, and
+    `stop` (the walk ending, Ctrl-C) makes every running and waiting `run`
+    end at once, its workers killed, raising InspectionStopped.
     """
 
     def __init__(
@@ -119,25 +125,45 @@ class Inspector:
         workers: int | None = None,
         time_limit: float = TIME_LIMIT,
         memory: int | None = MEMORY,
+        check: Callable[[], None] | None = None,
     ):
         self.pool = Pool(workers or default_workers(), memory, keep=True)
         self.time_limit = time_limit
         self._lock = threading.Lock()
+        self._check_outside = check
+        self._stopped = threading.Event()
+
+    def _check(self) -> None:
+        if self._stopped.is_set():
+            raise InspectionStopped("the walk is stopping")
+        if self._check_outside is not None:
+            self._check_outside()
 
     def run(
         self, fn: Callable, paths: list[str], budget: int | None
     ) -> list[Inspected]:
         tasks = [(fn, path, budget) for path in paths]
+        self._check()
         with self._lock:
+            self._check()  # another folder's turn may have ended in a stop
             raw = _run(
                 tasks,
                 self.pool.workers,
                 self.time_limit,
                 self.pool.memory,
+                check=self._check,
                 work=_inspect,
                 pool=self.pool,
             )
         return [outcome(r) for r in raw]
 
+    def stop(self) -> None:
+        """Every running and waiting `run` ends at its next check, within a second."""
+        self._stopped.set()
+
     def close(self) -> None:
         self.pool.close()
+
+
+class InspectionStopped(Exception):
+    """The walk is stopping: no inspection runs or waits any more."""

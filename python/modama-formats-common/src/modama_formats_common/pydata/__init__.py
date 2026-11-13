@@ -166,7 +166,9 @@ class Hdf5Links(Format):
 
         hdf5 = [e for e in d.entries if e.mime in self.reacts_to]
         listable = [e for e in hdf5 if e.mime == self.type and e.name.endswith(".h5")]
-        if len(hdf5) < links.MIN_FILES or not listable:
+        # A file an earlier format claimed is not offered, but may be a link's
+        # target, to flag as two formats wanting it (344; code review, S3)
+        if not listable or (len(hdf5) < links.MIN_FILES and not d.claimed):
             return
         if len(hdf5) > links.MAX_FILES:
             d.warn(
@@ -184,12 +186,22 @@ class Hdf5Links(Format):
             if x.kind != RESULT or not x.result["hdf5"]:
                 candidates.discard(e.name)
                 continue
+            if "error" in x.result:
+                # The library's own error for this state of the file: final,
+                # not tried again until the file changes (code review, S1)
+                d.warn(
+                    e.rel, f"{self.id}: {e.name}: links not listed, {x.result['error']}"
+                )
+                continue
             named[e.name] = x.result
             if x.result["cut"]:
                 d.warn(
                     e.rel,
                     f"{self.id}: {e.name}: links listed up to {links.MAX_LISTED} objects",
                 )
+            for t in sorted(set(x.result["external"] + x.result["virtual"])):
+                if t in d.claimed and t != e.name:
+                    d.claimed_elsewhere(e.rel, t)
         targets = {
             x: {
                 t
@@ -198,23 +210,23 @@ class Hdf5Links(Format):
             }
             for x, found in named.items()
         }
-        anchors, shared, cycles = links.grouped(targets)
+        anchors, shared, blocked = links.grouped(targets)
         notes: dict[str, list[str]] = {}
         for t, xs in shared.items():
             for x in xs:
                 others = ", ".join(y for y in xs if y != x)
                 notes.setdefault(x, []).append(
-                    f"{t} also linked by {others}, not a member"
+                    f"{t} is also linked by {others}, so it is in neither's dataset"
                 )
-        for x, y in cycles.items():
-            notes.setdefault(x, []).append(f"names {y}, which names it: no anchor")
+        for x, namers in blocked.items():
+            notes.setdefault(x, []).append(
+                f"names {', '.join(sorted(targets[x]))}, "
+                f"named by {', '.join(namers)}: no anchor"
+            )
         for x, texts in notes.items():
             d.note(by_name[x], "; ".join(texts))
         for x, members in anchors.items():
             found = named[x]
-            for t in found["external"] + found["virtual"]:
-                if t in d.claimed:
-                    d.claimed_elsewhere(by_name[x].rel, t)
             how = [
                 kind
                 for kind, key in (
@@ -241,7 +253,8 @@ class Hdf5Links(Format):
             for m in dataset.members
             if m != dataset.anchor
         }
-        hdf5.linked_data(original, linked, members)
+        if not_read := hdf5.linked_data(original, linked, members):
+            mapped["not_read"] = not_read  # the master's values stay (review, S4)
         return Extracted(
             summary=hdf5.summary(original, mapped),
             subjects=hdf5.terms(original),

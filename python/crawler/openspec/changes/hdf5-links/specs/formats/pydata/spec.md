@@ -88,7 +88,15 @@ A file named `*.h5` of type `application/vnd.hdfgroup.hdf5` whose links name oth
 
 #### Scenario: Two files that name each other
 - **WHEN** a folder holds `a.h5` linking `b.h5` and `b.h5` linking `a.h5`, and nothing else
-- **THEN** each is a dataset of `common/hdf5` of its own, and each one's basis names the other
+- **THEN** each is a dataset of `common/hdf5` of its own, and each one's basis says `names <the other>, named by <the other>: no anchor`
+
+#### Scenario: Three files that name each other in a ring
+- **WHEN** a folder holds `a.h5` linking `b.h5`, `b.h5` linking `c.h5` and `c.h5` linking `a.h5`
+- **THEN** each is a dataset of `common/hdf5` of its own, and the basis of `a.h5` says `names b.h5, named by c.h5: no anchor`, the others alike
+
+#### Scenario: A link target another format claimed
+- **WHEN** a format that runs before `common/hdf5links` claims `d1.h5`, and `m.h5` links `d1.h5` alone
+- **THEN** `m.h5` is a dataset of `common/hdf5`, with the warning `common/hdf5links: d1.h5 is claimed by <that format>; two formats want it` (decision 344)
 
 #### Scenario: A target that is not HDF5
 - **WHEN** a folder holds `m.h5` linking `d1.h5` and `d2.h5`, `d1.h5` an HDF5 file and `d2.h5` a text file
@@ -99,11 +107,11 @@ A file named `*.h5` of type `application/vnd.hdfgroup.hdf5` whose links name oth
 - **THEN** `m.h5` anchors a dataset with `d1.h5`, and `broken.h5` is a dataset of `common/hdf5` of its own
 
 ### Requirement: A file that two anchors name stays its own dataset
-A file named by two anchors SHALL be a member of neither, and each anchor's basis SHALL name it and the other anchor. A member's own targets SHALL NOT be added to the dataset.
+A file named by two files that could anchor SHALL be a member of neither, and each of their bases SHALL say `<file> is also linked by <the other>, so it is in neither's dataset`. A member's own targets SHALL NOT be added to the dataset.
 
 #### Scenario: A file two masters link
 - **WHEN** a folder holds `a.h5` linking `shared.h5` and `only_a.h5`, and `b.h5` linking `shared.h5`
-- **THEN** `a.h5` anchors a dataset with `only_a.h5`, whose basis says `shared.h5` is also linked by `b.h5`; `b.h5` and `shared.h5` are datasets of their own, the basis of `b.h5` says `shared.h5` is also linked by `a.h5`, and both count `shared.h5` as `found`
+- **THEN** `a.h5` anchors a dataset with `only_a.h5`, whose basis says `shared.h5 is also linked by b.h5, so it is in neither's dataset`; `b.h5` and `shared.h5` are datasets of their own, the basis of `b.h5` says the same of `a.h5`, and both count `shared.h5` as `found`
 
 ### Requirement: A target name is never opened
 Recognition and extraction SHALL compare a target name with the names of the folder's entries only, SHALL NOT open a path built from it, and SHALL NOT open anything through a link; every HDF5 file SHALL be opened through a file object of a descriptor opened without following a symlink.
@@ -129,7 +137,15 @@ Recognition and extraction SHALL compare a target name with the names of the fol
 
 #### Scenario: A file over its budget
 - **WHEN** the listing of a master would read more than 4 MiB
-- **THEN** it is a dataset of `common/hdf5` of its own, its data files too, and the folder has a warning naming the file and the budget, the same on every crawl
+- **THEN** it is a dataset of `common/hdf5` of its own, its data files too, and the folder has a warning naming the file and the budget, without `not inspected`, the same on every crawl and not tried again
+
+#### Scenario: A corrupt master is a final result
+- **WHEN** a byte of a link name in the dense link storage of `scan_master.h5` of `linked_scan` is flipped, so that HDF5's checksum fails while its links are listed
+- **THEN** it and its data files are datasets of `common/hdf5`, the master has the warning `common/hdf5links: scan_master.h5: links not listed, RuntimeError: …checksum…`, without `not inspected`, and the folder is not recognised again until it changes (main's reading of decision 340, to confirm with @weber: a deterministic error of the library is the result for that state of the file; only a timeout, a dead worker and a failure of the format's own function are tried again)
+
+#### Scenario: One group of many links
+- **WHEN** a file has 20,000 external links to `d1.h5` in one group, and `d1.h5` is in its folder
+- **THEN** its listing stops at 5,000, it anchors a dataset with `d1.h5`, warned that its links were listed up to 5,000 objects, and its extraction's `mapped_metadata.walk` says the object limit cut it, so that its counts do not read as complete
 
 #### Scenario: A listing that times out
 - **WHEN** the listing of `scan_master.h5` of `linked_scan`, crawled for the first time, does not end within the outside limit
@@ -149,6 +165,10 @@ The extractor of `common/hdf5links` SHALL give, for each entry of external links
 #### Scenario: A target path that leaves the member
 - **WHEN** the target path `/entry/data/data` of the first data file is a soft link to `/raw`, or an external link to a file outside the folder
 - **THEN** `original_metadata` has no `entry.data.data_000001.shape`, and nothing is opened through the link
+
+#### Scenario: A member gone at extraction
+- **WHEN** after recognition `scan_data_000001.h5` of `linked_scan` is removed, or replaced by a symlink
+- **THEN** the master's extraction keeps its values, `mapped_metadata.not_read` is `["scan_data_000001.h5"]`, `entry.data.data_000001.shape` comes from the next member of the run, and `dangling` counts it
 
 ## MODIFIED Requirements
 

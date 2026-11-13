@@ -17,7 +17,15 @@ The core SHALL let a format run a function of its own on files of its folder in 
 
 #### Scenario: A budget breach stays raised
 - **WHEN** a function reads past its file's budget, catches the error, and reads again
-- **THEN** the second read raises too, and the outcome says the file is over its budget
+- **THEN** the second read raises too, the outcome says the file is over its budget, and its warning does not say `not inspected`: the same file gives the same outcome, so it is not tried again
+
+#### Scenario: Stopping does not wait for the inspections
+- **WHEN** a crawl gets SIGTERM or Ctrl-C while one folder's files are inspected and other folders wait for the pool
+- **THEN** the running inspections are ended and their workers killed within seconds, no waiting folder starts its inspections, and the crawl stops (code review of hdf5-links, M1)
+
+#### Scenario: An inspection in the pre-order call is refused
+- **WHEN** a format asks for an inspection in the pre-order call
+- **THEN** the call raises, since the pre-order call has names and sizes only
 
 #### Scenario: An inspection that fails
 - **WHEN** a function raises an exception of its own

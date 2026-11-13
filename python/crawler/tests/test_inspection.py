@@ -9,7 +9,11 @@ what only they show (a hang, a crash, one pool).
 
 import errno
 import os
+import signal
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 from modama_crawler import extraction, files, inspection
@@ -249,3 +253,87 @@ def test_one_pool_for_the_crawl(tmp_path, monkeypatch):
     (tmp_path / "plain").mkdir()
     walk(tmp_path / "plain", [fmt], processes=2)
     assert made == []  # nothing to inspect, no process
+
+
+def test_an_inspection_in_the_pre_order_call_is_refused(tmp_path):
+    (tmp_path / "a.bin").write_bytes(b"x")
+    e = entry_of(tmp_path / "a.bin")
+    d = Directory("/", str(tmp_path), [e], [], "pre", uid=1, mtime=0.5)
+    with pytest.raises(ValueError, match="post-order"):
+        d.inspect([e], pid, 1024)
+
+
+def sleeps(f):
+    time.sleep(20)
+    return "slept"
+
+
+class Sleeps(Format):
+    """Inspects every text file with a function that takes 20 s."""
+
+    type = "x/slept"
+    reacts_to = frozenset({"text/plain"})
+
+    def recognize(self, d):
+        d.inspect(d.of_type("text/plain"), sleeps, 1024)
+        return []
+
+
+# Run in a process of its own, as the crawl runs: SIGTERM sets a flag that the
+# walk's progress and the inspector's check read (cli._terminate); Ctrl-C
+# raises KeyboardInterrupt in the main thread
+STOPPED = """
+import signal, sys, tempfile, threading
+from pathlib import Path
+sys.path.insert(0, {tests!r})
+from modama_crawler import mimedb, selection
+from modama_crawler.formats import Collection
+from modama_crawler.walk import walk
+import test_inspection
+database = Path(tempfile.mkdtemp(dir={scratch!r}))
+mimedb.build(selection.discover().values(), database)
+mimedb.activate(database)
+stop = threading.Event()
+signal.signal(signal.SIGTERM, lambda *_: stop.set())
+def progress(directories, files):
+    if stop.is_set():
+        raise SystemExit(143)
+def check():
+    if stop.is_set():
+        raise SystemExit(143)
+fmt = test_inspection.Sleeps()
+Collection("t", [fmt])
+print("walking", flush=True)
+try:
+    walk(Path({tree!r}), [fmt], progress=progress, processes=2, check=check)
+except KeyboardInterrupt:
+    sys.exit(130)
+"""
+
+
+@pytest.mark.parametrize("stop", [signal.SIGTERM, signal.SIGINT])
+def test_stopping_does_not_wait_for_the_inspections(tmp_path, stop):
+    tree = tmp_path / "tree"
+    for i in range(10):
+        (tree / f"f{i}").mkdir(parents=True)
+        (tree / f"f{i}" / "a.txt").write_text("text\n")
+    script = STOPPED.format(
+        tests=str(Path(__file__).parent), scratch=str(tmp_path), tree=str(tree)
+    )
+    run = subprocess.Popen(
+        [sys.executable, "-c", script], stdout=subprocess.PIPE, text=True
+    )
+    assert run.stdout.readline() == "walking\n"
+    time.sleep(4)  # the first folders inspect, the others wait for the pool
+    assert run.poll() is None, "the walk ended before the signal"
+    run.send_signal(stop)
+    start = time.monotonic()
+    try:
+        run.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        pytest.fail("still walking 30 s after the signal")
+    finally:
+        run.kill()
+    # Ten folders of 20 s on 2 workers, one folder at a time, would take 200 s
+    assert time.monotonic() - start < 30
+    assert run.returncode == (143 if stop == signal.SIGTERM else 130)

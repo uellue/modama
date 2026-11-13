@@ -14,7 +14,13 @@ import numpy
 import pytest
 from modama_crawler import extraction, inspection
 from modama_crawler import walk as walk_module
-from modama_crawler.formats import NOT_INSPECTED
+from modama_crawler.formats import (
+    NOT_INSPECTED,
+    WANTED_TWICE,
+    Collection,
+    Dataset,
+    Format,
+)
 from modama_crawler.walk import walk
 
 from modama_formats_common.pydata import links
@@ -356,8 +362,8 @@ def test_two_files_that_name_each_other(collection_tests, tmp_path):
     h5(tmp_path / "b.h5", a=("a.h5", "/data"))
     found = datasets(collection_tests, tmp_path)
     assert found["a.h5"].format == found["b.h5"].format == "common/hdf5"
-    assert "b.h5" in found["a.h5"].basis
-    assert "a.h5" in found["b.h5"].basis
+    assert "names b.h5, named by b.h5: no anchor" in found["a.h5"].basis
+    assert "names a.h5, named by a.h5: no anchor" in found["b.h5"].basis
 
 
 def test_a_target_that_is_not_hdf5(collection_tests, tmp_path):
@@ -393,9 +399,11 @@ def test_a_file_two_masters_link(collection_tests, tmp_path):
     h5(tmp_path / "only_a.h5")
     found = datasets(collection_tests, tmp_path)
     assert names(found["a.h5"]) == ["a.h5", "only_a.h5"]
-    assert "shared.h5 also linked by b.h5" in found["a.h5"].basis
+    shared = "shared.h5 is also linked by {}, so it is in neither's dataset"
+    assert shared.format("b.h5") in found["a.h5"].basis
     assert found["b.h5"].format == found["shared.h5"].format == "common/hdf5"
-    assert "shared.h5 also linked by a.h5" in found["b.h5"].basis
+    # b.h5 names nothing but shared.h5: no dataset of its own links, the same note
+    assert shared.format("a.h5") in found["b.h5"].basis
     for name in ("a.h5", "b.h5"):
         x, _ = extracted(collection_tests, tmp_path, name)
         assert mapped(x)["dangling"] == 0
@@ -468,12 +476,116 @@ def test_a_file_over_its_budget(collection_tests, scan, monkeypatch):
     assert found["scan_master.h5"].format == "common/hdf5"
     assert {found[n].format for n in DATA} == {"common/hdf5"}
     warned = [t for r, t in result.all_warnings() if r.endswith("scan_master.h5")]
-    assert any(NOT_INSPECTED in t and "budget of 1000" in t for t in warned)
+    assert any("budget of 1000" in t for t in warned)
+    # The same file gives the same outcome: not marked as tried again (340)
+    assert not any(NOT_INSPECTED in t for t in warned)
+    assert not any(listing.retry for listing in result.listings.values())
+
+
+def corrupt(path: Path) -> None:
+    """One byte of a link name flipped: HDF5's checksum of the link storage fails."""
+    data = bytearray(path.read_bytes())
+    data[data.find(b"data_000005") + 3] ^= 0xFF
+    path.write_bytes(bytes(data))
+
+
+def test_a_corrupt_master_is_a_final_result(collection_tests, scan):
+    # Code review of hdf5-links, S1: a deterministic error of the library while
+    # listing is the result for that state of the file, not retried every crawl
+    corrupt(scan / "scan_master.h5")
+    result = walk(scan, collection_tests.collection.formats)
+    found = {d.anchor.rsplit("/", 1)[-1]: d for d in result.datasets}
+    assert found["scan_master.h5"].format == "common/hdf5"
+    warned = [t for r, t in result.all_warnings() if r.endswith("scan_master.h5")]
+    assert any("links not listed" in t and "checksum" in t for t in warned)
+    assert not any(NOT_INSPECTED in t for t in warned)
+    assert not any(listing.retry for listing in result.listings.values())
+
+
+def test_one_group_of_many_links(collection_tests, tmp_path):
+    # Code review, S2: the links of one large group are counted as HDF5 hands them
+    # over and cut at 5,000; the extraction says its walk was cut. (100,000 links
+    # still read 20 MB when cut at 5,000, each link's value looked up by name:
+    # such a file is over its budget of 4 MiB, the same on every crawl.)
+    with h5py.File(tmp_path / "m.h5", "w", libver="latest", track_times=False) as f:
+        for i in range(20_000):  # in the root group, the last the walk sees
+            f[f"l{i:06d}"] = h5py.ExternalLink("d1.h5", "/data")
+    h5(tmp_path / "d1.h5")
+    from modama_crawler import files
+
+    with files.Counted(files.regular(str(tmp_path / "m.h5"))) as f:
+        assert links.listed(f)["cut"]
+        # the iteration stopped: 592,133 bytes, against 792,325 when all 20,000
+        # were collected first (h5py 3.16.0, HDF5 2.0.0)
+        assert f.read_bytes < 700_000
+    result = walk(tmp_path, collection_tests.collection.formats)
+    found = {d.anchor.rsplit("/", 1)[-1]: d for d in result.datasets}
+    assert names(found["m.h5"]) == ["d1.h5", "m.h5"]
+    assert any("links listed up to 5000 objects" in t for _, t in result.all_warnings())
+    x, _ = extracted(collection_tests, tmp_path, "m.h5")
+    assert "object limit" in mapped(x)["walk"]  # the counts are not complete
+
+
+class ClaimsD1(Format):
+    """A probe at priority 70 that claims d1.h5 before common/hdf5links (344)."""
+
+    type = "x/claimed"
+    priority = 70
+    reacts_to = frozenset({"application/vnd.hdfgroup.hdf5"})
+
+    def recognize(self, d):
+        for e in d.of_type("application/vnd.hdfgroup.hdf5"):
+            if e.name == "d1.h5":
+                yield Dataset(anchor=e.rel, basis="probe")
+
+
+def test_a_link_target_another_format_claimed(collection_tests, tmp_path):
+    # Code review, S3: the warning of 344 also when it is the only target
+    h5(tmp_path / "m.h5", d1=("d1.h5", "/data"))
+    h5(tmp_path / "d1.h5")
+    probe = ClaimsD1()
+    Collection("t", [probe])
+    result = walk(tmp_path, [*collection_tests.collection.formats, probe])
+    found = {d.anchor.rsplit("/", 1)[-1]: d for d in result.datasets}
+    assert found["m.h5"].format == "common/hdf5"
+    assert (
+        "/m.h5",
+        f"common/hdf5links: d1.h5 is claimed by t/claimsd1; {WANTED_TWICE}",
+    ) in result.all_warnings()
+
+
+@pytest.mark.parametrize("change", ["removed", "a symlink"])
+def test_a_member_gone_at_extraction(collection_tests, scan, change):
+    # Code review, S4: the master's values stay, the member is said not read
+    d = datasets(collection_tests, scan)["scan_master.h5"]
+    fmt = next(f for f in collection_tests.collection.formats if f.id == d.format)
+    first = scan / DATA[0]
+    first.unlink()
+    if change == "a symlink":
+        first.symlink_to(scan / DATA[1])
+    x = fmt.extract(d, str(scan))
+    assert mapped(x)["not_read"] == [DATA[0]]
+    # the next member of the run gives the linked data's structure
+    assert original(x)["entry.data.data_000001.shape"] == [2, 8, 6]
+    assert "entry.instrument.detector.description" in original(x)
+    assert mapped(x)["dangling"] == 10
+
+
+def test_three_files_that_name_each_other_in_a_ring(collection_tests, tmp_path):
+    # Code review, nit: as two files that name each other, each with a remark
+    h5(tmp_path / "a.h5", b=("b.h5", "/data"))
+    h5(tmp_path / "b.h5", c=("c.h5", "/data"))
+    h5(tmp_path / "c.h5", a=("a.h5", "/data"))
+    found = datasets(collection_tests, tmp_path)
+    assert {d.format for d in found.values()} == {"common/hdf5"}
+    assert "names b.h5, named by c.h5: no anchor" in found["a.h5"].basis
+    assert "names c.h5, named by a.h5: no anchor" in found["b.h5"].basis
+    assert "names a.h5, named by b.h5: no anchor" in found["c.h5"].basis
 
 
 def test_a_listing_that_times_out(collection_tests, scan, monkeypatch):
-    def short(workers=None):
-        return inspection.Inspector(workers, time_limit=0.01)
+    def short(workers=None, check=None):
+        return inspection.Inspector(workers, time_limit=0.01, check=check)
 
     monkeypatch.setattr(walk_module, "Inspector", short)
     result = walk(scan, collection_tests.collection.formats)

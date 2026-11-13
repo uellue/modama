@@ -365,6 +365,7 @@ def walk(
     top: str | None = None,
     start: str | None = None,
     kept: Kept | None = None,
+    check: Callable[[], None] | None = None,
 ) -> Result:
     """Recognise the tree under root.
 
@@ -395,7 +396,9 @@ def walk(
     read and no format runs for it (D3). Every directory is still listed.
     `threads` is the number of file system calls in flight; with `processes`
     above 0, MIME magic matching runs in that many worker processes
-    (parallel-walk D5).
+    (parallel-walk D5), and the formats' inspections in as many others
+    (hdf5-links D5). `check`, if given, is called before and while files are
+    inspected and may raise to stop the walk (the crawl's SIGTERM check).
     """
     # Ctrl-C is the main thread's; blocked here, it is also blocked in the
     # matching processes these threads start, from their first instruction
@@ -415,8 +418,9 @@ def walk(
         if processes
         else None
     )
-    # One pool for the crawl's inspections, made at the first (hdf5-links, D5)
-    inspector = Inspector(processes or None)
+    # One pool for the crawl's inspections, made at the first (hdf5-links, D5);
+    # `check` (the crawl's SIGTERM check) stops them too
+    inspector = Inspector(processes or None, check=check)
     try:
         return asyncio.run(
             _walk(
@@ -435,6 +439,9 @@ def walk(
             )
         )
     finally:  # also on an error or a signal: queued work is dropped
+        # Before the threads are waited for: those inspecting or waiting to
+        # inspect a folder end within a second instead of inspecting it
+        inspector.stop()
         pool.shutdown(cancel_futures=True)
         if matchers is not None:
             matchers.shutdown(cancel_futures=True)

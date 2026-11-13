@@ -101,14 +101,22 @@ def matched(file: str, virtual: bool = False) -> str | None:
 def listed(f) -> dict:
     """In a worker: what an HDF5 file's external links and virtual-dataset sources name.
 
-    {"hdf5": False} if h5py cannot open it; else {"hdf5": True, "external":
-    [names], "virtual": [names], "cut": bool}, each name as `matched` gives
-    it. Groups are entered by hard links only, objects opened by hard links
-    only, at most MAX_LISTED objects and links (a cut is said); links are
-    read with `links.get_val`, never followed. The exception classes caught at
-    the open are those LiberTEM's HDF5 dataset catches when it detects a file
-    (`detect_params`); RuntimeError and SystemError in the listing go to the
-    inspection's outcome "failed".
+    {"hdf5": False} if h5py cannot open it; {"hdf5": True, "error": text} if
+    the library fails while listing (a broken checksum, a link storage it
+    cannot iterate): the same file gives the same error, a result for that
+    state of the file, not tried again (code review of hdf5-links, S1);
+    else {"hdf5": True, "external": [names], "virtual": [names], "cut":
+    bool}, each name as `matched` gives it. Groups are entered by hard links
+    only, objects opened by hard links only, at most MAX_LISTED objects and
+    links, counted as HDF5 hands them over and the iteration stopped there,
+    so that one group of 100,000 links is not read whole (S2; a cut is
+    said); links are read with `links.get_val`, never followed. The
+    exception classes are those LiberTEM's HDF5 dataset catches when it
+    detects a file (`detect_params`): at the open (OSError, KeyError,
+    ValueError, TypeError), in the walk (RuntimeError, SystemError), with
+    KeyError, ValueError and OSError, as h5py raises them for broken
+    metadata. A read error is still told apart: the inspection's file object
+    notes it, whatever is caught here.
     """
     import h5py
 
@@ -121,37 +129,35 @@ def listed(f) -> dict:
     count = 0
     cut = False
     with h5:
-        stack = [h5.id]
-        while stack and not cut:
-            gid = stack.pop()
-            found: list[tuple[bytes, int]] = []
+        try:
+            stack = [h5.id]
+            while stack and not cut:
+                gid = stack.pop()
+                found: list[tuple[bytes, int]] = []
 
-            def take(name, info, found=found):
-                found.append((name, info.type))
+                def take(name, info, found=found):
+                    nonlocal count, cut
+                    count += 1
+                    if count > MAX_LISTED:
+                        cut = True
+                        return True  # ends the iteration (H5Literate)
+                    found.append((name, info.type))
+                    return None
 
-            gid.links.iterate(take, info=True, order=h5py.h5.ITER_NATIVE)
-            for name, kind in found:
-                count += 1
-                if count > MAX_LISTED:
-                    cut = True
-                    break
-                if kind == h5py.h5l.TYPE_EXTERNAL:
-                    file = gid.links.get_val(name)[0].decode("utf-8", "replace")
-                    if (target := matched(file)) is not None:
-                        external.add(target)
-                elif kind == h5py.h5l.TYPE_HARD:
-                    obj = h5py.h5o.open(gid, name)
-                    if isinstance(obj, h5py.h5g.GroupID):
-                        stack.append(obj)
-                    elif isinstance(obj, h5py.h5d.DatasetID):
-                        dcpl = obj.get_create_plist()
-                        if dcpl.get_layout() == h5py.h5d.VIRTUAL:
-                            for i in range(dcpl.get_virtual_count()):
-                                file = dcpl.get_virtual_filename(i)
-                                if file != "." and (
-                                    target := matched(file, virtual=True)
-                                ):
-                                    virtual.add(target)
+                gid.links.iterate(take, info=True, order=h5py.h5.ITER_NATIVE)
+                for name, kind in found:
+                    if kind == h5py.h5l.TYPE_EXTERNAL:
+                        file = gid.links.get_val(name)[0].decode("utf-8", "replace")
+                        if (target := matched(file)) is not None:
+                            external.add(target)
+                    elif kind == h5py.h5l.TYPE_HARD:
+                        obj = h5py.h5o.open(gid, name)
+                        if isinstance(obj, h5py.h5g.GroupID):
+                            stack.append(obj)
+                        elif isinstance(obj, h5py.h5d.DatasetID):
+                            virtual |= sources(obj)
+        except (RuntimeError, SystemError, KeyError, ValueError, OSError) as e:
+            return {"hdf5": True, "error": f"{type(e).__name__}: {e}"}
     return {
         "hdf5": True,
         "external": sorted(external),
@@ -160,39 +166,63 @@ def listed(f) -> dict:
     }
 
 
+def sources(dataset) -> set[str]:
+    """The names a virtual dataset's mappings onto other files are matched by (a
+    h5py DatasetID; nothing for any other layout), from its creation property list."""
+    import h5py
+
+    dcpl = dataset.get_create_plist()
+    if dcpl.get_layout() != h5py.h5d.VIRTUAL:
+        return set()
+    found = set()
+    for i in range(dcpl.get_virtual_count()):
+        file = dcpl.get_virtual_filename(i)
+        if file != "." and (target := matched(file, virtual=True)):
+            found.add(target)
+    return found
+
+
 def grouped(
     names: dict[str, set[str]],
-) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, str]]:
-    """Anchors with their members, the targets two anchors name, and cycles, from what each listed file names.
+) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, list[str]]]:
+    """Anchors with their members, the targets two candidates name, and the files that
+    name others but cannot anchor, from what each listed file names (design D4).
 
     `names`: a listed file -> the HDF5 files of the folder it names, its own
-    name left out. A back-link is a link from one of a file's targets whose
-    only target is that file. An anchor names at least one file, is named by
-    no other listed file but through a back-link, and is not one of two
-    files each the other's only target (a cycle); its members are its
-    targets but those another anchor names too (design D4).
-    Returns (anchor -> members, shared target -> anchors, file of a cycle -> the other).
+    name left out. A back-link from y to x is a link from one of x's targets
+    whose only target is x, while x names more than y (a data file that links
+    its master; two files each the other's only target are no such pair). A
+    candidate names at least one file and is named by no other listed file
+    but through a back-link; its members are its targets but those another
+    candidate names too; an anchor is a candidate with members. A file that
+    names others, is no candidate and no anchor's member (a ring of any
+    length, a chain's middle) is blocked by the files that name it.
+    Returns (anchor -> members, shared target -> its candidates, blocked file -> its namers).
     """
     by: dict[str, set[str]] = {}
     for x, targets in names.items():
         for t in targets:
             by.setdefault(t, set()).add(x)
-    cycles = {
-        x: next(iter(t))
-        for x, t in names.items()
-        if len(t) == 1 and names.get(next(iter(t))) == {x}
-    }
-    anchors = [
+
+    def back(y: str, x: str) -> bool:
+        return y in names[x] and names.get(y) == {x} and names[x] != {y}
+
+    candidates = [
         x
         for x, targets in sorted(names.items())
-        if targets
-        and x not in cycles
-        and all(y in targets and names.get(y) == {x} for y in by.get(x, ()))
+        if targets and all(back(y, x) for y in by.get(x, ()))
     ]
     named: dict[str, list[str]] = {}
-    for x in anchors:
+    for x in candidates:
         for t in names[x]:
             named.setdefault(t, []).append(x)
     shared = {t: sorted(xs) for t, xs in named.items() if len(xs) > 1}
-    members = {x: sorted(t for t in names[x] if t not in shared) for x in anchors}
-    return {x: m for x, m in members.items() if m}, shared, cycles
+    members = {x: sorted(t for t in names[x] if t not in shared) for x in candidates}
+    anchors = {x: m for x, m in members.items() if m}
+    in_dataset = {m for ms in anchors.values() for m in ms}
+    blocked = {
+        x: sorted(y for y in by.get(x, ()) if not back(y, x))
+        for x, targets in sorted(names.items())
+        if targets and x not in candidates and x not in in_dataset
+    }
+    return anchors, shared, blocked
