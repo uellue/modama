@@ -61,6 +61,8 @@ Agreed with @weber, co-admin of the server, 2026-11-10.
 
 ## Settings
 
+Since the change `subtree-crawl` (2026-11-13): `docker-compose.staging.yml` passes `STAGING_CRAWL_CONFIG` to `crawler` and `crawl-timer` as `MODAMA_CRAWLER_CONFIG`, so every `modama-crawler` command there uses it without `--config`. Exclusions are no longer the way to crawl one folder: `dc run --rm crawl-timer modama-crawler crawl --path adhoc/libertem` crawls it within the whole tree's index (the stack's README, "Crawling one folder"), and refuses another configuration than the last crawl of the whole tree had. For a new staging, `STAGING_CRAWL_CONFIG=full.toml` from the start; `libertem.toml` below is the history of runs 1 to 3.
+
 `staging.env` in `prototypes/search-stack/` (gitignored), written in steps 3 to 7:
 
 ```
@@ -421,8 +423,9 @@ dc exec -T crawler-db psql -U postgres -d modama_crawler -At -c "SELECT count(*)
 A crawl that logs `the user database does not know SSSD_CHECK_USER …: sssd is not
 answering` stored nothing: check `dc ps sssd` and `dc logs sssd`; the timer crawls again
 at the next 19:00, or crawl by hand with the timer's configuration:
-`dc exec crawl-timer modama-crawler --config /stagingconf/libertem.toml crawl` (the
-file named by `STAGING_CRAWL_CONFIG` in `staging.env`).
+`dc exec crawl-timer modama-crawler crawl` (since the change `subtree-crawl`, the
+file named by `STAGING_CRAWL_CONFIG` in `staging.env` is the default, as
+`MODAMA_CRAWLER_CONFIG`; before it, `--config /stagingconf/libertem.toml`).
 
 What it costs: nearly every record (1,451,848 in run 3) changes its creator, so the
 harvest takes them all again (run 3: 5 h 14 min, to about 01:30) and the indexing embeds

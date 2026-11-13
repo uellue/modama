@@ -55,14 +55,17 @@ To run the full chain (crawl, OAI-PMH server, harvester, warehouse and search), 
 
 ```bash
 modama-crawler migrate                  # bring the database's schema to this crawler's; once for a new database
-modama-crawler crawl [--root PATH]      # crawl MODAMA_DATA_ROOT (or PATH) into the database
+modama-crawler crawl [--root ROOT]      # crawl MODAMA_DATA_ROOT (or ROOT) into the database
+modama-crawler crawl --path PATH        # crawl only the folder PATH below the data root, from scratch (a subtree crawl)
 modama-crawler runs [--follow]          # the last ten crawls, newest first; --follow: the running one until it ends
 modama-crawler timer --at 19:00         # crawl every day at 19:00 UTC, and at once if the last finished crawl is over a day old
 modama-crawler serve                    # OAI-PMH on port 7654
 modama-crawler cpu-budget               # the crawl's worker processes and threads on this machine, and why
 ```
 
-**Warning:** `crawl --root PATH` treats PATH as the whole repository. Pointed at a subfolder of a crawled tree, it changes the identifiers and deletes every other record from the crawler's database (the files are untouched; a full crawl brings them back). Crawl a subfolder only into a database of its own, until `crawl --path` (change `subtree-crawl`, `BACKLOG.md` "Next") lands.
+`--root` sets the data root, and a crawl treats it as the whole tree: identifiers are relative to it, and whatever the crawl did not see is deleted from the crawler's database. So to crawl one folder of a crawled tree, use `--path`, not `--root`: `crawl --root` on a subfolder changes the identifiers and deletes every other record (the files are untouched; a full crawl brings them back).
+
+`crawl --path adhoc/libertem/libertem-test-data` recognises and extracts that folder and everything below it from scratch, with nothing taken over or reused, and changes nothing outside it. Records of datasets that disappeared below it are deleted, and only records whose content changed get a new datestamp, so the harvest that follows brings exactly those to the search. It is the quick way to see a changed format on real files: change the code, rebuild, `crawl --path` on a folder that has such files (in the search stack, `/prototypes/search-stack/README.md`, "Crawling one folder"). The next crawl of the whole tree recognises the folder again and reuses its extractions while the installation is the same; after a reverted experiment, it extracts the folder again with the reverted code, because the identity differs (Extract, above). PATH is a canonical path, relative to the data root (`adhoc/…`, a leading or trailing `/` is accepted; a file stands for its folder). It is refused, with status 2 and nothing recorded, where a crawl of the whole tree would not go: a folder that is a symlink, excluded, collapsed (an environment, `.git`, a Zarr store) or cannot be listed on the way down, a path outside the data root or the data root itself. It is refused too with `--select` or `--ignore`, with another `--root` or another configuration than the last crawl of the whole tree had, so that it cannot make records a full crawl would not make. A subtree crawl takes the same lock, starts the same harvest, and does not count for the timer's catch-up or for `modama-chain`'s freshness time. `runs` shows its path after the root.
 
 With `MODAMA_CRAWLER_AIRFLOW_URL` set (and `MODAMA_CRAWLER_AIRFLOW_USER`, `MODAMA_CRAWLER_AIRFLOW_PASSWORD`, an Airflow account allowed to start DAG runs), every finished crawl starts the EOSC warehouse's harvest of its own endpoint (`OAI_BASE_URL`), after its records are committed; also an unchanged crawl, so that a harvest covers it and the search's freshness time moves on. If the harvest cannot be started, the crawl still counts as finished, and the command exits with status 3. On SIGTERM (`docker stop`) a crawl records its run as failed and exits with 143; the timer passes SIGTERM on to its running crawl. `/prototypes/search-stack/` runs both, the timer and the trigger.
 
@@ -83,7 +86,7 @@ Where an item went between the tree and a search hit, and how fresh the search i
 
 Settings come from the environment or from `python/crawler/.env`. `.env.example` lists the keys: data root, database, PostgreSQL connection, the base URL reported to harvesters, and `OAI_BIND`. `OAI_BIND` is the address `serve` listens on. It defaults to `localhost`; use `0.0.0.0` inside a container.
 
-A TOML file passed with `--config` chooses the formats and the exclusions:
+A TOML file passed with `--config`, or named by `MODAMA_CRAWLER_CONFIG` when `--config` is not given, chooses the formats and the exclusions; a deployment sets `MODAMA_CRAWLER_CONFIG` once, so that every command uses its configuration. Every crawl records the configuration it ran with:
 
 ```toml
 [formats]
@@ -108,15 +111,16 @@ The schema of the crawler's database is changed by migrations, so that a change 
 ```
 INFO Running upgrade  -> 0001_baseline, baseline: the tables as the crawler made them before migrations
 INFO Running upgrade 0001_baseline -> 0002_extractor_identity, extractor identity: reuse by a digest of the installation, failures never reused
-INFO schema migrated from none to 0002_extractor_identity
+INFO Running upgrade 0002_extractor_identity -> 0003_crawl_runs_scope, crawl runs scope: the subtree of a subtree crawl, and the configuration of every crawl
+INFO schema migrated from none to 0003_crawl_runs_scope
 ```
 
-Run again, it says `INFO schema up to date at 0002_extractor_identity` at once, also while a crawl runs. On a database made before migrations it first says `INFO tables made before migrations found: adopted as 0001_baseline`. The search stack runs it as the service `crawler-migrate` before `crawler` and `crawl-timer` start. `crawl`, `runs`, `timer` and `serve` only check the version, and exit with status 2 when it does not fit. What you see, and what to do:
+Run again, it says `INFO schema up to date at 0003_crawl_runs_scope` at once, also while a crawl runs. On a database made before migrations it first says `INFO tables made before migrations found: adopted as 0001_baseline`. The search stack runs it as the service `crawler-migrate` before `crawler` and `crawl-timer` start. `crawl`, `runs`, `timer` and `serve` only check the version, and exit with status 2 when it does not fit. What you see, and what to do:
 
 | You see | Step |
 |---|---|
-| `ERROR the database has no schema version, this crawler needs 0002_extractor_identity: run modama-crawler migrate` | `modama-crawler migrate` |
-| `ERROR the database schema is at 0001_baseline, this crawler needs 0002_…: run modama-crawler migrate` | `modama-crawler migrate` |
+| `ERROR the database has no schema version, this crawler needs 0003_crawl_runs_scope: run modama-crawler migrate` | `modama-crawler migrate` |
+| `ERROR the database schema is at 0002_extractor_identity, this crawler needs 0003_…: run modama-crawler migrate` | `modama-crawler migrate` |
 | `ERROR the database schema is at 0002_…, which this crawler does not know: a newer crawler migrated it; use that crawler, or downgrade with it first (README)` | the newer crawler, or its downgrade ("Upgrade" below) |
 | `INFO waiting for the crawl lock (a crawl or another migration holds it)`, from `migrate` | wait until the crawl ends, then it migrates; Ctrl-C ends the wait and changes nothing |
 | `ERROR migration 0002_… failed, the database is unchanged at 0001_baseline: …`, exit status 1 | the database's error follows the colon; nothing was changed. Ending in `another transaction held a table for more than 10 s: run migrate again`: run `migrate` again. Otherwise, report the error to the developers |
@@ -142,7 +146,7 @@ Where a downgrade refuses, or the database is damaged, the way back is an empty 
 
 ### Adding a migration
 
-A schema change is a new revision, never an edit of a revision that has shipped (a database that has run it would not run it again), and never DDL in `store.py`. From `python/crawler/`:
+A schema change is a new revision, never an edit of a revision that has shipped (a database that has run it would not run it again), and never DDL in `store.py`. From `python/crawler/`, this is how `0003_crawl_runs_scope` was made (the next one is `0004_…`):
 
 ```bash
 alembic revision -m "crawl_runs scope" --rev-id 0003_crawl_runs_scope
