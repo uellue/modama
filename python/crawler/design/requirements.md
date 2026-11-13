@@ -113,7 +113,7 @@ Keeping guessing (cheap candidates), recognition (authoritative) and metadata ex
 ### Carried over from earlier decisions
 
 - **R17** One OAI-PMH record per dataset. A dataset can be a single file.
-- **R18** Whatever the crawl process can read is in scope. No per-user access checks at crawl time; per-user views are a deferred requirement.
+- **R18** Whatever the crawl process can read is in scope. No per-user access checks at crawl time; per-user views are a deferred requirement. Before production (@weber, 2026-11-13, item 305): search shows each person only what they can see in the file system, and private projects exist; until then the search stack is a demo.
 - **R19** PostgreSQL stays, unless something non-relational turns out clearly better.
 - **R20** YAGNI: solve the ER-C case first, keep the core small, and add generality when a concrete need appears.
 
