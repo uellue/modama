@@ -510,6 +510,26 @@ def test_one_folder_gives_the_same_datasets_as_the_whole_crawl(
         assert walk(tmp_path, formats, top=top).datasets == (collapsed or here), top
 
 
+# A subtree is walked as in the crawl of the whole tree (change subtree-crawl, D3)
+
+
+def test_a_walk_started_below_the_root(mime_database, tmp_path):
+    ct = collection_tests_for(importlib.import_module(_fixture_tests_modules()[0]))
+    formats = [f for c in mime_database.values() for f in c.formats]
+    for name in ct.fixture_names():
+        ct.materialise(name, tmp_path / "adhoc" / "lib" / "test-data")
+    (tmp_path / "adhoc" / "other.txt").write_text("outside")
+    whole = walk(tmp_path, formats)
+    for start in ("/adhoc/lib", "adhoc/lib/test-data/"):
+        under = "/" + start.strip("/")
+        result = walk(tmp_path, formats, start=start)
+        assert result.datasets == [
+            d for d in whole.datasets if d.directory.startswith(under)
+        ], start
+        assert result.datasets
+        assert all(rel.startswith(under) for rel in result.listings), start
+
+
 def test_subfolders_are_not_entered(tmp_path, monkeypatch):
     import modama_crawler.walk as walk_module
 

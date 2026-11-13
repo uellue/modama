@@ -62,6 +62,9 @@ class Run:
     # None from a crawler database before the extractor identity (0002_extractor_identity)
     identity: str | None = None
     reextracted: list | None = None  # per format and stored identity: datasets, changed
+    # a subtree crawl's path ("/a/b"); None for a crawl of the whole tree, and from a
+    # crawler database before the subtree crawl (0003_crawl_runs_scope)
+    scope: str | None = None
 
 
 def short(identity: str | None) -> str:
@@ -221,10 +224,11 @@ def runs(conn: psycopg.Connection) -> list[Run]:
         if _has_column(conn, "crawl_runs", "identity")
         else "NULL, NULL"
     )
+    scope = "scope" if _has_column(conn, "crawl_runs", "scope") else "NULL"
     rows = conn.execute(
         f"""
         SELECT started_at, updated_at, finished_at, outcome, directories, files,
-            datasets, records_changed, error, now() - updated_at, {identity}
+            datasets, records_changed, error, now() - updated_at, {identity}, {scope}
         FROM crawl_runs ORDER BY started_at DESC, run_id DESC
         """
     ).fetchall()

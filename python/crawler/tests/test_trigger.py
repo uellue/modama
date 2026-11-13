@@ -19,7 +19,13 @@ from conftest import CRAWLER, shell
 from modama_crawler import cli, selection
 from modama_crawler.cli import next_run, overdue
 from modama_crawler.formats import DIRECTORY, Collection, Format
-from modama_crawler.store import CRAWL_LOCK, STORE_LOCK
+from modama_crawler.store import (
+    CRAWL_LOCK,
+    STORE_LOCK,
+    end_run,
+    last_finished,
+    start_run,
+)
 from psycopg.conninfo import make_conninfo
 from werkzeug.serving import make_server
 from werkzeug.wrappers import Request, Response
@@ -108,6 +114,16 @@ def test_a_refused_trigger_is_an_error_after_a_finished_crawl(conn, env, tree, a
     assert "HTTP 401" in run.stderr and "Traceback" not in run.stderr
     conn.commit()
     assert conn.execute("SELECT outcome FROM crawl_runs").fetchall() == [("finished",)]
+
+
+def test_a_subtree_crawl_starts_the_harvest(env, tree, airflow):
+    url, requests = airflow
+    assert shell(f"{CRAWLER} crawl --root {tree}", crawl_env(env, url)).returncode == 0
+    run = shell(f"{CRAWLER} crawl --root {tree} --path sub", crawl_env(env, url))
+    assert run.returncode == 0, run.stderr
+    assert "harvest of http://crawler:7654/oai started: manual__1" in run.stderr
+    triggers = [r for r in requests if r[0].endswith("/dagRuns")]
+    assert len(triggers) == 2 and triggers[0][1] == triggers[1][1]
 
 
 def test_no_trigger_without_an_airflow_url(env, tree):
@@ -240,15 +256,15 @@ KILLS = pytest.mark.parametrize(
 )
 
 
-def _crawl(tree, formats, monkeypatch) -> tuple[int, float]:
-    """Crawl in this process with the given formats; the exit status and the seconds it took."""
+def _crawl(tree, formats, monkeypatch, *args) -> tuple[int, float]:
+    """Crawl in this process with the given formats and arguments; the exit status and the seconds it took."""
     monkeypatch.setattr(
         cli, "configure", lambda args: (selection.Config(), formats, "r1")
     )
     handler = signal.getsignal(signal.SIGTERM)
     start = time.monotonic()
     try:
-        status = cli.main(["crawl", "--root", str(tree)])
+        status = cli.main(["crawl", "--root", str(tree), *args])
     finally:
         signal.signal(signal.SIGTERM, handler)
     return status, time.monotonic() - start
@@ -289,6 +305,64 @@ def test_a_crawl_stopped_by_sigterm_during_extraction(
     assert seconds < 5  # not after the time limit
     assert _failed_without_records(conn)
     assert multiprocessing.active_children() == []
+
+
+def test_a_subtree_crawl_stopped_while_it_extracts(
+    conn, env, tree, tmp_path, monkeypatch
+):
+    from modama_crawler import extraction
+
+    formats = standin.collection(tmp_path / "calls").formats
+    assert _crawl(tree, formats, monkeypatch)[0] == 0
+    conn.commit()
+    before = conn.execute(
+        "SELECT identifier, datestamp FROM records ORDER BY 1"
+    ).fetchall()
+    (tree / "sub" / "slow.stand").write_text("hang")
+    real_run, real_wait, killed = extraction._run, extraction.wait, []
+    monkeypatch.setattr(
+        extraction,
+        "_run",
+        lambda tasks, workers, time_limit, *rest: real_run(tasks, workers, 10.0, *rest),
+    )
+
+    def wait(*args, **kwargs):
+        if not killed:
+            killed.append(True)
+            os.kill(os.getpid(), signal.SIGTERM)
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(extraction, "wait", wait)
+    status, seconds = _crawl(tree, formats, monkeypatch, "--path", "sub")
+    assert killed and status == 143 and seconds < 5
+    conn.commit()
+    assert conn.execute(
+        "SELECT outcome, scope, error FROM crawl_runs ORDER BY run_id"
+    ).fetchall() == [
+        ("finished", None, None),
+        ("failed", "/sub", "terminated (SIGTERM)"),
+    ]
+    assert (
+        conn.execute("SELECT identifier, datestamp FROM records ORDER BY 1").fetchall()
+        == before
+    )
+    assert multiprocessing.active_children() == []
+
+
+def test_a_subtree_crawl_does_not_make_the_timer_wait(conn):
+    now = datetime.now(UTC)
+    full = start_run(conn, "/data")
+    end_run(conn, full, "finished", directories=1, files=1)
+    subtree = start_run(conn, "/data", scope="/sub")
+    end_run(conn, subtree, "finished", directories=1, files=1)
+    for run_id, ago in ((full, timedelta(days=2)), (subtree, timedelta(hours=1))):
+        conn.execute(
+            "UPDATE crawl_runs SET finished_at = %s WHERE run_id = %s",
+            (now - ago, run_id),
+        )
+    conn.commit()
+    assert last_finished(conn) == now - timedelta(days=2)
+    assert overdue(last_finished(conn), now)
 
 
 @KILLS

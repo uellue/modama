@@ -1,5 +1,6 @@
 """The trace's rules with canned inputs (chain-trace spec); the stores themselves are tested in the e2e stack."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -11,12 +12,13 @@ from modama_chain.chain import (
     STALE,
     WARN,
     Stage,
+    crawl_line,
     diverging,
     freshness,
     harvest_stage,
     search_stage,
 )
-from modama_chain.crawler import Keys, Run
+from modama_chain.crawler import Keys, Run, runs
 from modama_chain.warehouse import Event, HarvestRun, IndexRun, local_id
 
 T0 = datetime(2026, 11, 5, 8, tzinfo=UTC)
@@ -171,6 +173,62 @@ def test_a_harvest_not_indexed_stops_the_chain():
         IndexRun("success", None, None, "h3"),
     ]
     assert freshness(crawls, harvests, index)[0] == at(0)
+
+
+def test_a_subtree_crawl_does_not_move_t():
+    subtree = replace(crawl(20, 25), scope="/adhoc/libertem/libertem-test-data")
+    harvests = [harvest("h1", None, 10), harvest("h2", 10, 30)]
+    index = [
+        IndexRun("success", None, None, "h1"),
+        IndexRun("success", None, None, "h2"),
+    ]
+    assert freshness([subtree, crawl(0, 5)], harvests, index)[0] == at(0)
+    assert crawl_line(subtree).endswith(
+        "  subtree crawl of adhoc/libertem/libertem-test-data"
+    )
+    assert "subtree" not in crawl_line(crawl(0, 5))
+
+
+def test_runs_of_a_crawler_without_scope():
+    """A crawler database from before the subtree crawl (0003_crawl_runs_scope): its runs are crawls of the whole tree."""
+
+    class Database:
+        def execute(self, query, params=()):
+            self.query = query
+            if "to_regclass" in query:
+                return Rows([("crawl_runs",)])
+            if "information_schema" in query:
+                return Rows([("identity",)] if params[1] == "identity" else [])
+            return Rows(
+                [
+                    (
+                        at(0),
+                        at(5),
+                        at(5),
+                        "finished",
+                        1,
+                        1,
+                        1,
+                        1,
+                        None,
+                        timedelta(0),
+                        None,
+                        None,
+                        None,
+                    )
+                ]
+            )
+
+    class Rows(list):
+        def fetchone(self):
+            return self[0] if self else None
+
+        def fetchall(self):
+            return list(self)
+
+    db = Database()
+    (run,) = runs(db)
+    assert run.scope is None and "NULL" in db.query
 
 
 def test_no_indexed_harvest():

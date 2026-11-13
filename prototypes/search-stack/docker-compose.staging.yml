@@ -13,8 +13,8 @@
 # sssd reads /var/local/data-mgmt/sssd.conf, the file for testing deploy/ against the real
 # directory (docs/guide/src/development.md), with "services = nss"; never changed on the host.
 #
-# The tree is always mounted whole, and a first crawl of a subtree uses exclusions,
-# so that identifiers (relative to the data root) stay the same for the full crawl.
+# The tree is always mounted whole, so that identifiers (relative to the data root) stay the
+# same; one folder is crawled with `crawl --path` (README, "Crawling one folder").
 # Ports on 127.0.0.1 only, offset from the test deployment's and deploy/'s by 10000.
 x-check-user: &check-user
   # sssd's health check and the crawl's check before it stores: the user the crawler reads
@@ -23,7 +23,11 @@ x-check-user: &check-user
 
 x-staging-crawler: &staging-crawler
   user: ${STAGING_USER:?see staging.env in the runbook}
-  environment: *check-user
+  environment:
+    <<: *check-user
+    # the default for --config of every modama-crawler command, the timer's crawls and a
+    # `crawl --path` in a one-off container included (change subtree-crawl, D8)
+    MODAMA_CRAWLER_CONFIG: /stagingconf/${STAGING_CRAWL_CONFIG:?see staging.env in the runbook}
   group_add:
     - ${STAGING_GROUP:?see staging.env in the runbook}
   volumes:
@@ -49,8 +53,6 @@ services:
     <<: *staging-crawler
     command:
       - modama-crawler
-      - --config
-      - /stagingconf/${STAGING_CRAWL_CONFIG:?see staging.env in the runbook}
       - timer
       - --at
       - "19:00"

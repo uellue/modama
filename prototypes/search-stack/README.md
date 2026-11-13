@@ -143,6 +143,7 @@ modama-chain status                          # last crawl, harvest, indexing; th
 modama-chain trace /notes/readme.txt         # one path through every stage
 modama-crawler runs                          # the crawls
 docker compose exec crawl-timer modama-crawler crawl   # crawl now; starts the harvest when it is done
+docker compose run --rm crawl-timer modama-crawler crawl --path adhoc/x   # one folder ("Crawling one folder")
 ```
 
 (In the test deployment the crawler has the Airflow account too, so `modama-crawler crawl` in its shell starts the harvest as well.)
@@ -200,6 +201,17 @@ A record's creator is the file owner's full name (`python/crawler/README.md`, "H
 - **The check user:** `SSSD_CHECK_USER` (10001 here, `STAGING_USER` on staging) is a user that must exist. sssd is healthy once it names that user (`start_period` 120 s, since sssd waits 60 s after a failed first contact), and `crawler` and `crawl-timer` start only then. A crawl looks the same user up before it stores its records: if sssd does not answer (stopped, crashed, the directory unreachable before sssd ever saw that user), the crawl stores nothing, logs `the user database does not know SSSD_CHECK_USER …: sssd is not answering (check docker compose ps sssd and docker compose logs sssd); no records stored` and fails; the timer crawls again at the next 19:00. Without the check, a crawl during an outage would turn names into numbers, and the next one back, each a full re-index. Nothing alerts an admin yet ("Moving to deploy/", alerting); `modama-crawler runs` and `modama-chain status` show the failed run.
 - **What a change of the names costs:** every crawl rebuilds every record, so a crawl whose creators differ from the last one (the first with names, or a rollback) changes every such record: the harvest and the indexing that follow take as long as a first full run. On staging (1,451,848 records) that was 5 h 14 min for the harvest and, at the indexing rates of run 3, 8 to 9 h or up to 27 h for the indexing (`python/crawler/openspec/changes/owner-names-in-the-search-stack/design.md`, D8).
 - **What remains:** an owner sssd has never seen, while the directory is unreachable and sssd itself answers, gets the number; the warehouse's conversion to DataCite types a creator without a comma as an organisation (`nameType` `Organizational`, `../EOSC-Data-Commons/metadata-crawlers/harvester/dc_to_datacite.xsl`, template `creators`).
+
+## Crawling one folder
+
+To see a changed format on real files in the search without waiting for a whole crawl (change `subtree-crawl`, `python/crawler/README.md`, "Running the crawler"): build the image, then crawl the folder in a one-off container of `crawl-timer`, which has the Airflow account and the deployment's configuration (`MODAMA_CRAWLER_CONFIG` on staging) and leaves the timer running:
+
+```bash
+docker compose build crawler
+docker compose run --rm crawl-timer modama-crawler crawl --path adhoc/libertem/libertem-test-data
+```
+
+It recognises and extracts that folder from scratch, changes nothing outside it, and starts the harvest; only the records under it whose content changed are harvested and indexed. The search shows them after that one harvest and its indexing when no harvest is running (Airflow's UI, DAG `warehouse_harvest_and_index`); otherwise after the running one, which after a crawl that changed much takes hours. Not `docker compose up --build`, which recreates the timer and stops a crawl it runs, and not `docker compose exec`, whose process gets no SIGTERM when the container stops. `modama-chain status` shows the subtree crawl on its crawl line, but its freshness time T counts crawls of the whole tree only. The nightly crawl recognises the folder again and reuses its extractions; with the code changed back, it extracts them again.
 
 ## Upgrade
 

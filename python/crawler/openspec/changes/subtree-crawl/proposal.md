@@ -1,0 +1,75 @@
+# Proposal
+
+## Why
+
+Improving a format's recognition or extraction and seeing the result in the search takes a whole crawl today: on staging (run 3, 2026-11-11) the walk took 17 minutes, the crawl 1 h 17 min, the harvest 5 h 14 min, the indexing hours more. @weber asked on 2026-11-12 for commands that give fast turn-around instead, without waiting for the whole re-crawl:
+
+1. re-run extraction, harvest and indexing for a specific path (to test an updated extractor);
+2. the same for all files of a specific kind (to make an improved format available everywhere);
+3. crawl, recognise, extract, harvest and index a whole subtree on demand, for example `adhoc/libertem/libertem-test-data`.
+
+I read the three as rules, not as single cases. In (1) and (3), "path" is a canonical path in the glossary's sense (`/CONTEXT.md`: the same on every way of access, `adhoc/testproject/session2`), which is also how the crawler names datasets: an anchor such as `/adhoc/libertem/libertem-test-data/dm/a.dm4` is relative to `MODAMA_DATA_ROOT`. In (2), "kind" is a format, named by its id as in `--select` (`em/dm4`).
+
+Today's `crawl --root PATH` does not help with (1) or (3), and it is a trap (README, "Running the crawler", warns since 0786930f). It treats PATH as the whole repository: anchors become relative to PATH, so the identifiers change (`walk.py`, `visit(root, "/")`), and the store deletes every dataset, listing and record it did not see (`store.py`, `store()`). Staging's other workaround, `--root` on the data root with exclusions (`stagingconf/libertem.toml`), keeps the identifiers but deletes everything outside the subtree too. It also changes the rule set (`selection.fingerprint` includes the exclusions), so the next full crawl recognises the whole tree again and gives every record a new datestamp, which means a full re-harvest.
+
+Request (2) is served by the change `extractor-identity`, which is implemented on `crawler` since this proposal was first written: a stored extraction is reused only under the same digest of the installation (R44), so after any change to a format's code the next crawl of the whole tree extracts every dataset with an extractor again, and only records whose content changed get a new datestamp. The procedure is "change the code, rebuild, run `crawl`", with nothing to raise (README). This change no longer covers request (2) (see "Changed since 2026-11-12").
+
+Serves R14 (developing a format is easy for humans and agents), R10 (a re-crawl only does work for what changed), R9 (inspect the outcome for one directory, now with harvest and search included) and the request of 2026-11-12, recorded as R41 (task 1.1).
+
+## What Changes
+
+- **New option `modama-crawler crawl --path PATH`**: a *subtree crawl* of the directory PATH (a canonical path; a leading and a trailing `/` are accepted). It walks only that subtree and recognises and extracts it from scratch: nothing is taken over from the stored state, and no extraction is reused. Within the subtree it brings datasets, members and records up to date, and records of datasets that disappeared are deleted. Outside the subtree, nothing changes, datestamps included; a sibling whose name starts the same (`adhoc/a/bc` next to `adhoc/a/b`) is outside. Identifiers are the same as a full crawl's. A file as PATH stands for its directory.
+- PATH must be a directory that a full crawl would enter: valid UTF-8, below the data root and not the data root itself, with no symlink on the way, not excluded by `[crawl] exclude`, not inside a collapsed directory (environment, `.git`, Zarr store), and every directory down to it listable. The data root and the configuration must be those of the last finished crawl of the whole tree. `--select` and `--ignore` cannot be used with `--path` (answer 169). Otherwise the crawl exits with status 2 and an error naming the reason, and records nothing. PATH itself may be collapsed (a Zarr store): it becomes one dataset, as in a full crawl.
+- **The configuration from one setting** (answers 170, 171): `MODAMA_CRAWLER_CONFIG`, the path of the TOML file, is the default for `--config` of every `modama-crawler` command; `--config` on the command line wins. The search stack's staging sets it for `crawler` and `crawl-timer`, and the timer's command drops its own `--config`. So `docker compose run --rm crawl-timer modama-crawler crawl --path adhoc/libertem/libertem-test-data` uses the deployment's configuration without typing it.
+- If PATH cannot be listed when the walk reaches it (after the checks passed), the crawl fails with status 2 and its run is `failed`; nothing under PATH is deleted.
+- A subtree crawl takes the same crawl lock, reacts to SIGTERM in the same way (run `failed`, status 143, no record changed) and starts the same harvest when it finishes. Only the records it changed are harvested and indexed, because the harvest is incremental (`from` = the end of the last closed harvest) and the harvest DAG indexes only the runs it harvested. In the search stack it runs as a one-off container of `crawl-timer` (`docker compose run --rm`), which leaves the timer running.
+- **Runs record their subtree and their configuration.** `crawl_runs` gets `scope` (NULL for a full crawl) and `config` (the configuration the crawl ran with), as migration `0003_crawl_runs_scope`; `runs` shows the scope. Only full crawls count for the timer's catch-up and for `modama-chain`'s freshness time T. A subtree crawl says nothing about the rest of the tree. The migration's downgrade deletes the subtree runs before it drops the columns, so that older code cannot count them as full crawls.
+- The next full crawl recognises a crawled subtree again: the subtree crawl leaves no stored listings for it. Its extractions are reused while the installation is the same, so this costs one more recognition of the subtree, and the state stays consistent whatever rules either crawl ran under.
+- `--root`'s help text and the README say that it sets the data root and that a crawl treats it as the whole tree; the README's warning becomes a pointer to `crawl --path`.
+
+Behaviour towards the user: an operator or developer gets `crawl --path`, a scope on run lines in `runs` (`… /data  adhoc/libertem/libertem-test-data`), `MODAMA_CRAWLER_CONFIG` as the default for `--config` (also for `records`), and new exit-2 errors for a path that a full crawl would not enter (among them the data root itself, a path that is not UTF-8, a `--root` other than the full crawls', another configuration, `--select` or `--ignore` with `--path`), and an exit-2 failure when PATH becomes unreadable during the walk. A harvester sees new datestamps only on records under the path whose content changed. A searcher sees those records re-indexed within one incremental harvest and its indexing, provided no harvest is running; otherwise after the running one, which after a full crawl that changed much takes hours (design D6). Records under the path whose datasets disappeared drop out of the crawler's endpoint (the warehouse keeps them, as after a full crawl, until the purge). `modama-chain status` shows subtree crawls but does not move T for them. No change for full crawls, `serve`, or `records` without `MODAMA_CRAWLER_CONFIG`.
+
+Out of scope (see "Not now" in `design.md`): several paths in one crawl; a subtree crawl that keeps the stored state (no forced re-run); re-extraction without a walk; a re-extraction of one format alone (`crawl --format`); tombstones (`deletedRecord`) and the purge; the timer retrying when a subtree crawl holds the lock; the inotify watcher; subtree crawls below a format that adopts datasets of subdirectories (none exists yet).
+
+## Changed since 2026-11-12
+
+The branch was 300 commits behind `crawler` when it was brought up to date on 2026-11-13 (item 255). What changed in the plan, and why:
+
+- **Request (2) and design D7 are dropped from this change.** D7 was "bump `extractor_version` and crawl now", with the alternative `crawl --format ID`. The change `extractor-identity` removed `extractor_version`: reuse is decided by a digest of the installation (`identity.py`; R44, @weber: "I'd not call it a version per se, but a hash"), so there is nothing to bump, and a changed format reaches every dataset by "change the code, rebuild, `crawl`". Its price, decided there (its S3): any change of the installation extracts every format's datasets again, about 52 minutes on staging, not only the changed format's. The spec delta `extraction` no longer has the scenario "A new extractor version"; it carries `extractor-identity`'s wording with the subtree crawl as the exception.
+- **H3 (a reverted experiment stays in the index) is resolved** by the same change (its sequence S1): the proposal's question "Should reverting an experiment undo it by itself?" is answered B (a digest of the installation), the README's manual undo step is not needed, and the revert scenario is written ("A reverted experiment is undone by the next full crawl").
+- **D5: the column comes by a migration.** `ensure_tables` is gone (change `schema-migrations`); `scope` is migration `0003_crawl_runs_scope` (0002 is the extractor identity), with a downgrade that first deletes the subtree runs (the rollback step of the Migration Plan becomes that downgrade), as `BACKLOG.md` planned.
+- **Answers 169 to 171 are in** (below): `--select`/`--ignore` refused with `--path`; the configuration from `MODAMA_CRAWLER_CONFIG`; another configuration than the full crawls' refused. The last one needs the configuration stored with every run: the column `config` in the same migration.
+- **D3 keeps "from scratch"** (agreed 2026-11-12, for performance tests), but it is no longer needed for correctness: with the extractor identity, a rebuilt image already re-extracts. Its scenario "A changed extractor without a new version" became "A changed extractor".
+- Line references to the code are replaced by function names, since the code moved.
+
+## Questions
+
+The leans are in the design and the code; each can be changed back cheaply.
+
+- **Q1 What if the last crawl of the whole tree has no recorded configuration?** Staging after the upgrade: the last full crawl ran before migration 0003, so its configuration is not known, and you run `docker compose run --rm crawl-timer modama-crawler crawl --path adhoc/libertem/libertem-test-data` before the next nightly crawl. *Option A, accept with a warning (lean):* the crawl runs and logs `WARNING the configuration of the last crawl of the whole tree is not recorded (it ran before this version): not compared`; with `MODAMA_CRAWLER_CONFIG` set by compose it is the right one anyway. *Option B, refuse:* status 2 until a full crawl has run under the new version, which costs 1 h 17 min before the first subtree crawl.
+- **Q2 Does `MODAMA_CRAWLER_CONFIG` apply to `records` too?** On staging, `docker compose exec crawler modama-crawler records /data/adhoc/libertem/libertem-test-data` would then use the deployment's formats and exclusions, as the crawl does; today it uses every installed format and no exclusions unless you pass `--config`. *Lean: yes*, it is the default for `--config` of every `modama-crawler` command, since 171 says "the configuration comes from one setting". `modama-chain browse` keeps its explicit `--config` in the compose file (a program of its own).
+
+### Answers by @weber, 2026-11-12 (questions 169 to 171 in the conversation)
+
+- **Only some formats (169): option A, refuse.** "yes, let's not complicate for now until we have the need for it." `--select` and `--ignore` with `--path` end with status 2.
+- **Another configuration (170):** "can we make it automatically use the right settings? I don't want to muck with it all the time." Confirmed (question 171, "Yes sounds perfect!"): the configuration comes from one setting, `MODAMA_CRAWLER_CONFIG` (the path of the TOML file), read by `cli.py` as the default for `--config` and set once in the compose files for `crawler` and `crawl-timer`, so `docker compose run --rm crawl-timer modama-crawler crawl --path adhoc/libertem/libertem-test-data` uses the deployment's configuration without typing it; `--config` on the command line still wins (requirements-pipeline 2.4, an easy override). As a safety net, a subtree crawl whose configuration differs from the last crawl of the whole tree is refused with status 2, naming both (option A of the question), so only a deliberate other `--config` can hit it. The timer's command then drops its own `--config`.
+- **Reverting an experiment (H3):** settled by the change `extractor-identity` (option B, a digest of the installation), with @weber's answers there.
+
+## Capabilities
+
+### New Capabilities
+
+### Modified Capabilities
+- `crawl`: the index after a crawl is defined for a subtree crawl as well, plus new requirements for the subtree crawl: what it changes, that it recognises and extracts from scratch, which paths it accepts (a canonical path below the data root, under the full crawls' data root and configuration, entered by a full crawl, without `--select` or `--ignore`), that it fails when its path cannot be listed, and the lock and SIGTERM.
+- `crawl-runs`: a run records its subtree and its configuration, and `runs` shows the subtree.
+- `format-selection`: the configuration file comes from `MODAMA_CRAWLER_CONFIG` unless `--config` is given.
+- `harvest-trigger`: a subtree crawl starts the harvest, and the timer's catch-up counts full crawls only.
+- `chain-trace`: the freshness time T counts full crawls only.
+- `extraction` (added by the open change `em-formats-and-extraction` and modified by `extractor-identity`, both archived first): take-over and reuse are stated for a crawl of the whole tree, and a subtree crawl is the exception.
+
+## Impact
+
+- Crawler: `cli.py` (the option, the path checks, the run's scope and configuration, `MODAMA_CRAWLER_CONFIG`, `--root`'s help), `walk.py` (start the walk at a directory below the root, with anchors relative to the root; the start directory fails like the root when it cannot be listed; `refusal()`, the checks on the way down), `store.py` (store restricted to a subtree; `last_finished` and the last full crawl for full crawls only), `migrations/versions/0003_crawl_runs_scope.py` and `schema.HEAD`, tests (a new `test_subtree.py` for the subtree crawl's scenarios, `test_locks.py`, `test_runs.py`, `test_trigger.py`, `test_walk.py`, `test_migrations.py`, `test_selection.py`).
+- `python/search-chain`: T from full crawls only; `scope` read as part of the `crawl_runs` interface, also against a database without it; README.
+- Docs: `README.md` (running the crawler: `crawl --path`, the warning turned into a pointer, `MODAMA_CRAWLER_CONFIG`), `BACKLOG.md`, `design/requirements.md` (R41), the decision log, `/prototypes/search-stack/README.md` (the command as a one-off container of `crawl-timer`, which alone has the Airflow account in production), `docker-compose.staging.yml` (`MODAMA_CRAWLER_CONFIG`; its header: no more exclusions for a first crawl of a subtree) and the staging runbook.
+- No new dependency.
