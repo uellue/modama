@@ -1,0 +1,33 @@
+{
+  "datasets": [
+    {
+      "anchor": "/budget.xlsx",
+      "basis": "OLE2 header, named as Office Open XML; common/xlsx: not application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, no ZIP header",
+      "collapsed": false,
+      "format": "common/ole",
+      "members": [
+        "/budget.xlsx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-ole-storage",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/budget.xlsx": {
+      "subjects": [],
+      "summary": [
+        "(encrypted)"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": true
+        },
+        "original_metadata": {}
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

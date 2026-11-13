@@ -20,6 +20,7 @@ from modama_crawler.formats.values import MAX_ITEMS, credential, textual
 # HDF5 file is bounded")
 ZIP = b"PK\x03\x04"  # a ZIP's local file header (APPNOTE 4.3.7)
 HDF5 = b"\x89HDF\r\n\x1a\n"  # the HDF5 signature
+ZSPY = "ZSpy"  # the root attribute file_format of RosettaSciIO's .zspy stores
 
 MAX_ENTRIES = extraction.MAX_ITEMS
 MAX_OBJECTS = 5000
@@ -30,10 +31,13 @@ ENTRY_LIMIT = f"cut at the entry limit of {MAX_ENTRIES}"
 class Walk:
     """The entries found so far, and why the walk stopped early (None while it goes on)."""
 
-    def __init__(self):
+    def __init__(self, timed: bool = True):
+        """Without `timed`, bounded by counts only: the same data gives the same walk
+        (a Zarr store's stamp, zarrstore.state)."""
         self.values: dict = {}
         self.objects = 0  # counted by the walker
         self.cut: str | None = None
+        self.timed = timed
         self._start = time.monotonic()
 
     def over(self) -> bool:
@@ -42,7 +46,7 @@ class Walk:
             self.cut = ENTRY_LIMIT
         elif self.objects >= MAX_OBJECTS:
             self.cut = f"cut at the object limit of {MAX_OBJECTS}"
-        elif time.monotonic() - self._start > SECONDS:
+        elif self.timed and time.monotonic() - self._start > SECONDS:
             self.cut = f"cut at the time limit of {SECONDS:g} s"
         return self.cut is not None
 
@@ -92,6 +96,15 @@ def plain(value):
     if isinstance(value, list | tuple):
         return [plain(v) for v in value]
     return value
+
+
+def hyperspy(name: str, value) -> bool:
+    """HyperSpy's skip list, of its HDF5 and its Zarr stores (specs formats/pydata, "A
+    HyperSpy file is described as HyperSpy stores it", and formats/pydata-zarr): its
+    internal state (`metadata._HyperSpy`: folding) and its placeholder for None, `_None_`."""
+    return "._HyperSpy." in f".{name}." or (
+        isinstance(value, str) and value == "_None_"
+    )
 
 
 def matches(pattern: str, name: str) -> bool:

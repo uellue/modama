@@ -10,6 +10,7 @@ from pathlib import Path
 
 import h5py
 import numpy
+import zarr
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NEXUS = FIXTURES / "nexus_examples" / "simple_example_basic.nexus.hdf5"
@@ -176,3 +177,60 @@ def python2(target: Path) -> None:
     (target / "legacy.py").write_text(
         '#!/usr/bin/env python\n"""Print the version."""\nprint "1.0"\n'
     )
+
+
+# Root attributes laid out as abTEM's ArrayObject.to_zarr writes them
+# (abtem/array.py, abTEM 1.0.11: metadata<i> beside arrays array<i>), with
+# made-up values
+ABTEM = {
+    "metadata0": {
+        "energy": 300000.0,
+        "semiangle_cutoff": 20,
+        "label": "intensity",
+        "units": "arb. unit",
+        "axes": {
+            "axis_0": {"label": "x", "units": "Å", "sampling": 0.1, "offset": 0.0},
+            "axis_1": {"label": "y", "units": "Å", "sampling": 0.1, "offset": 0.0},
+        },
+        "data_origin": "abTEM_v1.0.10",
+        "type": "DiffractionPatterns",
+        "kwargs": {"sampling": {"_type": "tuple", "_value": [0.1, 0.1]}},
+    }
+}
+
+
+def abtem_like(path: Path, zarr_format: int) -> None:
+    """A group with abTEM-like root attributes and an array array0 of 8 x 8 x 16 x 16
+    float32 in one chunk, written by zarr-python."""
+    g = zarr.create_group(store=str(path), zarr_format=zarr_format)
+    g.attrs.update(ABTEM)
+    a = g.create_array("array0", shape=(8, 8, 16, 16), chunks=(8, 8, 16, 16),
+                       dtype="float32")  # fmt: skip
+    a[:] = numpy.ones((8, 8, 16, 16), dtype="float32")
+
+
+def zarr_stores(target: Path) -> None:
+    """abTEM-like stores, v2 and v3, the v3 one with a notebook's checkpoint of its
+    root metadata inside it (as the staging sample has one), and a group store
+    holding another store, written by zarr-python."""
+    target.mkdir(parents=True)
+    abtem_like(target / "abtem_v2.zarr", 2)
+    abtem_like(target / "abtem_v3.zarr", 3)
+    checkpoints = target / "abtem_v3.zarr" / ".ipynb_checkpoints"
+    checkpoints.mkdir()
+    (checkpoints / "zarr-checkpoint.json").write_text(
+        (target / "abtem_v3.zarr" / "zarr.json").read_text()
+    )
+    outer = zarr.create_group(store=str(target / "nested.zarr"), zarr_format=2)
+    outer.attrs["kind"] = "a series of simulations"
+    inner = zarr.create_group(store=str(target / "nested.zarr" / "inner.zarr"),
+                              zarr_format=2)  # fmt: skip
+    inner.attrs["defocus"] = 50
+    a = inner.create_array("array0", shape=(2, 2), chunks=(2, 2), dtype="int8")
+    a[:] = numpy.ones((2, 2), dtype="int8")
+
+
+def zarr_broken_root(target: Path) -> None:
+    """A v3 store whose zarr.json is not JSON."""
+    (target / "broken.zarr").mkdir(parents=True)
+    (target / "broken.zarr" / "zarr.json").write_text("not json")

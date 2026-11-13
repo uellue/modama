@@ -389,11 +389,22 @@ class Format:
 
         Runs in a worker process after the walk, with a time limit, without
         database access. A member's path on disk is `root + member`; it reads
-        the dataset's members only. May raise: the dataset then keeps a basic
-        description and the crawl a warning, and the next crawl tries again.
-        Its result is reused while the files and the installation are the
-        same (the extractor identity); there is no version to raise.
+        the dataset's members only, or, for a collapsed dataset, which has
+        none, what `collapsed_state` covers below its anchor. May raise: the
+        dataset then keeps a basic description and the crawl a warning, and
+        the next crawl tries again. Its result is reused while the files and
+        the installation are the same (the extractor identity); there is no
+        version to raise.
         """
+        return None
+
+    def collapsed_state(self, path: str) -> str | None:
+        """For a collapsed dataset of this format at `path` on disk: a digest of the files
+        below it that its extractor reads, for the dataset's stamp; None: the folder's
+        listing alone stamps it. Runs in the walk at every crawl, also when the
+        folder's listing is unchanged (change zarr-stores, 319). The same files must
+        give the same digest. May raise: the crawl then warns, naming the format, and
+        stamps the dataset with a fixed marker instead (walk._stamped)."""
         return None
 
     @property

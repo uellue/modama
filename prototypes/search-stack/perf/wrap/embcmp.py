@@ -26,6 +26,9 @@ for k, x in a.items():
     sims.append(dot / math.sqrt(sum(p * p for p in x) * sum(q * q for q in y)))
 sims.sort()
 same = sum(a[k] == b[k] for k in a)
+# the largest component difference, against the index's sq step (change embedding-fp32-model, D4)
+largest = max(abs(p - q) for k in a for p, q in zip(a[k], b[k]))
 print(
-    f"{len(sims)} documents, {same} identical; cosine min {sims[0]:.6f}, median {sims[len(sims) // 2]:.6f}"
+    f"{len(sims)} documents, {same} identical; cosine min {sims[0]:.8f}, median {sims[len(sims) // 2]:.8f}; "
+    f"largest difference {largest:.3g}"
 )

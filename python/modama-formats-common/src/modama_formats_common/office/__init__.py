@@ -4,14 +4,15 @@ The core types these files by name. Each format checks the first bytes of
 the files of its type and drops a misnamed one to the type its content gives
 (Directory.not_of_type). The formats of the ZIP packages run first, then
 those of OLE2, then PDF, so that a dropped file reaches the format of its
-content in the cases seen (an encrypted .docx is an OLE2 file). Lock files
-get types of their own by name (office.xml), without a format. Extraction
-reads the metadata only: ooxml, odf, pdf, ole.
+content in the cases seen (an encrypted .docx is an OLE2 file, common/ole).
+Lock files get types of their own by name (office.xml), without a format.
+Extraction reads the metadata only: ooxml, odf, pdf, ole.
 """
 
 from collections.abc import Iterable
 from pathlib import Path
 
+from modama_crawler import mime
 from modama_crawler.formats import Collection, Dataset, Directory, Entry, Format
 
 from . import odf, ole, ooxml, pdf
@@ -94,6 +95,9 @@ class Xlsm(Xlsx):
     reacts_to = frozenset({type})
 
 
+PACKAGES = frozenset(f.type for f in (Docx, Docm, Pptx, Xlsx, Xlsm))
+
+
 class OpenDocument(Office):
     """An OpenDocument package, described by its meta.xml."""
 
@@ -146,6 +150,26 @@ class Xls(Legacy):
     reacts_to = frozenset({type})
 
 
+class Ole(Legacy):
+    """An OLE2 file named as an Office Open XML document, dropped by the formats of the ZIP packages: an encrypted one, as Office writes it.
+
+    The type stays the one its content gives, as freedesktop.org's data, file
+    and Apache Tika type it: the container. Which kind of document it holds
+    can't be told without decrypting it; its name says it.
+    """
+
+    type = "application/x-ole-storage"
+    reacts_to = frozenset({type})
+    basis = "OLE2 header, named as Office Open XML"
+
+    def recognize(self, d: Directory) -> Iterable[Dataset]:
+        for e in d.of_type(self.type):
+            # Typed by its content, so it starts with the signature; checked
+            # as the other formats do, a file that can't be read is left alone
+            if mime.by_name(e.name) in PACKAGES and self.found(d, e):
+                yield Dataset(anchor=e.rel, basis=self.basis)
+
+
 class Pdf(Office):
     """A PDF, described by its Info dictionary and XMP."""
 
@@ -182,6 +206,7 @@ COLLECTION = Collection(
         Doc(),
         Ppt(),
         Xls(),
+        Ole(),
         Pdf(),
     ],
     mime_files=(HERE / "office.xml",),

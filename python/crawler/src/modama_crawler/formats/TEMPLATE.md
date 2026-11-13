@@ -272,7 +272,12 @@ reader class its own buffered handle, readahead off), or read the bounded
 header unbuffered and hand it `io.BytesIO(data)` (`dm.parsed_from` on a
 ZIP member in `em/dmwx`). It reads
 the dataset's members only: a change to any other file would not bring it to
-run again. If it raises, crashes or runs over the limit, the dataset keeps a
+run again. The one exception is a collapsed dataset, which has no members:
+its extractor reads below its anchor what its format's
+`collapsed_state(path)` covers, a digest of those files' names, sizes and
+times that goes into the dataset's stamp at every crawl, also when the
+folder's listing is unchanged (`modama_formats_common.pydata.Zarr`: every
+metadata file of a Zarr store, never a chunk; change `zarr-stores`). If it raises, crashes or runs over the limit, the dataset keeps a
 basic description and the crawl reports a warning; the next crawl tries again.
 Return `None` if there is nothing to extract. There is no version to raise
 when the output changes: a change to the installed code (yours, or a library

@@ -1,0 +1,23 @@
+# An SSH tunnel per instance: ssh -N with the forwards of /etc/ssh-tunnel/NAME.conf, the key
+# and known-hosts file in /etc/ssh-tunnel/NAME/, as the account ssh-tunnel (README.md).
+# Derived from deploy/beatepi/etc/systemd/system/er-c-data-smb.service and the grace tunnel
+# of prototypes/search-stack/embedding-on-grace.md (change embedding-service-grace, D7).
+[Unit]
+Description=SSH tunnel %i (forwards in /etc/ssh-tunnel/%i.conf)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ssh-tunnel
+EnvironmentFile=/etc/ssh-tunnel/%i.conf
+ExecStart=/usr/bin/ssh -F none -N -i /etc/ssh-tunnel/%i/key \
+    -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+    -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/ssh-tunnel/%i/known_hosts \
+    -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 \
+    $SSH_OPTIONS $FORWARDS ${DESTINATION}
+Restart=always
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target
