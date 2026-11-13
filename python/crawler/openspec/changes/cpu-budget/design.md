@@ -194,6 +194,15 @@ Each stated before measuring, one case at a time, the wrapper patching the copy 
 
 The bulk bodies (`BULK_OUT`) of FILL 0 in the given order and sorted: 250 of 250 embeddings identical. Confirmed: on mixed lengths sorting saves what the short texts now cost as long ones; on texts that are all long it saves nothing. On staging the gain depends on how many records are shorter than 512 tokens and share sub-batches with long ones; its token lengths are not known here (the runner's `tokens per text` line on a staging batch, or the records' texts, would tell). A real change: patch 0002, `src/utils/embedding_utils.py`, `_embed_locally`: embed in order of length, return in the given order (a few lines).
 
+Implemented in patch 0002 (decision 250, commit 6105a3c5; task 3.10). Measured again with the built images, `perf/batch-memory.py 250 FILL 1` with the image's own sub-batch, the budget's thread variables and H1's wrapper without `SORT`, one throwaway container at a time on the otherwise idle test deployment; the image before kept as `search-stack-airflow:3.3.2-before-sort`; time is `transform_batch_impl`'s, CPU per record the process's ÷ 250:
+
+| FILL (tokens min, median, max) | before: time, records/s, CPU per record, peak | after: time, records/s, CPU per record, peak | gain |
+|---|---|---|---|
+| 0 (19, 34, 512) | 131.7 s, 1.9, 538 ms, 1.39 GB | 18.8 s, 13.3, 87 ms, 0.87 GB | 7.0× |
+| 500 (512, 512, 512) | 128.9 s, 1.9, 528 ms, 1.40 GB | 129.8 s, 1.9, 531 ms, 1.40 GB | none |
+
+The bulk bodies (`BULK_OUT`) before and after: byte-identical at FILL 0 and at FILL 500 (`cmp`; 250 documents with 18 distinct embeddings, so a vector in the wrong position would differ). Then `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e`: 30 passed, 0 skipped.
+
 **H2. On long texts, threads per process scale better than processes** (6.3: T = 8 costs 1.5 times the CPU of T = 1 per batch; staging runs 16 × 1). P processes at once, 250 texts at FILL 500 each:
 
 | P × T | sub-batch | all done | records/s | CPU per record |
