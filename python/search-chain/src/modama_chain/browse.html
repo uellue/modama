@@ -64,7 +64,7 @@ pre { margin: 0; padding: 6px 8px; font: 12px/1.35 ui-monospace, monospace; whit
 <div id="right">
   <div id="head"></div>
   <div id="views"></div>
-  <p class="muted">Click a folder to open it, a file to see its views; the path above goes up.</p>
+  <p class="muted">Click a folder to open it and see its views, a file to see its views; the path above goes up.</p>
 </div>
 <script>
 "use strict";
@@ -186,7 +186,7 @@ function views(path) {
   controllers = [];
   clearInterval(polling);
   const host = S.hostRoot.replace(/\/$/, "") + path.replace(/\/$/, "");
-  const file = !path.endsWith("/");  // a folder lists and shows its stored views, no live ones (D3)
+  const file = !path.endsWith("/");  // an open folder: its views too, live if it is a collapsed dataset; no snapshot (@weber, 2026-11-13)
   const saved = el("span", {class: "muted"});
   const message = el("textarea", {class: "message", rows: "2", placeholder: "A message for Claude (optional), saved at the top of the snapshot"});
   const save = el("button", {onclick: () => {
@@ -209,9 +209,8 @@ function views(path) {
   for (const [key, title] of ORDER) {
     const pair = [];
     for (const side of ["stored", "live"]) {
-      const waiting = side === "stored" ? "loading…" : file ? "computing…" : "a folder: no live views";
-      const empty = el("div", {class: "empty"}, waiting);
-      if (side === "live" && file) computing.push(empty);
+      const empty = el("div", {class: "empty"}, side === "stored" ? "loading…" : "computing…");
+      if (side === "live") computing.push(empty);
       cells[side + key] = el("div", {class: "cell"}, empty);
       pair.push(cells[side + key]);
     }
@@ -241,13 +240,12 @@ function views(path) {
     const i = r.info;
     info.textContent = i.error ? i.error : `${i.size} bytes, mtime ${i.mtime}, ctime ${i.ctime}${i.readable ? "" : ", not readable"}`;
     fill("stored", r.views);
-    if (!file) return null;
     // While the request waits for a free slot, its place in the queue (D3)
     const poll = polling = setInterval(() => fetch("/api/waiting", {headers: OWN}).then(r => r.json()).then(r => {
       for (const e of computing) e.textContent = r.ahead === null ? "computing…" : `waiting, ${r.ahead} ahead`;
     }).catch(() => {}), 1000);
     return api(path, "live", {headers: OWN}).then(r => fill("live", r.views)).finally(() => clearInterval(poll));
-  }).catch(e => { fail("stored", e); if (file) fail("live", e); });
+  }).catch(e => { fail("stored", e); fail("live", e); });
 }
 
 function cell(v) {

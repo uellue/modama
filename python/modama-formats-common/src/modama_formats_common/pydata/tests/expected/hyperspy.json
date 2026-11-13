@@ -83,7 +83,8 @@
     "/with_lists_etc.hdf5": {
       "subjects": [],
       "summary": [
-        "shape [10]"
+        "Experiments.__unnamed__.data [10] <i8",
+        "Experiments.__unnamed__.metadata.Signal.Noise_properties._sig_variance.data [10] <i8"
       ],
       "values": {
         "mapped_metadata": {},

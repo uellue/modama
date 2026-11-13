@@ -603,7 +603,7 @@ def test_a_new_failure_does_not_replace_a_stored_success(conn, tmp_path):
     assert result.all_warnings() == []
 
 
-def _unreadable(path, **kw):
+def _unreadable(path, *args, **kwargs):
     raise PermissionError(13, "Permission denied", path)
 
 
@@ -615,7 +615,8 @@ def test_a_directory_whose_recognition_met_the_environment_is_recognised_again(
     (root / "x.stand").write_text("ok x")
     calls = tmp_path / "calls"
     with monkeypatch.context() as m:
-        m.setattr(mime, "detect_with_tie", _unreadable)
+        # the detection's read, which the walk reports (listing-errors D6)
+        m.setattr(mime, "open", _unreadable, raising=False)
         first, _ = crawl(conn, root, calls)
     assert first.all_warnings() and first.listings["/"].retry
     second, _ = crawl(conn, root, calls)

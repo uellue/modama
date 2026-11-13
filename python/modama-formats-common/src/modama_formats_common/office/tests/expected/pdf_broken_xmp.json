@@ -1,0 +1,44 @@
+{
+  "datasets": [
+    {
+      "anchor": "/broken.pdf",
+      "basis": "PDF header",
+      "collapsed": false,
+      "format": "common/pdf",
+      "members": [
+        "/broken.pdf"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/pdf",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/broken.pdf": {
+      "subjects": [],
+      "summary": [
+        "Broken XMP",
+        "pypdf",
+        "pages 1",
+        "reader warning: XMP not read: no element found: line 1, column 177"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": false,
+          "header": "%PDF-1.3",
+          "pages": 1
+        },
+        "original_metadata": {
+          "Info.Producer": "pypdf",
+          "Info.Title": "Broken XMP"
+        },
+        "reader_warnings": [
+          "XMP not read: no element found: line 1, column 177"
+        ]
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

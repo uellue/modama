@@ -1,0 +1,41 @@
+{
+  "datasets": [
+    {
+      "anchor": "/dask-scratch-space",
+      "basis": "directory is named dask-scratch-space",
+      "collapsed": true,
+      "format": "collapse/daskscratch",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dask-scratch-space",
+      "warnings": []
+    },
+    {
+      "anchor": "/dask-worker-space",
+      "basis": "directory is named dask-worker-space",
+      "collapsed": true,
+      "format": "collapse/daskscratch",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.dask-scratch-space",
+      "warnings": []
+    },
+    {
+      "anchor": "/notes.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

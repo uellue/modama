@@ -19,6 +19,13 @@ licence = "MIT"
 source = "a mimicked .svn directory, next to a text file"
 generator = "modama_crawler.formats.collapse.tests.generate:svn"
 
+[dask]
+purpose = "representative"
+validity = "parser-only: name-based rule; the layout of a Dask scratch directory (global.lock, purge.lock, worker-*/storage, worker-*.dirlock, tmp*.py) under both names is mimicked from the October 2026 listing"
+licence = "MIT"
+source = "a mimicked dask-worker-space and dask-scratch-space, next to a text file"
+generator = "modama_crawler.formats.collapse.tests.generate:dask"
+
 [caches]
 purpose = "representative"
 validity = "parser-only: name-based rules; only __pycache__ is CPython-written, the .ipynb_checkpoints, node_modules and conda-meta layouts are mimicked"

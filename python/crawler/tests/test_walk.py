@@ -277,11 +277,12 @@ def test_unreadable_root_is_an_error(tmp_path):
 
 
 def test_the_file_system_decides_readability_not_the_mode_bits(tmp_path, monkeypatch):
-    # The mode bits grant it, the storage denies it (an immutable flag, an ACL): skipped (parallel-walk D4)
+    # The mode bits grant it, the storage denies it (an immutable flag, an ACL): skipped (parallel-walk D4);
+    # access(2) says no, and open(2), asked again for the errno, says EACCES (listing-errors D5)
     for name in ("open.txt", "denied.txt"):
         (tmp_path / name).write_text(name)
         (tmp_path / name).chmod(0o644)
-    real_access = os.access
+    real_access, real_open = os.access, os.open
     monkeypatch.setattr(
         os,
         "access",
@@ -289,6 +290,13 @@ def test_the_file_system_decides_readability_not_the_mode_bits(tmp_path, monkeyp
             not str(p).endswith("denied.txt") and real_access(p, *a, **kw)
         ),
     )
+
+    def open_(path, *args, **kwargs):
+        if str(path).endswith("denied.txt"):
+            raise PermissionError(13, "Permission denied", path)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", open_)
     result = walk(tmp_path, FORMATS)
     assert [d.anchor for d in result.datasets] == ["/open.txt"]
     assert result.skipped == [("/denied.txt", "not readable")]
@@ -358,15 +366,15 @@ def test_many_threads_with_the_last_crawls_state(conn, tmp_path, monkeypatch):
         for name in ("1.txt", "2.txt"):
             (root / d / name).write_text(name)
     (root / "r" / "unread").write_bytes(b"\0")  # no name a glob decides: read
-    real_detect = walk_module.mime.detect_with_tie
 
-    def detect(path, **kw):
+    def open_(path, *args, **kwargs):
+        # the read of the detection, not detect_with_tie itself, which falls back (listing-errors D6)
         if path.endswith("/unread"):
             raise PermissionError(13, "Permission denied", path)
-        return real_detect(path, **kw)
+        return open(path, *args, **kwargs)
 
     # The state the review fixes added: an unlistable directory, a listing to retry
-    monkeypatch.setattr(walk_module.mime, "detect_with_tie", detect)
+    monkeypatch.setattr(walk_module.mime, "open", open_, raising=False)
     os.chmod(root / "x" / "private", 0)
     try:
         result = walk(root, FORMATS, threads=16)

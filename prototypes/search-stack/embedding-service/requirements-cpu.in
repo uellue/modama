@@ -1,0 +1,15 @@
+# The service's tests in the development VM (README.md, Tests): the same packages as
+# requirements-gpu.in with ONNX Runtime's CPU build, plus pytest and requests (the
+# warehouse's HTTP client) for the tests. Not for grace. The lock file requirements-cpu.txt
+# (with hashes, for x86_64) is made from this one:
+#   uv pip compile --no-build --generate-hashes --python-platform x86_64-manylinux_2_34 \
+#     --python-version 3.12 requirements-cpu.in -o requirements-cpu.txt
+fastembed==0.8.0
+onnxruntime==1.31.1
+tokenizers==0.22.2
+numpy==2.4.4
+huggingface-hub==1.8.0
+starlette==1.10.0
+uvicorn==0.54.0
+pytest==9.0.2
+requests==2.33.1

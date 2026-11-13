@@ -70,10 +70,11 @@ def holds(d, path: str) -> bool:
 def compute(
     root: str, path: str, config: Path | None, base_url: str, stored: dict | None
 ) -> dict:
-    """The dataset holding the file at path (relative to root), its extraction, record and GetRecord response.
+    """The dataset holding the file or folder at path (relative to root), its extraction, record and GetRecord response.
 
     As `modama-crawler records` does it, for the file's folder alone
-    (`walk(top=…)`, D5) and the one dataset. `stored` is the stored record
+    (`walk(top=…)`, D5) and the one dataset; for a folder, only a collapsed
+    dataset anchored at it or above it. `stored` is the stored record
     ({"datestamp", "metadata"}), whose datestamp the live record keeps when
     its metadata is the same (D6).
     """
@@ -85,7 +86,8 @@ def compute(
 
     args = argparse.Namespace(config=config, select=None, ignore=None)
     config_, formats, _ = cli.configure(args)
-    folder = os.path.dirname(path) or "/"
+    is_folder = os.path.isdir(os.path.join(root, path.lstrip("/")))
+    folder = path if is_folder else os.path.dirname(path) or "/"
     with cpus.set_num_threads_env(1):  # the extraction worker's math threads (R43)
         result = walk(
             root,
@@ -94,7 +96,10 @@ def compute(
             per_path_ignores=config_.per_path_ignores,
             threads=THREADS,
             processes=0,
-            top=folder,
+            # A folder: its collapse check alone, the pre-order calls from the root down to
+            # it (walk makes them down to top's parent and stops at a top that is no
+            # folder; "." never is an entry), nothing of its files (@weber, 2026-11-13)
+            top=path.rstrip("/") + "/." if is_folder else folder,
         )
         mine = Result(datasets=[d for d in result.datasets if holds(d, path)][:1])
         # the identity a crawl in this installation extracts under (records-cli does the same)
@@ -109,6 +114,7 @@ def compute(
     out = {
         "pid": os.getpid(),
         "folder": folder,
+        "is_folder": is_folder,
         "dataset": None,
         "notes": list(
             dict.fromkeys(

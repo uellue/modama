@@ -53,6 +53,22 @@ def caches(target: Path) -> None:
     (target / "conda" / "bin" / "python").write_text("")
 
 
+def dask(target: Path) -> None:
+    # A Dask scratch directory under both of its names, as the October 2026
+    # listing has it (worker folders with storage/, lock files, a temporary script)
+    target.mkdir(parents=True)
+    for name in ("dask-worker-space", "dask-scratch-space"):
+        space = target / name
+        worker = space / "worker-abc123de"
+        (worker / "storage").mkdir(parents=True)
+        (worker / "storage" / "x-0").write_bytes(b"\x80\x05N.")
+        (worker / "tmp1a2b3c4d.py").write_text("x = 1\n")
+        (space / "worker-abc123de.dirlock").write_text("")
+        (space / "global.lock").write_text("")
+        (space / "purge.lock").write_text("")
+    (target / "notes.txt").write_text("next to Dask's scratch space\n")
+
+
 def venv_without_lib(target: Path) -> None:
     target.mkdir(parents=True)
     (target / "env").mkdir()
