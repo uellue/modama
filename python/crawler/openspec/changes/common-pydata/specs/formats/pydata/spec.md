@@ -73,23 +73,38 @@ The extractor of the HDF5 types SHALL walk the file's objects with h5py, depth f
 - **THEN** none of them is in `original_metadata`, and neither the attribute of 100 numbers nor the scalar of 100,000 bytes is read
 
 ### Requirement: An HDF5 file without a title is summarised by its structure
-An HDF5, NeXus or HyperSpy file without a title (`*.title`, `Experiments.*.metadata.General.title`; empty counts as none) SHALL have its structure as the summary line (decision 316): the three datasets of one dimension or more in `original_metadata` with the most elements, ties by dotted name, each `<dotted name> <shape> <dtype>`; then the root's `file_time` as found, if any. A file with a title SHALL keep its line.
+An HDF5, NeXus or HyperSpy file without a title (`*.title`, `Experiments.*.metadata.General.title`; empty counts as none) SHALL have its structure as the summary line (decision 316): the three datasets of one dimension or more with the most elements, ties by dotted name, each `<dotted name> <shape> <dtype>` (decision 326: a compound as NumPy's descr list); then `*.start_time`, `*.definition` (decision 324) and the root's `file_time`, as found, if any. A file with a title SHALL keep its line.
 
 #### Scenario: A NeXus file without a title
 - **WHEN** a NeXus file `scan.nxs` as a beamline writes it (an NXentry `entry` with an NXdata `data` of 1-D arrays `value1` to `value4` `<i4` and `exposuretime` `<f4` of 10 elements each and scalars `vfcconversion1` to `vfcconversion5`; root attributes `NX_class`, `file_name`, `file_time 2026-01-02T03:04:05`, `file_update_time`) has no `title`
 - **THEN** the summary is `entry.data.exposuretime [10] <f4, entry.data.value1 [10] <i4, entry.data.value2 [10] <i4, 2026-01-02T03:04:05`
 
+#### Scenario: A NeXus file without a title with a definition and start time
+- **WHEN** the NeXus file of "A NeXus file without a title" has `entry.definition` `NXmonopd` and `entry.start_time` `2026-01-02T02:59:00`
+- **THEN** the summary is `entry.data.exposuretime [10] <f4, entry.data.value1 [10] <i4, entry.data.value2 [10] <i4, 2026-01-02T02:59:00, NXmonopd, 2026-01-02T03:04:05`
+
 #### Scenario: An HDF5 file without a title
 - **WHEN** an HDF5 file has datasets `e` `[4, 4] <u2`, `d` `[100] <f8`, `b` `[4, 4] <u2`, `a` `[2] <i4` and a scalar `scalar`, and no title
 - **THEN** the summary is `d [100] <f8, b [4, 4] <u2, e [4, 4] <u2`
 
+#### Scenario: A compound array without a title
+- **WHEN** an HDF5 file without a title has one dataset `events` of 5 elements of the compound dtype `x <f4, y <i2`
+- **THEN** the summary is `events [5] [['x', '<f4'], ['y', '<i2']]`
+
 #### Scenario: A HyperSpy file without a title
 - **WHEN** RosettaSciIO's `with_lists_etc.hdf5`, whose signal's title is empty, is extracted as `untitled.hspy`
-- **THEN** the summary is `Experiments.__unnamed__.data [10] <i8`, then the variance signal's `data` `[10] <i8` and the first of HyperSpy's encoded lists `[2] <i8`, by their dotted names
+- **THEN** the summary is `Experiments.__unnamed__.data [10] <i8`, then the variance signal's `data` `[10] <i8`, by their dotted names; none of HyperSpy's encoded lists, the only other arrays
 
 #### Scenario: A file with a title keeps its line
 - **WHEN** the NeXus file of "A NeXus file without a title" has `entry.title` `Energy scan`
 - **THEN** the summary is `Energy scan`
+
+### Requirement: HyperSpy's encoded lists are not among the largest arrays
+In the summary line of a HyperSpy file without a title, the datasets with a part `_list_…` or `_tuple_…` in their dotted name, which RosettaSciIO's hspy writer makes of the lists and tuples in a signal's metadata, SHALL NOT be among the three largest datasets (decision 325).
+
+#### Scenario: HyperSpy's encoded lists are not among the largest arrays
+- **WHEN** the file of "A HyperSpy file without a title" also has a metadata list `test._list_long` of 1,000 elements, a list `_list_inner` of 500 elements in a tuple `test._tuple_1_nested`, and an array `learning_results.factors` `[10, 2] <f8`
+- **THEN** the summary is `learning_results.factors [10, 2] <f8`, `data [10] <i8` and the variance signal's `data` `[10] <i8`, by their dotted names
 
 ### Requirement: Credentials are left out
 A value that may be a credential by the shared check `modama_crawler.formats.values.credential` (its name, or a text such as a URL with a password) SHALL be left out of `original_metadata`, in every format of this part.

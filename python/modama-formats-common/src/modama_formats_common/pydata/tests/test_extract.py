@@ -254,6 +254,25 @@ def test_a_nexus_file_without_a_title(collection_tests, tmp_path):
     ]
 
 
+def test_a_nexus_file_without_a_title_with_a_definition_and_start_time(
+    collection_tests, tmp_path
+):
+    path = tmp_path / "scan.nxs"
+    beamline_nexus(path)
+    with h5py.File(path, "r+") as f:
+        f["entry/definition"] = "NXmonopd"
+        f["entry/start_time"] = "2026-01-02T02:59:00"
+    x, _ = extracted(collection_tests, tmp_path, "scan.nxs")
+    assert x.summary == [
+        "entry.data.exposuretime [10] <f4",
+        "entry.data.value1 [10] <i4",
+        "entry.data.value2 [10] <i4",
+        "2026-01-02T02:59:00",
+        "NXmonopd",
+        "2026-01-02T03:04:05",
+    ]
+
+
 def test_an_hdf5_file_without_a_title(collection_tests, tmp_path):
     with h5py.File(tmp_path / "plain.h5", "w") as f:
         f["e"] = numpy.zeros((4, 4), dtype="<u2")
@@ -263,6 +282,13 @@ def test_an_hdf5_file_without_a_title(collection_tests, tmp_path):
         f["scalar"] = 7
     x, _ = extracted(collection_tests, tmp_path, "plain.h5")
     assert x.summary == ["d [100] <f8", "b [4, 4] <u2", "e [4, 4] <u2"]
+
+
+def test_a_compound_array_without_a_title(collection_tests, tmp_path):
+    with h5py.File(tmp_path / "events.h5", "w") as f:
+        f["events"] = numpy.zeros(5, dtype=[("x", "<f4"), ("y", "<i2")])
+    x, _ = extracted(collection_tests, tmp_path, "events.h5")
+    assert x.summary == ["events [5] [['x', '<f4'], ['y', '<i2']]"]
 
 
 def test_a_file_with_a_title_keeps_its_line(collection_tests, tmp_path):
@@ -468,7 +494,26 @@ def test_a_hyperspy_file_without_a_title(collection_tests, tmp_path):
     assert x.summary == [
         f"{exp}.data [10] <i8",
         f"{exp}.metadata.Signal.Noise_properties._sig_variance.data [10] <i8",
-        f"{exp}.metadata.test._list_2_tuple_inside_list._tuple_1 [2] <i8",
+    ]
+
+
+def test_hyperspys_encoded_lists_are_not_among_the_largest_arrays(
+    collection_tests, tmp_path
+):
+    # Made up: the encoded lists larger than any array, a third array
+    path = tmp_path / "untitled.hspy"
+    shutil.copyfile(FIXTURES / "hyperspy" / "with_lists_etc.hdf5", path)
+    exp = "Experiments/__unnamed__"
+    with h5py.File(path, "r+") as f:
+        f[f"{exp}/metadata/test/_list_long"] = numpy.zeros(1000, dtype="<i8")
+        f[f"{exp}/metadata/test/_tuple_1_nested/0/_list_inner"] = numpy.zeros(500)
+        f[f"{exp}/learning_results/factors"] = numpy.zeros((10, 2))
+    x, _ = extracted(collection_tests, tmp_path, "untitled.hspy")
+    exp = "Experiments.__unnamed__"
+    assert x.summary == [
+        f"{exp}.learning_results.factors [10, 2] <f8",
+        f"{exp}.data [10] <i8",
+        f"{exp}.metadata.Signal.Noise_properties._sig_variance.data [10] <i8",
     ]
 
 
