@@ -83,6 +83,13 @@ Step zero before distilling anything: what exists. Sources: Anthropic's official
 
 What none of them do, and ours did: start from the project's requirements, write expectations before running, ask the manager questions during the test, judge a real terminal by eye, and verify every finding adversarially.
 
+## Practices of the crawler work, November 2026
+
+- **An open-items page.** While @weber is away or busy, the agent keeps a page (a claude.ai artifact) with every numbered item and question, its status, the details folded out, and a box for the answer; answers come back through the page, and the agent keeps it current. It made long stretches of parallel work possible without blocking on the chat; @weber wants it developed as a feature of the kaizen plugin (`python/crawler/design/kaizen.md`, notes).
+- **A cost estimate before a long stretch.** Before a loop of expensive runs, many coding agents or a night without check-ins, the agent says what it will cost and asks; no fixed ceiling, so that productive work is not stopped (`python/crawler/AGENTS.md`, standing rules).
+- **Tools before the goal.** The observation tools (the crawler's `records`, `modama-chain trace` and `browse`, py-spy, perf, NFS counters, the NFS benchmark) let a host of issues be fixed in about a day; they are worth building early, and using before going around them (`python/crawler/README.md`, "Seeing what happens").
+- **Compute.** Agentic development needs far more memory and cores per developer than a laptop has: a search stack, several coding agents with their own test suites, and a RAM disk `/tmp` shared by all of them (`python/crawler/README.md`, "Getting started").
+
 ## Media competency for agents
 
 @weber's night thought: unwanted or harmful instructions could spread between agents through any platform where one agent's output is read by another (issues, wikis, comments, generated files, the data tree itself), the way conspiracy theories, challenges and scams spread among people. The defence is the model's judgement ("is that a good idea, should I be doing that, is that plausible?") and standing instructions for critical evaluation of external content.

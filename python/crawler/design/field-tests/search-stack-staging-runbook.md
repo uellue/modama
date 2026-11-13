@@ -59,6 +59,23 @@ Agreed with @weber, co-admin of the server, 2026-11-10.
   it as it goes, and it stays in the agent's transcript: keep secrets off the screen.
   Look through it before anything is shared.
 
+## Before the first run
+
+The checks that caught problems on earlier runs (`python/crawler/README.md`, "What to look
+out for", "Performance"):
+
+- The instruments are ready first: `monitor.sh`, `field-test/nfs-stats.sh`, the recording,
+  and a reproducer for any issue already known; then a baseline run; then the fixes, one
+  at a time (@weber, 2026-11-11).
+- The change was measured on the benchmark first (`python/crawler/benchmark/`), so that a
+  night on staging is not spent finding what a few minutes there would show.
+- The expected numbers are written down before the run: files per second, kB read per
+  opened file, the duration (`df -i` on the data tree's file system bounds the number of
+  files). Compare them in the first minutes of the crawl; 16 files/s at 5 % CPU (run 2)
+  meant waiting on NFS.
+- The stack's broker allows long tasks (`consumer_timeout`, F17), and the coding agents
+  know that nobody pulls in the shared checkout while the run reads it.
+
 ## Settings
 
 `staging.env` in `prototypes/search-stack/` (gitignored), written in steps 3 to 7:
