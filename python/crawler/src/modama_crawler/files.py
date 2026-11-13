@@ -44,7 +44,7 @@ def regular(path: str) -> int:
 
 
 class BudgetExceeded(OSError):
-    """A read past a file's byte budget (a format's read limit per file).
+    """A read past a format's read limit per file.
 
     An OSError, so that a format skips the file as one it cannot read, and
     goes on with its other files (change read-limit-per-file).

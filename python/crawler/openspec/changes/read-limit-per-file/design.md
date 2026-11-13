@@ -30,9 +30,9 @@ From the code, per file and call (2026-11-13):
 | core `collapse/*` | nothing | no | |
 | core `skeleton/acquisition` (never enabled) | 10 bytes of the header | no | ended the call; fixed: skips the file |
 | `em/mrc` | 211 bytes (the map word at 208) | no | ended the call; fixed: skips the file |
-| `em/de` | 23 bytes of `*info.txt` | no | skips (`cannot_read`) |
+| `em/de` | 23 bytes of `*info.txt` | no | skips (`cannot_read`); the unread file's stem still owns its files (review, task 5.1) |
 | `em/hitachi` | 14 bytes of the `.txt` header | no | skips (`cannot_read`) |
-| `em/empad` | 65,536 bytes (64 KiB) of the XML header | at the threshold, not over | skips (catches every exception; its own warning too) |
+| `em/empad` | 65,536 bytes (64 KiB) of the XML header | at the threshold, not over | skips (catches every exception; a refusal without a warning of its own, review, task 5.3) |
 | `em/dmw` | 16 bytes | no | skips (`dm.header`) |
 | `em/dmwx` | 1,054 bytes (local header and a name of up to 1,024 bytes) | no | skips (`dm.header`) |
 | `em/k2is` | 16 bytes of a lone `.gtg` | no | skips (`dm.header`) |
@@ -50,6 +50,6 @@ From the code, per file and call (2026-11-13):
 | `common/npy`, `common/hdf5`, `common/python` | nothing | no | |
 | `common/hdf5links` | through `inspect`, h5py's reads, declared 4 MiB (the real master: 483 KB) | by design; not flagged (D3) | the file not listed, as before |
 | `common/zarr` (pre-order) | as core `zarr/zarr` | no | as core `zarr/zarr` |
-| `common/zspy` (pre-order) | a v3 `zarr.json` twice (core rule, then its root attribute), up to 2 × 64 KiB; a v2 `.zattrs` up to 64 KiB | **yes, when `zarr.json` is over 32 KiB** | skips (`values.start`) for the second read; the first as `zarr/zarr` |
+| `common/zspy` (pre-order) | a v3 `zarr.json` once, up to 64 KiB, as `zarr/zarr` reads it (it read it twice, up to 2 × 64 KiB, until the review, task 5.2); a v2 `.zattrs` up to 64 KiB | no (was: yes, when `zarr.json` was over 32 KiB) | as core `zarr/zarr`; `.zattrs` skips (`values.start`) |
 
-So no format reaches 1 MiB of one file through `d.read` today; one, `common/zspy`, can pass 64 KiB, by reading the same file twice (BACKLOG). Before this change, a refused read ended the call of `em/mrc` and the skeleton (neither caught an `OSError` around its read); both now skip the file, which also makes a read error on one MRC file skip that file instead of discarding `em/mrc`'s result for the folder (the spec's "A read error on one file"). The core `zarr/zarr` still ends its call on a read error of `zarr.json`; it cannot be refused (one read of at most 64 KiB), and changing what a read error does there is outside this change.
+So no format reaches 1 MiB of one file through `d.read` today, and none passes 64 KiB since `common/zspy` reads `zarr.json` once. Before this change, a refused read ended the call of `em/mrc` and the skeleton (neither caught an `OSError` around its read); both now skip the file, which also makes a read error on one MRC file skip that file instead of discarding `em/mrc`'s result for the folder (the spec's "A read error on one file"). The core `zarr/zarr` still ends its call on a read error of `zarr.json`; it cannot be refused (one read of at most 64 KiB), and changing what a read error does there is outside this change.

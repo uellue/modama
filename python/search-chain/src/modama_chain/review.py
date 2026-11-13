@@ -9,7 +9,9 @@ from urllib.parse import quote
 EXTRACTION_FAILED = "extraction failed"
 # The crawler's fixed markers: formats.WANTED_TWICE (decision 344) and NOT_INSPECTED (340, hdf5-links)
 MARKERS = ("two formats want it", "not inspected")
-# READ_MUCH and OVER_LIMIT: what recognition read of one file (change read-limit-per-file)
+# READ_MUCH and OVER_LIMIT: what recognition read of one file (change read-limit-per-file).
+# As text, not imported: review needs no crawler installed (psycopg only);
+# tests/test_review.py compares them with the crawler's
 MARKERS += ("read more than 64 KiB", "over its read limit")
 # extraction.SLOW_EXTRACTION: a success over 10 s (352, slow-extractions)
 MARKERS += ("slow extraction",)

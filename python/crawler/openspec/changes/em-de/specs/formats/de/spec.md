@@ -29,6 +29,10 @@ When a directory holds a file named `<8 digits>_<anything>_info.txt` that starts
 - **WHEN** a directory holds `20241021_00405_info.txt` with `20241021_00405_movie.mrc`, and `20241021_00405_x_info.txt` with `20241021_00405_x_movie.mrc`
 - **THEN** the result has two DE datasets of 2 members each, the `_x_` movie in the `_x_` acquisition
 
+#### Scenario: An info file of a longer stem that cannot be read
+- **WHEN** a directory holds `20241021_00405_info.txt` with `20241021_00405_movie.mrc`, and `20241021_00405_x_info.txt` with `20241021_00405_x_movie.mrc`, and `20241021_00405_x_info.txt` cannot be read (a read error, or over the format's read limit)
+- **THEN** the result has one DE dataset, `20241021_00405_` with its 2 members; `20241021_00405_x_info.txt` and `20241021_00405_x_movie.mrc` are single files, not members of the shorter stem's acquisition
+
 #### Scenario: Many acquisitions in one folder
 - **WHEN** a directory holds 16,000 acquisitions of an info file and a movie each
 - **THEN** they are 16,000 DE datasets of 2 members each, recognised in a time that grows with the number of files, not its square (under 5 s on the development VM)
