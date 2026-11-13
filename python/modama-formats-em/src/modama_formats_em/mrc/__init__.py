@@ -1,7 +1,8 @@
 """MRC files (MRC2014: maps, tomograms, image stacks, movies; `.mrc`, `.mrcs`, `.map`), one file one dataset.
 
 Recognition checks the map word at byte 208, as mrcfile does, since other
-programs write `.map` files too. Extraction reads the 1024-byte main header
+programs write `.map` files too; EPU's sidecars of the same name (`.xml`,
+`.jpg`) are members, not read (change em-mrc-sidecars). Extraction reads the 1024-byte main header
 through mrcfile and, for an FEI extended header (EPU, Tomo, Velox), its first
 record with mrcfile's description of it; nothing else (change em-mrc).
 """
@@ -25,6 +26,10 @@ HEADER_BYTES = 1024
 NSYMBT = slice(92, 96)
 # The map word: mrcfile checks its first three bytes, "MAP"
 MAP_WORD = (208, b"MAP")
+# EPU's sidecars of <stem>.mrc, members of its dataset by name, not read
+# (change em-mrc-sidecars): the image's metadata and preview; a movie
+# <stem>_Fractions.mrc has <stem>_Fractions.xml by the same rule
+SIDECARS = (".xml", ".jpg")
 # Extended headers whose first record is read: those mrcfile can interpret
 FEI = (b"FEI1", b"FEI2")
 # The skip lists (spec formats/mrc): unused space in the main header; unused
@@ -145,15 +150,30 @@ class Mrc(Format):
     # claims MRC files as members of a larger dataset (em/de) runs above it
     priority = 61
     reacts_to = frozenset({TYPE})
+    # 2: EPU's sidecars are members (change em-mrc-sidecars)
+    version = "2"
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         offset, word = MAP_WORD
+        taken = set()  # sidecars given to an MRC file of this folder already
         for e in d.of_type(TYPE):
             # The signature only, as the magic rule tests it
             if d.read(e, offset + len(word))[offset:] != word:
                 d.not_of_type(e, f"no {word.decode()} at byte {offset}")
                 continue
-            yield Dataset(anchor=e.rel, basis=f"{word.decode()} at byte {offset}")
+            stem = e.name.rpartition(".")[0] or e.name
+            sidecars = []
+            for name in (f"{stem}{ext}" for ext in SIDECARS):
+                if name in d.claimed:
+                    d.claimed_elsewhere(e.rel, name)
+                elif (s := d.entry(name)) and s.kind == "file" and name not in taken:
+                    taken.add(name)
+                    sidecars.append(s.rel)
+            yield Dataset(
+                anchor=e.rel,
+                members=(e.rel, *sidecars),
+                basis=f"{word.decode()} at byte {offset}",
+            )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
         """The main header's fields and an FEI record's as found, and what mrcfile

@@ -10,7 +10,7 @@ from modama_crawler.testing import recognise
 from modama_crawler.walk import walk
 
 from modama_formats_em.mrc import HEADER_BYTES
-from modama_formats_em.testing import rchar
+from modama_formats_em.testing import claimed_first, rchar
 
 from .generate import write
 
@@ -282,3 +282,59 @@ def test_a_negative_extended_header_size(collection_tests, tmp_path):
     original = extracted(collection_tests, tree, EPU).values["original_metadata"]
     assert (original["nx"], original["nsymbt"]) == (4096, -5)
     assert not any(k.startswith("extended_header.") for k in original)
+
+
+# Requirement: EPU's sidecars belong to their MRC file (change em-mrc-sidecars)
+
+STEM = "FoilHole_4551075_Data_4541935_4541937_20220507_110208"
+
+
+def groups(result) -> dict:
+    """Anchor -> (format, members) of a walk's datasets."""
+    return {d.anchor: (d.format, sorted(d.members)) for d in result.datasets}
+
+
+def test_a_micrograph_and_its_movie_from_epu(collection_tests, tmp_path):
+    tree = collection_tests.materialise("epu_data", tmp_path)
+    result = walk(tree, collection_tests.collection.formats)
+    assert groups(result) == {
+        f"/{STEM}.mrc": (
+            "em/mrc",
+            [f"/{STEM}.jpg", f"/{STEM}.mrc", f"/{STEM}.xml"],
+        ),
+        f"/{STEM}_Fractions.mrc": (
+            "em/mrc",
+            [f"/{STEM}_Fractions.mrc", f"/{STEM}_Fractions.xml"],
+        ),
+    }
+    summary = extracted(collection_tests, tree, f"{STEM}.mrc").summary
+    assert summary[:4] == ["nx 4096", "ny 4096", "nz 1", "mode 6"]
+
+
+def test_a_micrograph_without_its_xml(collection_tests, tmp_path):
+    tree = collection_tests.materialise("epu_data", tmp_path)
+    (tree / f"{STEM}.xml").unlink()
+    result = walk(tree, collection_tests.collection.formats)
+    (micrograph,) = [d for d in result.datasets if d.anchor == f"/{STEM}.mrc"]
+    assert sorted(micrograph.members) == [f"/{STEM}.jpg", f"/{STEM}.mrc"]
+    assert micrograph.warnings == ()
+
+
+def test_a_movies_xml_without_the_movie(collection_tests, tmp_path):
+    tree = collection_tests.materialise("epu_data", tmp_path)
+    (tree / f"{STEM}_Fractions.mrc").unlink()
+    result = walk(tree, collection_tests.collection.formats)
+    (xml,) = [d for d in result.datasets if d.anchor == f"/{STEM}_Fractions.xml"]
+    assert xml.format != "em/mrc"
+
+
+def test_a_sidecar_claimed_by_another_format(collection_tests, tmp_path):
+    result = claimed_first(collection_tests, "epu_data", tmp_path, f"{STEM}.xml")
+    assert groups(result)[f"/{STEM}.mrc"] == (
+        "em/mrc",
+        [f"/{STEM}.jpg", f"/{STEM}.mrc"],
+    )
+    assert (
+        f"/{STEM}.mrc",
+        f"em/mrc: {STEM}.xml is claimed by probe/claim; two formats want it",
+    ) in result.all_warnings()

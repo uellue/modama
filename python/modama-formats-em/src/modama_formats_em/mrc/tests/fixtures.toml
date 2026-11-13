@@ -16,6 +16,12 @@ validity = "vendor-written, cut: two files of an EPU 2.12.1.2782 session on a Ti
 licence = "CC0-1.0 (EMPIAR data; LICENSE.fixtures beside this file)"
 source = "https://ftp.ebi.ac.uk/empiar/world_availability/12652/data/Images-Disc1/GridSquare_4530231/Data/FoilHole_4551046_Data_4541935_4541937_20220507_103020.mrc (34464768 bytes, sha256 b8d94b7a56c4194bd6edda6ec9e3035dffe4db21a5f0c06f3bd5f7944aaa7e1d; cut 1912 bytes, sha256 e90548f1ffbc8b1d9c97ca6dd1ea2a8bbb98362e12457e8fffb2c988b5b926bc) and https://ftp.ebi.ac.uk/empiar/world_availability/12652/data/Images-Disc1/GridSquare_4530231/GridSquare_20220505_150431.mrc (34464768 bytes, sha256 57e3c2df597cd9370a9ddcc314c6be415961377fe85343dbad26983858865340; cut 1912 bytes, sha256 19ab27007d0a9cc8f35a5bdfe69ff89c853fa7af076bb965ddd2f0e099fc4ef0), fetched 2026-11-13, cut by cut-header.sh beside this file"
 
+[epu_data]
+purpose = "representative"
+validity = "vendor-written, cut: the five files of one stem in an EPU 2.12 Data folder, as deposited in EMPIAR-12652 under Images-Disc1/GridSquare_4530231/Data/ (change em-mrc-sidecars): the micrograph FoilHole_4551075_Data_4541935_4541937_20220507_110208.mrc (FEI2) with its .xml and .jpg, and its movie …_Fractions.mrc (4096x4096x40, mode 1, no extended header) with …_Fractions.xml. The MRC files cut to the main header and the FEI record (cut-header.sh), the two XML files whole, the JPEG cut to its first 2048 bytes (cut-sidecars.sh; nothing reads it)"
+licence = "CC0-1.0 (EMPIAR data; LICENSE.fixtures beside this file)"
+source = "https://ftp.ebi.ac.uk/empiar/world_availability/12652/data/Images-Disc1/GridSquare_4530231/Data/FoilHole_4551075_Data_4541935_4541937_20220507_110208 with .mrc (34464768 bytes, sha256 dbacc756335ddf8b737c2d7f5d243f7529a09c4e8548ac3f73c0a79198a6e73f; cut 1912 bytes, sha256 a54eb8690b86f7f5532ed4819688dfb3a75121d6fc554b48b5293698b9fd84f8), .xml (18387 bytes, sha256 97f9693d4a240260f61303cd9e9ca73e75c1b745b7d67c3fb3833887e6afcee9, whole), .jpg (145836 bytes, sha256 9b449a6ce8535d5c6b198e3e4cd1e32a8de09885e3b76efacd263f051d527886; cut 2048 bytes, sha256 307b5d262dda2e14e97298fc7aac7d6888e224a79eea3f5bb5f13bd63e2ec78f), _Fractions.mrc (1342178304 bytes, sha256 029f4dc41c3d3c3a66805b1b999e4f67537b909bae77a27b30c00fa39e55e3c5, streamed through the hash, only its first 2 MiB stored; cut 1024 bytes, sha256 d87d5d0888703abeae85a715d15d782083786d4d6ddf3a6053bf40c61f2718bf), _Fractions.xml (41156 bytes, sha256 b4cdbc0b4393c0bfac8e808d4f6b6bd6d188a3f70efc1bd4960b39a692dac5b9, whole); fetched 2026-11-13, cut by cut-header.sh and cut-sidecars.sh beside this file"
+
 [epu_movie]
 purpose = "representative"
 validity = "vendor-written, cut: an EPU movie FoilHole_20147964_Data_20151868_20151870_20220520_172819_Fractions.mrc as deposited in EMPIAR-12018 (4096x4096x42, mode 1, 16-bit), with an FEI2 extended header of one record per frame that holds little but time stamps and the readout area; the main header and the first record (888 bytes), the further records and the frames cut (decision 293)"
@@ -25,7 +31,7 @@ source = "https://ftp.ebi.ac.uk/empiar/world_availability/12018/data/FoilHole_20
 [fei1]
 purpose = "representative"
 validity = "vendor-written, cut: fei-extended.mrc of mrcfile's test data, an image written by EPU 1.2.0.16 (\"Fei EPU\") on a Titan Krios with an energy filter's camera (EF-CCD), 3710x3838 float32, with an FEI1 extended header of 786432 bytes; the main header and the first record (768 bytes) kept, the rest cut (decision 293)"
-licence = "public distribution permitted by its contributor (mrcfile's test-data README); in mrcfile's BSD-3-Clause repository; question 298 open (LICENSE.fixtures beside this file)"
+licence = "public distribution permitted by its contributor, Diamond Light Source (mrcfile's test-data README); in mrcfile's BSD-3-Clause repository; use agreed by @weber, 298 (LICENSE.fixtures beside this file)"
 source = "https://github.com/ccpem/mrcfile/raw/v1.5.4/tests/test_data/fei-extended.mrc (29265416 bytes, sha256 e9f168012031b3a6ea47fbed8eca8b9c8a040b4d1f4fbb2e3326bdb6d9307efe; cut 1792 bytes, sha256 5c083cdd814312136b174d49d3e3849657bdc7b72103bcef147e67d91c1ada73), fetched 2026-11-13, cut by cut-header.sh beside this file"
 
 [particle_stack]
