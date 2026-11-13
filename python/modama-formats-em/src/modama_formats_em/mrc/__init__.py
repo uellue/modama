@@ -1,8 +1,9 @@
-"""MRC files (MRC2014: maps, tomograms, image stacks; `.mrc`, `.mrcs`, `.map`), one file one dataset.
+"""MRC files (MRC2014: maps, tomograms, image stacks, movies; `.mrc`, `.mrcs`, `.map`), one file one dataset.
 
 Recognition checks the map word at byte 208, as mrcfile does, since other
 programs write `.map` files too. Extraction reads the 1024-byte main header
-only, through mrcfile; the extended header is not read (change em-mrc).
+through mrcfile and, for an FEI extended header (EPU, Tomo, Velox), its first
+record with mrcfile's description of it; nothing else (change em-mrc).
 """
 
 import io
@@ -11,37 +12,57 @@ import warnings
 from collections.abc import Iterable
 from pathlib import Path
 
+import numpy as np
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 from modama_crawler.formats.values import credential, textual
 
 log = logging.getLogger(__name__)
 HERE = Path(__file__).parent
 TYPE = "application/x.mrc"
-# The main header; the extended header that may follow is not read
+# The main header
 HEADER_BYTES = 1024
 # The map word: mrcfile checks its first three bytes, "MAP"
 MAP_WORD = (208, b"MAP")
-# The skip list: unused space in the header (spec formats/mrc)
+# Extended headers whose first record is read: those mrcfile can interpret
+FEI = (b"FEI1", b"FEI2")
+# The skip lists (spec formats/mrc): unused space in the main header; unused
+# space and reserved placeholders in an FEI record
 SKIPPED = ("extra1", "extra2")
-# The summary line's entries, the only list of wanted entries; a cell length or
-# sampling of 0 is a placeholder, a mode or space group of 0 a value
-HEADLINE = ("nx", "ny", "nz", "mode", "ispg")
-PLACEHOLDER_0 = ("cella.x", "cella.y", "cella.z", "mx", "my", "mz")
+SKIPPED_FEI = (
+    "Unused range",
+    *(f"Camera param reserved {n}" for n in range(10)),
+    *(f"STEM param reserved {n}" for n in range(5)),
+)
+# The summary line's entries, the only list of wanted entries: of the main
+# header (0 is a value of each), then of an FEI record (0 or empty left out;
+# text bare, a number after its name, without a unit: mrcfile gives none)
+HEADLINE = ("nx", "ny", "nz", "mode")
+HEADLINE_FEI = ("Microscope type", "HT", "Pixel size X", "Camera name")
+
+
+def plain(v):
+    """A header value as found, as a plain JSON value.
+
+    Text ends at its first NUL (fixed-size C strings: EPU leaves bytes after it)
+    and loses trailing spaces, read as Latin-1; a 32-bit float becomes the shortest
+    decimal that reads back to the same 32-bit float (11.4, not 11.399999618530273).
+    """
+    if isinstance(v, bytes):
+        return v.split(b"\0", 1)[0].rstrip(b" ").decode("latin-1")
+    if isinstance(v, np.float32):
+        return float(str(v))
+    if isinstance(v, np.generic):
+        return v.item()
+    return v
 
 
 def entries(header) -> dict:
     """Every field of mrcfile's header record under its name, flat, as found.
 
     Records (cella, cellb, origin) become `name.field`, the labels `label[n]`
-    from 1; byte strings lose their padding (trailing spaces and NULs) and read
-    as Latin-1; the machine stamp is printed as mrcfile prints it.
+    from 1; the machine stamp is printed as mrcfile prints it.
     """
     from mrcfile.utils import pretty_machine_stamp
-
-    def plain(v):
-        if isinstance(v, bytes):
-            return v.rstrip(b" \x00").decode("latin-1")
-        return v
 
     out = {}
     for name in header.dtype.names:
@@ -54,14 +75,36 @@ def entries(header) -> dict:
             # The map word as written, "MAP " with its space
             out[name] = bytes(field).rstrip(b"\x00").decode("latin-1")
         elif name == "label":
-            for n, label in enumerate(field.tolist(), 1):
-                out[f"label[{n}]"] = plain(label)
+            for n in range(len(field)):
+                out[f"label[{n + 1}]"] = plain(field[n])
         elif field.dtype.names:
-            for sub, v in zip(field.dtype.names, field.tolist()):
-                out[f"{name}.{sub}"] = plain(v)
+            for sub in field.dtype.names:
+                out[f"{name}.{sub}"] = plain(field[sub][()])
         else:
-            out[name] = plain(field.item())
+            out[name] = plain(field[()])
     return out
+
+
+def fei_record(header, f, anchor: str) -> dict:
+    """The first record of an FEI extended header, read from `f` (at its start),
+    as `extended_header.<name>`, but the skip list; {} if it is not of its type."""
+    from mrcfile.dtypes import get_ext_header_dtype
+
+    exttyp = bytes(header.exttyp)
+    dtype = get_ext_header_dtype(exttyp, header.mode.dtype.byteorder)
+    nsymbt = int(header.nsymbt)
+    blob = f.read(min(dtype.itemsize, nsymbt)) if nsymbt > 0 else b""
+    record = np.frombuffer(blob, dtype)[0] if len(blob) == dtype.itemsize else None
+    # mrcfile's test (MrcObject.indexed_extended_header): a whole record that
+    # states its own size
+    if record is None or record["Metadata size"] != dtype.itemsize:
+        log.warning("%s: the extended header is not %s", anchor, exttyp.decode())
+        return {}
+    return {
+        f"extended_header.{name}": plain(record[name])
+        for name in dtype.names
+        if name not in SKIPPED_FEI
+    }
 
 
 def kind(header) -> str:
@@ -76,6 +119,20 @@ def kind(header) -> str:
     if ndim == 4:
         return "volume stack"
     return "image stack" if header.ispg == IMAGE_STACK_SPACEGROUP else "volume"
+
+
+def summary(original: dict) -> list[str]:
+    """The summary line (spec formats/mrc, "The MRC header is extracted")."""
+    line = [f"{k} {original[k]}" for k in HEADLINE if k in original]
+    for name in HEADLINE_FEI:
+        v = original.get(f"extended_header.{name}")
+        if isinstance(v, str) and v:
+            line.append(v)
+        elif isinstance(v, int | float) and v != 0:
+            line.append(f"{name} {v} (unit unknown)")
+    if original.get("label[1]"):
+        line.append(original["label[1]"])
+    return line
 
 
 class Mrc(Format):
@@ -94,25 +151,28 @@ class Mrc(Format):
             yield Dataset(anchor=e.rel, basis=f"{word.decode()} at byte {offset}")
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """The main header's fields as found, and what mrcfile computes from them
-        (spec formats/mrc, "The MRC header is extracted")."""
+        """The main header's fields and an FEI record's as found, and what mrcfile
+        computes from them (spec formats/mrc, "The MRC header is extracted")."""
         from mrcfile.mrcinterpreter import MrcInterpreter
         from mrcfile.utils import dtype_from_mode
 
         with open(root + dataset.anchor, "rb", buffering=0) as f:
             head = f.read(HEADER_BYTES)
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            # Permissive: a header mrcfile finds odd is read with a warning.
-            # The extended header is not in `head`, so its warning is ours.
-            m = MrcInterpreter(io.BytesIO(head), permissive=True, header_only=True)
-        for w in caught:
-            if issubclass(w.category, RuntimeWarning) and not str(w.message).startswith(
-                "Expected"
-            ):
-                log.warning("%s: mrcfile: %s", dataset.anchor, w.message)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                # Permissive: a header mrcfile finds odd is read with a warning.
+                # The extended header is not in `head`, so its warning is ours.
+                m = MrcInterpreter(io.BytesIO(head), permissive=True, header_only=True)
+            for w in caught:
+                if issubclass(w.category, RuntimeWarning) and not str(
+                    w.message
+                ).startswith("Expected"):
+                    log.warning("%s: mrcfile: %s", dataset.anchor, w.message)
+            found = entries(m.header)
+            if bytes(m.header.exttyp) in FEI:
+                found |= fei_record(m.header, f, dataset.anchor)
         original, secrets = {}, 0
-        for name, value in entries(m.header).items():
+        for name, value in found.items():
             if not textual(value):
                 continue
             if credential(name, value):
@@ -121,20 +181,13 @@ class Mrc(Format):
             original[name] = value
         mapped = {
             "data_type": str(dtype_from_mode(m.header.mode)),
-            # float32 values as Python floats, unrounded, as for every field
-            "voxel_size": list(m.voxel_size.tolist()),
+            "voxel_size": [plain(m.voxel_size[axis][()]) for axis in "xyz"],
             "kind": kind(m.header),
         }
         if secrets:
             mapped["credentials_left_out"] = secrets
-        summary = [f"{k} {original[k]}" for k in HEADLINE if k in original]
-        summary += [
-            f"{k} {original[k]}" for k in PLACEHOLDER_0 if original.get(k, 0) != 0
-        ]
-        if original.get("label[1]"):
-            summary.append(original["label[1]"])
         return Extracted(
-            summary=summary,
+            summary=summary(original),
             subjects=[],
             values={
                 "original_metadata": original,

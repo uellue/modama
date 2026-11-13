@@ -8,8 +8,15 @@
 - [x] 1.4 Extraction. Verify: `test_extract.py`, one test per scenario of "The MRC header is extracted", also under `TZ=Europe/Berlin`; bytes read counted.
 - [x] 1.5 README row of `modama-formats-em`. Verify: by eye.
 
-## 2. Checks and review
+## 2. Public files and the extended header (decision 293)
 
-- [x] 2.1 `pytest src` of `modama-formats-em` (also `TZ=Europe/Berlin`), the crawler's suite, `uvx pre-commit run --all-files` from the repository root. Verify: their output in the hand-over.
-- [ ] 2.2 Review by an agent that did not write the code: skipped in the hallway test of 2026-11-13 (main session's instruction).
-- [ ] 2.3 Real files in `modama-chain browse`: not possible in the hallway test (no search stack).
+- [x] 2.1 Public files from EMPIAR and EMDB (CC0, verified on EBI's pages) and `mrcfile`'s `FEI1` file, each cut by `mrc/tests/cut-header.sh` to the main header and the FEI record: fixtures `epu_falcon`, `epu_movie`, `fei1`, `particle_stack`, `emdb_tomogram`, with URL, licence and the sha256 of original and cut in `fixtures.toml` and `LICENSE.fixtures`. Downloads in `/var/tmp/mrc-293/`, deleted after. Verify: `test_manifest`, `expected/*.json` reviewed.
+- [x] 2.2 The first record of an FEI extended header as `extended_header.<name>`, with its skip list; 32-bit floats as the shortest decimal; text up to its first NUL; the summary line cut to a few entries. Verify: `test_extract.py`, one test per scenario of "The first record of an FEI extended header is extracted" and "Only the headers are read", red first (7 failed before the code), then green.
+- [x] 2.3 README row; BACKLOG "Sync with upstream": `mrcfile`'s NumPy 2.5 deprecation (upstream issue #75, pull request #76). Verify: by eye.
+- [ ] 2.4 Questions 295 to 298 to @weber (summary line, EPU's sidecars, labels, the `FEI1` fixture's licence); the leans applied meanwhile.
+
+## 3. Checks and review
+
+- [x] 3.1 `pytest src` of `modama-formats-em` (also `TZ=Europe/Berlin`), the crawler's suite, `uvx pre-commit run --all-files` from the repository root. Verify: their output in the hand-over.
+- [ ] 3.2 Review by an agent that did not write the code (the main session starts it).
+- [ ] 3.3 Real files in `modama-chain browse`: the browse and crawler images need a rebuild for `mrcfile` first (the main session's OK).

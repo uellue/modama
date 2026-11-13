@@ -1,0 +1,87 @@
+{
+  "datasets": [
+    {
+      "anchor": "/emd_66908.map",
+      "basis": "MAP at byte 208",
+      "collapsed": false,
+      "format": "em/mrc",
+      "members": [
+        "/emd_66908.map"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.mrc",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/emd_66908.map": {
+      "subjects": [],
+      "summary": [
+        "nx 700",
+        "ny 700",
+        "nz 357",
+        "mode 0",
+        "::::EMDATABANK.org::::EMD-66908::::"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "data_type": "int8",
+          "kind": "volume",
+          "voxel_size": [
+            17.14,
+            17.14,
+            17.14
+          ]
+        },
+        "original_metadata": {
+          "cella.x": 11998.0,
+          "cella.y": 11998.0,
+          "cella.z": 6118.98,
+          "cellb.alpha": 90.0,
+          "cellb.beta": 90.0,
+          "cellb.gamma": 90.0,
+          "dmax": 102.0,
+          "dmean": 19.857813,
+          "dmin": -101.0,
+          "exttyp": "",
+          "ispg": 1,
+          "label[10]": "",
+          "label[1]": "::::EMDATABANK.org::::EMD-66908::::",
+          "label[2]": "",
+          "label[3]": "",
+          "label[4]": "",
+          "label[5]": "",
+          "label[6]": "",
+          "label[7]": "",
+          "label[8]": "",
+          "label[9]": "",
+          "machst": "0x44 0x41 0x00 0x00",
+          "map": "MAP ",
+          "mapc": 1,
+          "mapr": 2,
+          "maps": 3,
+          "mode": 0,
+          "mx": 700,
+          "my": 700,
+          "mz": 357,
+          "nlabl": 1,
+          "nsymbt": 0,
+          "nversion": 20141,
+          "nx": 700,
+          "nxstart": 0,
+          "ny": 700,
+          "nystart": 0,
+          "nz": 357,
+          "nzstart": 0,
+          "origin.x": 0.0,
+          "origin.y": 0.0,
+          "origin.z": 0.0,
+          "rms": 8.493746
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

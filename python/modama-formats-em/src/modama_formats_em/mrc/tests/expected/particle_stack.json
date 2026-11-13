@@ -1,0 +1,86 @@
+{
+  "datasets": [
+    {
+      "anchor": "/000143902881609190160_FoilHole_9904289_Data_9921494_9921496_20220611_094557_Fractions_patch_aligned_doseweighted_particles.mrcs",
+      "basis": "MAP at byte 208",
+      "collapsed": false,
+      "format": "em/mrc",
+      "members": [
+        "/000143902881609190160_FoilHole_9904289_Data_9921494_9921496_20220611_094557_Fractions_patch_aligned_doseweighted_particles.mrcs"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.mrc",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/000143902881609190160_FoilHole_9904289_Data_9921494_9921496_20220611_094557_Fractions_patch_aligned_doseweighted_particles.mrcs": {
+      "subjects": [],
+      "summary": [
+        "nx 540",
+        "ny 540",
+        "nz 69",
+        "mode 2"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "data_type": "float32",
+          "kind": "image stack",
+          "voxel_size": [
+            1.2,
+            1.2,
+            1.2
+          ]
+        },
+        "original_metadata": {
+          "cella.x": 648.0,
+          "cella.y": 648.0,
+          "cella.z": 82.8,
+          "cellb.alpha": 90.0,
+          "cellb.beta": 90.0,
+          "cellb.gamma": 90.0,
+          "dmax": 4.924749,
+          "dmean": -0.0029111265,
+          "dmin": -6.2681036,
+          "exttyp": "",
+          "ispg": 0,
+          "label[10]": "",
+          "label[1]": "",
+          "label[2]": "",
+          "label[3]": "",
+          "label[4]": "",
+          "label[5]": "",
+          "label[6]": "",
+          "label[7]": "",
+          "label[8]": "",
+          "label[9]": "",
+          "machst": "0x44 0x41 0x00 0x00",
+          "map": "MAP ",
+          "mapc": 1,
+          "mapr": 2,
+          "maps": 3,
+          "mode": 2,
+          "mx": 540,
+          "my": 540,
+          "mz": 69,
+          "nlabl": 0,
+          "nsymbt": 0,
+          "nversion": 0,
+          "nx": 540,
+          "nxstart": 0,
+          "ny": 540,
+          "nystart": 0,
+          "nz": 69,
+          "nzstart": 0,
+          "origin.x": 0.0,
+          "origin.y": 0.0,
+          "origin.z": 0.0,
+          "rms": 0.0
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

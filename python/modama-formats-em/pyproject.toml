@@ -20,8 +20,10 @@ dependencies = [
     # blockfile imports rsciio.utils._date_time (serial_date_to_datetime)
     "rosettasciio[blockfile]==0.15.0",
     # mrc: CCP-EM's reader, the field's; pinned exactly as mrc reads the header
-    # with mrcfile.mrcinterpreter.MrcInterpreter on a buffer of its 1024 bytes.
-    # 1.5.4 is the current release (PyPI, 2026-11-13), a pure-Python wheel
+    # with mrcfile.mrcinterpreter.MrcInterpreter on a buffer of its 1024 bytes
+    # and an FEI record (FEI1, FEI2) with mrcfile.dtypes.get_ext_header_dtype.
+    # 1.5.4 is the current release (PyPI, looked up 2026-11-13; of 2025-01-22),
+    # a pure-Python wheel
     "mrcfile==1.5.4",
 ]
 authors = [

@@ -34,14 +34,7 @@
         "nx 16",
         "ny 16",
         "nz 1",
-        "mode 2",
-        "ispg 0",
-        "cella.x 24.0",
-        "cella.y 24.0",
-        "cella.z 1.5",
-        "mx 16",
-        "my 16",
-        "mz 1"
+        "mode 2"
       ],
       "values": {
         "mapped_metadata": {
@@ -107,13 +100,6 @@
         "ny 16",
         "nz 3",
         "mode 1",
-        "ispg 0",
-        "cella.x 24.0",
-        "cella.y 24.0",
-        "cella.z 1.5",
-        "mx 16",
-        "my 16",
-        "mz 1",
         "stack written by mrcfile"
       ],
       "values": {
@@ -169,7 +155,7 @@
           "origin.x": 0.0,
           "origin.y": 0.0,
           "origin.z": 0.0,
-          "rms": 221.7023162841797
+          "rms": 221.70232
         }
       }
     }

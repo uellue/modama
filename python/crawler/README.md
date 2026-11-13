@@ -189,7 +189,7 @@ When choosing a MIME type, use an existing one if possible. Look at freedesktop.
 |---|---|---|---|---|
 | crawler | `python/crawler`: `pytest` | 451 | 5 to 7 min, 390 MB | the PostgreSQL binaries; both format packages installed |
 | formats, common | `python/modama-formats-common`: `pytest src`, then `TZ=Europe/Berlin pytest src` | 276 | 25 s, 320 MB | its `[test]` extra |
-| formats, EM | `python/modama-formats-em`: `pytest src`, also with `TZ=Europe/Berlin` | 135 | 25 s, 130 MB | |
+| formats, EM | `python/modama-formats-em`: `pytest src`, also with `TZ=Europe/Berlin` | 163 | 25 s, 130 MB | |
 | search chain | `python/search-chain`: `pytest` | 74 | 25 s to 1 min | the `[browse]` extra; the EOSC submodules checked out |
 | end to end | `prototypes/search-stack`: `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e` | 29 checks | about 6 min on a fresh stack | Docker; a secrets folder with a language model key (its README, "Secrets for the end-to-end test") |
 | lint | the repository root: `uvx pre-commit run --all-files`, as CI runs it (ruff pinned in `.pre-commit-config.yaml`; its check leaves out `prototypes/`) | | seconds | for `prototypes/` too: `uvx ruff check`, with 7 known errors in notebooks (`BACKLOG.md`) |
