@@ -137,6 +137,12 @@ As built:
 
 The header follows 0002's form, with E5's numbers, "Unset or empty, nothing changes", and "Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; … change embedding-fp32-model, decision 283".
 
+**Order with `embedding-service-grace`'s 0005.** That patch reached `crawler` first (f61a3ec4). It was written against 0001 to 0003 and adds `lazy_load=True` to the same `TextEmbedding` call. Its header expected 0004 to come before it, and the service's README, `server.py` and that change's proposal all name this patch 0004.
+
+So the smallest change keeps both numbers. 0004 stays as it is, and only 0005's first hunk is regenerated against 0001 to 0004: `lazy_load=True,` becomes a line after `specific_model_path=model_path,`. Its header now says "with 0001 to 0004 applied"; its `embedding_utils.py` hunks are unchanged.
+
+Renumbering this patch to 0006 would have left those references wrong. With lazy loading, the marker check stays eager, at the start of the batch, and fastembed keeps `specific_model_path` for the deferred load.
+
 Alternatives:
 - `TextEmbedding.add_custom_model`: it needs a new model name and a download source, and a local file still needs `specific_model_path`.
 - ONNX Runtime directly: our own tokenisation, pooling and normalisation in place of fastembed's. That is code of our own where the library already does it, and the review's cosine of 0.9999996 shows that fastembed's pre- and post-processing are the same either way.
@@ -161,10 +167,14 @@ Alternatives:
 
 None of these is a distinct disadvantage in @weber's sense (item 283). Memory and CPU go down, and the disk and the dependency are small and confined to the build.
 
-**D6. Measurement.** The VM numbers exist (E5). Staging confirms them rather than gating the change: on staging's own records the mix differs, and the build host's CPU is not the VM's.
+**D6. Measurement.** The VM numbers exist (E5). The order is decided by the main session, in line with @weber's "faster is better" (283) and no re-index (343): **merge first, then measure on staging.** Staging confirms the gain rather than gating the change; on staging's own records the mix differs, and the host's CPU is not the VM's.
+
+On a "no", the way back is `EMBEDDING_MODEL_PATH=` (empty) for `airflow-worker-transform`, with no rebuild and no revert. The measurement runs on the deployed image, which then holds both files.
 - **Before and after:** the same image and the same sample. Only `EMBEDDING_MODEL_PATH` is switched: empty for before, the image's value for after.
 - **Order and repeats:** cases run in the order A B B A B A, so three repeats each; the median is reported, with the spread.
-- **Go rule:** go if the mixed set's gain is at least 5 % and more than twice the spread between repeats.
+- **Keep rule:** keep the float32 file if the mixed set's gain is at least 5 % and more than twice the spread.
+  - The gain is the median CPU per record of A minus that of B, as a share of A's.
+  - The spread is max − min of the three repeats, taken per file; the larger of the two counts.
 - **Instruments:** `cpu-budget`'s `perf/batch-memory.py`, `perf/wrap/run.sh`, `cpu.py`, `embcmp.py` and `lengths.py`. Gaps found while planning (AGENTS.md, "Own instruments first"):
   - `batch-memory.py` loads every closed harvest run's events before it picks N; on staging that is 1.45 M records. It gets an opt-in fixed sample, `SAMPLE=1`: N non-deleted events ordered by `md5` of their event id (representative and repeatable, review S7), each loaded as the DAG loads a batch. It also gets `CUT=<chars>`, which cuts each record's own text for the short set. That is simpler than a token filter, which would have to compute the texts before the transform does.
   - Its memory line gets PSS and USS from `/proc/self/smaps_rollup`.
@@ -177,7 +187,7 @@ None of these is a distinct disadvantage in @weber's sense (item 283). Memory an
 
 ## Risks / Trade-offs
 
-- [Staging's mix gains less than the VM's] → The go rule of D6. If it fails, the branch stays unmerged and BACKLOG says why.
+- [Staging's mix gains less than the VM's] → D6's keep rule. If it fails, `EMBEDDING_MODEL_PATH=` (empty) for `airflow-worker-transform`, without a rebuild, and BACKLOG says why. The patch and the folder stay in the image, unused, until a decision to remove them.
 - [A mixed index, with old vectors from the production file and new ones from the float32 file] → E6: the change moves results less than `sq` does. No re-index (Q3, @weber, 343).
 - [The query side stays on the production file] → That is the agreement D4 bounds and E6 measured (queries embedded alone, with the production file's runtime behaviour).
 - [A build host with another instruction set fails the check] → The margin of D4. A failure names the set and the cosine.
@@ -187,8 +197,9 @@ None of these is a distinct disadvantage in @weber's sense (item 283). Memory an
 ## Migration Plan
 
 1. VM, with the main session's OK (the image tags are shared): build, tasks 3.x, then `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e`.
-2. Staging, after @weber's go: `./upstaging.sh --build` in an idle window (D6). The next indexing's batches use the float32 file, and indexed records keep their vectors (Q3).
-3. The way back without a rebuild: `EMBEDDING_MODEL_PATH=` (empty) for `airflow-worker-transform` in a compose file of the deployment, then `dc up -d airflow-worker-transform` in an idle window.
+2. Merge, then staging: `./upstaging.sh --build` in an idle window (D6). The next indexing's batches use the float32 file, and indexed records keep their vectors (Q3).
+3. The before/after on staging's sample with the deployed image (tasks 4.2, 4.3), A with `BEFORE=1`.
+4. The way back on a "no", without a rebuild: `EMBEDDING_MODEL_PATH=` (empty) for `airflow-worker-transform` in a compose file of the deployment, then `dc up -d airflow-worker-transform` in an idle window.
 
 ## Open Questions
 

@@ -9,7 +9,9 @@
 # PROJECT (default search-stack; staging: search-staging) names the compose project whose network and
 # embedding cache it uses, IMAGE (default search-stack-airflow:3.3.2) the image; SAMPLE, CUT: batch-memory.py's;
 # BEFORE=1 runs with `-e EMBEDDING_MODEL_PATH=`, fastembed's download instead of the image's float32 file
-# (change embedding-fp32-model, D6).
+# (change embedding-fp32-model, D6). The read-only warehouse role comes from the stack's secrets,
+# $MODAMA_SECRETS_DIR/chain.env (MODAMA_CHAIN_WAREHOUSE_DB); without MODAMA_SECRETS_DIR in the environment it is
+# read from ENVFILE in the stack's folder (default .env; staging: staging.env), relative to that folder.
 set -euo pipefail
 mode=$1 n=$2 fill=$3 t=$4 sb=$5
 here=$(cd "$(dirname "$0")" && pwd)
@@ -23,6 +25,17 @@ extra=(-v "$out/tmp-$case_":/tmp)
 for v in SORT ORT_PROFILE ORT_ARENA ORT_OPT BULK_OUT SAMPLE CUT; do [ -n "${!v:-}" ] && extra+=(-e "$v=${!v}"); done
 if [ -n "${BEFORE:-}" ]; then extra+=(-e EMBEDDING_MODEL_PATH=); fi
 project=${PROJECT:-search-stack} image=${IMAGE:-search-stack-airflow:3.3.2}
+envfile=$repo/${ENVFILE:-.env}
+secrets=${MODAMA_SECRETS_DIR:-$(sed -n 's/^MODAMA_SECRETS_DIR=\([^ #]*\).*/\1/p' "$envfile" 2> /dev/null || true)}
+if [ -z "$secrets" ]; then
+  echo "run.sh: MODAMA_SECRETS_DIR is neither set nor in $envfile" >&2
+  exit 2
+fi
+case $secrets in /*) ;; *) secrets=$repo/$secrets ;; esac
+if [ ! -r "$secrets/chain.env" ]; then
+  echo "run.sh: cannot read $secrets/chain.env (the read-only warehouse role)" >&2
+  exit 2
+fi
 if [ "$mode" != plain ]; then
   extra+=(-e WAIT=3)
   if [ "$mode" = fp ]; then extra+=(-e PYTHONPERFSUPPORT=1); else pyx=(-X perf_jit); fi
@@ -31,7 +44,7 @@ cid=$(docker run -d --rm --network "${project}_search" -v "$repo/perf":/probe:ro
   -v "${project}_fastembed-airflow":/opt/airflow/cache/fastembed:ro \
   -e PYTHONPATH=/opt/airflow/project/src:/opt/airflow/project \
   -e EMBEDDING_MODEL=BAAI/bge-small-en-v1.5 -e FASTEMBED_CACHE_DIR=/opt/airflow/cache/fastembed \
-  -e POSTGRES_USER=chain_reader -e POSTGRES_PASSWORD=test-chain-reader -e POSTGRES_DB=datasetdb \
+  --env-file "$secrets/chain.env" \
   -e POSTGRES_ADDRESS_DOCKER=postgres -e OPENSEARCH_ADDRESS_DOCKER=opensearch -e OPENSEARCH_PORT_DOCKER=9200 \
   -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 -e RAYON_NUM_THREADS="$tt" \
   "${extra[@]}" \

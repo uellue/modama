@@ -9,13 +9,13 @@ container of the airflow image (transform venv), without writing anywhere.
     SUB_BATCH  0: the image's own `embed` sub-batch; S: batch_size=S (fastembed's default is 256; patch 0002: 32)
 
 One throwaway container per case, on the running test deployment's network (the design's "Measurement of one
-batch", change cpu-budget; the test deployment's throwaway password of the read-only role):
+batch", change cpu-budget; the read-only role from the stack's secrets):
 
   docker run --rm --network search-stack_search -v "$PWD/perf":/probe:ro \
     -v search-stack_fastembed-airflow:/opt/airflow/cache/fastembed:ro \
     -e PYTHONPATH=/opt/airflow/project/src:/opt/airflow/project \
     -e EMBEDDING_MODEL=BAAI/bge-small-en-v1.5 -e FASTEMBED_CACHE_DIR=/opt/airflow/cache/fastembed \
-    -e POSTGRES_USER=chain_reader -e POSTGRES_PASSWORD=test-chain-reader -e POSTGRES_DB=datasetdb \
+    --env-file testconf/secrets/chain.env \
     -e POSTGRES_ADDRESS_DOCKER=postgres -e OPENSEARCH_ADDRESS_DOCKER=opensearch -e OPENSEARCH_PORT_DOCKER=9200 \
     --entrypoint /opt/airflow/transform-venv/bin/python search-stack-airflow:3.3.2 /probe/batch-memory.py 250 0 0
 
@@ -29,7 +29,8 @@ of every closed run's events; CUT=<chars> cuts each record's own text to its fir
 short set, before any FILL). In an image with patch 0004, `-e EMBEDDING_MODEL_PATH=` embeds with fastembed's
 download instead of the image's float32 file (the "before" of a before/after).
 
-Reads the warehouse with the read-only role (POSTGRES_* in the environment). The writes are replaced:
+Reads the warehouse with the read-only role: POSTGRES_* in the environment, or MODAMA_CHAIN_WAREHOUSE_DB (the
+stack's chain.env, which perf/wrap/run.sh passes), whose user, password and dbname then set them. The writes are replaced:
 psycopg's connection inside transform_batch_impl is a fake that records statements, and the OpenSearch bulk
 serializes every action as opensearch-py does, then returns success. Prints VmHWM (peak RSS) per stage.
 """
@@ -64,6 +65,17 @@ n, fill, threads, embed_batch = (int(a) for a in (sys.argv[1:5] + ["0"])[:4])
 print("start      ", st(), flush=True)
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
+
+if os.environ.get("MODAMA_CHAIN_WAREHOUSE_DB"):
+    # the read-only role from the stack's secrets (chain.env), not a password written here
+    dsn = conninfo_to_dict(os.environ["MODAMA_CHAIN_WAREHOUSE_DB"])
+    os.environ.update(
+        POSTGRES_USER=dsn["user"],
+        POSTGRES_PASSWORD=dsn["password"],
+        POSTGRES_DB=dsn["dbname"],
+    )
+
 import transform.transform_core as core
 from planning.transform_planning import load_batch
 

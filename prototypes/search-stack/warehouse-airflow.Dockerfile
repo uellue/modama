@@ -51,7 +51,9 @@ COPY --from=budget budget.py /opt/modama/budget.py
 COPY --from=model --chown=root:root /tmp/model/bge-small-en-v1.5-fp32 /opt/modama/models/bge-small-en-v1.5-fp32
 # patch 0004: the batches load this folder; empty: fastembed's own download (README, "The embedding model")
 ENV EMBEDDING_MODEL_PATH=/opt/modama/models/bge-small-en-v1.5-fp32
-# the image's user (airflow, uid 50000) can open the graph and its weight file
-RUN /opt/airflow/transform-venv/bin/python -c "import onnxruntime as o, sys; \
+# every file 0644, and the image's user (airflow, uid 50000) can open the graph and its weight file
+RUN wrong="$(find "$EMBEDDING_MODEL_PATH" -type f ! -perm 0644)" \
+ && if [ -n "$wrong" ]; then echo "not mode 0644: $wrong"; exit 1; fi \
+ && /opt/airflow/transform-venv/bin/python -c "import onnxruntime as o, sys; \
 o.InferenceSession(sys.argv[1] + '/model_optimized.onnx', providers=['CPUExecutionProvider']); \
 print('model loads as uid', __import__('os').getuid())" "$EMBEDDING_MODEL_PATH"

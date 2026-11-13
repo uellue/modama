@@ -10,8 +10,9 @@ Why: the modama search stack's image puts there the same graph stored in float32
 The file fastembed downloads (qdrant/bge-small-en-v1.5-onnx-q, model_optimized.onnx) is a float16 graph;
 ONNX Runtime's CPU provider has no float16 kernels for its fused nodes and casts the activations around
 them on every run. In the stack's VM (one process, 1 thread, sub-batch 32, sorted) the float32 file took
-14 % less CPU per text on short texts, 10 % on mixed and 13 % on long (512 tokens), with a minimum cosine
-of 0.9999997 to the downloaded file's vectors, not bitwise identical (change embedding-fp32-model, E5, E6).
+14 % less CPU per text on short texts, 10 % on mixed and 13 % on long (512 tokens). Its vectors are not
+bitwise identical to the downloaded file's: minimum cosine 0.9999996, largest component difference 5.75e-4
+over 1,088 texts (change embedding-fp32-model, E5, E6).
 
 Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; applied with `patch -p1` in the image build
 (modama search stack, warehouse-airflow.Dockerfile; change embedding-fp32-model, D3; @weber, 283).

@@ -221,6 +221,23 @@ def test_check_fails_on_the_int8_file(upstream, converted, text_sets, tmp_path):
     ), r.stderr
 
 
+def test_check_fails_when_nothing_was_converted(upstream, text_sets, tmp_path):
+    """A folder whose vectors are all bitwise the upstream file's: a no-op conversion, or fastembed
+    ignoring specific_model_path (code review of 960c8a7c)."""
+    same = tmp_path / "same"
+    same.mkdir()
+    for name in fp32.PINS:
+        shutil.copyfile(upstream / name, same / name)
+    (same / fp32.MARKER).write_text(
+        json.dumps(
+            {"model": fp32.MODEL, "source": fp32.SOURCE, "model_file": fp32.MODEL_FILE}
+        )
+    )
+    r = run("check", str(upstream), str(same), text_sets[0])
+    assert r.returncode == 1
+    assert "every vector bitwise identical" in r.stderr, r.stderr
+
+
 def test_check_stops_when_fastembed_names_another_file():
     """Scenario: fastembed names another file."""
     marker = {

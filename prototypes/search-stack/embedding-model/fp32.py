@@ -12,7 +12,9 @@ python/crawler/openspec/changes/embedding-fp32-model/; spec embedding-model).
       them) with both folders as the transform batches do (fastembed, one thread, in order of length,
       sub-batches of 32) and reports per set the bitwise-identical count,
       the largest component difference and the minimum cosine (float64). Exits 1 when a cosine is below
-      MIN_COSINE or when the installed fastembed describes the marker's model with another source or file.
+      MIN_COSINE, when every vector of every set is bitwise the upstream file's (the float32 file runs other
+      kernels: nothing converted, or not loaded), or when the installed fastembed describes the marker's
+      model with another source or file.
       Needs fastembed (the image's transform venv).
 
 The float32 conversion is perf/grace-embedding/prepare_model.py's to_fp32 (the grace benchmark measured
@@ -140,6 +142,7 @@ def check(upstream: Path, out: Path, sets: dict[str, Path]) -> int:
         return vectors
 
     failed = False
+    identical = total = 0
     for name, path in sets.items():
         texts = [
             json.loads(line)["text"]
@@ -162,6 +165,15 @@ def check(upstream: Path, out: Path, sets: dict[str, Path]) -> int:
                 file=sys.stderr,
             )
             failed = True
+        identical, total = identical + same, total + len(texts)
+    if identical == total:
+        # the float32 file gives other vectors (other kernels): all identical means it was not used
+        print(
+            f"check: every vector bitwise identical ({total}): the folder was not converted, "
+            "or fastembed did not load it",
+            file=sys.stderr,
+        )
+        failed = True
     return 1 if failed else 0
 
 
