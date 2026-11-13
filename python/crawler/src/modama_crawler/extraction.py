@@ -55,7 +55,7 @@ MAX_NAMED = 5  # differences named per format, then "and N more" (R36)
 # marker, by which `modama-chain review` lists them (change slow-extractions, @weber 352)
 SLOW = 10.0
 SLOW_EXTRACTION = "slow extraction"
-SLOWEST = 10  # the crawl's slowest extractions in its report and run (352)
+SLOWEST = 10  # the crawl's slowest extractions in its report (352)
 
 
 def default_workers() -> int:
@@ -157,8 +157,8 @@ class Report:
     spot: SpotCheck | None = None  # None: no spot check (no seed given)
     # stored identity -> what differs from the crawl's, set by the caller (identity.differences)
     causes: dict[str, list[str]] = field(default_factory=dict)
-    # (anchor, format id, seconds) of the SLOWEST extractions run, slowest first (352)
-    slowest: list[tuple[str, str, float]] = field(default_factory=list)
+    # (anchor, format id, seconds, failed) of the SLOWEST extractions run, slowest first (352)
+    slowest: list[tuple[str, str, float, bool]] = field(default_factory=list)
 
     def __str__(self) -> str:
         times = ", ".join(f"{f} {s:.1f} s" for f, s in sorted(self.seconds.items()))
@@ -172,7 +172,11 @@ class Report:
         """The report: its first line, the slowest extractions, one per format and stored identity extracted again, one per format with failures tried again, the spot check."""
         out = [str(self)]
         if self.slowest:
-            out.append(f"slowest extractions: {slowest_text(self.slowest_json())}")
+            named = ", ".join(
+                f"{anchor} {fid} {seconds:.1f} s" + (" (failed)" if failed else "")
+                for anchor, fid, seconds, failed in self.slowest
+            )
+            out.append(f"slowest extractions: {named}")
         for (fid, before), (n, changed) in sorted(self.reextracted.items()):
             causes = ", ".join(self.causes.get(before, [f"from {short(before)}"]))
             out.append(
@@ -201,26 +205,12 @@ class Report:
             for (fid, before), (n, changed) in sorted(self.reextracted.items())
         ]
 
-    def slowest_json(self) -> list[dict]:
-        """The slowest extractions as the run keeps them (352)."""
-        return [
-            {"dataset": anchor, "format": fid, "seconds": seconds}
-            for anchor, fid, seconds in self.slowest
-        ]
-
     def retried_json(self) -> dict:
         """The failures tried again per format, as the run keeps them (D9, R45)."""
         return {
             fid: {"tried": n, "succeed": succeed}
             for fid, (n, succeed) in sorted(self.retried.items())
         }
-
-
-def slowest_text(slowest: list[dict]) -> str:
-    """`/a/b.dm4 em/dm4 23.4 s, …`: the slowest extractions as the report and `runs` name them (352)."""
-    return ", ".join(
-        f"{x['dataset']} {x['format']} {x['seconds']:.1f} s" for x in slowest
-    )
 
 
 def _slow(d: Dataset) -> Dataset:
@@ -356,16 +346,21 @@ def extract(
         picked = sample(seed, reused, sample_size)
         index = {result.datasets[i].anchor: i for i in wanted}
         spots = [index[a] for fid in sorted(picked) for a in picked[fid]]
-    outcomes = _run(
-        [
-            (by_id[result.datasets[i].format], result.datasets[i], root)
-            for i in tasks + spots
-        ],
-        workers or default_workers(),
-        time_limit,
-        memory,
-        check,
-    )
+    outcomes = [
+        # a success's time as the worker measured it, a failure's as the pool did
+        (None, error, seconds) if got is None else (got[0], error, got[1])
+        for got, error, seconds in _run(
+            [
+                (by_id[result.datasets[i].format], result.datasets[i], root)
+                for i in tasks + spots
+            ],
+            workers or default_workers(),
+            time_limit,
+            memory,
+            check,
+            work=_timed,
+        )
+    ]
     for i, (extracted, error, seconds) in zip(
         tasks, outcomes[: len(tasks)], strict=True
     ):
@@ -375,7 +370,7 @@ def extract(
         result.datasets[i] = replace(d, extraction=new)
         report.run += 1
         report.seconds[fmt.id] = report.seconds.get(fmt.id, 0.0) + seconds
-        report.slowest.append((d.anchor, fmt.id, seconds))
+        report.slowest.append((d.anchor, fmt.id, seconds, error is not None))
         before = befores.get(i)
         if before is None:
             continue
@@ -468,6 +463,12 @@ def _work(fmt: Format, dataset: Dataset, root: str) -> Extracted | None:
         [extracted.summary, extracted.subjects, extracted.values], allow_nan=False
     )
     return extracted
+
+
+def _timed(fmt: Format, dataset: Dataset, root: str) -> tuple[Extracted | None, float]:
+    """In the worker: `_work`'s result and its time, without starting the worker and its imports (352, review S3)."""
+    start = time.monotonic()
+    return _work(fmt, dataset, root), time.monotonic() - start
 
 
 def _limit_memory(memory: int | None) -> None:

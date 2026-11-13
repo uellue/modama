@@ -358,7 +358,7 @@ NEWER_CRAWLER = (
     f"{sys.executable} -c 'import sys; from modama_crawler import cli, schema; "
     'schema.HEAD = "0099_probe"; '
     'schema.known = lambda: {"0001_baseline", "0002_extractor_identity", "0003_crawl_runs_scope", '
-    '"0004_crawl_runs_listing_errors", "0005_crawl_runs_slowest", "0099_probe"}; '
+    '"0004_crawl_runs_listing_errors", "0099_probe"}; '
     "sys.exit(cli.main())'"
 )
 

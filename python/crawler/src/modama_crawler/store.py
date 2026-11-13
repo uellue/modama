@@ -111,7 +111,7 @@ def end_run(
     unanswered: dict | None = None,
     refused: dict | None = None,
 ) -> None:
-    """Record the run's end; with `extraction`, its counts, its identity with `ingredients`, the re-extraction, the spot check and the slowest extractions.
+    """Record the run's end; with `extraction`, its counts, its identity with `ingredients`, the re-extraction and the spot check.
 
     `unanswered` and `refused` are the folders the file system did not
     answer and the refused folders that had datasets (listing-errors D8).
@@ -128,10 +128,9 @@ def end_run(
             Jsonb(extraction.reextracted_json()),
             Jsonb(extraction.retried_json()),
             Jsonb(extraction.spot.to_json()) if extraction.spot else None,
-            Jsonb(extraction.slowest_json()),
         )
         if extraction
-        else (None,) * 10
+        else (None,) * 9
     )
     conn.execute(
         """
@@ -140,7 +139,7 @@ def end_run(
             records_changed = %s, extractions_run = %s, extractions_reused = %s,
             extractions_failed = %s, directories_unchanged = %s, identity = %s,
             identity_ingredients = %s, reextracted = %s, retried = %s, spot_check = %s,
-            slowest = %s, error = %s, unanswered = %s, refused = %s
+            error = %s, unanswered = %s, refused = %s
         WHERE run_id = %s
         """,
         (
@@ -236,14 +235,13 @@ class Run:
     # the folders the file system did not answer, the refused ones (listing-errors D8)
     unanswered: dict | None = None
     refused: dict | None = None
-    slowest: list | None = None  # Report.slowest_json()
 
 
 _RUN_SELECT = """SELECT run_id, root, started_at, updated_at, finished_at, outcome,
     directories, files, datasets, warnings, records_changed, extractions_run,
     extractions_reused, extractions_failed, directories_unchanged, identity,
     reextracted, spot_check, error, now() - updated_at AS age, scope, unanswered,
-    refused, slowest
+    refused
     FROM crawl_runs"""
 
 

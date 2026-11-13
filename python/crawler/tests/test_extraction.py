@@ -157,22 +157,24 @@ def slow(d) -> list[str]:
 
 def test_a_slow_extraction(tmp_path, monkeypatch):
     monkeypatch.setattr(extraction, "SLOW", 1.0)
+    # every worker starts 1.5 s late, over the threshold: its imports do not count (review S3)
+    monkeypatch.setenv("STANDIN_IMPORT_SLEEP", "1.5")
     root = tmp_path / "data"
     root.mkdir()
     (root / "slow.stand").write_text("sleep 1.5")
     (root / "quick.stand").write_text("ok quick")
     (root / "late.stand").write_text("hang")
-    result, _, by_anchor = extract(root, tmp_path / "calls", time_limit=3.0)
+    result, _, by_anchor = extract(root, tmp_path / "calls", time_limit=6.0)
     x = by_anchor["/slow.stand"].extraction
+    assert 1.5 <= x.seconds < 3.0
     text = f"t/stand extraction took {x.seconds:.1f} s; slow extraction"
     assert slow(by_anchor["/slow.stand"]) == [text]
     assert ("/slow.stand", text) in result.all_warnings()
     late = by_anchor["/late.stand"]
     assert late.extraction.error and late.extraction.seconds > 1.0
     assert slow(late) == []  # warned as failed only
-    # the quick one by its time, which includes starting its process
     quick = by_anchor["/quick.stand"]
-    assert bool(slow(quick)) == (quick.extraction.seconds > 1.0)
+    assert quick.extraction.seconds < 1.0 and slow(quick) == []
 
 
 def test_a_reused_slow_extraction_keeps_its_warning(conn, tmp_path, monkeypatch):
@@ -201,29 +203,20 @@ def test_a_reused_slow_extraction_keeps_its_warning(conn, tmp_path, monkeypatch)
 def test_the_slowest_extractions(tmp_path):
     root = tmp_path / "data"
     root.mkdir()
-    for i in range(12):
+    for i in range(11):
         (root / f"{i:02}.stand").write_text(f"ok w{i:02}")
-    _, report, by_anchor = extract(root, tmp_path / "calls")
+    (root / "late.stand").write_text("hang")  # fails after 2 s, the slowest (review S1)
+    _, report, by_anchor = extract(root, tmp_path / "calls", time_limit=2.0)
     times = sorted(
         ((d.extraction.seconds, a) for a, d in by_anchor.items()), reverse=True
     )
-    named = ", ".join(f"{a} t/stand {s:.1f} s" for s, a in times[:10])
+    named = ", ".join(
+        f"{a} t/stand {s:.1f} s"
+        + (" (failed)" if by_anchor[a].extraction.error else "")
+        for s, a in times[:10]
+    )
+    assert named.startswith("/late.stand t/stand 2.0 s (failed), ")
     assert report.lines()[1] == f"slowest extractions: {named}"
-
-
-def test_the_slowest_extractions_stay_with_the_run(conn, tmp_path):
-    root = tmp_path / "data"
-    root.mkdir()
-    (root / "a.stand").write_text("ok a")
-    (root / "b.stand").write_text("ok b")
-    crawl(conn, root, tmp_path / "calls")
-    times = conn.execute(
-        "SELECT anchor, extract_seconds FROM datasets"
-        " WHERE extractor IS NOT NULL ORDER BY extract_seconds DESC"
-    ).fetchall()
-    named = ", ".join(f"{a} t/stand {s:.1f} s" for a, s in times)
-    (latest,) = recent_runs(conn, 1)
-    assert f"; slowest: {named}" in cli._run_line(latest)
 
 
 # Crawls into the database: unchanged directories and the extractor's identity (D3)

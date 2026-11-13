@@ -19,7 +19,9 @@ does is written in the file:
   `OMP_NUM_THREADS` (the cpu-budget spec)
 
 Every call is appended to `calls`, a file outside the tree, so that a test
-can count the extractor's runs across processes.
+can count the extractor's runs across processes. With `STANDIN_IMPORT_SLEEP`
+set in the environment, importing this module takes that many seconds longer,
+standing in for a worker's slow imports (change slow-extractions).
 """
 
 import errno
@@ -28,6 +30,8 @@ import signal
 import time
 
 from modama_crawler.formats import DIRECTORY, Collection, Dataset, Extracted, Format
+
+time.sleep(float(os.environ.get("STANDIN_IMPORT_SLEEP", "0")))
 
 
 class Stand(Format):
