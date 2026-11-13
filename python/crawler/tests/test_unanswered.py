@@ -12,7 +12,7 @@ import errno
 import os
 import re
 import signal
-from datetime import timedelta
+from datetime import UTC, timedelta
 
 import pytest
 import standin
@@ -689,7 +689,8 @@ def test_the_run_records_the_folder(conn, crawl, data, monkeypatch):
     assert crawl() == 4
     run = last_run(conn)
     assert run["outcome"] == "finished"
-    since = run["started_at"].strftime("%Y-%m-%dT%H:%M:%SZ")
+    # the stored `since` is UTC; started_at comes back in the session's time zone
+    since = run["started_at"].astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     assert run["unanswered"] == {
         "total": 1,
         "kept": 2,
