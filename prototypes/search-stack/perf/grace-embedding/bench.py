@@ -5,12 +5,18 @@ subcommands, each with the Python of the venv it measures:
   bench.py cpu  MODE OUT LABEL  CPU sweep: processes x threads, pinned or not, sub-batch,
                                 sorted or not; model files, session options, one
                                 shared session, memory sharing
-  bench.py gpu  MODE OUT LABEL  checks the GPU and its vectors, reruns the best CPU case
+  bench.py gpu  MODE OUT LABEL [--force]
+                                checks the GPU and its vectors, reruns the best CPU case
                                 of each set with this venv's runtime, then the GPU sweep:
                                 concurrent workers x batch size, token budgets, threads
                                 on one session, float32 against float16
-  bench.py gpu-check            only the GPU checks (nvidia-smi, CUDA provider, a session
-                                on the GPU)
+  bench.py gpu-check [--force]  only the GPU checks (nvidia-smi, CUDA provider, no other
+                                process on the GPU, a session on the GPU)
+
+The GPU part stops when another process uses the GPU (nvidia-smi's compute apps, checked
+before every case), unless --force. Its workers' ONNX Runtime arenas together may take
+GPU_MEM_FRACTION (environment, default 0.5) of the GPU's memory, and no batch has more
+than MAX_BATCH_TOKENS tokens at the set's longest text.
   bench.py report OUT           the table, OUT/table.txt and OUT/summary.json (standard
                                 library only)
   bench.py worker SPEC          one worker process (internal)
@@ -20,11 +26,13 @@ MODE is quick or full. OUT holds texts-{short,mixed,long}.jsonl (gen_texts.py) a
 receives cases.jsonl, facts-LABEL.json, vectors-*.npy, checks.json and logs/. The model
 variants come from prepare_model.py.
 
-What production does (patch 0002 of the modama search stack, `_embed_locally`): texts
-sorted by length, embedded in sub-batches of 32, returned in the given order; one ONNX
-Runtime thread per process, 8 to 16 processes. A worker here does the same with its
-share of the texts: sorts it by length (or not), embeds it with `batch_size`, and keeps
-the order. The timed part starts when all workers have loaded the model and warmed up.
+What production does (patch 0002 of the modama search stack, `_embed_locally`): the
+texts of a transform batch (250 records) sorted by length, embedded in sub-batches of 32,
+returned in the given order; one ONNX Runtime thread per process, 8 to 16 processes. A
+worker here does the same with its share of the texts, a whole number of windows of 250
+(SORT_WINDOW): sorts each window by length (or not), embeds it with `batch_size`, and
+keeps the order; a GPU batch larger than a window takes consecutive sorted windows. The
+timed part starts when all workers have loaded the model and warmed up.
 """
 
 import json
@@ -52,6 +60,13 @@ SETS = ("short", "mixed", "long")
 CHECK_TEXTS = 512
 MIN_COSINE = 0.9999
 PRODUCTION_SUB_BATCH = 32
+# production's transform batch: texts are sorted by length within windows of this many,
+# in every case (a worker's share is a whole number of windows)
+SORT_WINDOW = 250
+# GPU: no batch of more tokens than this (batch x the set's longest text)
+MAX_BATCH_TOKENS = 2**20  # the long set: 2048 texts of 512
+# GPU: the share of the GPU's memory all workers' ONNX Runtime arenas together may take
+GPU_MEM_FRACTION = float(os.environ.get("GPU_MEM_FRACTION", "0.5"))
 # a step counts as better only if it raises texts/s by more than 3 %
 GAIN = 1.03
 PERF_EVENTS = (
@@ -64,8 +79,6 @@ MODES = {
     "quick": {
         # the timed part of a case takes at least about this long
         "seconds": 3,
-        # texts per worker at least (2 sub-batches of 32)
-        "min_per_worker": 64,
         # short texts, larger sub-batches: at the best composition
         "short_sub_batches": (128,),
         # every set, other sub-batches: at the best case
@@ -84,8 +97,6 @@ MODES = {
     },
     "full": {
         "seconds": 20,
-        # production's transform batch: the window the texts are sorted in
-        "min_per_worker": 250,
         # at every composition that fills the machine
         "short_sub_batches": (128, 512),
         "cpu_sub_batches": (16, 64, 128, 256),
@@ -192,8 +203,15 @@ def load_model(ort, case: dict, gpu: bool):
     from fastembed.common.preprocessor_utils import load_tokenizer
 
     threads, name = case["threads"], case.get("model", "prod")
+    providers = ["CPUExecutionProvider"]
+    if gpu:
+        # the arena's limit: what a CUDA out-of-memory error stops at, not the whole GPU
+        cuda = {"gpu_mem_limit": case["gpu_mem_limit"]}
+        providers = [("CUDAExecutionProvider", cuda)]
     if name == "prod" and not case.get("options"):
-        return TextEmbedding(MODEL, cache_dir=str(CACHE), threads=threads, cuda=gpu)
+        return TextEmbedding(
+            MODEL, cache_dir=str(CACHE), threads=threads, providers=providers
+        )
     model = TextEmbedding(MODEL, cache_dir=str(CACHE), threads=threads, lazy_load=True)
     inner = model.model
     path = VARIANTS / f"model-{name}.onnx"
@@ -204,7 +222,6 @@ def load_model(ort, case: dict, gpu: bool):
     so.intra_op_num_threads = so.inter_op_num_threads = threads
     for k, v in (case.get("options") or {}).items():
         so.add_session_config_entry(k, v)
-    providers = ["CUDAExecutionProvider"] if gpu else ["CPUExecutionProvider"]
     inner.tokenizer, inner.special_token_to_id = load_tokenizer(Path(inner._model_dir))
     inner.model = ort.InferenceSession(str(path), sess_options=so, providers=providers)
     return model
@@ -223,6 +240,16 @@ def batches_of(order: list[int], lengths: list[int], batch: int, budget: int | N
         cur.append(i)
         longest = max(longest, lengths[i])
     return [*out, cur] if cur else out
+
+
+def windows_of(texts: list[str], sort: bool) -> list[list[int]]:
+    """The indices in windows of SORT_WINDOW, each sorted by length if `sort`."""
+    n = len(texts)
+    out = [list(range(w, min(w + SORT_WINDOW, n))) for w in range(0, n, SORT_WINDOW)]
+    if sort:
+        for w in out:
+            w.sort(key=lambda i: len(texts[i]))
+    return out
 
 
 def worker(spec: dict) -> None:
@@ -255,9 +282,8 @@ def worker(spec: dict) -> None:
         pool = [json.loads(line)["text"] for line in f]
     k, p, n = spec["index"], spec["processes"], spec["n"]
     texts = [pool[(k + j * p) % len(pool)] for j in range(n)]
-    order = list(range(n))
-    if spec["sorted"]:
-        order.sort(key=lambda i: len(texts[i]))
+    windows = windows_of(texts, spec["sorted"])
+    order = [i for w in windows for i in w]
     b, budget, callers = spec["batch"], spec.get("budget"), spec.get("callers", 1)
     lengths = []
     for i in range(0, n if budget else 0, 1024):
@@ -265,7 +291,11 @@ def worker(spec: dict) -> None:
         # pads each call's texts to its longest)
         enc = model.model.tokenizer.encode_batch(texts[i : i + 1024])
         lengths += [sum(e.attention_mask) for e in enc]
-    batches = batches_of(order, lengths, b, budget)
+    if budget or b > SORT_WINDOW:
+        # by tokens, or a GPU batch of several windows: across windows
+        batches = batches_of(order, lengths, b, budget)
+    else:  # production's sub-batches, within a window
+        batches = [w[i : i + b] for w in windows for i in range(0, len(w), b)]
 
     # warm-up: the batch with the most tokens (the longest texts), the largest shapes
     t0 = time.monotonic()
@@ -288,9 +318,10 @@ def worker(spec: dict) -> None:
             keep(batch, model.embed([texts[i] for i in batch], batch_size=len(batch)))
 
     c0, w0 = time.process_time(), time.time()
-    if not budget and callers == 1:
-        # production's call: one embed over the sorted texts
-        keep(order, model.embed([texts[i] for i in order], batch_size=b))
+    if not budget and callers == 1 and b <= SORT_WINDOW:
+        # production's call: one embed per window (transform batch)
+        for w in windows:
+            keep(w, model.embed([texts[i] for i in w], batch_size=b))
     elif callers == 1:
         embed(batches)
     else:  # threads calling one session (Run() is thread-safe in ONNX Runtime)
@@ -464,9 +495,16 @@ def parse_perf(text: str) -> dict:
 # ---------------------------------------------------------------- one case
 
 
+class GpuBusy(Exception):
+    """Another process uses the GPU: the GPU part stops (unless --force)."""
+
+
 class Context:
-    def __init__(self, mode: str, out: Path, label: str):
+    def __init__(self, mode: str, out: Path, label: str, force: bool = False):
         self.mode, self.cfg, self.out, self.label = mode, MODES[mode], out, label
+        self.force = force
+        self.gpu_mem_mib = 0  # the GPU's total memory (GPU part)
+        self.tokens: dict = {}  # the sets' token lengths (cpu_reference)
         self.cases = out / "cases.jsonl"
         (out / "logs").mkdir(exist_ok=True)
         self.count = 0
@@ -506,6 +544,12 @@ def run_once(ctx: Context, case: dict, n: int, save: str | None = None) -> dict:
     perf_file = logf.with_suffix(".perf")
     per = math.ceil(n / p)
     result = dict(case, runtime=ctx.runtime, venv=ctx.label, texts=per * p)
+    result["sort_window"] = SORT_WINDOW
+    if gpu:
+        # all workers' arenas together: GPU_MEM_FRACTION of the GPU's memory
+        limit = int(GPU_MEM_FRACTION * ctx.gpu_mem_mib * 2**20 / p)
+        case = dict(case, gpu_mem_limit=limit)
+        result["gpu_mem_limit"] = limit
     result["log"] = str(logf.relative_to(ctx.out))
     result["loadavg_before"] = os.getloadavg()[0]
     bind = not gpu and ctx.membind and case.get("membind", True)
@@ -653,15 +697,23 @@ def measure(ctx: Context, case: dict, rate_estimate: float | None) -> dict:
     """One case, with enough texts for about ctx's seconds; again with more texts while
     it was too short."""
     seconds = ctx.cfg["seconds"]
+    p = case["processes"]
     each = 2 * case["batch"] if not case.get("budget") else case["budget"] // 8
-    n_min = case["processes"] * max(each, ctx.cfg["min_per_worker"])
-    n = max(n_min, int(rate_estimate * seconds)) if rate_estimate else n_min
+
+    def texts(want: float) -> int:
+        # a whole number of sort windows per worker, at least one
+        return p * SORT_WINDOW * max(1, math.ceil(want / (p * SORT_WINDOW)))
+
+    n_min = texts(p * each)
+    n = max(n_min, texts(rate_estimate * seconds)) if rate_estimate else n_min
     for attempt in range(1, 4):
+        if case["device"] == "gpu" and not ctx.force and (others := gpu_others()):
+            raise GpuBusy("; ".join(others))
         r = run_once(ctx, case, n)
         r["attempt"] = attempt
         if "error" in r or r["wall_s"] >= seconds / 2 or attempt == 3:
             break
-        n = max(n_min, int(r["texts_per_s"] * seconds * 1.1))
+        n = max(n_min, texts(r["texts_per_s"] * seconds * 1.1))
     with open(ctx.cases, "a") as f:
         f.write(json.dumps(r) + "\n")
     if "error" in r:
@@ -876,11 +928,21 @@ def gpu_sweep(ctx: Context, set_name: str) -> list[dict]:
     results: list[dict] = []
     best_rate = None
     prev_best = 0.0
+    longest = ctx.tokens[set_name]["max"]
+
+    def fits(b: int) -> bool:
+        return b * longest <= MAX_BATCH_TOKENS
+
+    if not all(fits(b) for b in ctx.cfg["gpu_batches"]):
+        log(
+            f"  batches above {MAX_BATCH_TOKENS // longest} texts not tried: more than "
+            f"{MAX_BATCH_TOKENS} tokens at the longest text, {longest} tokens"
+        )
     for w in ctx.cfg["gpu_workers"]:
         tried: dict[int, dict] = {}
         limit = None  # the smallest batch that failed
         last = 0.0
-        for b in ctx.cfg["gpu_batches"]:
+        for b in filter(fits, ctx.cfg["gpu_batches"]):
             r = measure(ctx, gpu_case(set_name, w, b), best_rate)
             results.append(r)
             if "error" in r:
@@ -899,7 +961,8 @@ def gpu_sweep(ctx: Context, set_name: str) -> list[dict]:
         if ctx.cfg["refine"]:
             top = max(tried.values(), key=lambda r: r["texts_per_s"])["batch"]
             for b in (top // 2, top * 2):
-                if b >= 32 and b not in tried and (limit is None or b < limit):
+                fresh = b >= 32 and b not in tried and fits(b)
+                if fresh and (limit is None or b < limit):
                     r = measure(ctx, gpu_case(set_name, w, b), best_rate)
                     results.append(r)
                     if "error" not in r:
@@ -918,13 +981,21 @@ def gpu_sweep(ctx: Context, set_name: str) -> list[dict]:
     for callers in ctx.cfg["gpu_callers"]:
         results.append(measure(ctx, gpu_case(set_name, 1, b, callers=callers), rate))
     for f in ctx.cfg["gpu_fp32_factors"]:
-        case = gpu_case(set_name, w, max(32, int(b * f)), model="fp32")
-        results.append(measure(ctx, case, rate))
+        if fits(int(b * f)):
+            case = gpu_case(set_name, w, max(32, int(b * f)), model="fp32")
+            results.append(measure(ctx, case, rate))
     results.append(measure(ctx, dict(case_of(best), sorted=False), rate))
     return results
 
 
-def gpu_check() -> str | None:
+def gpu_others() -> list[str]:
+    """The processes on the GPU (nvidia-smi's compute apps), except an MPS server."""
+    apps = "--query-compute-apps=pid,process_name,used_memory"
+    got = run(["nvidia-smi", apps, "--format=csv,noheader"])
+    return [x for x in got.splitlines() if x.strip() and "mps-server" not in x]
+
+
+def gpu_check(force: bool = False) -> str | None:
     """The cheap checks before any GPU work; returns what is wrong, or None."""
     smi = shutil.which("nvidia-smi")
     if not smi:
@@ -951,7 +1022,21 @@ def gpu_check() -> str | None:
             f"this venv's ONNX Runtime has no CUDA provider ({runtime()}: {available}); "
             "it is the CPU build. Make venv-gpu with requirements-gpu.txt."
         )
+    others = [] if force else gpu_others()
+    if others:
+        return (
+            f"other processes use the GPU ({'; '.join(others)}). It is shared: run "
+            "when it is free, or with --force."
+        )
     return None
+
+
+def gpu_mem_mib() -> int:
+    """The GPU's total memory, MiB."""
+    got = run(
+        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]
+    )
+    return int(got.splitlines()[0])
 
 
 def gpu_session_hint(error: str) -> str:
@@ -983,8 +1068,8 @@ def load_jsonl(path: Path) -> list[dict]:
 
 def cpu_reference(ctx: Context) -> dict:
     """Model load time in one process, the sets' token lengths, and the CPU vectors of
-    the check texts (as production embeds them: sorted, sub-batch 32), with this venv's
-    runtime."""
+    the check texts (as production embeds them: sorted in windows, sub-batch 32), with
+    this venv's runtime."""
     import numpy as np
     from fastembed import TextEmbedding
 
@@ -996,11 +1081,11 @@ def cpu_reference(ctx: Context) -> dict:
     model = TextEmbedding(MODEL, cache_dir=str(CACHE), threads=cores(), cuda=False)
     load = time.monotonic() - t0
     texts = [r["text"] for r in load_jsonl(ctx.out / "texts-mixed.jsonl")[:CHECK_TEXTS]]
-    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
-    embedded = model.embed([texts[i] for i in order], batch_size=PRODUCTION_SUB_BATCH)
     vecs = [None] * len(texts)
-    for i, v in zip(order, embedded, strict=True):
-        vecs[i] = v
+    for w in windows_of(texts, sort=True):
+        embedded = model.embed([texts[i] for i in w], batch_size=PRODUCTION_SUB_BATCH)
+        for i, v in zip(w, embedded, strict=True):
+            vecs[i] = v
     np.save(ctx.out / f"vectors-{ctx.label}-cpu.npy", np.stack(vecs))
     tokens = {}
     tok = model.model.tokenizer
@@ -1191,15 +1276,33 @@ def part_cpu(mode: str, out: Path, label: str) -> None:
             check_vectors(ctx, r)
 
 
-def part_gpu(mode: str, out: Path, label: str) -> int:
-    problem = gpu_check()
+def part_gpu(mode: str, out: Path, label: str, force: bool) -> int:
+    problem = gpu_check(force)
     if problem:
         log(f"GPU part not run: {problem}")
         record_check(out, "gpu", {"error": problem})
         return 3
-    ctx = Context(mode, out, label)
+    ctx = Context(mode, out, label, force)
     ctx.perf_problem = "not used in the GPU part"
-    write_json(out / f"facts-{label}.json", facts(ctx) | cpu_reference(ctx))
+    ctx.gpu_mem_mib = gpu_mem_mib()
+    ref = cpu_reference(ctx)
+    ctx.tokens = ref["tokens"]
+    limits = {
+        "gpu_mem_fraction": GPU_MEM_FRACTION,
+        "max_batch_tokens": MAX_BATCH_TOKENS,
+        "forced": force,
+    }
+    write_json(out / f"facts-{label}.json", facts(ctx) | ref | limits)
+    try:
+        return gpu_cases(ctx)
+    except GpuBusy as e:
+        log(f"GPU part stopped: other processes use the GPU ({e}); --force runs anyway")
+        record_check(out, "gpu", {"error": f"stopped: other processes on the GPU: {e}"})
+        return 5
+
+
+def gpu_cases(ctx: Context) -> int:
+    out, label = ctx.out, ctx.label
 
     # the check vectors on the GPU first: also the test that a session starts there
     log("GPU, the vectors")
@@ -1262,8 +1365,21 @@ def perf_cols(r: dict) -> tuple[str, str]:
     return ipc, (f"{miss / r['texts'] / 1e3:.0f}k" if miss else "")
 
 
+def vectors_of(checks: dict, r: dict) -> dict | None:
+    return checks.get("vectors", {}).get(f"{r['device']} {variant(r)} ({r['runtime']})")
+
+
+def vectors_ok(checks: dict, r: dict) -> bool:
+    """Whether the case's vectors passed the check; production's file on the CPU without
+    a check is the reference itself."""
+    got = vectors_of(checks, r)
+    if got is None:
+        return r["device"] == "cpu" and variant(r) == "prod"
+    return bool(got.get("passed"))
+
+
 def check_of(checks: dict, r: dict) -> str:
-    got = checks.get("vectors", {}).get(f"{r['device']} {variant(r)} ({r['runtime']})")
+    got = vectors_of(checks, r)
     if not got or "min" not in got:
         return ""
     return (
@@ -1276,13 +1392,18 @@ def headline_lines(
 ) -> tuple[list[str], dict]:
     lines = [
         "Best CPU against best GPU, each at its own optimum (texts/s; higher is better):",
-        "the best case, the best with production's model file if another, and int8 apart",
-        "(it changes every vector)",
+        "the best case, the best with production's model file if another; apart, and not",
+        "in the ratio: int8 (it changes every vector) and every variant whose vectors did",
+        "not pass the check",
     ]
+    counted = ("", " production's file")
     kinds = {
-        "": lambda c: c.get("model") != "int8",
-        " production's file": lambda c: variant(c) == "prod",
+        "": lambda c: c.get("model") != "int8" and vectors_ok(checks, c),
+        " production's file": lambda c: variant(c) == "prod" and vectors_ok(checks, c),
         " int8": lambda c: c.get("model") == "int8",
+        " vectors not passed": lambda c: (
+            c.get("model") != "int8" and not vectors_ok(checks, c)
+        ),
     }
     headline = {}
     for s in SETS:
@@ -1292,6 +1413,7 @@ def headline_lines(
             f"{100 * tok.get('at_512', 0):.0f} % at 512):"
         )
         row = {}
+        best_of: dict[str, list[dict]] = {"cpu": [], "gpu": []}  # in the ratio
         groups = sorted({(c["device"], c["venv"]) for c in cases})
         for device, venv in groups:
             for kind, wanted in kinds.items():
@@ -1306,15 +1428,17 @@ def headline_lines(
                 b = fastest(mine)
                 key = f"{device} ({b['runtime']}){kind}"
                 row[key] = b
+                if kind in counted:
+                    best_of[device].append(b)
                 e = energy(b)
                 lines.append(
                     f"  {device.upper()} {b['runtime']:24} {b['texts_per_s']:9.1f} texts/s  "
                     f"{describe(b).split(' ', 2)[2]}; CPU {b['cpu_ms_per_text']} ms/text"
                     + (f"; {e}" if e else "")
                     + check_of(checks, b)
+                    + ("" if kind in counted else f"; apart:{kind}")
                 )
-        cpu = [b for k, b in row.items() if k.startswith("cpu") and "int8" not in k]
-        gpu = [b for k, b in row.items() if k.startswith("gpu") and "int8" not in k]
+        cpu, gpu = best_of["cpu"], best_of["gpu"]
         # (the ratio of the best cases; production's file is among them)
         if cpu and gpu:
             ratio = fastest(gpu)["texts_per_s"] / fastest(cpu)["texts_per_s"]
@@ -1418,8 +1542,8 @@ def report(out: Path) -> None:
     print(f"\nWritten: {out / 'summary.json'} (send this one) and {out / 'table.txt'}")
 
 
-def gpu_check_command() -> int:
-    problem = gpu_check()
+def gpu_check_command(force: bool) -> int:
+    problem = gpu_check(force)
     if problem:
         print(f"GPU check failed: {problem}")
         return 3
@@ -1442,6 +1566,8 @@ def gpu_check_command() -> int:
 
 
 def main() -> int:
+    force = "--force" in sys.argv  # the GPU part even while others use the GPU
+    sys.argv = [a for a in sys.argv if a != "--force"]
     cmd = sys.argv[1:2]
     if cmd == ["worker"]:
         try:
@@ -1462,9 +1588,9 @@ def main() -> int:
         if cmd == ["cpu"]:
             part_cpu(mode, out, label)
             return 0
-        return part_gpu(mode, out, label)
+        return part_gpu(mode, out, label, force)
     if cmd == ["gpu-check"]:
-        return gpu_check_command()
+        return gpu_check_command(force)
     if cmd == ["report"] and len(sys.argv) == 3:
         report(Path(sys.argv[2]))
         return 0
