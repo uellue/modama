@@ -290,7 +290,9 @@ def test_a_crawl_stopped_by_sigterm_during_extraction(
     monkeypatch.setattr(
         extraction,
         "_run",
-        lambda tasks, workers, time_limit, *rest: real_run(tasks, workers, 10.0, *rest),
+        lambda tasks, workers, time_limit, *rest, **kw: real_run(
+            tasks, workers, 10.0, *rest, **kw
+        ),
     )
 
     def wait(*args, **kwargs):
@@ -323,7 +325,9 @@ def test_a_subtree_crawl_stopped_while_it_extracts(
     monkeypatch.setattr(
         extraction,
         "_run",
-        lambda tasks, workers, time_limit, *rest: real_run(tasks, workers, 10.0, *rest),
+        lambda tasks, workers, time_limit, *rest, **kw: real_run(
+            tasks, workers, 10.0, *rest, **kw
+        ),
     )
 
     def wait(*args, **kwargs):
