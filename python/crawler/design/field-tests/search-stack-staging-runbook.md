@@ -489,6 +489,18 @@ the next reload of the page; after an edit to `python/search-chain/`:
 `.claude/field-tests/browse/<time>-<name>.md` and shows `browse/<name>` to copy into the
 chat. Stop it with `dc --profile browse stop browse`.
 
+## Embedding on grace, 2026-11-13
+
+The warehouse's embedding through the service on grace (change `embedding-service-grace`):
+the switch, the measurement before and after (design D9, steps 1 to 7, at staging's 2,000
+records per batch) and the way back are numbered commands in one place, together with the
+steps on grace that come first: `/prototypes/search-stack/embedding-on-grace.md`, "Runbook",
+steps 1 to 13. The staging host's part starts at step 8. Results into a folder outside the
+checkout, `~/embed-check/`; the finding goes into `search-stack-staging-findings.md`.
+
+The way back, at any time: `EMBED_API_URL=` (empty) in `staging.env`, then
+`dc up -d airflow-worker-transform`.
+
 ## For colleagues
 
 ```bash
