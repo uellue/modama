@@ -42,6 +42,8 @@ What follows:
 
 ## D2 The runner offers only unclaimed entries
 
+*Built as bug 311 (merge 58bea00e), with decision 344, before this change was applied: claimed entries are no longer offered, by type or by name; a format names a companion another format claimed with `Directory.claimed_elsewhere`, "… two formats want it". `em/de` does so for every file of an acquisition's stem in `Directory.claimed` and builds the acquisition of the others (spec `formats/de`, "A file of the stem claimed by another format is flagged"). The options as weighed at the proposal follow.*
+
 The `recognition` spec says a claimed entry "SHALL NOT be available to formats that run later", but `Directory.of_type` returns claimed entries too, and the runner then rejects the later claim with "already claimed by …" (`run_post`). Found by the `em/mrc` agent; `BACKLOG.md`, the `em/de` item. With `em/de` the first format to claim files of generic types, each DE acquisition would bring one such warning per MRC member (`em/mrc`), for the log (`common/text`'s `text/x-log`), for the CSV (`common/structured`), for a `.de5`, `.hspy` or `.tif` movie (`common/pydata`, `common/image`), at every crawl, and `em/mrc` would read 213 bytes of each MRC member to check its map word.
 
 Options:
@@ -58,7 +60,7 @@ Lean: the runner hides. A format that is offered entries by type has no claim of
 ## D3 Recognition and grouping
 
 - **The name**: `de.xml` types `[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*_info.txt` (shared-mime-info's globs are `fnmatch` patterns; the crawler's index compiles them with `fnmatch.translate`) as `application/x.de-info`, a subclass of `text/plain`. The pattern is longer than `*.txt`, so it wins. A narrower name than `*_info.txt`: a `run_info.txt` elsewhere is never read by `em/de`. Upper case is matched as every glob is (shared-mime-info is case-insensitive unless a glob says otherwise).
-- **The content** (Q1): `d.read(e, 64)` must start with `Server Software Version` (the first key of every public file, 2.7.2 to 2.7.5); otherwise `d.not_of_type(e, "no DE-Server first line")`, and the file is `text/plain` for `common/text`. 64 bytes per candidate; the directory's budget of 1 MiB holds 16,384 of them. The alternative, the `Dataset Name = …` line, lies 3,667, 6,303 and 4,251 bytes into the 2.7.2, 2.7.4 and 2.7.5 files; with 8 KiB per candidate, 128 acquisitions fit, and a folder of more skips `em/de` for the whole folder ("em/de skipped: … exceeds the budget"). The 2020 file decides whether the first line holds for older versions (Q2).
+- **The content** (Q1): its first 23 bytes must be `Server Software Version` (the first key of every public file, 2.7.2 to 2.7.5); otherwise `d.not_of_type(e, "no DE-Server first line")`, and the file is `text/plain` for `common/text`. 23 bytes per candidate; the directory's budget of 1 MiB holds over 45,000 of them. The alternative, the `Dataset Name = …` line, lies 3,667, 6,303 and 4,251 bytes into the 2.7.2, 2.7.4 and 2.7.5 files; with 8 KiB per candidate, 128 acquisitions fit, and a folder of more skips `em/de` for the whole folder ("em/de skipped: … exceeds the budget"). The 2020 file decides whether the first line holds for older versions (Q2).
 - **The stem**: the `_info.txt`'s name without `info.txt` (`20241021_00405_`, with a suffix `20241021_00405_sampleA_`). Members: every regular file of the directory whose name starts with the stem, case-sensitive (DE-Server writes one form; the stem is taken from the file). The longest stem first, and a file belongs to one stem (Merlin's rule), so that `20241021_00405_x_info.txt` keeps `20241021_00405_x_movie.mrc` from `20241021_00405_info.txt`.
 - **The anchor** is the `_info.txt`; the dataset's type `application/x.de-acquisition`. `basis`: `"DE-Server info, <n> file(s) <stem>*"`.
 - **No warnings** for files with a date prefix and no `_info.txt` (D1 of the proposal: other programs use the same prefix).
@@ -68,7 +70,7 @@ Lean: the runner hides. A format that is offered entries by type has no claim of
 - **Reading**: the `_info.txt` whole, after a size check (at most 1 MiB; the public files are 19 to 40 kB, the tree's 2.8 kB; larger is an error of the extraction). Decoded as ASCII, else UTF-8, else Windows-1252 (the rule of `common/text`, `head.encoding`, without a BOM or NUL case: none seen). Lines split at the first `=`, key and value stripped of the padding; a blank line skipped; a line without `=` kept as a key with an empty value (as Merlin's header lines without a tab).
 - **`original_metadata`**: every entry, key as written, value as text, in the file's order, minus `de.skipped`: keys ending in ` Allowed Values`, the keys `Preset - List`, and keys ending in ` Preset List` (option lists of the user interface, Q6); then the shared checks, `textual` (none of the public values is over 1,000 characters; the longest 344) and `credential`. Empty values kept (decision 161).
 - **The Dataset Name**: a value that does not start the file's name (`20241021_00405` for `20241021_00405_info.txt`) gives a warning of the extraction, "Dataset Name … differs from the file name"; the values are kept.
-- **`mapped_metadata`** (Q3): RosettaSciIO's `read_de_metadata_file(path)` with no scan file: its `metadata` and `axes`, flat under dotted names as in `dm` (`Acquisition_instrument.TEM.detector`, `axes[0].size`). It opens the file itself (a text file under 1 MiB, after our size check). A `ValueError` for a scan that is not a raster leaves the mapped part out, with the reader's message as a warning of the extraction. The scan coordinate file is never handed to it.
+- **`mapped_metadata`** (Q3): RosettaSciIO's `read_de_metadata_file(path)` with no scan file: its `metadata` flat under dotted names as in `dm` (`Acquisition_instrument.TEM.detector`) as `mapped_metadata`, its axes (name, size, scale, units) as `axes`, as `dm` keeps them; a count of credentials left out, if any, as `mapped_metadata.credentials_left_out` (as `em/mrc`). It opens the file itself (a text file under 1 MiB, after our size check). A `ValueError` for a scan that is not a raster leaves the mapped part out, with the reader's message as a warning of the extraction. The scan coordinate file is never handed to it.
 - **The summary line** (`de.HEADLINE`, the only positive list): `Camera Model`, `Image Processing - Mode`, `Instrument Accelerating Voltage (V)`, `Exposure Time (seconds)`, `Frames Per Second`; when `Scan - Enable` is `Enable`: `Scan - Type`, `Scan - Size X`, `Scan - Size Y`; then `Local time` (Q7). A text bare, a number after its key, as written (`Frames Per Second 700`), a missing or empty entry left out; no 0 or `-1` rule, since none of these entries uses one as "no value" in the files seen.
 - **Subjects**: `Camera Model`; the format's display name "Direct Electron acquisition" comes with every dataset.
 
@@ -80,7 +82,7 @@ Examples (RosettaSciIO's files):
 
 ## D5 Priority
 
-62. It must run before `em/mrc` (60) and before every format that claims a member's type on its own: `common/pydata`'s `Npz`, `Nexus` and `Hspy` run at 61 and sort before `em/de` by id (`common/…` < `em/…`), so a `_movie.hspy` would be claimed by `common/hspy` at 61. `em/k2is` is at 61 and shares no type.
+62. It must run before `em/mrc` (61, as a format that drops a type) and before every format that claims a member's type on its own: `common/pydata`'s `Npz`, `Nexus` and `Hspy` run at 61 and sort before `em/de` by id (`common/…` < `em/…`), so a `_movie.hspy` would be claimed by `common/hspy` at 61. `em/k2is` is at 61 and shares no type.
 
 ## D6 MIME types (R25)
 
@@ -88,7 +90,7 @@ Looked up on 2026-11-13: Debian's `media-types` (`/etc/mime.types`) gives `mrc` 
 
 ## D7 Bytes read
 
-- Recognition: 64 bytes of each file named like a DE `_info.txt`; nothing of the other members.
+- Recognition: 23 bytes of each file named like a DE `_info.txt`; nothing of the other members.
 - Extraction: the `_info.txt` twice (ours, then RosettaSciIO's), 2.8 to 40 kB each in the files seen, bounded by the 1 MiB size check; no other member. Test: a movie member of 1 GiB, sparse, and `rchar` (`modama_formats_em.testing.rchar`) under 2 × the `_info.txt`'s size plus 64 KiB.
 
 ## D8 Fixtures (R29)
@@ -96,7 +98,7 @@ Looked up on 2026-11-13: Debian's `media-types` (`/etc/mime.types`) gives `mrc` 
 - `acquisition_274`: RosettaSciIO's `20241021_00405_*`, all six files as they are (representative, vendor-written, renamed by RosettaSciIO as D1 says; GPL-3.0, `de/tests/LICENSE.fixtures`).
 - `lone_info_272`: RosettaSciIO's `info.txt`, renamed `20230925_01497_info.txt` after its Dataset Name (representative: a lone `_info.txt` of an older version, CRLF).
 - `xy_scan_275`: RosettaSciIO's `Custom_info.txt`, `Custom_movie.mrc`, `Custom_scan_coordinates.csv`, renamed `20250429_06699_info.txt`, `20250429_06699_0_movie.mrc`, `20250429_06699_scan_coordinates.csv` (representative: a numbered movie, a scan that is not a raster).
-- Generated at test time (reproducers): the 2.7.4 `_info.txt` with a made-up entry; with a suffix (`20241021_00405_sampleA_*`); nested stems; a `20240619_1736_info.txt` without DE's first line next to `20240619_1736_HAADF.mrc`; a lone `_movie.mrc`; a 1 GiB sparse movie for D7.
+- Generated at test time from `acquisition_274` (reproducers, `de/tests/generate.py`): `new_entry` (a made-up entry), `with_suffix` (`20241021_00405_sampleA_*`), `nested_stems`, `with_log` (a made-up `_processing.log`), `other_program` (a `20240619_1736_info.txt` without DE's first line next to `20240619_1736_HAADF.mrc`), `lone_movie`, `renamed_info` (`20241021_00406_info.txt`); in a test, a 1 GiB sparse movie for D7.
 - The 2020 acquisition from LiberTEM's test data: only as a cut, only with @weber's OK (Q9).
 
 ## Risks

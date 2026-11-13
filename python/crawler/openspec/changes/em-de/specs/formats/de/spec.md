@@ -18,7 +18,7 @@ When a directory holds a file named `<8 digits>_<anything>_info.txt` that starts
 - **THEN** the result has one DE dataset with these 3 members
 
 #### Scenario: A file nobody has seen with the stem
-- **WHEN** a directory holds a DE acquisition `20200821_92978_info.txt` with `20200821_92978_movie.mrc` and `20200821_92978_processing.log`
+- **WHEN** a directory holds a DE acquisition `20241021_00405_info.txt` with `20241021_00405_movie.mrc` and `20241021_00405_processing.log` (as the tree's 2020 acquisition has one)
 - **THEN** the log is a member of the acquisition's dataset
 
 #### Scenario: A filename suffix set by the user
@@ -28,6 +28,13 @@ When a directory holds a file named `<8 digits>_<anything>_info.txt` that starts
 #### Scenario: Stems that nest
 - **WHEN** a directory holds `20241021_00405_info.txt` with `20241021_00405_movie.mrc`, and `20241021_00405_x_info.txt` with `20241021_00405_x_movie.mrc`
 - **THEN** the result has two DE datasets of 2 members each, the `_x_` movie in the `_x_` acquisition
+
+### Requirement: A file of the stem claimed by another format is flagged
+A file with an acquisition's stem that a format of higher priority claimed SHALL NOT be a member of the acquisition; the crawl SHALL warn at the info file that two formats want it (spec `recognition`, "A file two formats want is flagged for review"), and the acquisition SHALL be built of its other files.
+
+#### Scenario: The sum claimed by another format
+- **WHEN** a format of higher priority claims `20241021_00405_final.mrc` of the acquisition `20241021_00405`
+- **THEN** the DE dataset has the other 5 files as members, and the crawl warns at `20241021_00405_info.txt`: `em/de: 20241021_00405_final.mrc is claimed by <that format>; two formats want it`
 
 ### Requirement: An info file of another program is not a DE info file
 A file named like a DE info file that does not start with the key `Server Software Version` SHALL get the type it has without its name, with the reason in its basis, and SHALL NOT group any file. Files sharing a date prefix without a DE info file SHALL stay as they are, without a warning from the DE format.

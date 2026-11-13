@@ -1,0 +1,66 @@
+[acquisition_274]
+purpose = "representative"
+validity = "vendor-written: an acquisition of DE-Server 2.7.4.10190 (Debug Build) with the simulated camera DESim, an 8x4 raster scan of 8x4 frames, 32 frames; the info file (552 entries), movie, sum, one external and two virtual detector images, unchanged. RosettaSciIO's authors renamed the detector images: the info file names them 20241021_00405_ext1_Ext #1.mrc, 20241021_00405_0_Virt #0_total_sum.mrc and 20241021_00405_1_Virt #1_sum.mrc"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/20241021_00405_*, https://github.com/hyperspy/rosettasciio/tree/v0.15.0/rsciio/tests/data/mrc; sha256: _info.txt 3cae153510e94a5469f0ef84fa68c8a2928275a12cb18f19fa8e65b0df4b45a0, _movie.mrc e7b2a476bb64818454edc428d21e4d40da08e0a6362bfbe2d95a74084c22f718, _final.mrc 56c87ae1703a91ecd1f5a95de520fdaa9b83968c1bac4f040b68b1c6314a5d89, _ext1_Ext 1.mrc 4962c3ead6547d819e22447765e93e357911bacd2905191d97d339b5cc0dd1dc, _0_Virt 0_sum.mrc and _1_Virt 1_sum.mrc 3f798cf43ff1f3c39750b379a22962a4c6d2d546f1298461fabc6bced0cc876f"
+
+[lone_info_272]
+purpose = "representative"
+validity = "vendor-written, renamed: the info file of DE-Server 2.7.2.9048 with the camera CeleritasXS (252 entries, CRLF line ends, its movie a .de5 that is not in the test data), unchanged but named 20230925_01497_info.txt after its Dataset Name instead of RosettaSciIO's info.txt"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/info.txt (sha256 489a0b421fa32a72a4f2713f914d78a2dc6e35e6420d4c8b7ee407602e6a588f)"
+
+[xy_scan_275]
+purpose = "representative"
+validity = "vendor-written, renamed: an acquisition of DE-Server 2.7.5.10756 with DESim, a scan of type XY File (5x5 positions, 30 frames), unchanged but named after its Dataset Name 20250429_06699 and its info file's Autosave Movie Frames File Path (…_0_movie.mrc) instead of RosettaSciIO's Custom_info.txt, Custom_movie.mrc and Custom_scan_coordinates.csv"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "RosettaSciIO test data at tag v0.15.0, rsciio/tests/data/mrc/Custom_info.txt (sha256 0bbe5961e4dce56f8dbf01c865852eef2d64e5fc962f5c6f870904123f5140f5), Custom_movie.mrc (4d91c16ccce7b2bab77ce39f7b89b1bf62406c0291f12e703bb78f95d5c8c414), Custom_scan_coordinates.csv (4f46d3cbc6d956433d474dcaef7802795a0e63142e55d8cd4256ffa288911157)"
+
+[with_suffix]
+purpose = "reproducer"
+validity = "renamed: acquisition_274's info file, movie and sum named with a filename suffix, 20241021_00405_sampleA_*, as DE-Server's Autosave Filename Suffix inserts it (RosettaSciIO's documentation: uniqueid_suffix_movie.mrc); no file with a suffix written by DE-Server is public"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.de.tests.generate:with_suffix, from acquisition_274"
+generator = "modama_formats_em.de.tests.generate:with_suffix"
+
+[nested_stems]
+purpose = "reproducer"
+validity = "renamed: acquisition_274's info file and movie twice, as 20241021_00405_* and 20241021_00405_x_*, whose stems nest"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.de.tests.generate:nested_stems, from acquisition_274"
+generator = "modama_formats_em.de.tests.generate:nested_stems"
+
+[with_log]
+purpose = "reproducer"
+validity = "synthetic log: acquisition_274's info file and movie with a made-up 20241021_00405_processing.log, as the tree's 2020 acquisition has one (its content is not public)"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.de.tests.generate:with_log, from acquisition_274"
+generator = "modama_formats_em.de.tests.generate:with_log"
+
+[other_program]
+purpose = "reproducer"
+validity = "invalid-by-design: a text 20240619_1736_info.txt without DE-Server's first line, and acquisition_274's sum named 20240619_1736_HAADF.mrc, as other programs' files with a date prefix are named in the tree"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.de.tests.generate:other_program, from acquisition_274"
+generator = "modama_formats_em.de.tests.generate:other_program"
+
+[lone_movie]
+purpose = "reproducer"
+validity = "incomplete: acquisition_274's movie without its info file"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.de.tests.generate:lone_movie, from acquisition_274"
+generator = "modama_formats_em.de.tests.generate:lone_movie"
+
+[renamed_info]
+purpose = "reproducer"
+validity = "invalid-by-design: acquisition_274's info file (Dataset Name 20241021_00405) named 20241021_00406_info.txt"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.de.tests.generate:renamed_info, from acquisition_274"
+generator = "modama_formats_em.de.tests.generate:renamed_info"
+
+[new_entry]
+purpose = "reproducer"
+validity = "edited: acquisition_274's info file with one more line, Made Up Entry (units) = 42"
+licence = "GPL-3.0-or-later (LICENSE.fixtures beside this file)"
+source = "modama_formats_em.de.tests.generate:new_entry, from acquisition_274"
+generator = "modama_formats_em.de.tests.generate:new_entry"
