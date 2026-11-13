@@ -30,7 +30,10 @@
   "extractions": {
     "/example.h5": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "entry.data.data [1024, 1024] |u1",
+        "2022-03-07 14:34:04.418733"
+      ],
       "values": {
         "mapped_metadata": {},
         "original_metadata": {
