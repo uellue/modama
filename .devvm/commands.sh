@@ -22,7 +22,9 @@ PROJECT_USAGE+="  desktop-setup     install the virtual desktop's packages and R
   tray ARGS...      read and click the tray icon over D-Bus (tray.py; devvm tray --help)
   xdo ARGS...       xdotool on the desktop, e.g. devvm xdo mousemove 100 200 click 1
   desktop-drag X1 Y1 X2 Y2
-                    drag with the left button from X1,Y1 to X2,Y2 in steps, as a hand does"
+                    drag with the left button from X1,Y1 to X2,Y2 in steps, as a hand does
+  bench-setup       install the crawl benchmark's NFS server and I/O tools in the VM (once;
+                    python/crawler/benchmark/README.md)"
 
 # Copy .devvm/guest/desktop/ to the VM, replacing the previous copy
 desktop_copy_tools() {
@@ -70,6 +72,10 @@ project_cmd_desktop_vnc() {
     echo '  xvncviewer -noraiseonbeep -encodings "copyrect tight hextile zlib corre rre" -compresslevel 9 localhost:5900'
     echo "Add -viewonly to only watch a session that runs without you: no mouse or keyboard input."
     vm_ssh -N -L 5900:localhost:5900
+}
+
+project_cmd_bench_setup() {
+    vm_ssh "bash -s" < "$PROJECT_DIR/guest/bench/setup.sh"
 }
 
 project_cmd_ui() {
