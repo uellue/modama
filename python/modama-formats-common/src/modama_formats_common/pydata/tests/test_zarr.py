@@ -3,6 +3,7 @@
 Run with -s to see each extraction's summary and the bytes it read.
 """
 
+import errno
 import json
 import os
 import shutil
@@ -14,7 +15,7 @@ import zarr
 from modama_crawler.formats import zarr as core_zarr
 from modama_crawler.walk import walk
 
-from modama_formats_common.pydata import zarrstore
+from modama_formats_common.pydata import values, zarrstore
 
 from .generate import ABTEM, abtem_like
 from .test_extract import FIXTURES, Opened, datasets, extracted, mapped, original
@@ -139,6 +140,16 @@ def test_a_metadata_file_below_the_first_level_changes(collection_tests, tmp_pat
     assert stamp() != before
 
 
+def test_the_stamp_of_a_walk_cut_by_its_time(collection_tests, tmp_path, monkeypatch):
+    # Code review of zarr-stores, S2: counts bound the stamp's walk, not the time
+    store = group(tmp_path / "s.zarr")
+    for name in ("a", "b", "c"):
+        group(store / name, {"n": name})
+    timely = zarrstore.state(str(store))
+    monkeypatch.setattr(values, "SECONDS", -1.0)  # up before the first node
+    assert zarrstore.state(str(store)) == timely
+
+
 # A store is described by its metadata files
 
 
@@ -203,6 +214,15 @@ def test_an_unknown_codec_and_an_unknown_data_type(collection_tests, tmp_path):
     y, _ = extracted(collection_tests, tmp_path, "v3.zarr")
     assert original(y)["a.data_type"] == "made_up_type"
     assert original(y)["b.data_type"] == "uint8"
+
+
+def test_a_zarr_format_that_is_an_object(collection_tests, tmp_path):
+    # Code review of zarr-stores, NIT: kept as found, not flattened
+    store = tmp_path / "s.zarr"
+    store.mkdir()
+    (store / ".zgroup").write_text('{"zarr_format": {"x": 1}}')
+    x, _ = extracted(collection_tests, tmp_path, "s.zarr")
+    assert original(x) == {"zarr_format": {"x": 1}}
 
 
 def test_consolidated_metadata_is_not_read(collection_tests, tmp_path):
@@ -277,6 +297,64 @@ def test_a_metadata_file_that_is_a_fifo(collection_tests, tmp_path):
     group(store / "plain", {"also": "kept"})
     x, _ = extracted(collection_tests, tmp_path, "s.zarr")
     assert original(x) == {"zarr_format": 2, "kept": 1, "plain.also": "kept"}
+
+
+def test_a_subgroup_the_crawler_may_not_read(collection_tests, tmp_path):
+    # Code review of zarr-stores, S3: refused, as decision 271 skips what the file
+    # system refuses, but named, and in the stamp
+    assert os.geteuid() != 0, "needs a user whose access the file system checks"
+    store = group(tmp_path / "s.zarr", {"kept": 1})
+    locked = group(store / "locked", {"secret": 1})
+    open_state = zarrstore.state(str(store))
+    locked.chmod(0)
+    try:
+        x, _ = extracted(collection_tests, tmp_path, "s.zarr")
+        closed_state = zarrstore.state(str(store))
+    finally:
+        locked.chmod(0o755)
+    assert original(x) == {"zarr_format": 2, "kept": 1}
+    assert mapped(x) == {"unreadable": ["locked"]}
+    assert closed_state != open_state
+
+
+@pytest.mark.parametrize("error", ["EIO", "ESTALE"])
+def test_an_input_output_error_in_the_store(
+    collection_tests, tmp_path, monkeypatch, error
+):
+    # Code review of zarr-stores, S3: not skipped, the extraction and the stamp fail
+    # (a warning, tried again next crawl), as decision 271 keeps the index's state
+    store = group(tmp_path / "s.zarr", {"kept": 1})
+    group(store / "g", {"also": 1})
+    real_open = os.open
+
+    def failing(path, flags, *args, **kwargs):
+        if path == "g":
+            raise OSError(getattr(errno, error), os.strerror(getattr(errno, error)))
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", failing)
+    with pytest.raises(OSError):
+        zarrstore.described(str(store))
+    with pytest.raises(OSError):
+        zarrstore.state(str(store))
+
+
+def test_a_metadata_file_that_grows_while_it_is_read(
+    collection_tests, tmp_path, monkeypatch
+):
+    # Code review of zarr-stores, NIT: over 1 MiB by the time it is read: not read
+    store = group(tmp_path / "s.zarr", {"kept": 1})
+    group(store / "g", {"also": 1})
+    real_read = os.read
+
+    def growing(fd, n):
+        data = real_read(fd, n)
+        return data + b" " * (zarrstore.MAX_FILE + 1) if b"also" in data else data
+
+    monkeypatch.setattr(os, "read", growing)
+    original_, mapped_ = zarrstore.described(str(store))[:2]
+    assert original_ == {"zarr_format": 2, "kept": 1}
+    assert mapped_ == {"not_read": ["g/.zattrs"]}
 
 
 # The walk of a store is bounded
@@ -428,6 +506,14 @@ def test_a_hyperspy_store(collection_tests, tmp_path):
     x, _ = extracted(collection_tests, tree, "scan.zspy")
     assert x.summary == ["4D-STEM scan", "electron_diffraction", "shape [4, 4, 16, 16]"]
     assert x.subjects == ["electron_diffraction"]
+
+
+def test_attributes_named_like_an_arrays(collection_tests, tmp_path):
+    # Code review of zarr-stores, S1: shape and data type of the same array node
+    group(tmp_path / "s.zarr", {"detector": {"shape": [2048, 2048], "dtype": "uint32"}})
+    array_v2(tmp_path / "s.zarr" / "img")
+    x, _ = extracted(collection_tests, tmp_path, "s.zarr")
+    assert x.summary == ["shape [4, 4]", "<u2"]
 
 
 def test_an_abtem_like_store(collection_tests, tmp_path):

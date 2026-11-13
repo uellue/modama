@@ -211,9 +211,9 @@ class Zarr(CoreZarr):
     def extract(self, dataset: Dataset, root: str) -> Extracted:
         from . import zarrstore
 
-        original, mapped = zarrstore.described(root + dataset.anchor)
+        original, mapped, first = zarrstore.described(root + dataset.anchor)
         return Extracted(
-            summary=zarrstore.summary(original),
+            summary=zarrstore.summary(original, first),
             subjects=zarrstore.terms(original),
             values={"original_metadata": original, "mapped_metadata": mapped},
         )

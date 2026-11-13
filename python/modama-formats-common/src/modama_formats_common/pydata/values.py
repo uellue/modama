@@ -31,10 +31,13 @@ ENTRY_LIMIT = f"cut at the entry limit of {MAX_ENTRIES}"
 class Walk:
     """The entries found so far, and why the walk stopped early (None while it goes on)."""
 
-    def __init__(self):
+    def __init__(self, timed: bool = True):
+        """Without `timed`, bounded by counts only: the same data gives the same walk
+        (a Zarr store's stamp, zarrstore.state)."""
         self.values: dict = {}
         self.objects = 0  # counted by the walker
         self.cut: str | None = None
+        self.timed = timed
         self._start = time.monotonic()
 
     def over(self) -> bool:
@@ -43,7 +46,7 @@ class Walk:
             self.cut = ENTRY_LIMIT
         elif self.objects >= MAX_OBJECTS:
             self.cut = f"cut at the object limit of {MAX_OBJECTS}"
-        elif time.monotonic() - self._start > SECONDS:
+        elif self.timed and time.monotonic() - self._start > SECONDS:
             self.cut = f"cut at the time limit of {SECONDS:g} s"
         return self.cut is not None
 

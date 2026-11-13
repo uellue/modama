@@ -37,11 +37,15 @@ A Zarr store named `*.zspy` whose root attributes have `file_format` `ZSpy` SHAL
 - **THEN** it is a dataset of the format `common/zarr`, described with HyperSpy's skip list and summary line
 
 ### Requirement: A change of any metadata file is noticed
-The extractor SHALL read the metadata files of the store's nodes below its anchor, which are not members of the collapsed dataset; the dataset's stamp SHALL cover the name, size and times of every metadata file of the nodes the extractor walks (`zarr.json`, `.zarray`, `.zgroup`, `.zattrs`), found by `lstat` without listing an array's folder, and no chunk.
+The extractor SHALL read the metadata files of the store's nodes below its anchor, which are not members of the collapsed dataset; the dataset's stamp SHALL cover the name, size and times of every metadata file of the nodes the extractor walks (`zarr.json`, `.zarray`, `.zgroup`, `.zattrs`), found by `lstat` without listing an array's folder, and no chunk; that walk SHALL be bounded by counts only, never by time, so that the same store gives the same stamp.
 
 #### Scenario: A metadata file below the first level changes
 - **WHEN** a store's `a/b/.zattrs` is rewritten in place, so that no folder's listing changes, and, separately, one of its chunks
 - **THEN** the store's stamp changes with the `.zattrs` and not with the chunk
+
+#### Scenario: The stamp of a walk cut by its time
+- **WHEN** a store's stamp is computed with the walk's time limit already up
+- **THEN** it equals the stamp computed without
 
 ### Requirement: A store is described by its metadata files
 The extractor SHALL walk the store's nodes (folders holding `zarr.json`, `.zarray` or `.zgroup`) from its root and give as `original_metadata`, under the node's dotted path, every attribute of every node, every entry of each array's metadata document as found, objects flattened as `a.b` and `a[2].b`, and the root's `zarr_format`.
@@ -53,6 +57,10 @@ The extractor SHALL walk the store's nodes (folders holding `zarr.json`, `.zarra
 #### Scenario: An entry nobody has seen
 - **WHEN** a group's attributes hold `{"made_up_key": "made-up value"}`
 - **THEN** `made_up_key made-up value` is in `original_metadata` under the group's path
+
+#### Scenario: A zarr_format that is an object
+- **WHEN** a store's `.zgroup` is `{"zarr_format": {"x": 1}}`
+- **THEN** `zarr_format` is `{"x": 1}`, as found, not flattened
 
 #### Scenario: A nested store
 - **WHEN** a group store holds another group store with an array, as a subfolder
@@ -92,6 +100,17 @@ The extractor SHALL NOT follow a symlink below the store's folder, SHALL open on
 - **WHEN** a group's `.zattrs` is a named pipe
 - **THEN** the extraction does not block, and the group's other entries are described
 
+### Requirement: Errors of the file system in a store
+A name in a store that is gone or a symlink SHALL be passed over; one the file system refuses (`EACCES`, `EPERM`) SHALL be named in `mapped_metadata.unreadable` and in the stamp, and the walk SHALL go on; any other error (`EIO`, `ESTALE`, …) SHALL fail the extraction and the stamp, as decision 271 keeps the index's state on such errors, so that the crawl warns and tries again.
+
+#### Scenario: A subgroup the crawler may not read
+- **WHEN** a store's subgroup `locked` has mode 000
+- **THEN** the store's other entries are described, `mapped_metadata.unreadable` is `["locked"]`, and the stamp differs from that of the readable store
+
+#### Scenario: An input/output error in the store
+- **WHEN** opening a subgroup fails with `EIO`, or with `ESTALE`
+- **THEN** the extraction and the stamp fail with that error
+
 ### Requirement: The walk of a store is bounded
 The walk SHALL stop at 1,000 kept entries, 5,000 nodes, a third of the extractor's time limit or 16 MiB read, and say which in `mapped_metadata.walk`; a metadata file over 1 MiB SHALL NOT be read and SHALL be named in `mapped_metadata.not_read`; a group's listing SHALL be read up to one name more than the nodes the walk still has room for; the nodes below a group at depth 100 SHALL NOT be walked, its path named in `mapped_metadata.too_deep`.
 
@@ -110,6 +129,10 @@ The walk SHALL stop at 1,000 kept entries, 5,000 nodes, a third of the extractor
 #### Scenario: A root document over 1 MiB
 - **WHEN** a store's root `zarr.json` is 2 MiB
 - **THEN** it is not read, `zarr.json` is in `mapped_metadata.not_read`, and the store's other nodes are described
+
+#### Scenario: A metadata file that grows while it is read
+- **WHEN** a group's `.zattrs`, under 1 MiB when looked at, holds more than 1 MiB when it is read
+- **THEN** it is not described, and its path is in `mapped_metadata.not_read`
 
 ### Requirement: Unreadable metadata is reported
 A node whose metadata file is not a JSON object, or is nested too deeply to parse or flatten, SHALL be left out with everything below it and its path named in `mapped_metadata.unreadable`; a store whose root metadata cannot be read SHALL fail its extraction, with the reason.
@@ -138,7 +161,7 @@ A node whose metadata file is not a JSON object, or is nested too deeply to pars
 - **THEN** the value is not in the values
 
 ### Requirement: The summary line of a store
-The summary line SHALL be, as found, a HyperSpy signal's title, signal type and data shape (the patterns of `.hspy`); else the `shape` and the data type (`data_type` in v3, `dtype` in v2) of the root array, or of the first array one level down in name order. The subjects SHALL be the HyperSpy signal type, where there is one.
+The summary line SHALL be, as found, a HyperSpy signal's title, signal type and data shape (the patterns of `.hspy`); else the `shape` and the data type (`data_type` in v3, `dtype` in v2) of the root array, or of the first array one level down in name order, both from that array's metadata document. The subjects SHALL be the HyperSpy signal type, where there is one.
 
 #### Scenario: A HyperSpy store
 - **WHEN** a store written by RosettaSciIO of a signal with title `4D-STEM scan`, signal type `electron_diffraction` and data of shape [4, 4, 16, 16] is extracted
@@ -147,3 +170,7 @@ The summary line SHALL be, as found, a HyperSpy signal's title, signal type and 
 #### Scenario: An abTEM-like store
 - **WHEN** a v3 group with an array `array0` of shape [8, 8, 16, 16], `float32`, is extracted
 - **THEN** the summary is `shape [8, 8, 16, 16], float32`
+
+#### Scenario: Attributes named like an array's
+- **WHEN** a v2 group's attributes are `{"detector": {"shape": [2048, 2048], "dtype": "uint32"}}` and it holds an array `img` of 4 × 4 `<u2`
+- **THEN** the summary is `shape [4, 4], <u2`
