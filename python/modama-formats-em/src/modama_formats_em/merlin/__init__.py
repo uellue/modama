@@ -60,6 +60,8 @@ class Merlin(Format):
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         frames = d.of_type(FRAMES)
+        # Frame files a format before this one claimed: named, not missed (decision 344)
+        theirs = {n for n in d.claimed if n.lower().endswith(".mib")}
         claimed = set()
         # The longest stem first, so that acq1.hdr keeps acq1*.mib from acq.hdr
         for header in sorted(d.of_type(HEADER), key=lambda e: -len(e.name)):
@@ -69,6 +71,9 @@ class Merlin(Format):
                 for f in frames
                 if f.rel not in claimed and f.name.startswith(stem)
             ]
+            for name in sorted(n for n in theirs if n.startswith(stem)):
+                theirs.discard(name)
+                d.claimed_elsewhere(header.rel, name)
             if not mine:
                 continue
             claimed.update(mine)

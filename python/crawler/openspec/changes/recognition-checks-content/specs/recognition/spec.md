@@ -70,11 +70,11 @@ When a file cannot be read while a format checks it (its first bytes, or the cor
 - **THEN** `notes.tags` keeps the type `application/x.test-tags`, `picture.tags` is a dataset of `test/png` with the basis `PNG signature; test/tags: not application/x.test-tags, no TAGS header`, the crawl's only warning names `notes.tags` and the error, and the directory is marked to be recognised again on the next crawl
 
 ### Requirement: A claimed file keeps its type
-When a format says a file is not of its type, but a format that ran earlier on the directory has claimed the file, the file SHALL keep its type, the claiming dataset SHALL keep its basis, and the crawl SHALL warn at the file, naming both formats.
+A file that a format which ran earlier on the directory has claimed SHALL keep its type, and the claiming dataset its basis: the formats after it are not offered the file (requirement "Formats run in priority order with exclusive claims"), so none of them can say it is not of its type.
 
 #### Scenario: A file an earlier format claimed
-- **WHEN** a test format `test/claim` at a higher priority than `test/tags` claims `x.tags`, holding `hello\n`, with the basis "claimed", and `test/tags` then says it is not of its type
-- **THEN** `x.tags` is a dataset of `test/claim` of type `application/x.test-tags` with the basis `claimed`, and the crawl warns at `x.tags` that it is claimed by `test/claim` and its type is kept
+- **WHEN** a test format `test/claim` at a higher priority than `test/tags` claims `x.tags`, holding `hello\n`, with the basis "claimed", and `test/tags` would say it is not of its type
+- **THEN** `x.tags` is a dataset of `test/claim` of type `application/x.test-tags` with the basis `claimed`, and the crawl warns of nothing
 
 ### Requirement: A dropped type lasts until the file or the rules change
 The new type and basis of a file whose name type a format dropped SHALL be stored with its dataset like any recognition result. A crawl of the unchanged directory under the same rules SHALL give the same type and basis without reading the file. A crawl after the file changed SHALL check it again.

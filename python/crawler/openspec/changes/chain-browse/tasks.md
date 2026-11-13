@@ -44,3 +44,8 @@ Written with the coordinator's leans of 2026-11-12 as assumptions (design D1 to 
 
 - [x] 7.1 `live.Slots` (N at once, first in first out, one request per tab), the tab header and `/api/waiting` in `browse.py`, `MODAMA_BROWSE_LIVE` in `cli.py`, the tab id and "waiting, k ahead" in `browse.html`. Verify: one test per scenario of "Live computations per tab" with fake children (`test_a_newer_request_of_the_same_tab` for "A newer request of the same tab" and "A request without a tab id", `test_two_tabs_both_get_their_result`, `test_the_n_plus_first_waits_then_runs`, `test_a_newer_request_removes_the_tab_s_queued_one`) and one through the app with the header and `/api/waiting`; the new ones fail on the code before; the real server with parallel curl requests by hand.
 - [x] 7.2 README "browse" (the behaviour, `MODAMA_BROWSE_LIVE` in "Configuration"), the backlog's line. Verify: read against the spec.
+
+## 8. An open folder's views (D5, D11, @weber 2026-11-13)
+
+- [x] 8.1 `live.compute` for a folder: its collapse check (`walk(top=<folder>/.)`), the dataset holding it; `/api/live` for a folder; the page requests an open folder's live views; the note "a folder: no live views" from the server. Verify: `test_an_open_zarr_store` ("An open Zarr store") and `test_a_normal_folder` ("A normal folder", type detections counted), both failing on the code before; the real server on a scratch tree with a Zarr store, by curl.
+- [x] 8.2 README "browse", the backlog's line. Verify: read against the spec.

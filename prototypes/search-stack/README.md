@@ -191,6 +191,11 @@ Benchmarks and probes of the test deployment, from the change `cpu-budget` and t
 | `embed-bench.py`, `embedlat.py`, `searchlat.sh` | embedding throughput for P processes × T threads; one query's embedding latency; 100 searches' latency |
 | `validator-check.py` | that patch 0001 changes no validation result |
 | `wrap/` | `run.sh` runs `batch-memory.py` in a throwaway container under perf (`fp`, `dwarf`) or plain; `cpu.py` adds wall and CPU time to each line and switches ONNX Runtime's profile and options; `par.sh` P batches at once; `ortsum.py` sums an ONNX Runtime profile by operator; `embcmp.py` compares two bulk bodies' embeddings; `lengths.py` the texts' token lengths |
+| `grace-embedding/` | CPU against GPU embedding on grace (GH200), each at its own optimum; copied to grace and run with `run.sh` (its README) |
+
+## Embedding on grace
+
+The warehouse's embedding moves to a service on grace's GPU, reached from staging through an SSH tunnel (a prototype, 2026-11-13): [embedding-on-grace.md](embedding-on-grace.md) has the plan, the ports and the tunnel's setup.
 
 ## Owners' names
 

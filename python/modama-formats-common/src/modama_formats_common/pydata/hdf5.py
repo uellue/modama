@@ -7,6 +7,7 @@ its objects"). No array is read, no link to another file followed, nothing
 read from outside the file.
 """
 
+import math
 import warnings
 from collections.abc import Callable
 
@@ -233,12 +234,43 @@ HEADLINE = (
     "Experiments.*.metadata.Signal.signal_type",
     "Experiments.*.data.shape",
 )
+TITLES = ("*.title", "Experiments.*.metadata.General.title")
+# Without a title, the line is the file's structure (decision 316): its largest
+# arrays, then a NeXus entry's start time and definition in the titled line's
+# order (decision 324) and the root's file_time, a NeXus root attribute
+LARGEST = 3
+UNTITLED = ("*.start_time", "*.definition", "file_time")
 # Subjects: what names a technique, as found
 TERMS = ("*.definition", "Experiments.*.metadata.Signal.signal_type")
 
 
 def summary(values: dict) -> list[str]:
-    return headline(values, HEADLINE)
+    if headline(values, TITLES):
+        return headline(values, HEADLINE)
+    return arrays(values)[:LARGEST] + headline(values, UNTITLED)
+
+
+def encoded(name: str) -> bool:
+    """Whether a dotted name is in a list or tuple of HyperSpy's metadata, which
+    RosettaSciIO's hspy writer stores as a dataset `_list_<key>` or a group
+    `_list_<length>_<key>` (`_tuple_` alike; HierarchicalWriter.parse_structure)."""
+    return any(part.startswith(("_list_", "_tuple_")) for part in name.split("."))
+
+
+def arrays(values: dict) -> list[str]:
+    """`<dotted path> <shape> <dtype>` of each dataset of one dimension or more whose
+    shape and dtype the walk kept, the most elements first, ties in path order; in a
+    HyperSpy file, not its encoded lists and tuples (decision 325)."""
+    hspy = values.get("file_format") == "HyperSpy"
+    found = []
+    for key, shape in values.items():
+        name = key.removesuffix(".shape")
+        dtype = values.get(f"{name}.dtype")
+        if name == key or not (isinstance(shape, list) and shape) or dtype is None:
+            continue
+        if not (hspy and encoded(name)):
+            found.append((-math.prod(shape), name, f"{name} {shape} {dtype}"))
+    return [phrase for *_, phrase in sorted(found)]
 
 
 def terms(values: dict) -> list[str]:

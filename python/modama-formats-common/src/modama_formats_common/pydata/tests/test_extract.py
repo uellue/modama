@@ -220,6 +220,83 @@ def test_a_nexus_files_attributes_and_datasets(collection_tests, tmp_path):
     assert x.summary[0] == "1-D scan of I00 v. mr"
 
 
+def beamline_nexus(path: Path, title: str | None = None) -> None:
+    """A NeXus file of the shape a beamline writes (decision 316), made-up values:
+    1-D arrays and scalars in an NXdata, the file's times as root attributes."""
+    with h5py.File(path, "w") as f:
+        f.attrs["NX_class"] = "NXroot"
+        f.attrs["file_name"] = path.name
+        f.attrs["file_time"] = "2026-01-02T03:04:05"
+        f.attrs["file_update_time"] = "2026-01-02T03:14:05"
+        entry = f.create_group("entry")
+        entry.attrs["NX_class"] = "NXentry"
+        if title is not None:
+            entry["title"] = title
+        data = entry.create_group("data")
+        data.attrs["NX_class"] = "NXdata"
+        for i in range(1, 5):
+            data[f"value{i}"] = numpy.arange(10, dtype="<i4")
+            data[f"value{i}"].attrs["Name"] = f"channel {i}"
+        data["exposuretime"] = numpy.ones(10, dtype="<f4")
+        for i in range(1, 6):
+            data[f"vfcconversion{i}"] = 1.5
+            data[f"vfcconversion{i}"].attrs["Units"] = "V/Hz"
+
+
+def test_a_nexus_file_without_a_title(collection_tests, tmp_path):
+    beamline_nexus(tmp_path / "scan.nxs")
+    x, _ = extracted(collection_tests, tmp_path, "scan.nxs")
+    assert x.summary == [
+        "entry.data.exposuretime [10] <f4",
+        "entry.data.value1 [10] <i4",
+        "entry.data.value2 [10] <i4",
+        "2026-01-02T03:04:05",
+    ]
+
+
+def test_a_nexus_file_without_a_title_with_a_definition_and_start_time(
+    collection_tests, tmp_path
+):
+    path = tmp_path / "scan.nxs"
+    beamline_nexus(path)
+    with h5py.File(path, "r+") as f:
+        f["entry/definition"] = "NXmonopd"
+        f["entry/start_time"] = "2026-01-02T02:59:00"
+    x, _ = extracted(collection_tests, tmp_path, "scan.nxs")
+    assert x.summary == [
+        "entry.data.exposuretime [10] <f4",
+        "entry.data.value1 [10] <i4",
+        "entry.data.value2 [10] <i4",
+        "2026-01-02T02:59:00",
+        "NXmonopd",
+        "2026-01-02T03:04:05",
+    ]
+
+
+def test_an_hdf5_file_without_a_title(collection_tests, tmp_path):
+    with h5py.File(tmp_path / "plain.h5", "w") as f:
+        f["e"] = numpy.zeros((4, 4), dtype="<u2")
+        f["d"] = numpy.zeros(100, dtype="<f8")
+        f["b"] = numpy.zeros((4, 4), dtype="<u2")
+        f["a"] = numpy.zeros(2, dtype="<i4")
+        f["scalar"] = 7
+    x, _ = extracted(collection_tests, tmp_path, "plain.h5")
+    assert x.summary == ["d [100] <f8", "b [4, 4] <u2", "e [4, 4] <u2"]
+
+
+def test_a_compound_array_without_a_title(collection_tests, tmp_path):
+    with h5py.File(tmp_path / "events.h5", "w") as f:
+        f["events"] = numpy.zeros(5, dtype=[("x", "<f4"), ("y", "<i2")])
+    x, _ = extracted(collection_tests, tmp_path, "events.h5")
+    assert x.summary == ["events [5] [['x', '<f4'], ['y', '<i2']]"]
+
+
+def test_a_file_with_a_title_keeps_its_line(collection_tests, tmp_path):
+    beamline_nexus(tmp_path / "titled.nxs", title="Energy scan")
+    x, _ = extracted(collection_tests, tmp_path, "titled.nxs")
+    assert x.summary == ["Energy scan"]
+
+
 def test_an_attribute_nobody_has_seen_before(collection_tests, tmp_path):
     with h5py.File(tmp_path / "new.h5", "w") as f:
         f.create_group("g").attrs["never_seen_before"] = "value"
@@ -405,6 +482,39 @@ def test_rosettasciios_test_file(collection_tests, tmp_path):
     for found in (original(x), original(y)):
         assert not [k for k in found if "_HyperSpy" in k]
         assert "_None_" not in found.values()
+
+
+def test_a_hyperspy_file_without_a_title(collection_tests, tmp_path):
+    # RosettaSciIO's older HyperSpy file, whose signal has no title, as .hspy
+    shutil.copyfile(
+        FIXTURES / "hyperspy" / "with_lists_etc.hdf5", tmp_path / "untitled.hspy"
+    )
+    x, _ = extracted(collection_tests, tmp_path, "untitled.hspy")
+    exp = "Experiments.__unnamed__"
+    assert x.summary == [
+        f"{exp}.data [10] <i8",
+        f"{exp}.metadata.Signal.Noise_properties._sig_variance.data [10] <i8",
+    ]
+
+
+def test_hyperspys_encoded_lists_are_not_among_the_largest_arrays(
+    collection_tests, tmp_path
+):
+    # Made up: the encoded lists larger than any array, a third array
+    path = tmp_path / "untitled.hspy"
+    shutil.copyfile(FIXTURES / "hyperspy" / "with_lists_etc.hdf5", path)
+    exp = "Experiments/__unnamed__"
+    with h5py.File(path, "r+") as f:
+        f[f"{exp}/metadata/test/_list_long"] = numpy.zeros(1000, dtype="<i8")
+        f[f"{exp}/metadata/test/_tuple_1_nested/0/_list_inner"] = numpy.zeros(500)
+        f[f"{exp}/learning_results/factors"] = numpy.zeros((10, 2))
+    x, _ = extracted(collection_tests, tmp_path, "untitled.hspy")
+    exp = "Experiments.__unnamed__"
+    assert x.summary == [
+        f"{exp}.learning_results.factors [10, 2] <f8",
+        f"{exp}.data [10] <i8",
+        f"{exp}.metadata.Signal.Noise_properties._sig_variance.data [10] <i8",
+    ]
 
 
 def test_a_variance_signal_in_the_metadata(collection_tests, tmp_path):
