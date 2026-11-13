@@ -44,9 +44,13 @@ The path of `crawl --path` SHALL be read as a canonical path, relative to the da
 ### Requirement: A subtree crawl recognises and extracts its subtree again
 A subtree crawl SHALL recognise every directory under its path and SHALL run the extractor of every dataset there that has one, without taking over stored datasets and without reusing stored extractions. A record SHALL get a new datestamp only if its content changed.
 
-#### Scenario: A changed extractor without a new version
-- **WHEN** the tree was crawled, the extractor of `em/dm4` is changed without changing its `extractor_version`, and `crawl --path adhoc/libertem/libertem-test-data` is run
-- **THEN** the DM4 files under the path are extracted again, and only their records whose description or subjects changed get a new datestamp
+#### Scenario: A changed extractor
+- **WHEN** the tree was crawled, the extractor of `em/dm4` is changed (a new installation), and `crawl --path adhoc/libertem/libertem-test-data` is run
+- **THEN** the DM4 files under the path are extracted again with the changed extractor, only their records whose description or subjects changed get a new datestamp, and no dataset outside the path is extracted
+
+#### Scenario: A reverted experiment is undone by the next full crawl
+- **WHEN** the tree was crawled, `crawl --path adhoc/libertem/libertem-test-data` ran with a changed extractor of `em/dm4` and changed records under the path, and the whole tree is crawled with the extractor changed back
+- **THEN** the records under the path have the metadata they had before the experiment
 
 #### Scenario: The same code gives the same records
 - **WHEN** `crawl --path adhoc/libertem/libertem-test-data` is run twice without changes to the files or the formats
@@ -104,6 +108,28 @@ When a crawl of the whole tree has finished on the index, a subtree crawl under 
 #### Scenario: Another data root
 - **WHEN** the whole tree was crawled with the data root `/data`, and `crawl --root /data/adhoc --path libertem` is run
 - **THEN** the exit status is 2, stderr names both data roots, and no run is recorded
+
+### Requirement: A subtree crawl uses the formats of the full crawls
+A subtree crawl SHALL end with status 2, an error line, and no run recorded, when `--select` or `--ignore` is given.
+
+#### Scenario: Only some formats
+- **WHEN** `crawl --path adhoc/libertem/libertem-test-data --select em/dm4` is run
+- **THEN** the exit status is 2, stderr says that `--select` and `--ignore` cannot be used with `--path`, and no run is recorded
+
+### Requirement: A subtree crawl uses the configuration of the full crawls
+A subtree crawl SHALL end with status 2, an error line naming both configuration files and the parts that differ, and no run recorded, when the last finished crawl of the whole tree recorded a configuration whose selection, per-path ignores or exclusions differ from the subtree crawl's. When that crawl recorded no configuration, the subtree crawl SHALL run and log a warning that it was not compared.
+
+#### Scenario: Another configuration
+- **WHEN** the whole tree was crawled with a configuration that excludes `.snapshot/`, and `crawl --path adhoc/libertem/libertem-test-data` is run with a configuration that does not
+- **THEN** the exit status is 2, stderr names both configuration files and `exclude`, and no run is recorded
+
+#### Scenario: The same configuration from another file
+- **WHEN** the whole tree was crawled with `full.toml`, and `crawl --path adhoc/libertem/libertem-test-data --config copy.toml` is run, where `copy.toml` holds the same settings in another order and with comments
+- **THEN** the crawl runs
+
+#### Scenario: A full crawl without a recorded configuration
+- **WHEN** the last crawl of the whole tree ran before the configuration was recorded, and `crawl --path adhoc/libertem/libertem-test-data` is run
+- **THEN** the crawl runs, and stderr has a warning that the configuration of the last crawl of the whole tree is not recorded and was not compared
 
 ### Requirement: A subtree crawl fails when its path cannot be listed
 When its path cannot be listed as the walk reaches it, a subtree crawl SHALL fail as a crawl of the whole tree does when its root cannot be read: exit status 2, an error line naming the path, the run recorded as `failed`, and no dataset, stored listing or record changed.
