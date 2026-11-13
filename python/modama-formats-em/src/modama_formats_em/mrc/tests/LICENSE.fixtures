@@ -1,0 +1,39 @@
+Fixtures from public archives (fixtures.toml has each file's URL and sha256, of the
+original and of the cut):
+
+- fixtures/emdb_map/EMD-3197.map: the map of the EMDB entry EMD-3197
+  (https://www.ebi.ac.uk/emdb/EMD-3197), taken unchanged from mrcfile's test data
+  (https://github.com/ccpem/mrcfile, tests/test_data/, at its tag v1.5.4), whose
+  README says it was fetched from the EMDB.
+- fixtures/emdb_tomogram/emd_66908.map: the header of the map of the EMDB entry
+  EMD-66908, "Cryo-electron tomography of a synapse in cultured rat hippocampal
+  neurons" (Lv ZY, Lu ZH, Liu S et al.), https://www.ebi.ac.uk/emdb/EMD-66908.
+- fixtures/epu_falcon/: the headers of two files of EMPIAR-12652, "TnsB strand
+  transfer complex micrographs" (Tenjo-Castaño F, Sofos N, López-Méndez B et al.),
+  https://www.ebi.ac.uk/empiar/EMPIAR-12652/.
+- fixtures/epu_movie/: the header of one movie of EMPIAR-12018, "Cryo-EM of
+  hMRS2-BRIL with EDTA" (He Z, Mount JW, Zhang J et al.),
+  https://www.ebi.ac.uk/empiar/EMPIAR-12018/.
+- fixtures/particle_stack/: the header of one particle stack of EMPIAR-11898,
+  "Cryo-EM micrographs of engineered encapsulin P3P4" (Satler T, Jerala R et al.),
+  https://www.ebi.ac.uk/empiar/EMPIAR-11898/.
+
+Licence of these: CC0 1.0. EMPIAR: "All data in EMPIAR is freely and publicly
+available to the global community under the CC0 license"
+(https://www.ebi.ac.uk/empiar/faq, "Under what license is EMPIAR data available?",
+read 2026-11-13). EMDB: the molecular and cellular structure archives at EMBL-EBI
+(PDBe, EMDB and EMPIAR) "provide data available to all in accordance with the
+Creative Commons Zero (CC0) designation"
+(https://www.ebi.ac.uk/pdbe/about/public-data-access-statement, read 2026-11-13);
+the wwPDB core archives likewise (https://www.wwpdb.org/about/usage-policies).
+Please cite the entries' authors as a matter of good scientific practice.
+
+- fixtures/fei1/fei-extended.mrc: the header of fei-extended.mrc of mrcfile's test
+  data (https://github.com/ccpem/mrcfile, tests/test_data/, at its tag v1.5.4),
+  whose README says: "fei-extended.mrc was contributed (along with permission for
+  public distribution) by Kevin Savage at Diamond Light Source." mrcfile's
+  repository is under the BSD 3-Clause licence, "Copyright (c) 2016, Science and
+  Technology Facilities Council"; the file carries no licence of its own.
+
+The rest of modama-formats-em, the other fixtures here included, is
+MIT-licensed; see ../../../../LICENSE.

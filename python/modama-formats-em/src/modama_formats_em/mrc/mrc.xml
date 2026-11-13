@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- MRC (MRC2014, CCP-EM): maps, tomograms and image stacks. No established
+       MIME type exists (Debian's media-types gives *.mrc to application/marc,
+       library records), so an unofficial one (TEMPLATE.md, "Rules first"). -->
+  <mime-type type="application/x.mrc">
+    <comment>MRC image, stack or volume</comment>
+    <glob pattern="*.mrc"/>
+    <glob pattern="*.mrcs"/>
+    <!-- Other programs write .map files too (linker and source maps): the
+         format checks the map word and drops the type where it is missing -->
+    <glob pattern="*.map"/>
+    <!-- The map word, as mrcfile checks it (its first three bytes), and the
+         machine stamp's first byte: 0x44 little-endian, 0x11 big-endian -->
+    <magic priority="60">
+      <match type="string" offset="208" value="MAP">
+        <match type="byte" offset="212" value="0x44"/>
+        <match type="byte" offset="212" value="0x11"/>
+      </match>
+    </magic>
+  </mime-type>
+</mime-info>
