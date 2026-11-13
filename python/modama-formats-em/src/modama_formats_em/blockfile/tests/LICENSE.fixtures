@@ -13,7 +13,7 @@ fixtures/stingray/Stingray16bit_7_11.blo comes from the block file
 Stingray16bit_7_11.blo of LiberTEM's test data (libertem-test-data), published
 here with its owner's agreement (2026-11-12). It holds metadata only: the
 file's first 4,096 bytes, its header and note, unchanged. The diffraction
-patterns are not included. blo-fixture.sh of the field tests did the cut.
+patterns are not included. cut-header.sh beside this file did the cut.
 
 It is distributed under the MIT licence of modama-formats-em, as is the rest
 of modama-formats-em; see ../../../../LICENSE.

@@ -15,7 +15,7 @@ generator = "modama_formats_em.blockfile.tests.generate:header_only"
 purpose = "representative"
 validity = "vendor-written, header only (first 4,096 bytes): the header and note up to Data_offset_1 (0x1000), unchanged, without the virtual bright-field image and the diffraction patterns (decision 232). MAGIC 259, the 16-bit variant (the note: 'Acquisition SW: ScanDpa v3.0 [Build:202409051150]', 'Detector: AVT Stingray F046B', 'Blo Bit Depth: 16 bits'), a 7x11 scan of 576x576 patterns, Beam_energy 60000, Camera_length 6000, Acquisition_time 45552.0 (2024-09-17, no time of day); read by rosettasciio 0.15.0 on 2026-11-12 with its warning 'Blockfile has unrecognized header signature' (spec formats/blockfile, the 16-bit variant)"
 licence = "MIT (LICENSE.fixtures beside this file)"
-source = "libertem-test-data/Stingray16bit_7_11.blo on the ER-C staging data (the file that started this format, found with modama-chain browse on 2026-11-12), cut by @weber with .claude/field-tests/blo-fixture.sh on 2026-11-12; sha256 461c7ccba3b5236db9e1992c6b0e5377987a797698a65dffd09933cb29694ec2"
+source = "libertem-test-data/Stingray16bit_7_11.blo on the ER-C staging data (the file that started this format, found with modama-chain browse on 2026-11-12), cut by @weber on 2026-11-12 with the script now committed as cut-header.sh beside this file; sha256 461c7ccba3b5236db9e1992c6b0e5377987a797698a65dffd09933cb29694ec2"
 
 [text_blo]
 purpose = "reproducer"

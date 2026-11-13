@@ -320,7 +320,7 @@ def test_no_unit_the_reader_does_not_give(monkeypatch):
 
 # Tags of a DM4 image from a camera, as RosettaSciIO's reader gives them, from
 # ncempy's list of 2018-7-17 15_29_0000.dm4 (staging, a K2 summit on an FEI
-# Tecnai; .claude/field-tests/browse/ncempy-2018-7-17.txt): the groups the
+# Tecnai; made with ncempy_tags.py beside this file): the groups the
 # summary line and the user-interface rule read, not the whole file
 CAMERA = {
     "Acquisition": {
