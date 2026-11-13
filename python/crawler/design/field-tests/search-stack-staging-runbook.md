@@ -87,11 +87,11 @@ On the server, as yourself, one line at a time.
 cd ~/src/data-management-system/prototypes/search-stack
 ```
 
-**2.** Start the recording (a copy of kaizen's `record.sh`) into the next `run-<n>`;
-`exit` ends it:
+**2.** Start the recording (`field-test/record.sh`, a copy of kaizen's) into the next
+`run-<n>`; `exit` ends it:
 
 ```bash
-FIELD_TEST_DIR=$HOME/src/data-management-system/.claude/field-tests bash ../../.claude/field-tests/record.sh
+FIELD_TEST_DIR=$HOME/src/data-management-system/.claude/field-tests bash field-test/record.sh
 ```
 
 **2a.** In the recorded shell, check the channel: type a note at the prompt, and wait
@@ -209,7 +209,7 @@ Optional, for the performance baseline (F5), in a third terminal: the NFS counte
 data tree's mount, into the run's folder:
 
 ```bash
-../../.claude/field-tests/nfs-stats.sh "$HOME/src/data-management-system/.claude/field-tests/run-1/nfs.log"
+field-test/nfs-stats.sh /storage/er-c-data "$HOME/src/data-management-system/.claude/field-tests/run-1/nfs.log"
 ```
 
 Leave `monitor.sh` (and `nfs-stats.sh`) running overnight in a terminal that survives
