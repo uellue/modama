@@ -24,6 +24,8 @@ x-airflow-common: &airflow-common
     dockerfile: ../../warehouse-airflow.Dockerfile
     additional_contexts:
       budget: cpu-budget
+      embedding-model: embedding-model
+      texts: perf/grace-embedding
   image: search-stack-airflow:3.3.2
   networks: [search]
   env_file:
