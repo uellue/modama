@@ -318,8 +318,7 @@ def test_a_csv_file_larger_than_the_bound(collection_tests, tmp_path):
     assert d.mapped["header"] is True
     assert "rows" not in d.mapped
     assert 0 < d.mapped["rows_at_least"] < rows
-    # rchar counts reading /proc/self/io too: a few hundred bytes
-    assert d.bytes_read <= LIMIT + 1 + 1024
+    assert d.bytes_read <= LIMIT + 1
 
 
 # Every key of an INI or .cfg file is kept
@@ -352,7 +351,7 @@ def test_a_json_file_over_the_bound(collection_tests, tmp_path):
         "mapped_metadata": {"not_read_larger_than_bytes": 8388608}
     }
     assert d.extracted.summary == []
-    assert d.bytes_read < 1024  # rchar counts reading /proc/self/io too
+    assert d.bytes_read == 0
 
 
 def test_more_entries_than_the_bound(collection_tests, tmp_path):

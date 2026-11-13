@@ -319,10 +319,11 @@ modama-crawler records --verbose src/<package>/<area>/tests/fixtures
 What the tests must hold, beyond the fixtures (the skeleton has one of each):
 
 - **Bytes read**: a large generated file (a header padded to MiBs, a sparse data file
-  of a GiB) and `rchar` of `/proc/self/io` before and after the extraction; the bound is
-  what the format needs, not the file's size (`skeleton/tests/test_extract.py`,
-  `modama_formats_em.testing.rchar`). A library that claims to read lazily is measured,
-  not trusted.
+  of a GiB) and the bytes the extraction reads, `modama_crawler.testing.bytes_read`
+  (`rchar` of `/proc/self/io` before and after, less the read of it, exactly; run the
+  extraction once before, so that imports do not count); the bound is what the format
+  needs, not the file's size (`skeleton/tests/test_extract.py`). Use that helper, not a
+  copy of your own. A library that claims to read lazily is measured, not trusted.
 - **An entry nobody has seen**: add a made-up entry to a fixture; it must arrive in
   `original_metadata`.
 - **The name lies**: a text file with your format's name gets the type it has without
@@ -350,7 +351,7 @@ A checklist for every new format, from what `modama-formats-em` taught (where ea
 - [ ] **A test with an entry nobody has seen**: it must arrive in `original_metadata`. (the skip-list rule above)
 - [ ] **The summary line**: a few chosen entries as found (Merlin's line of five: `Frames in Acquisition (Number) 1, frame 256, 256, Counter Depth (number) 6, Merlin Quad, 15/04/2021 14:43:23`), text bare, a number after its name (`Exposure Time (s) 2.0`), a 0 left out only where the format writes 0 for "no value" (GMS's `STEM Camera Length`, `dm` `test_a_placeholder_zero`; a block file's `Scan_rotation`), kept where 0 is a value (a mode or a code: MRC's `mode 0` is int8), decided per entry and named in the spec (the skeleton's `phrase` drops every 0, right for its made-up header only), no words or units of ours, with two exceptions: a number whose reader gives no unit says so, "(unit unknown)" (@weber, 2026-11-11; EM README, "Values and units"; EMPAD's exposure time); a document whose metadata can't be read because it is encrypted has the summary line "(encrypted)" (@weber, 2026-11-12, 242b; office: PDF, OpenDocument). It is the only positive list. (`dm.HEADLINE`; 228, 231)
 - [ ] **The values become the record's second description**, one `name: value` line each, sorted by name, empty values left out there: names and values must read well that way. (234, change `tags-in-the-record`)
-- [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. Count the bytes read in a test (`modama_formats_em.testing.rchar`). (@weber 2026-11-12; block files: the header plus one buffer)
+- [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. Count the bytes read in a test (`modama_crawler.testing.bytes_read`). (@weber 2026-11-12; block files: the header plus one buffer)
 - [ ] **Time-zone independent output**: a date and time as the file writes it, without a reader's conversion to the local time zone, and a test under another `TZ`. (`modama_formats_em.blockfile`, `test_the_acquisition_time_as_written`)
 - [ ] **Recognition by content where names lie**: a glob plus magic, a subtype (`sub-class-of`) where one exists, and `d.not_of_type` to fall back to the type the file has without its name rule. ("A file that is not of its name's type" above; DM by header whatever the name, `.blo` without `IMGBLO`)
 - [ ] **Fixtures**: public test data with licence and source in `fixtures.toml`, or generated at test time by the software that writes the format; small (cut to what the rules and extractor read if need be, the cut in `validity`); no copyrighted content without a licence. (Fixtures above; @weber 2026-11-12: "Use publicly available test data")

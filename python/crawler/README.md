@@ -222,7 +222,7 @@ The project has its own instruments for every question of the kind "what did the
 | `modama-chain review` | the files the crawl flagged (stored warnings, failed extractions), by kind and format, as a Markdown list of links into `browse` | the same, "review" |
 | `monitor.sh`, `field-test/` scripts, the recorded terminal | a run on staging over hours: load, memory, containers, NFS counters, the indexing's tasks and batches | `/prototypes/search-stack/README.md`, "Field-test scripts" |
 | `benchmark/run.sh`, `measure.sh` | what NFS did for one command: operations, bytes, round trips, memory, against an emulated production mount | `benchmark/README.md` |
-| `rchar`, the `bytes_read` fixture, strace | how many bytes a format or a library reads, and in which pieces | `benchmark/README.md`, "Profiling"; `tests/conftest.py` |
+| `rchar` by `modama_crawler.testing.bytes_read`, strace | how many bytes a format or a library reads, and in which pieces | `benchmark/README.md`, "Profiling"; `src/modama_crawler/testing.py` |
 | py-spy, perf | where the time goes, in Python and in C | `benchmark/README.md`, "Profiling" |
 | `rabbitmqctl list_queues`, OpenSearch `_count` | whether the broker's queues have consumers; how many documents the search can find | `/prototypes/search-stack/README.md`, "Looking around" |
 
