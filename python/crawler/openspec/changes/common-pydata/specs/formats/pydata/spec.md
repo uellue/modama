@@ -72,6 +72,25 @@ The extractor of the HDF5 types SHALL walk the file's objects with h5py, depth f
 - **WHEN** an HDF5 file has an attribute of 100 numbers, an opaque attribute of bytes, a scalar dataset of a string over 1,000 characters, a scalar object reference and a scalar of 100,000 bytes
 - **THEN** none of them is in `original_metadata`, and neither the attribute of 100 numbers nor the scalar of 100,000 bytes is read
 
+### Requirement: An HDF5 file without a title is summarised by its structure
+An HDF5, NeXus or HyperSpy file without a title (`*.title`, `Experiments.*.metadata.General.title`; empty counts as none) SHALL have its structure as the summary line (decision 316): the three datasets of one dimension or more in `original_metadata` with the most elements, ties by dotted name, each `<dotted name> <shape> <dtype>`; then the root's `file_time` as found, if any. A file with a title SHALL keep its line.
+
+#### Scenario: A NeXus file without a title
+- **WHEN** a NeXus file `scan.nxs` as a beamline writes it (an NXentry `entry` with an NXdata `data` of 1-D arrays `value1` to `value4` `<i4` and `exposuretime` `<f4` of 10 elements each and scalars `vfcconversion1` to `vfcconversion5`; root attributes `NX_class`, `file_name`, `file_time 2026-01-02T03:04:05`, `file_update_time`) has no `title`
+- **THEN** the summary is `entry.data.exposuretime [10] <f4, entry.data.value1 [10] <i4, entry.data.value2 [10] <i4, 2026-01-02T03:04:05`
+
+#### Scenario: An HDF5 file without a title
+- **WHEN** an HDF5 file has datasets `e` `[4, 4] <u2`, `d` `[100] <f8`, `b` `[4, 4] <u2`, `a` `[2] <i4` and a scalar `scalar`, and no title
+- **THEN** the summary is `d [100] <f8, b [4, 4] <u2, e [4, 4] <u2`
+
+#### Scenario: A HyperSpy file without a title
+- **WHEN** RosettaSciIO's `with_lists_etc.hdf5`, whose signal's title is empty, is extracted as `untitled.hspy`
+- **THEN** the summary is `Experiments.__unnamed__.data [10] <i8`, then the variance signal's `data` `[10] <i8` and the first of HyperSpy's encoded lists `[2] <i8`, by their dotted names
+
+#### Scenario: A file with a title keeps its line
+- **WHEN** the NeXus file of "A NeXus file without a title" has `entry.title` `Energy scan`
+- **THEN** the summary is `Energy scan`
+
 ### Requirement: Credentials are left out
 A value that may be a credential by the shared check `modama_crawler.formats.values.credential` (its name, or a text such as a URL with a password) SHALL be left out of `original_metadata`, in every format of this part.
 
@@ -118,7 +137,7 @@ The extractor SHALL open the file without file locking and with readahead off; r
 - **THEN** nothing of the other file is in `original_metadata`, not even the link's name
 
 ### Requirement: A HyperSpy file is described as HyperSpy stores it
-An HDF5 file whose attribute `file_format` is `HyperSpy` (a `.hspy` file, or an older HyperSpy `.hdf5` file) SHALL be described by the HDF5 walk, with HyperSpy's names as stored (`_list_`, `_sig_`), but a skip list: HyperSpy's internal groups `_HyperSpy` and values that are HyperSpy's placeholder `_None_`. Its summary line SHALL give the first signal's title, signal type and data shape.
+An HDF5 file whose attribute `file_format` is `HyperSpy` (a `.hspy` file, or an older HyperSpy `.hdf5` file) SHALL be described by the HDF5 walk, with HyperSpy's names as stored (`_list_`, `_sig_`), but a skip list: HyperSpy's internal groups `_HyperSpy` and values that are HyperSpy's placeholder `_None_`. Its summary line SHALL give the first signal's title, signal type and data shape; without a title, its structure ("An HDF5 file without a title is summarised by its structure").
 
 #### Scenario: RosettaSciIO's test file
 - **WHEN** `example2_v3.1.hspy` is extracted

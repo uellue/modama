@@ -56,7 +56,9 @@
   "extractions": {
     "/blocked.h5": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "data [2, 3] <u2"
+      ],
       "values": {
         "mapped_metadata": {},
         "original_metadata": {
@@ -71,7 +73,9 @@
     },
     "/old.hdf": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "data [2, 3] <u2"
+      ],
       "values": {
         "mapped_metadata": {},
         "original_metadata": {
@@ -86,7 +90,9 @@
     },
     "/scan.h5": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "data [2, 3] <u2"
+      ],
       "values": {
         "mapped_metadata": {},
         "original_metadata": {
@@ -101,7 +107,9 @@
     },
     "/velox.emd": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "data [2, 3] <u2"
+      ],
       "values": {
         "mapped_metadata": {},
         "original_metadata": {
