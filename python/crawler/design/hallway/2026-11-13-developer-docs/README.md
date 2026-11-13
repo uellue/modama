@@ -43,7 +43,15 @@ Distortions, by design: the clone has no history (`git log` shows one commit); n
 stack, no Docker and no `browse`, since one stack serves the VM; the tester's harness may
 attach the shared checkout's `AGENTS.md` and a memory index, which it must name.
 
+Run 1 (2026-11-13) ran the tester as a sub-agent of the session that wrote the docs, and
+the harness attached that session's instruction files, its memory index and its edit hook
+to the tester (the tester named them). For a run that sees only Git, start the tester as a
+Claude Code session of its own in the clone (`cd <clone> && claude`), on a machine or user
+account without project memory for that path, and paste the brief.
+
 ## What it costs
 
-To be filled in after the first run: minutes, output tokens and tool calls of the tester
-and of the grader, from the usage script.
+Run 1 (2026-11-13, `run-1/`): the tester 27 minutes, 155 tool calls, 71,000 output tokens
+(Opus 5.5), three rounds of questions; the grader 8 minutes, 14 tool calls (Sonnet 5.5);
+the harness itself (`setup.sh`, seed, briefs, key) about 12 minutes of an agent. Plus the
+suites the tester runs: about 7 minutes of an 8-vCPU VM for the crawler suite.
