@@ -103,6 +103,27 @@ def test_unknown_file_becomes_octet_stream_dataset():
     ]
 
 
+def test_many_datasets_in_one_directory():
+    # Review of em-de, 2026-11-13 (M2): each dataset's fill built a map of the
+    # directory's entries, so a folder of n datasets took time n² (16,000 DE
+    # acquisitions: 33 s in the runner alone); a folder of single files of a
+    # format (images, texts) as well
+    class Each(Format):
+        type = "x/each"
+        reacts_to = frozenset({"text/plain"})
+
+        def recognize(self, d):
+            for e in d.of_type("text/plain"):
+                yield Dataset(anchor=e.rel, basis="each")
+
+    d = directory([entry(f"{i}.txt") for i in range(20_000)])
+    start = time.monotonic()
+    datasets, _ = run_post(d, collect(Each()), 5.0, 1 << 20)
+    elapsed = time.monotonic() - start
+    assert len(datasets) == 20_000 and {x.format for x in datasets} == {"t/each"}
+    assert elapsed < 3, f"{elapsed:.1f} s"
+
+
 def test_higher_priority_wins_shared_file():
     d = directory([entry("a.txt"), entry("a.txt.bak", "application/x-trash")])
     datasets, _ = run_post(d, collect(Greedy(), TextPairs()), 5.0, 1 << 20)

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- A Direct Electron acquisition: the files DE-Server writes into one folder
+       under the acquisition's Dataset Name YYYYMMDD_NNNNN (_info.txt, _movie.mrc,
+       _final.mrc, virtual and external images, _scan_coordinates.csv; research
+       /docs/research/direct-electron-files.md). No MIME type is registered or
+       used in the wild (Debian's media-types and its desktop applications'
+       list, shared-mime-info: none, 2026-11-13). The acquisition's type has no
+       rules of its own: the DE format gives it to the dataset (change em-de, D6). -->
+  <mime-type type="application/x.de-acquisition">
+    <comment>Direct Electron acquisition</comment>
+  </mime-type>
+  <!-- The _info.txt: every DE-Server property as `key = value`. Named as the
+       Dataset Name says, 8 digits of the date first, so that other files named
+       *_info.txt are not typed; the DE format checks the first line,
+       `Server Software Version`, and a file without it gets the type it has
+       without this glob (change em-de, D3). -->
+  <mime-type type="application/x.de-info">
+    <comment>Direct Electron DE-Server acquisition info</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*_info.txt"/>
+  </mime-type>
+</mime-info>
