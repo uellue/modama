@@ -148,6 +148,77 @@ def test_report_after_a_crawl(tmp_path):
     assert "t/stand " in str(report) and " s" in str(report)
 
 
+# Change slow-extractions (@weber 352): the slowest extractions, a slow one flagged
+
+
+def slow(d) -> list[str]:
+    return [w for w in d.warnings if w.endswith("; slow extraction")]
+
+
+def test_a_slow_extraction(tmp_path, monkeypatch):
+    monkeypatch.setattr(extraction, "SLOW", 1.0)
+    # every worker starts 1.5 s late, over the threshold: its imports do not count (review S3)
+    monkeypatch.setenv("STANDIN_IMPORT_SLEEP", "1.5")
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "slow.stand").write_text("sleep 1.5")
+    (root / "quick.stand").write_text("ok quick")
+    (root / "late.stand").write_text("hang")
+    result, _, by_anchor = extract(root, tmp_path / "calls", time_limit=6.0)
+    x = by_anchor["/slow.stand"].extraction
+    assert 1.5 <= x.seconds < 3.0
+    text = f"t/stand extraction took {x.seconds:.1f} s; slow extraction"
+    assert slow(by_anchor["/slow.stand"]) == [text]
+    assert ("/slow.stand", text) in result.all_warnings()
+    late = by_anchor["/late.stand"]
+    assert late.extraction.error and late.extraction.seconds > 1.0
+    assert slow(late) == []  # warned as failed only
+    quick = by_anchor["/quick.stand"]
+    assert quick.extraction.seconds < 1.0 and slow(quick) == []
+
+
+def test_a_reused_slow_extraction_keeps_its_warning(conn, tmp_path, monkeypatch):
+    monkeypatch.setattr(extraction, "SLOW", 1.0)
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "slow.stand").write_text("sleep 1.5")
+    calls = tmp_path / "calls"
+
+    def stored() -> list[str]:
+        return conn.execute(
+            "SELECT warnings FROM datasets WHERE anchor = '/slow.stand'"
+        ).fetchone()[0]
+
+    crawl(conn, root, calls)
+    first = stored()
+    assert len(first) == 1 and first[0].endswith("; slow extraction")
+    crawl(conn, root, calls)  # unchanged: the folder is taken over
+    assert stored() == first
+    (root / "new.stand").write_text("ok new")  # the folder is recognised again
+    _, report = crawl(conn, root, calls)
+    assert (report.run, report.reused) == (1, 1)  # new.stand run, slow.stand reused
+    assert stored() == first
+
+
+def test_the_slowest_extractions(tmp_path):
+    root = tmp_path / "data"
+    root.mkdir()
+    for i in range(11):
+        (root / f"{i:02}.stand").write_text(f"ok w{i:02}")
+    (root / "late.stand").write_text("hang")  # fails after 2 s, the slowest (review S1)
+    _, report, by_anchor = extract(root, tmp_path / "calls", time_limit=2.0)
+    times = sorted(
+        ((d.extraction.seconds, a) for a, d in by_anchor.items()), reverse=True
+    )
+    named = ", ".join(
+        f"{a} t/stand {s:.1f} s"
+        + (" (failed)" if by_anchor[a].extraction.error else "")
+        for s, a in times[:10]
+    )
+    assert named.startswith("/late.stand t/stand 2.0 s (failed), ")
+    assert report.lines()[1] == f"slowest extractions: {named}"
+
+
 # Crawls into the database: unchanged directories and the extractor's identity (D3)
 
 # Files opened by this process while the `opened` fixture watches

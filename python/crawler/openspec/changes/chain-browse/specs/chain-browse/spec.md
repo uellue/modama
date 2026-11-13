@@ -120,7 +120,7 @@ The service SHALL be published on 127.0.0.1 only, SHALL refuse requests whose `H
 - **THEN** the answer is 403 and nothing is written
 
 ### Requirement: Flagged files are listed as links into the browser
-`modama-chain review` SHALL read, read-only, the stored warnings and failed extractions of the whole index and print them on stdout as Markdown (design D17, @weber 354), by kind (`extraction failed`, `two formats want it`, `not inspected`, `other warnings`), then by format (else `no format named`), each group with its count and its first entries by path, each entry a link into the browser with its text, and one summary line per group on stderr.
+`modama-chain review` SHALL read, read-only, the stored warnings and failed extractions of the whole index and print them on stdout as Markdown (design D17, @weber 354), by kind (`extraction failed`, `two formats want it`, `not inspected`, `slow extraction`, `other warnings`), then by format (else `no format named`), each group with its count and its first entries by path, each entry a link into the browser with its text, and one summary line per group on stderr.
 
 #### Scenario: Files two formats want
 - **WHEN** the index holds the warning `em/merlin: acq_2.mib is claimed by em/empad; two formats want it` at `/scan/acq.hdr`
@@ -133,6 +133,10 @@ The service SHALL be published on 127.0.0.1 only, SHALL refuse requests whose `H
 #### Scenario: Files not inspected
 - **WHEN** the index holds a warning with the marker `not inspected`
 - **THEN** it is listed under `not inspected` and under no other kind
+
+#### Scenario: Slow extractions
+- **WHEN** (@weber 352, change `slow-extractions`) the dataset `/a/b.dm4` of `em/dm4` carries the warning `em/dm4 extraction took 23.4 s; slow extraction`
+- **THEN** stdout has the heading `slow extraction`, under it `em/dm4 (1)` and the entry ``[`/a/b.dm4`](http://localhost:7655/?path=%2Fa%2Fb.dm4): em/dm4 extraction took 23.4 s; slow extraction``, and stderr the line `slow extraction, em/dm4: 1`
 
 #### Scenario: Other warnings, with and without a format
 - **WHEN** the index holds `common/text failed: ValueError()` at a folder and `type is ambiguous between a, b; using a` at a file

@@ -13,6 +13,8 @@ MARKERS = ("two formats want it", "not inspected")
 # As text, not imported: review needs no crawler installed (psycopg only);
 # tests/test_review.py compares them with the crawler's
 MARKERS += ("read more than 64 KiB", "over its read limit")
+# extraction.SLOW_EXTRACTION: a success over 10 s (352, slow-extractions)
+MARKERS += ("slow extraction",)
 OTHER = "other warnings"
 KINDS = (EXTRACTION_FAILED, *MARKERS, OTHER)
 NO_FORMAT = "no format named"

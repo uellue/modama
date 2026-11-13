@@ -9,7 +9,8 @@ does is written in the file:
   format's `variant`, so that its output changes with the installed code
 - `raise` raises as a reader does on a broken file; `oserror` and `import`
   raise as the environment does (a stale NFS handle, a missing module)
-- `kill` kills its own process, `hang` sleeps, `eat` allocates 8 GiB,
+- `kill` kills its own process, `hang` sleeps, `sleep <seconds>` sleeps that
+  long and returns, `eat` allocates 8 GiB,
   `eat <MiB>` that many MiB
 - whatever the file says, a `variant` of `"raise"` raises, standing in for a
   reader that now fails
@@ -18,7 +19,9 @@ does is written in the file:
   `OMP_NUM_THREADS` (the cpu-budget spec)
 
 Every call is appended to `calls`, a file outside the tree, so that a test
-can count the extractor's runs across processes.
+can count the extractor's runs across processes. With `STANDIN_IMPORT_SLEEP`
+set in the environment, importing this module takes that many seconds longer,
+standing in for a worker's slow imports (change slow-extractions).
 """
 
 import errno
@@ -27,6 +30,8 @@ import signal
 import time
 
 from modama_crawler.formats import DIRECTORY, Collection, Dataset, Extracted, Format
+
+time.sleep(float(os.environ.get("STANDIN_IMPORT_SLEEP", "0")))
 
 
 class Stand(Format):
@@ -63,6 +68,8 @@ class Stand(Format):
                 os.kill(os.getpid(), signal.SIGKILL)
             case "hang":
                 time.sleep(600)
+            case "sleep":
+                time.sleep(float(word))
             case "eat":
                 bytearray((int(word) if word else 8 << 10) << 20)
             case "nan":
