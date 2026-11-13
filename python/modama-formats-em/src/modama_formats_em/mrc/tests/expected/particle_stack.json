@@ -28,21 +28,21 @@
           "data_type": "float32",
           "kind": "image stack",
           "voxel_size": [
-            1.2,
-            1.2,
-            1.2
+            1.2000000476837158,
+            1.2000000476837158,
+            1.2000000476837158
           ]
         },
         "original_metadata": {
           "cella.x": 648.0,
           "cella.y": 648.0,
-          "cella.z": 82.8,
+          "cella.z": 82.80000305175781,
           "cellb.alpha": 90.0,
           "cellb.beta": 90.0,
           "cellb.gamma": 90.0,
-          "dmax": 4.924749,
-          "dmean": -0.0029111265,
-          "dmin": -6.2681036,
+          "dmax": 4.92474889755249,
+          "dmean": -0.002911126473918557,
+          "dmin": -6.26810359954834,
           "exttyp": "",
           "ispg": 0,
           "label[10]": "",

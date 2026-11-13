@@ -28,14 +28,14 @@
           "data_type": "int16",
           "kind": "image stack",
           "voxel_size": [
-            1.1938851,
-            1.1938851,
+            1.193885087966919,
+            1.193885087966919,
             0.0
           ]
         },
         "original_metadata": {
-          "cella.x": 4890.1533,
-          "cella.y": 4890.1533,
+          "cella.x": 4890.1533203125,
+          "cella.y": 4890.1533203125,
           "cella.z": 0.0,
           "cellb.alpha": 90.0,
           "cellb.beta": 90.0,

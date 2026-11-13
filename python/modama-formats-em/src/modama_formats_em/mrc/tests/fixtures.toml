@@ -25,7 +25,7 @@ source = "https://ftp.ebi.ac.uk/empiar/world_availability/12018/data/FoilHole_20
 [fei1]
 purpose = "representative"
 validity = "vendor-written, cut: fei-extended.mrc of mrcfile's test data, an image written by EPU 1.2.0.16 (\"Fei EPU\") on a Titan Krios with an energy filter's camera (EF-CCD), 3710x3838 float32, with an FEI1 extended header of 786432 bytes; the main header and the first record (768 bytes) kept, the rest cut (decision 293)"
-licence = "BSD-3-Clause (mrcfile's repository; contributed to it \"with permission for public distribution\": LICENSE.fixtures beside this file)"
+licence = "public distribution permitted by its contributor (mrcfile's test-data README); in mrcfile's BSD-3-Clause repository; question 298 open (LICENSE.fixtures beside this file)"
 source = "https://github.com/ccpem/mrcfile/raw/v1.5.4/tests/test_data/fei-extended.mrc (29265416 bytes, sha256 e9f168012031b3a6ea47fbed8eca8b9c8a040b4d1f4fbb2e3326bdb6d9307efe; cut 1792 bytes, sha256 5c083cdd814312136b174d49d3e3849657bdc7b72103bcef147e67d91c1ada73), fetched 2026-11-13, cut by cut-header.sh beside this file"
 
 [particle_stack]

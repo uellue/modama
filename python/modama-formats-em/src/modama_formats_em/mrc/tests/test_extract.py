@@ -1,6 +1,8 @@
 """MRC recognition and extraction, one test per scenario of spec formats/mrc (change em-mrc)."""
 
+import json
 import logging
+import resource
 from pathlib import Path
 
 import numpy as np
@@ -13,8 +15,9 @@ from modama_formats_em.testing import rchar
 from .generate import write
 
 EPU = "FoilHole_4551046_Data_4541935_4541937_20220507_103020.mrc"
-MOVIE = "FoilHole_20147964_Data_20151868_20151870_20220520_172819_Fractions.mrc"
 FEI2_RECORD = 888
+# Byte offsets of main header words (MRC2014): mx, nsymbt, rms
+MX, NSYMBT, RMS = 28, 92, 216
 
 
 def extracted(ct, tree: Path, name: str | None = None):
@@ -23,6 +26,13 @@ def extracted(ct, tree: Path, name: str | None = None):
     (d,) = [d for d in datasets if name is None or d.anchor == "/" + name]
     (fmt,) = ct.collection.formats
     return fmt.extract(d, str(tree))
+
+
+def patched(path: Path, offset: int, data: bytes) -> None:
+    """Overwrite bytes of a fixture's copy in place."""
+    with path.open("r+b") as f:
+        f.seek(offset)
+        f.write(data)
 
 
 def one_file(tmp_path: Path, **kwargs) -> Path:
@@ -98,8 +108,8 @@ def test_the_header_of_a_map_from_emdb(collection_tests, tmp_path):
     mapped = result.values["mapped_metadata"]
     assert mapped["kind"] == "volume"
     assert mapped["data_type"] == "float32"
-    # The file's float32 11.4, not its widening 11.399999618530273
-    assert mapped["voxel_size"] == [11.4, 11.4, 11.4]
+    # mrcfile's float32 as it widens it (TEMPLATE.md; @weber 309)
+    assert mapped["voxel_size"] == [11.399999618530273] * 3
 
 
 def test_a_tomogram_from_emdb(collection_tests, tmp_path):
@@ -133,6 +143,17 @@ def test_one_image(collection_tests, tmp_path):
     tree = collection_tests.materialise("written_by_mrcfile", tmp_path)
     result = extracted(collection_tests, tree, "image.mrc")
     assert result.values["mapped_metadata"]["kind"] == "image"
+
+
+def test_values_that_json_cannot_hold(collection_tests, tmp_path):
+    tree = collection_tests.materialise("emdb_map", tmp_path)
+    patched(tree / "EMD-3197.map", RMS, np.float32("nan").tobytes())
+    patched(tree / "EMD-3197.map", MX, np.int32(0).tobytes())
+    result = extracted(collection_tests, tree)
+    assert result.values["original_metadata"]["rms"] == "nan"
+    assert result.values["original_metadata"]["mx"] == 0
+    assert result.values["mapped_metadata"]["voxel_size"][0] == "inf"
+    json.dumps(result.values, allow_nan=False)  # as the extraction stores it
 
 
 def test_a_label_nobody_has_seen_before(collection_tests, tmp_path):
@@ -241,3 +262,23 @@ def test_only_the_first_record_is_read(collection_tests, tmp_path):
     before = rchar()
     extracted(collection_tests, tree)
     assert rchar() - before <= HEADER_BYTES + FEI2_RECORD + 4096
+
+
+def test_an_extended_header_of_2_gib(collection_tests, tmp_path):
+    tree = collection_tests.materialise("epu_falcon", tmp_path)
+    patched(tree / EPU, NSYMBT, np.int32(2**31 - 1).tobytes())
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # KiB
+    result = extracted(collection_tests, tree, EPU)
+    grown = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - peak
+    assert grown < 64 * 1024, f"peak memory grew by {grown} KiB"
+    original = result.values["original_metadata"]
+    assert original["nsymbt"] == 2**31 - 1
+    assert original["extended_header.Application"] == "EPU"
+
+
+def test_a_negative_extended_header_size(collection_tests, tmp_path):
+    tree = collection_tests.materialise("epu_falcon", tmp_path)
+    patched(tree / EPU, NSYMBT, np.int32(-5).tobytes())
+    original = extracted(collection_tests, tree, EPU).values["original_metadata"]
+    assert (original["nx"], original["nsymbt"]) == (4096, -5)
+    assert not any(k.startswith("extended_header.") for k in original)

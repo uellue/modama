@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: MRC files are datasets of em/mrc
-A file named `*.mrc`, `*.mrcs` or `*.map`, or of any name whose bytes 208 to 210 are `MAP` with the machine stamp's first byte `0x44` or `0x11` at byte 212, SHALL be a single-file dataset of the format `em/mrc`, type `application/x.mrc`, whether it holds an image, an image stack, a movie or a volume.
+A file named `*.mrc`, `*.mrcs` or `*.map`, or of any name whose bytes 208 to 210 are `MAP` with the machine stamp's first byte `0x44` or `0x11` at byte 212, SHALL be a single-file dataset of the format `em/mrc`, type `application/x.mrc`, whether it holds an image, an image stack, a movie or a volume. The format runs at priority 61, as a format that drops a type (TEMPLATE.md); a format that claims MRC files as members of a larger dataset (Direct Electron's acquisitions, a planned `em/de`) runs above it.
 
 #### Scenario: A map from EMDB
 - **WHEN** the fixture `emdb_map` (`EMD-3197.map`) is crawled
@@ -29,11 +29,15 @@ A file named like an MRC file whose bytes 208 to 210 are not `MAP` SHALL get the
 - **THEN** it is a dataset of type `text/plain`, not of `em/mrc`, and its basis says `no MAP at byte 208`
 
 ### Requirement: The MRC header is extracted
-The extractor SHALL read the file's 1024-byte main header and keep every field of it in `original_metadata` under its name as `mrcfile` gives it, flat (`cella.x`, `cellb.alpha`, `origin.z`, `label[1]` to `label[10]`), values as found: integers as integers; a 32-bit float as the shortest decimal that reads back to the same 32-bit float (`11.4`, not its 64-bit widening `11.399999618530273`; nothing is lost); a text field up to its first NUL byte, without trailing spaces, read as Latin-1; the map word as written (`MAP `); the machine stamp as `mrcfile` prints it. The skip list is `extra1` and `extra2` (unused space). Empty values are kept. A label that the shared credential check flags is left out and counted in `mapped_metadata` as `credentials_left_out`. `mapped_metadata` has `data_type` (from `mode`), `voxel_size` (x, y, z; 32-bit floats as above) and `kind` (`image`, `image stack`, `volume` or `volume stack`), as `mrcfile` computes them. The summary line is `nx`, `ny`, `nz`, `mode` as `name value` (0 is a value of each), then the entries of an FEI extended header's record (next requirement), then the first label bare if it is not empty.
+The extractor SHALL read the file's 1024-byte main header and keep every field of it in `original_metadata` under its name as `mrcfile` gives it, flat (`cella.x`, `cellb.alpha`, `origin.z`, `label[1]` to `label[10]`), values as found: numbers as `mrcfile` gives them, widened to Python numbers (a 32-bit 11.4 as `11.399999618530273`, TEMPLATE.md; @weber, 309); the infinities and NaN, which JSON cannot hold, as Python writes them (`nan`, `inf`); `nsymbt` as the file writes it, which `mrcfile` is not given (it would allocate the extended header's declared size, up to 2 GiB, and fails on a negative one); a text field up to its first NUL byte, without trailing spaces, read as Latin-1; the map word as written (`MAP `); the machine stamp as `mrcfile` prints it. The skip list is `extra1` and `extra2` (unused space). Empty values are kept. A label that the shared credential check flags is left out and counted in `mapped_metadata` as `credentials_left_out`. `mapped_metadata` has `data_type` (from `mode`), `voxel_size` (x, y, z; values as above) and `kind` (`image`, `image stack`, `volume` or `volume stack`), as `mrcfile` computes them. The summary line is `nx`, `ny`, `nz`, `mode` as `name value` (0 is a value of each), then the entries of an FEI extended header's record (next requirement), then the first label bare if it is not empty.
 
 #### Scenario: The header of a map from EMDB
 - **WHEN** `emdb_map/EMD-3197.map` is extracted
-- **THEN** the summary line is `nx 20, ny 20, nz 20, mode 2, ::::EMDATABANK.org::::EMD-3197::::`, `original_metadata` has `machst` `0x44 0x41 0x00 0x00`, `map` `MAP `, `cella.x` 228.0, `label[2]` empty text and no `extra1`, and `mapped_metadata` has `kind` `volume`, `data_type` `float32` and `voxel_size` [11.4, 11.4, 11.4]
+- **THEN** the summary line is `nx 20, ny 20, nz 20, mode 2, ::::EMDATABANK.org::::EMD-3197::::`, `original_metadata` has `machst` `0x44 0x41 0x00 0x00`, `map` `MAP `, `cella.x` 228.0, `label[2]` empty text and no `extra1`, and `mapped_metadata` has `kind` `volume`, `data_type` `float32` and `voxel_size` [11.399999618530273, 11.399999618530273, 11.399999618530273]
+
+#### Scenario: Values that JSON cannot hold
+- **WHEN** a copy of `emdb_map/EMD-3197.map` has a NaN as `rms` and 0 as `mx`
+- **THEN** `original_metadata` has `rms` `nan` and `mx` 0, `mapped_metadata` has `voxel_size` `inf` for x, and the values can be stored as JSON
 
 #### Scenario: A tomogram from EMDB
 - **WHEN** `emdb_tomogram/emd_66908.map` (700 x 700 x 357, 8-bit) is extracted
@@ -88,3 +92,11 @@ The extractor SHALL read the main header and, for `FEI1` and `FEI2`, the extende
 #### Scenario: Only the first record is read
 - **WHEN** an MRC file has an `FEI2` extended header of 909312 bytes, as EPU writes it, and a 1 GiB data block
 - **THEN** the extraction reads at most 1024 + 888 bytes of it plus 4096 for the reader's imports
+
+#### Scenario: An extended header of 2 GiB
+- **WHEN** a copy of the `epu_falcon` micrograph says `nsymbt` 2147483647
+- **THEN** the extraction's peak memory grows by less than 64 MiB, `original_metadata` has `nsymbt` 2147483647 and the FEI record's fields
+
+#### Scenario: A negative extended header size
+- **WHEN** a copy of the `epu_falcon` micrograph says `nsymbt` -5
+- **THEN** `original_metadata` has the main header with `nsymbt` -5 and no `extended_header.` entry

@@ -45,20 +45,20 @@
           "data_type": "uint16",
           "kind": "image",
           "voxel_size": [
-            0.8674089,
-            0.8674089,
+            0.8674088716506958,
+            0.8674088716506958,
             0.0
           ]
         },
         "original_metadata": {
-          "cella.x": 3552.9067,
-          "cella.y": 3552.9067,
+          "cella.x": 3552.90673828125,
+          "cella.y": 3552.90673828125,
           "cella.z": 0.0,
           "cellb.alpha": 90.0,
           "cellb.beta": 90.0,
           "cellb.gamma": 90.0,
           "dmax": 4963.0,
-          "dmean": 3342.631,
+          "dmean": 3342.631103515625,
           "dmin": 1239.0,
           "extended_header.Acceleration voltage offset": 0.0,
           "extended_header.Acquisition time stamp": 0,
@@ -212,20 +212,20 @@
           "data_type": "uint16",
           "kind": "image",
           "voxel_size": [
-            194.39369,
-            194.39369,
+            194.39369201660156,
+            194.39369201660156,
             0.0
           ]
         },
         "original_metadata": {
-          "cella.x": 796236.56,
-          "cella.y": 796236.56,
+          "cella.x": 796236.5625,
+          "cella.y": 796236.5625,
           "cella.z": 0.0,
           "cellb.alpha": 90.0,
           "cellb.beta": 90.0,
           "cellb.gamma": 90.0,
           "dmax": 107.0,
-          "dmean": 5.8976455,
+          "dmean": 5.897645473480225,
           "dmin": 0.0,
           "extended_header.Acceleration voltage offset": 0.0,
           "extended_header.Acquisition time stamp": 0,

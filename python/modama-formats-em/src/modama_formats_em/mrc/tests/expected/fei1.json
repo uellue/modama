@@ -32,20 +32,20 @@
           "data_type": "uint16",
           "kind": "image",
           "voxel_size": [
-            0.8537755,
-            0.8537755,
+            0.8537755012512207,
+            0.8537755012512207,
             0.0
           ]
         },
         "original_metadata": {
-          "cella.x": 3167.507,
-          "cella.y": 3276.7903,
+          "cella.x": 3167.507080078125,
+          "cella.y": 3276.790283203125,
           "cella.z": 0.0,
           "cellb.alpha": 90.0,
           "cellb.beta": 90.0,
           "cellb.gamma": 90.0,
           "dmax": 45804.0,
-          "dmean": 3521.0303,
+          "dmean": 3521.0302734375,
           "dmin": 302.0,
           "extended_header.Acceleration voltage offset": 0.0,
           "extended_header.Alpha tilt": 0.004274353952111746,

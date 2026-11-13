@@ -29,20 +29,20 @@
           "data_type": "int8",
           "kind": "volume",
           "voxel_size": [
-            17.14,
-            17.14,
-            17.14
+            17.139999389648438,
+            17.139999389648438,
+            17.139999389648438
           ]
         },
         "original_metadata": {
           "cella.x": 11998.0,
           "cella.y": 11998.0,
-          "cella.z": 6118.98,
+          "cella.z": 6118.97998046875,
           "cellb.alpha": 90.0,
           "cellb.beta": 90.0,
           "cellb.gamma": 90.0,
           "dmax": 102.0,
-          "dmean": 19.857813,
+          "dmean": 19.857812881469727,
           "dmin": -101.0,
           "exttyp": "",
           "ispg": 1,
@@ -77,7 +77,7 @@
           "origin.x": 0.0,
           "origin.y": 0.0,
           "origin.z": 0.0,
-          "rms": 8.493746
+          "rms": 8.493745803833008
         }
       }
     }

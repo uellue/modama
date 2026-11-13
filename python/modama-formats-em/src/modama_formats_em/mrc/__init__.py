@@ -8,6 +8,7 @@ record with mrcfile's description of it; nothing else (change em-mrc).
 
 import io
 import logging
+import math
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
@@ -19,8 +20,9 @@ from modama_crawler.formats.values import credential, textual
 log = logging.getLogger(__name__)
 HERE = Path(__file__).parent
 TYPE = "application/x.mrc"
-# The main header
+# The main header, and its word nsymbt, the extended header's size in bytes
 HEADER_BYTES = 1024
+NSYMBT = slice(92, 96)
 # The map word: mrcfile checks its first three bytes, "MAP"
 MAP_WORD = (208, b"MAP")
 # Extended headers whose first record is read: those mrcfile can interpret
@@ -44,15 +46,16 @@ def plain(v):
     """A header value as found, as a plain JSON value.
 
     Text ends at its first NUL (fixed-size C strings: EPU leaves bytes after it)
-    and loses trailing spaces, read as Latin-1; a 32-bit float becomes the shortest
-    decimal that reads back to the same 32-bit float (11.4, not 11.399999618530273).
+    and loses trailing spaces, read as Latin-1; numbers as the reader widens them
+    to Python numbers (a 32-bit 11.4 as 11.399999618530273, TEMPLATE.md); the
+    infinities and NaN, which JSON cannot hold, as Python writes them ("nan").
     """
     if isinstance(v, bytes):
         return v.split(b"\0", 1)[0].rstrip(b" ").decode("latin-1")
-    if isinstance(v, np.float32):
-        return float(str(v))
     if isinstance(v, np.generic):
-        return v.item()
+        v = v.item()
+    if isinstance(v, float) and not math.isfinite(v):
+        return str(v)
     return v
 
 
@@ -85,14 +88,14 @@ def entries(header) -> dict:
     return out
 
 
-def fei_record(header, f, anchor: str) -> dict:
-    """The first record of an FEI extended header, read from `f` (at its start),
-    as `extended_header.<name>`, but the skip list; {} if it is not of its type."""
+def fei_record(header, nsymbt: int, f, anchor: str) -> dict:
+    """The first record of an FEI extended header of `nsymbt` bytes, read from `f`
+    (at its start), as `extended_header.<name>`, but the skip list; {} if it is
+    not of its type."""
     from mrcfile.dtypes import get_ext_header_dtype
 
     exttyp = bytes(header.exttyp)
     dtype = get_ext_header_dtype(exttyp, header.mode.dtype.byteorder)
-    nsymbt = int(header.nsymbt)
     blob = f.read(min(dtype.itemsize, nsymbt)) if nsymbt > 0 else b""
     record = np.frombuffer(blob, dtype)[0] if len(blob) == dtype.itemsize else None
     # mrcfile's test (MrcObject.indexed_extended_header): a whole record that
@@ -138,7 +141,9 @@ def summary(original: dict) -> list[str]:
 class Mrc(Format):
     type = TYPE
     display_name = "MRC"
-    priority = 60
+    # A format that drops a type runs at 61 or more (TEMPLATE.md); one that
+    # claims MRC files as members of a larger dataset (em/de) runs above it
+    priority = 61
     reacts_to = frozenset({TYPE})
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
@@ -158,19 +163,23 @@ class Mrc(Format):
 
         with open(root + dataset.anchor, "rb", buffering=0) as f:
             head = f.read(HEADER_BYTES)
+            # mrcfile allocates the extended header's declared size even with
+            # header_only (a bytearray of nsymbt, up to 2 GiB; a negative one
+            # fails): it gets the header with nsymbt 0, the real one is ours
+            blank = head[: NSYMBT.start] + bytes(4) + head[NSYMBT.stop :]
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
-                # Permissive: a header mrcfile finds odd is read with a warning.
-                # The extended header is not in `head`, so its warning is ours.
-                m = MrcInterpreter(io.BytesIO(head), permissive=True, header_only=True)
+                # Permissive: a header mrcfile finds odd is read with a warning
+                m = MrcInterpreter(io.BytesIO(blank), permissive=True, header_only=True)
+                # Cell over sampling; a sampling of 0 gives inf or nan, with a warning
+                voxel_size = [plain(m.voxel_size[axis][()]) for axis in "xyz"]
             for w in caught:
-                if issubclass(w.category, RuntimeWarning) and not str(
-                    w.message
-                ).startswith("Expected"):
+                if issubclass(w.category, RuntimeWarning):
                     log.warning("%s: mrcfile: %s", dataset.anchor, w.message)
-            found = entries(m.header)
+            nsymbt = int(np.frombuffer(head[NSYMBT], m.header.nsymbt.dtype)[0])
+            found = entries(m.header) | {"nsymbt": nsymbt}
             if bytes(m.header.exttyp) in FEI:
-                found |= fei_record(m.header, f, dataset.anchor)
+                found |= fei_record(m.header, nsymbt, f, dataset.anchor)
         original, secrets = {}, 0
         for name, value in found.items():
             if not textual(value):
@@ -181,7 +190,7 @@ class Mrc(Format):
             original[name] = value
         mapped = {
             "data_type": str(dtype_from_mode(m.header.mode)),
-            "voxel_size": [plain(m.voxel_size[axis][()]) for axis in "xyz"],
+            "voxel_size": voxel_size,
             "kind": kind(m.header),
         }
         if secrets:
