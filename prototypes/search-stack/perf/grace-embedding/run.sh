@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Embedding benchmark, best CPU against best GPU (README.md):
-#   ./run.sh quick|full [all|cpu|gpu]
+#   ./run.sh quick|full [all|cpu|gpu] [--force]
+# --force: the GPU part even while other processes use the GPU.
 # Environment (optional): VENV_CPU, VENV_GPU (default ./venv-cpu, ./venv-gpu), RESULTS (default
-# ./results), FASTEMBED_CACHE_DIR (default ./cache: the model's files and our variants of it).
+# ./results), FASTEMBED_CACHE_DIR (default ./cache: the model's files and our variants of it),
+# GPU_MEM_FRACTION (default 0.5: of the GPU's memory, for all GPU workers together).
 set -euo pipefail
+force=()
+if [ "${*: -1}" = --force ]; then
+	force=(--force)
+	set -- "${@:1:$#-1}"
+fi
 mode="${1:-}"
 parts="${2:-all}"
 case "$mode" in
@@ -16,12 +23,13 @@ all | cpu | gpu) ;;
 *) mode="" ;;
 esac
 if [ -z "$mode" ]; then
-	echo "usage: $0 quick|full [all|cpu|gpu]" >&2
+	echo "usage: $0 quick|full [all|cpu|gpu] [--force]" >&2
 	exit 2
 fi
 here="$(cd "$(dirname "$0")" && pwd)"
 venv_cpu="${VENV_CPU:-$here/venv-cpu}"
 venv_gpu="${VENV_GPU:-$here/venv-gpu}"
+# (bench.py puts Hugging Face's and CUDA's caches into it too)
 export FASTEMBED_CACHE_DIR="${FASTEMBED_CACHE_DIR:-$here/cache}"
 if [ ! -x "$venv_cpu/bin/python" ]; then
 	echo "No CPU venv at $venv_cpu: see README.md, Setup." >&2
@@ -29,8 +37,13 @@ if [ ! -x "$venv_cpu/bin/python" ]; then
 fi
 out="${RESULTS:-$here/results}/$(hostname -s)-$(date +%Y%m%d-%H%M%S)-$mode-$parts"
 mkdir -p "$out"
-exec > >(tee -a "$out/run.log") 2>&1
+# tee -i: on Ctrl-C the log keeps the report that follows
+exec > >(tee -ia "$out/run.log") 2>&1
 echo "Results in $out"
+# the report of what ran, on every way out: done, failed, Ctrl-C, SIGTERM (timeout)
+report() { "$venv_cpu/bin/python" "$here/bench.py" report "$out" || true; }
+trap report EXIT
+trap 'exit 143' TERM
 
 for set in short:0 mixed:0.12 long:1; do
 	"$venv_cpu/bin/python" "$here/gen_texts.py" "$out/texts-${set%%:*}.jsonl" --n "$texts" --long-share "${set#*:}"
@@ -43,11 +56,10 @@ fi
 gpu_status=0
 if [ "$parts" != cpu ]; then
 	if [ -x "$venv_gpu/bin/python" ]; then
-		"$venv_gpu/bin/python" "$here/bench.py" gpu "$mode" "$out" gpu || gpu_status=$?
+		"$venv_gpu/bin/python" "$here/bench.py" gpu "$mode" "$out" gpu "${force[@]}" || gpu_status=$?
 	else
 		echo "GPU part not run: no GPU venv at $venv_gpu (README.md, Setup)." >&2
 		gpu_status=3
 	fi
 fi
-"$venv_cpu/bin/python" "$here/bench.py" report "$out"
 exit "$gpu_status"

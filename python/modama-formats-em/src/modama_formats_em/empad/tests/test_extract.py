@@ -2,7 +2,24 @@
 
 from modama_crawler.walk import walk
 
-from modama_formats_em.testing import described
+from modama_formats_em.testing import claimed_first, described
+
+
+def test_a_companion_claimed_by_another_format_is_named_as_such(
+    collection_tests, tmp_path
+):
+    # Spec recognition, decision 344: not "missing", but flagged for review;
+    # the header stays a single file
+    result = claimed_first(collection_tests, "pair", tmp_path, "series_x4.raw")
+    by_anchor = {d.anchor: (d.type, d.format) for d in result.datasets}
+    assert by_anchor["/series_x4.raw"] == ("application/x.probe", "probe/claim")
+    assert by_anchor["/SCA2_rings.xml"] == ("application/x.empad+xml", "")
+    assert result.all_warnings() == [
+        (
+            "/SCA2_rings.xml",
+            "em/empad: series_x4.raw is claimed by probe/claim; two formats want it",
+        )
+    ]
 
 
 def test_a_representative_empad_acquisition(collection_tests, tmp_path):

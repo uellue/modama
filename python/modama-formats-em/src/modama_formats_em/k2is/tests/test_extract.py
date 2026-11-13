@@ -15,7 +15,24 @@ from modama_crawler.testing import recognise
 from modama_crawler.walk import walk
 
 from modama_formats_em import k2is
-from modama_formats_em.testing import described, stale
+from modama_formats_em.testing import claimed_first, described, stale
+
+
+def test_a_companion_claimed_by_another_format_is_named_as_such(
+    collection_tests, tmp_path
+):
+    # Spec recognition, decision 344: not "7 sector files", but flagged for
+    # review; no capture, and the other 7 stay single files
+    result = claimed_first(collection_tests, "capture52", tmp_path, "Capture52_1.bin")
+    formats = {d.anchor: d.format for d in result.datasets}
+    assert formats["/Capture52_1.bin"] == "probe/claim"
+    assert formats["/Capture52_.gtg"] == ""
+    assert result.all_warnings() == [
+        (
+            "/Capture52_.gtg",
+            "em/k2is: Capture52_1.bin is claimed by probe/claim; two formats want it",
+        )
+    ]
 
 
 def test_a_capture_with_its_8_sectors(collection_tests, tmp_path):
