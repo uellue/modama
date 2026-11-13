@@ -115,15 +115,15 @@ def settings() -> Settings:
 class Model:
     """fastembed's TextEmbedding with a session of ours: the same tokenizer, truncation at
     512 tokens, [CLS] pooling and normalisation as the warehouse's local path; ONNX Runtime's
-    CUDA provider with TF32 off and the arena's limit."""
+    CUDA provider with TF32 off and the arena's limit (tf32: on, for measure.py only)."""
 
-    def __init__(self, s: Settings):
+    def __init__(self, s: Settings, tf32: bool = False):
         import onnxruntime as ort
         from fastembed import TextEmbedding
         from fastembed.common.preprocessor_utils import load_tokenizer
 
         if s.device == "cuda":
-            options = {"use_tf32": "0"}
+            options = {"use_tf32": "1" if tf32 else "0"}
             if s.mem_limit:
                 options["gpu_mem_limit"] = str(s.mem_limit)
             providers = [("CUDAExecutionProvider", options)]

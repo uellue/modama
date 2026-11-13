@@ -5,7 +5,8 @@ staging host through an SSH tunnel. Status: being set up, 2026-11-13. Decided by
 the warehouse calls an embeddings service (item 346, option A); a systemd service for the
 prototype; the tunnel as a systemd unit with a dedicated `nologin` account and a
 restricted key. The design is the OpenSpec change `embedding-service-grace` (in
-`python/crawler/openspec/changes/`, being written); this page is the setup.
+`python/crawler/openspec/changes/`); this page is the setup, and its "Runbook" the steps on
+grace and staging, in order.
 
 ## Why
 
@@ -111,6 +112,13 @@ change `embedding-service-grace`, design D7):
   `PermitTTY no`, `X11Forwarding no`) changed no outcome on 10.0, but they hold on the
   server side whatever the key line says (review of the change, S5).
 
+The general part, for this and any further tunnel, is `deploy/ssh-tunnel/README.md`: the
+template unit `ssh-tunnel@.service` (its own account `ssh-tunnel` instead of root, the host
+key pinned against the fingerprint read on the far end, no `ssh_config`), the far end's
+account, the key line and the `Match` block, and a test of every refused case
+(`deploy/ssh-tunnel/test/run.sh`). The unit below stays as it is until @weber moves it to
+`ssh-tunnel@embed` (change `embedding-service-grace`, Q15).
+
 ### On the staging host: the key and the unit
 
 A key of its own, without a passphrase, readable only by root:
@@ -175,20 +183,220 @@ It lists the models the server offers (Ollama answers OpenAI's `/v1/models`). No
 containers and the host; `curl -sI http://172.17.0.1:17656/` on the host itself tells the
 two apart.
 
-## Still to come
+## In the repository
 
-- **The service** on grace: a systemd service under its own user, from the benchmark's
-  locked venv (`perf/grace-embedding/requirements-gpu.txt`, Python 3.12), so `nvidia-smi`
-  and `nvtop` show it under that name; the token from a file outside the repository.
-  Docker with NVIDIA's Container Toolkit is an option for a permanent service later.
-- **The warehouse patch** (the 1,000-character cut) and the compose settings
-  (`EMBED_API_URL`, `extra_hosts`, and the token in a file of its own, `embed.env`, which
-  only `airflow-worker-transform` reads: in `keys.env` the search API would take it too and
-  send it to EGI with every reranked search; change `embedding-service-grace`, design D11).
-- **Measurements on staging**, before and after, with no harvest or indexing running:
-  throughput, and which step becomes the bottleneck once embedding is offloaded.
-- **A reusable template** of the tunnel unit and its README in `deploy/`, from this page.
-- **A real network connection** instead of the tunnel.
+- **The service:** `embedding-service/` (its README: what it answers, install, the unit
+  `modama-embed.service`, `measure.py`, `check.py`, the tests). Docker with NVIDIA's
+  Container Toolkit is an option for a permanent service later.
+- **The warehouse patch** `patches/warehouse/0005-embedding-service.patch`: texts whole (the
+  service cuts at 512 tokens as the local path does), 30 s per wait, no retry of a refused
+  request, the local model loaded only when needed.
+- **The compose settings:** the token in `embed.env` of the secrets folder, read by
+  `airflow-worker-transform` only (in `keys.env` the search API would take it too and send it
+  to EGI with every reranked search; design D11); `search-api` gets `EMBED_API_KEY: ""`;
+  the worker takes `EMBED_API_URL` from the deployment's env file and reaches the host as
+  `host.docker.internal`. `./runtest.sh` checks where the token goes.
+- **`field-test/batch-times.sh`** says per batch `service`, `fallback` or `local`.
+- **The tunnel template** `deploy/ssh-tunnel/`.
+- Later: **a real network connection** instead of the tunnel.
+
+## Runbook
+
+The steps on grace and on the staging host, in order (change `embedding-service-grace`,
+tasks 1 to 7; agents have no shell there). "root" marks a step that needs root. Each says
+what to expect and how to undo it. Grace's GPU must be free of the benchmark first.
+`<grace>` is grace's host name; on the staging host, `dc` is the staging runbook's
+shorthand, run in `prototypes/search-stack/` of the checkout.
+
+**1. On grace, root: the tunnel's far end as this page has it** (task 1.2). If set up
+before this change, check that `authorized_keys` and `sshd_config` have the lines above.
+
+```bash
+sudo sshd -T -C user=embedtunnel | grep -E '^(allowtcpforwarding|allowstreamlocalforwarding|permittty|x11forwarding|permitopen) '
+```
+
+Expect `allowtcpforwarding local`, `allowstreamlocalforwarding no`, `permittty no`,
+`x11forwarding no`, `permitopen 127.0.0.1:7656 127.0.0.1:11434`. grace runs OpenSSH 9.6,
+the tests ran 10.0. Undo: remove the `Match` block, `sudo sshd -t && sudo systemctl reload ssh`.
+
+**2. On the staging host, root: the refused cases, by hand** (task 1.2), with the tunnel's key:
+
+```bash
+k="-i /var/local/sshvpn/staging-embed-tunnel -o BatchMode=yes"
+sudo ssh $k embedtunnel@<grace> id -un                  # This account is currently not available.
+sudo ssh $k -tt embedtunnel@<grace> < /dev/null         # PTY allocation request failed
+sudo timeout 15 ssh $k -o ExitOnForwardFailure=yes -N -R 127.0.0.1:47656:127.0.0.1:22 embedtunnel@<grace>   # remote port forwarding failed
+sudo timeout 15 ssh $k -o ExitOnForwardFailure=yes -N -R /tmp/x.socket:127.0.0.1:22 embedtunnel@<grace>    # remote port forwarding failed
+sudo timeout 10 ssh $k -N -L 127.0.0.1:47657:127.0.0.1:22 embedtunnel@<grace> & sleep 3; curl -s -m 3 127.0.0.1:47657; echo "curl exit $?"   # not 0: refused
+sudo timeout 10 ssh $k -N -L 127.0.0.1:47658:/run/systemd/notify embedtunnel@<grace> & sleep 3; curl -s -m 3 127.0.0.1:47658; echo "curl exit $?"   # not 0: refused
+```
+
+Nothing to undo.
+
+**3. On grace and the staging host: the stand-in test** of "Test the tunnel before the
+service exists" above (task 1.3). Expect `HTTP/1.0 200 OK`. Stop the stand-in with Ctrl-C.
+
+**4. On grace, root: the service's account, venv and model files** (tasks 1.4, 2.1):
+`embedding-service/README.md`, "Install on grace", the blocks "The venv" and "The account,
+the service's file and the model files". Expect `getent passwd modama-embed` to end in
+`/usr/sbin/nologin`, the provider check to list `CUDAExecutionProvider`, `fetch` to print
+the snapshot's folder. A pip error "THESE PACKAGES DO NOT MATCH THE HASHES": stop and report.
+Undo: `sudo rm -r /opt/modama-embed && sudo userdel -r modama-embed`.
+
+**5. On grace, as yourself, with the GPU free: the measurements** (tasks 1.1, 2.2):
+`embedding-service/README.md`, "The memory limit" (`measure.py`, about 5 minutes). Send the
+whole output back: per file and set, TF32 off and on against grace's CPU (minimum cosine,
+largest component difference), and the GPU memory of one worker. Also the full benchmark
+run's files into `.claude/field-tests/grace-results/`. Nothing to undo.
+
+**6. On grace, root: the token, the unit, the limit; start** (task 2.4): the README's block
+"The token, the unit and the limit", with `limit` twice the memory of step 5 in bytes.
+Expect, after about 20 s:
+
+```bash
+systemctl status --no-pager modama-embed             # active (running)
+curl -s 127.0.0.1:7656/health; echo                  # ... "provider":"CUDAExecutionProvider"
+ss -ltn | grep 7656                                  # 127.0.0.1:7656 only
+nvidia-smi                                           # two processes /opt/modama-embed/venv/bin/python, user modama-embed
+journalctl -u modama-embed -n 5 --no-pager           # "worker ... ready", the limit, the other processes on the GPU
+```
+
+Undo: `sudo systemctl disable --now modama-embed` (the rest of step 4's undo removes the files).
+
+**7. On grace, root: the scenarios that need grace** (task 2.4; spec `embedding-service`):
+
+```bash
+# The process is killed: back within a minute (30 s pause, then the model loads)
+sudo kill -9 "$(systemctl show -p MainPID --value modama-embed)"; sleep 45; curl -s 127.0.0.1:7656/health; echo
+# A limit too small for a batch: 503, then 200 for a small one; then the limit back
+sudo mkdir -p /etc/systemd/system/modama-embed.service.d
+printf '[Service]\nEnvironment=MODAMA_EMBED_MEM_LIMIT=50000000\n' | sudo tee /etc/systemd/system/modama-embed.service.d/tiny.conf
+sudo systemctl daemon-reload && sudo systemctl restart modama-embed && sleep 20
+python3 -c 'import json; print(json.dumps({"model": "bge-small-en-v1.5", "input": ["beam dose tilt " * 300] * 256}))' > /tmp/long.json
+python3 -c 'import json; print(json.dumps({"model": "bge-small-en-v1.5", "input": ["ferritin"]}))' > /tmp/short.json
+t=$(sudo cat /etc/modama-embed/token)
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $t" -H 'Content-Type: application/json' -d @/tmp/long.json 127.0.0.1:7656/v1/embeddings    # 503
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $t" -H 'Content-Type: application/json' -d @/tmp/short.json 127.0.0.1:7656/v1/embeddings   # 200
+unset t; rm /tmp/long.json /tmp/short.json
+sudo rm /etc/systemd/system/modama-embed.service.d/tiny.conf && sudo systemctl daemon-reload && sudo systemctl restart modama-embed
+```
+
+If the tiny limit gives 500 instead of 503, send `journalctl -u modama-embed -n 30`: the
+error's text tells the service which errors are out of memory (tested on the CPU only).
+From another host (the staging host): `curl -m 5 http://<grace>:7656/health` must fail.
+
+**8. On the staging host: the service through the tunnel** (task 2.4):
+
+```bash
+docker run --rm --add-host=host.docker.internal:host-gateway curlimages/curl -s http://host.docker.internal:17656/health
+```
+
+Expect the same answer as on grace. Nothing to undo.
+
+**9. On the staging host: the secrets folder and the token** (task 5.4). First where
+`MODAMA_SECRETS_DIR` points:
+
+```bash
+grep '^MODAMA_SECRETS_DIR=' staging.env
+```
+
+Only if it says `./testconf/secrets`: a folder outside the checkout (the token must never
+land in `testconf/secrets/`, where `git status` would show it), and point there:
+
+```bash
+mkdir -p ~/.config/modama && cp -r testconf/secrets ~/.config/modama/staging-secrets && chmod 700 ~/.config/modama/staging-secrets
+# then, in staging.env with an editor: MODAMA_SECRETS_DIR=<your home>/.config/modama/staging-secrets
+```
+
+Then in that folder's `embed.env`, with an editor, `EMBED_API_KEY=<the token>` (from `sudo
+cat /etc/modama-embed/token` on grace, not in a recorded terminal), and check without
+printing it:
+
+```bash
+grep -c '^EMBED_API_KEY=.' "$(sed -n 's/^MODAMA_SECRETS_DIR=//p' staging.env)/embed.env"   # 1
+git status --short testconf/secrets/                                                      # nothing
+```
+
+Undo: `EMBED_API_KEY=` (empty) in that file.
+
+**10. On the staging host: the measurement before the switch** (task 7.1; design D9, steps
+1 to 3). Quiet first: `dc exec crawler modama-chain status` shows no crawl, harvest or
+indexing running, and the next crawl (19:00 UTC) hours away. Then:
+
+```bash
+mkdir -p ~/embed-check
+dc exec -T airflow-worker-transform bash < field-test/batch-times.sh > ~/embed-check/before-batch-times.txt
+bash field-test/index-tasks.sh > ~/embed-check/before-index-tasks.csv
+```
+
+If the last indexing run's task logs are gone or are not of the current image: a re-index of
+the last full harvest run, 30 minutes, with the probes, then stopped in Airflow's UI (the run,
+"Mark as failed"):
+
+```bash
+dc exec airflow-api-server airflow dags trigger warehouse_transform_index -c '{"harvest_run_id": "<the harvest run>", "reuse_embeddings": false}'
+dc exec -T airflow-worker-transform python3 - < field-test/indexing-probe.py > ~/embed-check/before-probe.log 2>&1 &
+./monitor.sh ~/embed-check/before-monitor.log &
+```
+
+The per-step times on one batch of 2,000 (the header of `perf/phase-timer.py` has the
+commands; with `-e EMBED_API_URL=` so that it embeds locally):
+
+```bash
+dc exec -T airflow-worker-transform sh -c 'cat > /tmp/phase-timer.py' < perf/phase-timer.py
+dc exec -T -e EMBED_API_URL= -w /opt/airflow/project airflow-worker-transform /opt/airflow/transform-venv/bin/python /tmp/phase-timer.py 2000 > ~/embed-check/before-phases.txt
+```
+
+The snapshot of 1,000 stored vectors, before the re-index overwrites them:
+
+```bash
+dc exec -T crawler python - snapshot < embedding-service/check.py > ~/embed-check/before.jsonl   # "1000 records"
+```
+
+**11. On the staging host: the switch** (task 5.4; design D9, step 4):
+
+```bash
+echo 'EMBED_API_URL=http://host.docker.internal:17656/v1' >> staging.env
+dc up -d airflow-worker-transform                       # ends the batches it runs; Airflow retries them
+dc exec airflow-worker-transform curl -s http://host.docker.internal:17656/health; echo
+dc exec search-api printenv EMBED_API_KEY               # an empty line
+dc exec airflow-worker-transform sh -c 'test -n "$EMBED_API_KEY" && echo set'   # set
+chk() { dc run --rm --no-deps -T -v "$PWD:/stack:ro" --entrypoint /opt/airflow/transform-venv/bin/python airflow-worker-transform /stack/embedding-service/check.py "$@"; }
+chk sets > ~/embed-check/sets.txt; echo "exit $?"     # exit 0: every set within design D4
+chk rate > ~/embed-check/rate.txt                       # texts/s and MB/s through the tunnel
+```
+
+If `chk sets` exits 1, switch back (below) and wait for @weber (design D4, Q2).
+
+**12. On the staging host and grace: the measurement after** (task 7.1; design D9, steps 5
+and 6): the same re-index as in step 10, let it finish, with the same probes into
+`after-*` files, and on grace `nvidia-smi dmon -s um > ~/embed-dmon.log` meanwhile. During
+it, the outage on purpose: `sudo systemctl stop embed-tunnel` for 10 minutes, then `sudo
+systemctl start embed-tunnel`; batches fall back and none fails. Then:
+
+```bash
+dc exec -T airflow-worker-transform bash < field-test/batch-times.sh > ~/embed-check/after-batch-times.txt   # the last line counts service, fallback, local
+bash field-test/index-tasks.sh > ~/embed-check/after-index-tasks.csv
+dc exec -T -w /opt/airflow/project airflow-worker-transform /opt/airflow/transform-venv/bin/python /tmp/phase-timer.py 2000 > ~/embed-check/after-phases.txt
+```
+
+**13. On the staging host: the stored vectors** (design D9, step 7):
+
+```bash
+dc exec -T crawler python - snapshot < embedding-service/check.py > ~/embed-check/after.jsonl
+dc run --rm --no-deps -T -v "$PWD:/stack:ro" -v ~/embed-check:/check:ro --entrypoint /opt/airflow/transform-venv/bin/python \
+    airflow-worker-transform /stack/embedding-service/check.py compare /check/before.jsonl /check/after.jsonl
+```
+
+Expect exit 0 and the number of records compared. Send `~/embed-check/` back (it holds no
+token; `before.jsonl` and `after.jsonl` hold record identifiers and vectors).
+
+**The way back, at any time** (staging host): `EMBED_API_URL=` (empty) in `staging.env`,
+then `dc up -d airflow-worker-transform`; the next batches embed locally and
+`batch-times.sh` shows them as `local`. Vectors already indexed from the service stay; they
+agree within design D4. The tunnel and the service may stay or go: `sudo systemctl disable
+--now embed-tunnel` on the staging host (it also carries the chat model's forward), `sudo
+systemctl disable --now modama-embed` on grace.
 
 ## Before anything beyond the demo
 
