@@ -3,7 +3,7 @@
 The errors are injected for one path: listings through `walk._names`, an
 entry's stat through `walk._stat`, a folder's own stat through `os.lstat`,
 `access(2)` and the `open(2)` that asks again through `os.access` and
-`os.open`, reads through the `open` of `mime` and of `formats` (review 1:
+`os.open`, reads through the `open` of `mime` and `files.regular` (review 1:
 not `detect_with_tie`, whose fallback hid the error). The formats are the
 stand-ins (standin.py), Zarr, and the test formats below.
 """
@@ -18,7 +18,7 @@ import pytest
 import standin
 import test_trigger
 from conftest import CRAWLER, shell
-from modama_crawler import cli, formats, identity, mime, selection
+from modama_crawler import cli, files, formats, identity, mime, selection
 from modama_crawler import walk as walk_module
 from modama_crawler.cli import overdue
 from modama_crawler.formats import DIRECTORY, Collection, Dataset, Format
@@ -233,9 +233,21 @@ def fail_stat(monkeypatch, data, rel: str, code: int):
 
 
 def fail_read(monkeypatch, module, data, rel: str, code: int):
-    """Opening the file fails in that module (its global `open`); the file is touched, so that it is read."""
+    """Opening the file fails in that module (its global `open`; for `formats`, whose
+    reader opens through `files.regular`, that); the file is touched, so that it is read."""
     target = os.path.join(data, rel)
     touch(target)
+
+    if module is formats:
+        real = files.regular
+
+        def regular(path):
+            if os.fspath(path) == target:
+                raise error(code, path)
+            return real(path)
+
+        monkeypatch.setattr(files, "regular", regular)
+        return
 
     def open_(path, *args, **kwargs):
         if os.fspath(path) == target:

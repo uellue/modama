@@ -241,6 +241,7 @@ def crawl_tree(
             processes=_workers() or extraction.default_workers(),
             start=scope,
             kept=kept,
+            stopping=_sigterm.is_set,  # inspections stop too (hdf5-links, M1)
         )
     except _Stopped:
         raise Terminated("terminated (SIGTERM)") from None
