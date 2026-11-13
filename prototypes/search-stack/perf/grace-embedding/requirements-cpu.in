@@ -1,0 +1,13 @@
+# The CPU path: production's versions (metadata-warehouse v1.10.0, uv.lock). aarch64 wheels on PyPI for
+# Python 3.11 to 3.14 (checked 2026-11-13). The lock file requirements-cpu.txt (with hashes, for
+# aarch64) is made from this one:
+#   uv pip compile --no-build --generate-hashes --python-platform aarch64-manylinux_2_34 \
+#     --python-version 3.11 requirements-cpu.in -o requirements-cpu.txt
+# (the same packages for Python 3.11, 3.13 and 3.14; the hashes cover every file of a version)
+fastembed==0.8.0
+onnxruntime==1.24.4
+tokenizers==0.22.2
+numpy==2.4.4
+huggingface-hub==1.8.0
+# not production's: prepare_model.py writes the float32 and int8 model files with it
+onnx==1.23.2
