@@ -1,6 +1,7 @@
 """The runner: how formats are called on one directory (the `recognition` spec)."""
 
 import time
+from dataclasses import replace
 
 import pytest
 from modama_crawler.formats import (
@@ -105,7 +106,72 @@ def test_higher_priority_wins_shared_file():
     d = directory([entry("a.txt"), entry("a.txt.bak", "application/x-trash")])
     datasets, _ = run_post(d, collect(Greedy(), TextPairs()), 5.0, 1 << 20)
     assert [x.format for x in datasets] == ["t/textpairs"]
-    assert any("already claimed by t/textpairs" in text for _, text in d.warnings)
+    assert d.warnings == []
+
+
+def test_a_claimed_entry_is_not_offered_to_later_formats():
+    class PairsAndChildren(TextPairs):
+        collection = True
+
+        def recognize(self, d):
+            for ds in super().recognize(d):
+                yield replace(ds, parts=tuple(c.anchor for c in d.children))
+
+    seen = []
+
+    class Later(Format):
+        type = "x/later"
+        priority = 10
+        reacts_to = frozenset({"text/plain"})
+
+        def recognize(self, d):
+            seen.append(
+                (
+                    [e.name for e in d.entries],
+                    [e.name for e in d.of_type("text/plain")],
+                    [d.entry(n) is not None for n in ("a.txt", "a.txt.bak", "b.txt")],
+                    d.children,
+                )
+            )
+            return ()
+
+    child = Dataset(anchor="/sub", type="x/series")
+    d = directory(
+        [entry("a.txt"), entry("a.txt.bak", "application/x-trash"), entry("b.txt")],
+        children=[child],
+    )
+    datasets, adoptions = run_post(
+        d, collect(PairsAndChildren(), Later()), 5.0, 1 << 20
+    )
+    assert seen == [(["b.txt"], ["b.txt"], [False, False, True], [])]
+    assert d.warnings == []
+    assert [(x.anchor, x.format) for x in datasets] == [
+        ("/a.txt", "t/pairsandchildren"),
+        ("/b.txt", ""),
+    ]
+    assert adoptions == {"/sub": "/a.txt"}
+
+
+def test_a_later_claim_on_a_claimed_entry():
+    class Namer(Format):
+        """Names /a.txt without looking at the entries."""
+
+        type = "x/namer"
+        priority = 10
+        reacts_to = frozenset({DIRECTORY})
+
+        def recognize(self, d):
+            yield Dataset(anchor="/b.txt", members=("/a.txt",))
+
+    d = directory(
+        [entry("a.txt"), entry("a.txt.bak", "application/x-trash"), entry("b.txt")]
+    )
+    datasets, _ = run_post(d, collect(TextPairs(), Namer()), 5.0, 1 << 20)
+    assert [(x.anchor, x.format) for x in datasets] == [
+        ("/a.txt", "t/textpairs"),
+        ("/b.txt", ""),
+    ]
+    assert d.warnings == [("/b.txt", "t/namer: /a.txt already claimed by t/textpairs")]
 
 
 def test_sibling_format_runs_only_with_its_type_present():

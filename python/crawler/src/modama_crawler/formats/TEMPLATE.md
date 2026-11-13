@@ -158,7 +158,8 @@ class Pair(Format):
 ```
 
 Rules: claim only entries of `d` and whole child datasets (`parts=`); never
-open files yourself; keep `recognize` fast, it has a time limit per directory.
+open files yourself; keep `recognize` fast: a call over 5 s per directory is
+logged as slow (nothing stops a call that hangs yet).
 
 ### A file that is not of its name's type
 
@@ -199,8 +200,10 @@ class Workspace(Format):
 - A file of your type that is odd but kept (a variant nobody has seen yet)
   can be flagged for a person with `d.note(e, "file of interest: …")`: the
   note goes into its dataset's basis, its type stays.
-- Drop only types of files you react to: a drop of a file a format that ran
-  earlier claimed is undone, with a warning.
+- A file or child dataset that a format which ran earlier claimed is not
+  offered to yours: it is not in `d.entries`, `d.of_type` or `d.entry`, nor
+  in `d.children`. A file you name without them, and another format claimed,
+  rejects your dataset with an "already claimed" warning.
 - Order: a format that runs before yours does not see the new type. Give
   yours a higher priority than the formats that are to claim the new types.
   The crawl warns when a format that ran earlier reacts to a dropped file's
