@@ -51,6 +51,11 @@ MAX_STRING = 4096  # characters per string
 MAX_ITEMS = 1000  # entries per list or dict
 SAMPLE = 20  # datasets per format that the spot check extracts again (D10)
 MAX_NAMED = 5  # differences named per format, then "and N more" (R36)
+# A successful extraction over SLOW seconds is warned at its dataset with the
+# marker, by which `modama-chain review` lists them (change slow-extractions, @weber 352)
+SLOW = 10.0
+SLOW_EXTRACTION = "slow extraction"
+SLOWEST = 10  # the crawl's slowest extractions in its report and run (352)
 
 
 def default_workers() -> int:
@@ -152,6 +157,8 @@ class Report:
     spot: SpotCheck | None = None  # None: no spot check (no seed given)
     # stored identity -> what differs from the crawl's, set by the caller (identity.differences)
     causes: dict[str, list[str]] = field(default_factory=dict)
+    # (anchor, format id, seconds) of the SLOWEST extractions run, slowest first (352)
+    slowest: list[tuple[str, str, float]] = field(default_factory=list)
 
     def __str__(self) -> str:
         times = ", ".join(f"{f} {s:.1f} s" for f, s in sorted(self.seconds.items()))
@@ -162,8 +169,10 @@ class Report:
         return f"{line}; identity {short(self.identity)}" if self.identity else line
 
     def lines(self) -> list[str]:
-        """The report: its first line, one per format and stored identity extracted again, one per format with failures tried again, the spot check."""
+        """The report: its first line, the slowest extractions, one per format and stored identity extracted again, one per format with failures tried again, the spot check."""
         out = [str(self)]
+        if self.slowest:
+            out.append(f"slowest extractions: {slowest_text(self.slowest_json())}")
         for (fid, before), (n, changed) in sorted(self.reextracted.items()):
             causes = ", ".join(self.causes.get(before, [f"from {short(before)}"]))
             out.append(
@@ -192,12 +201,41 @@ class Report:
             for (fid, before), (n, changed) in sorted(self.reextracted.items())
         ]
 
+    def slowest_json(self) -> list[dict]:
+        """The slowest extractions as the run keeps them (352)."""
+        return [
+            {"dataset": anchor, "format": fid, "seconds": seconds}
+            for anchor, fid, seconds in self.slowest
+        ]
+
     def retried_json(self) -> dict:
         """The failures tried again per format, as the run keeps them (D9, R45)."""
         return {
             fid: {"tried": n, "succeed": succeed}
             for fid, (n, succeed) in sorted(self.retried.items())
         }
+
+
+def slowest_text(slowest: list[dict]) -> str:
+    """`/a/b.dm4 em/dm4 23.4 s, …`: the slowest extractions as the report and `runs` name them (352)."""
+    return ", ".join(
+        f"{x['dataset']} {x['format']} {x['seconds']:.1f} s" for x in slowest
+    )
+
+
+def _slow(d: Dataset) -> Dataset:
+    """The dataset with the slow-extraction warning of its extraction, and no other (352).
+
+    A dataset taken over from the last crawl carries the warning stored with
+    it; set anew here, it follows the extraction, reused or run again.
+    """
+    x = d.extraction
+    warnings = tuple(w for w in d.warnings if not w.endswith(f"; {SLOW_EXTRACTION}"))
+    if x is not None and x.error is None and x.seconds > SLOW:
+        warnings += (
+            f"{d.format} extraction took {x.seconds:.1f} s; {SLOW_EXTRACTION}",
+        )
+    return d if warnings == d.warnings else replace(d, warnings=warnings)
 
 
 Stored = Callable[[list[str]], dict[str, Extraction]]
@@ -337,6 +375,7 @@ def extract(
         result.datasets[i] = replace(d, extraction=new)
         report.run += 1
         report.seconds[fmt.id] = report.seconds.get(fmt.id, 0.0) + seconds
+        report.slowest.append((d.anchor, fmt.id, seconds))
         before = befores.get(i)
         if before is None:
             continue
@@ -348,6 +387,7 @@ def extract(
             counts = report.reextracted.setdefault((fmt.id, before.identity), [0, 0])
             counts[0] += 1
             counts[1] += _stored_form(before) != _stored_form(new)
+    report.slowest = sorted(report.slowest, key=lambda x: x[2], reverse=True)[:SLOWEST]
     for i, (extracted, error, seconds) in zip(
         spots, outcomes[len(tasks) :], strict=True
     ):
@@ -380,9 +420,10 @@ def extract(
     for i, d in enumerate(result.datasets):
         if d.format not in by_id and d.extraction is not None and not d.kept:
             result.datasets[i] = replace(d, extraction=None)
-    for d in result.datasets:
+    for i, d in enumerate(result.datasets):
         if d.kept:
             continue
+        result.datasets[i] = _slow(d)
         if d.extraction is not None and d.extraction.error is not None:
             report.failed += 1
             result.warnings.append(

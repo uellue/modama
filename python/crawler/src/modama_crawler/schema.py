@@ -16,7 +16,7 @@ import psycopg
 log = logging.getLogger(__name__)
 
 # The newest revision in migrations/versions/; a test checks that it is Alembic's head
-HEAD = "0004_crawl_runs_listing_errors"
+HEAD = "0005_crawl_runs_slowest"
 MIGRATIONS = Path(__file__).parent / "migrations"
 
 

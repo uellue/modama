@@ -867,6 +867,8 @@ def _run_line(run: Run) -> str:
                 counts += (
                     f"; spot check: {differ} {'differs' if differ == 1 else 'differ'}"
                 )
+            if run.slowest:  # change slow-extractions (352)
+                counts += f"; slowest: {extraction.slowest_text(run.slowest)}"
             counts += _listing_errors_part(run)
     # as wide as the longest state, so that the columns stay aligned (review 8)
     line = f"{_when(run.started_at)}  {state:<{len(WITH_ERRORS)}}  {when}  {counts}  {run.root}"

@@ -133,6 +133,19 @@ def test_files_not_inspected(db):
     assert r.stderr.splitlines() == ["not inspected, common/hdf5links: 1"]
 
 
+def test_slow_extractions(db):
+    text = "em/dm4 extraction took 23.4 s; slow extraction"
+    fill(db, datasets=[single("/a/b.dm4", format="em/dm4", warnings=(text,))])
+    r = run(db, "modama-chain review")
+    part = section(r.stdout, "slow extraction")
+    assert "\n### em/dm4 (1)\n" in part
+    assert (
+        f"- [`/a/b.dm4`](http://localhost:7655/?path=%2Fa%2Fb.dm4): {text}"
+        in part.splitlines()
+    )
+    assert r.stderr.splitlines() == ["slow extraction, em/dm4: 1"]
+
+
 def test_other_warnings_with_and_without_a_format(db):
     fill(
         db,
@@ -226,11 +239,12 @@ def test_a_closed_pipe(db):
 
 def test_the_markers_are_the_crawlers():
     from modama_chain.review import MARKERS
-    from modama_crawler import formats
+    from modama_crawler import extraction, formats
 
     assert formats.WANTED_TWICE == MARKERS[0]
     # NOT_INSPECTED comes with hdf5-links (decision 340); checked once it is there
     assert getattr(formats, "NOT_INSPECTED", MARKERS[1]) == MARKERS[1]
+    assert extraction.SLOW_EXTRACTION == MARKERS[2]
 
 
 def test_the_database_unreachable(db):
