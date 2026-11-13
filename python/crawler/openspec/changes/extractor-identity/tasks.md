@@ -38,7 +38,7 @@
 ## 8. Review and acceptance
 
 - [x] 8.1 Review of the code by an agent that did not write it, given the code, the specs, R44 and R45, not this design's conclusions (AGENTS.md: more than a few hundred lines, and a migration); findings verified before they are acted on. The design was reviewed before any code (`review.md`, parts A to D, with each finding's outcome). Verify: the code review's findings added to `review.md`, each with its outcome.
-- [ ] 8.2 Final acceptance with the commands CI and the hook run: `uvx ruff format --check --diff` and `uvx ruff check` from the repository root, `pytest` of the crawler, `modama-formats-em` and `search-chain`, and `./runtest.sh e2e`. Verify: the output, with the number of skipped tests and where the local environment differs from CI's.
+- [ ] 8.2 Final acceptance with the commands CI and the hook run: `uvx pre-commit run --all-files` from the repository root (after `git add` of new files), `pytest` of the crawler, `modama-formats-em` and `search-chain`, and `./runtest.sh e2e`. Verify: the output, with the number of skipped tests and where the local environment differs from CI's.
 
 ## Workflow follow-up
 

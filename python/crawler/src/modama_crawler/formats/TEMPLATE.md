@@ -89,7 +89,8 @@ A library (a package of collections):
    their licence), or generate them with the program that writes the format.
 5. Write the tests from the scenarios, then the code, until `pytest src` in the
    package passes. The first run records `expected/*.json` and fails: read them, then
-   run again.
+   run again. A recorded `"error"` is right only for a fixture that is
+   invalid-by-design; otherwise delete the file and fix the code first.
 6. A row in the package's README; the dependency, if any, in its `pyproject.toml`.
 7. "Testing a format" below, all of it; then the review and the hand-over (the skill).
 
@@ -107,10 +108,16 @@ so that the browser shows a change without a build.
 ## Rules first, Python second
 
 Single-file types go into the XML, as valid shared-mime-info rules. Name a
-type after one already used in the wild for the format (check the Debian MIME
-support list and reader libraries such as LiberTEM or HyperSpy); if none
-exists, invent an unofficial `application/x.<name>` type. Never leave a format
-on a misleading generic type such as `text/plain` for a text header with
+type after one already used in the wild for the format (R25: an official one,
+else an established unofficial one). Look it up by extension and by the
+format's name in Debian's list (`grep -i '<ext>' /etc/mime.types`, package
+`media-types`) and in shared-mime-info, vendored here as
+`core/freedesktop.org.xml` (`modama-crawler records --verbose` on a folder
+with a sample file shows the type it gives today in `dc:format`); a hit may be
+another format of the same extension (`.mrc` in Debian's list is
+`application/marc`, library records). If none exists, use an unofficial
+`application/x.<name>` type of our own (R25). Never leave a format on a
+misleading generic type such as `text/plain` for a text header with
 binary frames. Where a vendored upstream definition is wrong for us, curate it
 in `core/er-c.xml` by forcing a content check (a tie), not by editing
 `freedesktop.org.xml`. Python is
@@ -231,7 +238,12 @@ class Pair(Format):
 `extract` runs in a worker process with a time limit, without database
 access; plain JSON values only. It may open the members itself, unbuffered
 (`open(path, "rb", buffering=0)`), or with a 64 KiB buffer and readahead off
-for a library that reads in tiny pieces (see the README's pitfalls). It reads
+for a library that reads in tiny pieces (see the README's pitfalls). To use
+the field's reader on what you read, never letting it open the file itself:
+hand it your handle (`modama_formats_em.dm.parsed` gives RosettaSciIO's DM
+reader class its own buffered handle, readahead off), or read the bounded
+header unbuffered and hand it `io.BytesIO(data)` (`dm.parsed_from` on a
+ZIP member in `em/dmwx`). It reads
 the dataset's members only: a change to any other file would not bring it to
 run again. If it raises, crashes or runs over the limit, the dataset keeps a
 basic description and the crawl reports a warning; the next crawl tries again.
@@ -249,7 +261,11 @@ by the software that writes the format in practice. Reproducers for invalid or
 incomplete files are the only exception from realism. A wild file too large or
 not to be published whole may be cut to the bytes your rules and extractor read,
 with the cut in `validity` and the tool that cut it beside the manifest
-(`modama-formats-em`'s K2IS `capture52`). Manifest entry:
+(`modama-formats-em`'s K2IS `capture52`). A generated fixture must come out the
+same on every run, or its recorded result changes from run to run: no times, random
+ids or unseeded randomness in what the generator writes (fixed dates, fixed seeds;
+`mrcfile.new` writes the time into a label, which the generator then overwrites).
+Manifest entry:
 
 ```toml
 [pair]
@@ -300,22 +316,22 @@ What the tests must hold, beyond the fixtures (the skeleton has one of each):
   change and after it (`python/search-chain/README.md`, "browse").
 
 Then the crawler's suite (`pytest` in `python/crawler`; its tests use every installed
-package) and CI's ruff from the repository root (`uvx ruff format --check --diff`,
-`uvx ruff check`).
+package) and the lint as CI runs it, `uvx pre-commit run --all-files` from the
+repository root, after `git add` of your new files (README, "Running tests").
 
 ## Lessons from the EM formats
 
 A checklist for every new format, from what `modama-formats-em` taught (where each comes from in brackets; the decision log is `design/architecture.md`).
 
 - [ ] **The established reader**: read each format with its field's standard library (Pillow or tifffile, h5py, zarr, nbformat, the office libraries, pypdf, PyYAML …), a dependency of your collection, pinned as `modama-formats-em` pins RosettaSciIO and flagged in the hand-over; a parser of your own only where no established reader exists. Where the reader fails on real files, work around it here, with a test from the real case, and record its bug in `python/crawler/BACKLOG.md`, "Sync with upstream", as *worked around here*. (@weber 2026-11-12: "new dependencies are no issue … don't build unusual things just to save on dependencies"; "if an upstream reader struggles with real world files … we 'get it done' somehow and take note"; decision log; dm, merlin, blockfile use RosettaSciIO, and the Merlin header is read in Latin-1 by us)
-- [ ] **What the file says, without editorializing**: no rounding, no unit guessed from a value's size or converted, no number from one entry joined with a unit from another; interpreting metadata across vendors is out of scope. (@weber 2026-11-11; decision log 2026-11-12, 230; `modama-formats-em` README, "Values and units")
+- [ ] **What the file says, without editorializing**: no rounding (a float32 header value goes out as the reader widens it to a Python float, `11.399999618530273` for a stored 11.4, as the DM reader's `18.325349807739258`), no unit guessed from a value's size or converted, no number from one entry joined with a unit from another; interpreting metadata across vendors is out of scope. (@weber 2026-11-11; decision log 2026-11-12, 230; `modama-formats-em` README, "Values and units")
 - [ ] **`original_metadata`**: flat dotted names (`a.b[2].c`) to values as found, every entry the file has minus one skip list per format (GUI settings, placeholders, values not suitable for text), never a list of wanted entries; the skip list is named in code and in the spec, with examples. (decision log 2026-11-12, "minus a skip list per format"; decisions 129, 235)
 - [ ] **`mapped_metadata`**: what we compute (frame count, scan size) or a reader maps to standard names, a second, labelled section; where it disagrees with the original, the original wins. (230; Merlin, EMPAD)
 - [ ] **Not suitable for text** is one shared check: `modama_crawler.formats.values.textual(value)` (more than 16 items, more than 1,000 characters, control characters, bytes, arrays that are not numbers). Don't write your own. (@weber 2026-11-12)
 - [ ] **Credentials are skipped, best effort**: a value that `modama_crawler.formats.values.credential(name, value)` flags (a name such as `password`, `token`, `api_key`; a text such as `POSTGRES_PASSWORD=…`, `--requirepass …`, a URL with a password, `Basic …`) stays out of `original_metadata` and the summary line, counted in `mapped_metadata`; a record is seen by more people than the file. (review of change `common-structured`, 2026-11-12)
 - [ ] **Empty values are kept** in the values, as the file has them (`""`, `[]`). (decision 161; `test_extract.py` of Merlin, EMPAD, K2IS)
 - [ ] **A test with an entry nobody has seen**: it must arrive in `original_metadata`. (the skip-list rule above)
-- [ ] **The summary line**: a few chosen entries as found, text bare, a number after its name (`Exposure Time (s) 2.0`), 0 placeholders left out, no words or units of ours, with two exceptions: a number whose reader gives no unit says so, "(unit unknown)" (@weber, 2026-11-11; EM README, "Values and units"; EMPAD's exposure time); a document whose metadata can't be read because it is encrypted has the summary line "(encrypted)" (@weber, 2026-11-12, 242b; office: PDF, OpenDocument). It is the only positive list. (`dm.HEADLINE`; 228, 231)
+- [ ] **The summary line**: a few chosen entries as found (Merlin's line of five: `Frames in Acquisition (Number) 1, frame 256, 256, Counter Depth (number) 6, Merlin Quad, 15/04/2021 14:43:23`), text bare, a number after its name (`Exposure Time (s) 2.0`), a 0 left out only where the format writes 0 for "no value" (GMS's `STEM Camera Length`, `dm` `test_a_placeholder_zero`; a block file's `Scan_rotation`), kept where 0 is a value (a mode or a code: MRC's `mode 0` is int8), decided per entry and named in the spec (the skeleton's `phrase` drops every 0, right for its made-up header only), no words or units of ours, with two exceptions: a number whose reader gives no unit says so, "(unit unknown)" (@weber, 2026-11-11; EM README, "Values and units"; EMPAD's exposure time); a document whose metadata can't be read because it is encrypted has the summary line "(encrypted)" (@weber, 2026-11-12, 242b; office: PDF, OpenDocument). It is the only positive list. (`dm.HEADLINE`; 228, 231)
 - [ ] **The values become the record's second description**, one `name: value` line each, sorted by name, empty values left out there: names and values must read well that way. (234, change `tags-in-the-record`)
 - [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. Count the bytes read in a test (`modama_formats_em.testing.rchar`). (@weber 2026-11-12; block files: the header plus one buffer)
 - [ ] **Time-zone independent output**: a date and time as the file writes it, without a reader's conversion to the local time zone, and a test under another `TZ`. (`modama_formats_em.blockfile`, `test_the_acquisition_time_as_written`)

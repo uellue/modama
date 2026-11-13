@@ -37,9 +37,9 @@ Top-level layout:
 ## Commands (mirrors `.gitlab-ci.yml`)
 
 ```bash
-# Lint/format (Python, whole repo; config in ruff.toml)
-uvx ruff format --check --diff
-uvx ruff check
+# Lint/format (Python, whole repo), as CI runs it: the hooks of .pre-commit-config.yaml
+# (ruff pinned there, config in ruff.toml); only files Git tracks: git add new files first
+uvx pre-commit run --all-files
 pre-commit install --install-hooks   # runs ruff on commit
 
 # mgmtinterface tests (CI installs the three *-client packages first)

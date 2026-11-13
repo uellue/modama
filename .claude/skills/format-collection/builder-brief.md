@@ -54,8 +54,8 @@ with them (SKILL.md, step 1): <answers, or a link>. Your area: `<area>` in the p
 ## Checks
 
 `pytest src` in the package, also with `TZ=Europe/Berlin`; the crawler's suite;
-`uvx ruff format --check --diff` and `uvx ruff check` from the repository root (known
-errors: `python/crawler/BACKLOG.md`).
+`uvx pre-commit run --all-files` from the repository root, as CI runs it, after
+`git add` of your new files (`python/crawler/README.md`, "Running tests").
 
 ## Hand-over
 

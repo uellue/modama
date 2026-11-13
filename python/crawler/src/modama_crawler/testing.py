@@ -15,7 +15,9 @@ with `tests/expected/<name>.json`.
 A missing result is recorded on the first run, which fails and asks for a review
 (decision T4, the pytest-regressions model); `--regen-expected` rewrites the
 results and fails for every file that changed, naming the datasets, so that the
-run itself says what to review. Every rule the collection defines itself (each
+run itself says what to review. An extraction error is recorded with a failure
+that says so; for a reproducer that is not invalid-by-design it is not recorded
+at all (its expected result is the fixed one). Every rule the collection defines itself (each
 glob, each magic rule, each Python format) must fire on at least one
 representative fixture. A collection is tested with its own definitions plus
 the core's, whatever else is installed (R2, R3).
@@ -208,6 +210,26 @@ def _extractions(ct: CollectionTests, result: Result, root: Path) -> dict:
     return out
 
 
+def _errors(ct: CollectionTests, name: str, result: dict) -> list[str]:
+    """The extraction errors about to be recorded; a reproducer that is not invalid-by-design records none (formats-testing spec)."""
+    errors = [
+        f"{anchor}: {x['error']}"
+        for anchor, x in sorted(result.get("extractions", {}).items())
+        if x and "error" in x
+    ]
+    entry = ct.manifest.get(name, {})
+    if (
+        errors
+        and entry.get("purpose") == "reproducer"
+        and not entry.get("validity", "").startswith("invalid-by-design")
+    ):
+        pytest.fail(
+            f"not recorded: the extraction of reproducer {name} fails ({', '.join(errors)}); "
+            "a reproducer records the fixed result: fix the code first, then run again"
+        )
+    return errors
+
+
 def test_fixture(
     collection_tests: CollectionTests,
     fixture_name: str,
@@ -224,8 +246,15 @@ def test_fixture(
     expected_file = ct.expected_dir / f"{fixture_name}.json"
     regen = request.config.getoption("--regen-expected")
     if not expected_file.exists():
+        errors = _errors(ct, fixture_name, result)
         ct.expected_dir.mkdir(exist_ok=True)
         expected_file.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+        if errors:
+            pytest.fail(
+                f"recorded an ERROR as the expected result for {fixture_name} "
+                f"({', '.join(errors)}) in {expected_file}: intended only for a fixture "
+                "that is invalid-by-design; for a reproducer, delete the file and fix the code first"
+            )
         pytest.fail(
             f"recorded a new result in {expected_file}; review it and run again"
         )
@@ -233,6 +262,7 @@ def test_fixture(
     if regen:
         changed = _changes(expected, result)
         if changed:
+            _errors(ct, fixture_name, result)
             expected_file.write_text(
                 json.dumps(result, indent=2, sort_keys=True) + "\n"
             )
