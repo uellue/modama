@@ -213,6 +213,21 @@ class Workspace(Format):
   `em/k2is`).
 - Order: a format that runs before yours does not see the new type. Give
   yours a higher priority than the formats that are to claim the new types.
+- A reader has two forms. `d.read(e, n)` gives a file's first bytes, against
+  the call's budget (1 MiB). Where recognition needs a library to parse a
+  file (h5py for an HDF5 file's links), `d.inspect(entries, fn, budget)`
+  runs `fn(f)` on each file in the crawl's worker processes, one folder at a
+  time, with a time limit enforced from outside, and returns one outcome per
+  file (`modama_crawler.inspection`): `fn` is a module-level function that
+  gets a read-only file object with `budget` bytes per file, closes what it
+  opens on it (`with h5py.File(f, "r", locking=False) as h5:`), and returns
+  plain data. Both readers open a file only as a regular file, never through
+  a symlink it may have become since the listing (`files.regular`). An
+  inspection that fails, times out or kills its process leaves a warning
+  with the marker `not inspected` and the directory is recognised again
+  next crawl (decision 340); one over its budget leaves a warning; a read
+  the file system did not answer keeps the folder's stored datasets
+  (`common/hdf5links`; change hdf5-links, design D5).
   The crawl warns when a format that ran earlier reacts to a dropped file's
   new type; it cannot tell for formats that react to `DIRECTORY`.
 - A changed priority needs a new recognition `version`: priorities are not

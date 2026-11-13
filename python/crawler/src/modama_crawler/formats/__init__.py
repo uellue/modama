@@ -14,11 +14,16 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
-from .. import mime
+from .. import files, mime
+from ..files import BudgetExceeded
+
+if TYPE_CHECKING:
+    from ..inspection import Inspected, Inspector
 
 log = logging.getLogger(__name__)
 
@@ -32,10 +37,15 @@ REFUSED = frozenset({errno.EACCES, errno.EPERM})
 # The end of every warning about a file two formats want (Directory.claimed_elsewhere):
 # the marker that lists them all, to develop resolution rules (decision 344)
 WANTED_TWICE = "two formats want it"
+# In every warning about a file whose inspection failed, timed out or killed its
+# process: it is tried again next crawl (Directory.inspect, decision 340)
+NOT_INSPECTED = "not inspected"
 
 
 def not_visible(err: OSError) -> bool:
-    return err.errno in NOT_VISIBLE
+    """Whether the file system says the path is refused or gone; an entry that is no
+    longer a regular file is gone for the crawl, as the walk skips such entries."""
+    return isinstance(err, files.NotRegular) or err.errno in NOT_VISIBLE
 
 
 def errno_name(err: OSError) -> str:
@@ -175,10 +185,6 @@ class Result:
         }
 
 
-class BudgetExceeded(Exception):
-    pass
-
-
 class Directory:
     """What a format sees: plain data plus one bounded reader."""
 
@@ -214,6 +220,8 @@ class Directory:
         # which are not offered the file (bug 311, decision 344)
         self.claimed: dict[str, str] = {}
         self._format = ""  # the id of the format being called
+        # The crawl's pool for inspect, set by the walk; without it, a pool of the call's own
+        self.inspector: Inspector | None = None
 
     @property
     def name(self) -> str:
@@ -233,13 +241,58 @@ class Directory:
             raise BudgetExceeded(f"reading {n} bytes of {entry.rel} exceeds the budget")
         self._budget -= n
         try:
-            # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole buffer
-            with open(entry.path, "rb", buffering=0) as f:
+            # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole
+            # buffer; never through a symlink the entry may have become since
+            # its listing (hdf5-links, design D4)
+            with files.Counted(files.regular(entry.path), name=entry.rel) as f:
                 return f.read(n)
         except OSError as e:
             # noted here, so that it counts also when the format catches it (review 3)
             self.did_not_answer(entry.rel, e)
             raise
+
+    def inspect(
+        self, entries: list[Entry], fn: Callable, budget: int | None
+    ) -> dict[str, Inspected]:
+        """fn(file object) for each entry, in worker processes; the outcome per entry rel.
+
+        Each file is opened only as a regular file, never through a symlink,
+        read through a file object with `budget` bytes per file, and given the
+        inspector's time limit, enforced from outside (change hdf5-links,
+        design D5). A read the file system did not answer is noted
+        (did_not_answer); a function that fails, times out or kills its
+        process leaves a warning with NOT_INSPECTED, and the directory is
+        recognised again next crawl (decision 340); a file over its budget
+        leaves a warning. fn is a module-level function returning plain data.
+        """
+        from ..inspection import OVER_BUDGET, RETRIED, UNANSWERED, Inspector
+
+        for e in entries:
+            if self._by_name.get(e.name) is not e:
+                raise ValueError(f"{e.rel} is not an entry of {self.rel}")
+        if not entries:
+            return {}
+        inspector = self.inspector or Inspector()
+        try:
+            got = inspector.run(fn, [e.path for e in entries], budget)
+        finally:
+            if inspector is not self.inspector:
+                inspector.close()
+        for e, x in zip(entries, got, strict=True):
+            if x.kind == UNANSWERED:
+                self.did_not_answer(e.rel, OSError(x.errno, x.detail, e.path))
+            elif x.kind in RETRIED:
+                self.retry = True
+                self.warn(
+                    e.rel,
+                    f"{self._format}: {e.name} {NOT_INSPECTED}, {x.kind} "
+                    f"({x.detail}); tried again next crawl",
+                )
+            elif x.kind == OVER_BUDGET:
+                self.warn(
+                    e.rel, f"{self._format}: {e.name} {NOT_INSPECTED}, {x.detail}"
+                )
+        return {e.rel: x for e, x in zip(entries, got, strict=True)}
 
     def did_not_answer(self, rel: str, error: OSError) -> None:
         """Note the first error of the "did not answer" class (listing-errors D1)."""
