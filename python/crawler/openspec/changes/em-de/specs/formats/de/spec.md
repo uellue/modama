@@ -44,6 +44,10 @@ A file with an acquisition's stem that a format of higher priority claimed SHALL
 - **WHEN** a directory holds the nesting acquisitions `20241021_00405_` and `20241021_00405_x_`, and a format of higher priority claims `20241021_00405_x_movie.mrc`
 - **THEN** the crawl warns at `20241021_00405_x_info.txt` only, and `20241021_00405_` keeps its 2 members
 
+#### Scenario: An unread info file of a longer stem
+- **WHEN** a directory holds the nesting acquisitions `20241021_00405_` and `20241021_00405_x_`, and `20241021_00405_x_info.txt` cannot be read (a read error, or refused over the read limit)
+- **THEN** `20241021_00405_` keeps its 2 members, the files of `20241021_00405_x_` stay as they are without the DE format, and the DE format gives no "two formats want it" warning for that stem (test `test_an_unread_info_file_of_a_longer_stem`)
+
 ### Requirement: An info file of another program is not a DE info file
 A file named like a DE info file that does not start with the key `Server Software Version` SHALL get the type it has without its name, with the reason in its basis, and SHALL NOT group any file. Files sharing a date prefix without a DE info file SHALL stay as they are, without a warning from the DE format.
 
