@@ -2,9 +2,9 @@
   "datasets": [
     {
       "anchor": "/testWORD_protected_passtika.docx",
-      "basis": "single file; common/docx: not application/vnd.openxmlformats-officedocument.wordprocessingml.document, no ZIP header",
+      "basis": "OLE2 header, named as Office Open XML; common/docx: not application/vnd.openxmlformats-officedocument.wordprocessingml.document, no ZIP header",
       "collapsed": false,
-      "format": "",
+      "format": "common/ole",
       "members": [
         "/testWORD_protected_passtika.docx"
       ],
@@ -14,6 +14,20 @@
       "warnings": []
     }
   ],
+  "extractions": {
+    "/testWORD_protected_passtika.docx": {
+      "subjects": [],
+      "summary": [
+        "(encrypted)"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "encrypted": true
+        },
+        "original_metadata": {}
+      }
+    }
+  },
   "skipped": [],
   "warnings": []
 }
