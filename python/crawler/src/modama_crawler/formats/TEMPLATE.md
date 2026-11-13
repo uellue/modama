@@ -301,8 +301,8 @@ What the tests must hold, beyond the fixtures (the skeleton has one of each):
   change and after it (`python/search-chain/README.md`, "browse").
 
 Then the crawler's suite (`pytest` in `python/crawler`; its tests use every installed
-package) and CI's ruff from the repository root (`uvx ruff format --check --diff`,
-`uvx ruff check`).
+package) and the lint as CI runs it, `uvx pre-commit run --all-files` from the
+repository root, after `git add` of your new files (README, "Running tests").
 
 ## Lessons from the EM formats
 

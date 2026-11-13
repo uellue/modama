@@ -58,8 +58,8 @@ the code; one test per scenario, named after it.
 
 ## 4. Test
 
-TEMPLATE.md, "Testing a format", all of it, then the crawler's suite and CI's ruff from
-the repository root. Show the commands with their output in the hand-over.
+TEMPLATE.md, "Testing a format", all of it, then the crawler's suite and the lint as CI
+runs it (`python/crawler/README.md`, "Running tests"). Show the commands with their output in the hand-over.
 
 ## 5. Independent review
 
