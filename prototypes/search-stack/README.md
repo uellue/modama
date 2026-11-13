@@ -135,6 +135,22 @@ CPU budget: 8 workers × 1 thread; 8 CPUs usable (affinity 8, no quota); no over
 
 **A new embedding model** (`EMBEDDING_MODEL`) needs a new measurement of the memory per batch process (`perf/batch-memory.py`): the 1.6 GiB are for bge-small-en-v1.5 at its 512 tokens, with the sub-batch of 32 texts of `patches/warehouse/0002`.
 
+## The embedding model
+
+The transform batches embed with the model's graph stored in float32, made at image build, not with the file fastembed downloads (change `embedding-fp32-model` in `python/crawler/openspec/changes/`; @weber, 283: "faster is better, unless there are distinct disadvantages"). The downloaded file (`qdrant/bge-small-en-v1.5-onnx-q`, `model_optimized.onnx`) is a float16 graph. ONNX Runtime's CPU provider has no float16 kernels for its fused nodes, so it casts the activations around them on every run. In the VM the float32 file took 10 to 14 % less CPU per text. Its vectors are not bitwise identical to the old file's: minimum cosine 0.9999997, largest component difference 4.4e-4, below the index's own quantisation (`encoder: sq`). Records indexed before keep their vectors; nothing is indexed again for it (@weber, 343).
+
+- **Where it is made.** `warehouse-airflow.Dockerfile`, stage `model`:
+  - It fetches the five upstream files at revision `aa8f8b06…` with `ADD --checksum`. A changed file stops the build there with `digest mismatch`, naming both hashes.
+  - `embedding-model/fp32.py convert` writes the folder: the graph, its weights in `model_optimized.onnx.data`, the tokenizer files, and the marker `modama-model.json`, which names the model and the pins. Every file is mode 0644.
+  - `fp32.py check` then embeds 64 short, 64 mixed and 32 long texts (`perf/grace-embedding/gen_texts.py`) with both files, in the image's transform venv. It stops the build if any cosine is below 0.99999 or if fastembed's description of the model names another source. It prints per set, for example `short: 64 texts, 0 bitwise identical, largest difference 0.000441, minimum cosine 0.99999971`.
+  - The check runs whenever the stage's cache is invalidated (about 80 s); the build then opens the file as the image's user (uid 50000).
+
+  `onnx` (Apache-2.0) is installed only in that stage, from the hash lock `embedding-model/requirements-onnx.txt`.
+- **How the batches load it.** Patch `0004` passes `EMBEDDING_MODEL_PATH` (the image sets it to `/opt/modama/models/bge-small-en-v1.5-fp32`) to fastembed. A batch whose `EMBEDDING_MODEL` is not the model the folder's marker names stops before embedding. The worker's log line says which file it uses: `Setting up embedding transformer with model BAAI/bge-small-en-v1.5 from /opt/modama/models/bge-small-en-v1.5-fp32`.
+- **The way back, without a rebuild.** Set `EMBEDDING_MODEL_PATH` empty for `airflow-worker-transform` in a compose file of your own, then run `docker compose up -d airflow-worker-transform` while nothing is being indexed. The batches then load fastembed's download again (`… from fastembed's download`).
+- **The image** grows by 128 MB.
+- **Tests:** `embedding-model/test_fp32.py`, in a venv of `perf/grace-embedding/requirements-cpu.in` (its header has the commands). `embedding-model/agreement.py` measures the vectors and the rankings on the full sets.
+
 ## Looking around
 
 ```bash
@@ -187,10 +203,10 @@ Benchmarks and probes of the test deployment, from the change `cpu-budget` and t
 | `indexing-bench.sh`, `docker-compose.perf.yml`, `docker-compose.today.yml`, `seed.py`, `report.py` | the indexing: reset, seed N files, crawl, wait for the harvest and indexing, records/s, per-batch times, CPU per container; `today` is the worker as before the CPU budget |
 | `harvest-bench.sh`, `harvest-report.py`, `harvest-insert-timer.py` | the harvest: records/s, py-spy records of the harvester and the warehouse API, what each database insert costs |
 | `batch-probe.py`, `phase-timer.py` | inside the transform worker: each batch process's life, CPU, threads, memory; the time of each of upstream's transform steps |
-| `batch-memory.py` | peak memory of one transform batch in a throwaway container, by text length, threads and sub-batch |
+| `batch-memory.py` | peak memory (and PSS, USS) of one transform batch in a throwaway container, by text length, threads and sub-batch; `SAMPLE=1` a fixed sample of a large warehouse, `CUT` short texts |
 | `embed-bench.py`, `embedlat.py`, `searchlat.sh` | embedding throughput for P processes × T threads; one query's embedding latency; 100 searches' latency |
 | `validator-check.py` | that patch 0001 changes no validation result |
-| `wrap/` | `run.sh` runs `batch-memory.py` in a throwaway container under perf (`fp`, `dwarf`) or plain; `cpu.py` adds wall and CPU time to each line and switches ONNX Runtime's profile and options; `par.sh` P batches at once; `ortsum.py` sums an ONNX Runtime profile by operator; `embcmp.py` compares two bulk bodies' embeddings; `lengths.py` the texts' token lengths |
+| `wrap/` | `run.sh` runs `batch-memory.py` in a throwaway container under perf (`fp`, `dwarf`) or plain (`PROJECT`, `IMAGE` for staging or another image; `BEFORE=1` with fastembed's download instead of the float32 file); `cpu.py` adds wall and CPU time to each line and switches ONNX Runtime's profile and options; `par.sh` P batches at once; `ortsum.py` sums an ONNX Runtime profile by operator; `embcmp.py` compares two bulk bodies' embeddings (identical count, cosine, largest difference); `lengths.py` the texts' token lengths |
 | `grace-embedding/` | CPU against GPU embedding on grace (GH200), each at its own optimum; copied to grace and run with `run.sh` (its README) |
 
 ## Embedding on grace
@@ -239,6 +255,10 @@ A new version of the crawler may bring a schema migration (a new file in `python
 3. Build and start: `./uptest.sh --build`. Compose stops `crawler` and `crawl-timer` (a running crawl is recorded as failed, as on any rebuild), runs `crawler-migrate`, then starts them again. The OAI-PMH endpoint is down until `crawler` is healthy again. `docker compose logs crawler-migrate` shows `schema migrated from … to …`, or `schema up to date at …` when there was nothing to do.
 4. If `up` fails with `service "crawler-migrate" didn't complete successfully: exit 1` (or `exit 2`), `docker compose logs crawler-migrate` says why and what to do; the messages and their steps are in `python/crawler/README.md`, "The database schema". The database is unchanged then.
 5. What the next crawl extracts again. Any change to the installed code or its dependencies changes the crawler's extractor identity, and the next crawl extracts every dataset of a format with an extractor again (`python/crawler/README.md`, "How it works"). `docker compose exec crawler modama-crawler runs` says so before the runs, on standard error, for example `note: extraction identity 6d881430e7c8 is installed; the next crawl extracts again em/dm4 150000, em/dm3 27000 datasets stored under 77b1e2d4a0c9 (rosettasciio 0.15.0 -> 0.16.0); about 50 minutes on 8 processes`; stored datasets of a format with an extractor but no extraction yet follow as `and for the first time …` (only by their stored format: files a newly installed collection will claim are not counted, `python/crawler/README.md`); on staging, `./upstaging.sh` prints this note at its end, with the command to start the crawl now. Otherwise the timer's next crawl does it. Its report then has one line per format, `em/dm4: 150000 extracted again for a new identity (rosettasciio 0.15.0 -> 0.16.0), 1200 results changed`: only the records whose content changed get a new datestamp and are harvested and indexed again, so `0 results changed` means nothing downstream moves. The line `spot check (seed …): em/dm4 20 of 20 as stored, …` names any dataset whose stored result differs from what the installed code gives now.
+6. If the Airflow image's build stops in the stage `model`, an upstream file or fastembed's description of the embedding model has moved: a `digest mismatch` at an `ADD`, or `check: fastembed describes …` (a new metadata-warehouse release with another fastembed). To go on:
+   - re-pin the files, in `warehouse-airflow.Dockerfile` and in `embedding-model/fp32.py` (`test_fp32.py` checks that they agree);
+   - measure the vectors again with `embedding-model/agreement.py`;
+   - decide whether the index needs re-indexing ("The embedding model").
 
 The way back, while the newer image is still there (a downgrade needs the newer code):
 

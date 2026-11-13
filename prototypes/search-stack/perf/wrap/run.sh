@@ -6,6 +6,10 @@
 # Output (perf data, logs, the container's /tmp) goes to PERF_OUT, default /var/tmp/perf-wrap.
 # The embedding profile was made with it (python/crawler/openspec/changes/cpu-budget/design.md,
 # "Where the CPU time goes").
+# PROJECT (default search-stack; staging: search-staging) names the compose project whose network and
+# embedding cache it uses, IMAGE (default search-stack-airflow:3.3.2) the image; SAMPLE, CUT: batch-memory.py's;
+# BEFORE=1 runs with `-e EMBEDDING_MODEL_PATH=`, fastembed's download instead of the image's float32 file
+# (change embedding-fp32-model, D6).
 set -euo pipefail
 mode=$1 n=$2 fill=$3 t=$4 sb=$5
 here=$(cd "$(dirname "$0")" && pwd)
@@ -16,20 +20,22 @@ tt=${t/#0/8}
 extra=() pyx=()
 mkdir -p "$out/tmp-$case_" && chmod 777 "$out/tmp-$case_"
 extra=(-v "$out/tmp-$case_":/tmp)
-for v in SORT ORT_PROFILE ORT_ARENA ORT_OPT BULK_OUT; do [ -n "${!v:-}" ] && extra+=(-e "$v=${!v}"); done
+for v in SORT ORT_PROFILE ORT_ARENA ORT_OPT BULK_OUT SAMPLE CUT; do [ -n "${!v:-}" ] && extra+=(-e "$v=${!v}"); done
+if [ -n "${BEFORE:-}" ]; then extra+=(-e EMBEDDING_MODEL_PATH=); fi
+project=${PROJECT:-search-stack} image=${IMAGE:-search-stack-airflow:3.3.2}
 if [ "$mode" != plain ]; then
   extra+=(-e WAIT=3)
   if [ "$mode" = fp ]; then extra+=(-e PYTHONPERFSUPPORT=1); else pyx=(-X perf_jit); fi
 fi
-cid=$(docker run -d --rm --network search-stack_search -v "$repo/perf":/probe:ro -v "$here":/wrap:ro \
-  -v search-stack_fastembed-airflow:/opt/airflow/cache/fastembed:ro \
+cid=$(docker run -d --rm --network "${project}_search" -v "$repo/perf":/probe:ro -v "$here":/wrap:ro \
+  -v "${project}_fastembed-airflow":/opt/airflow/cache/fastembed:ro \
   -e PYTHONPATH=/opt/airflow/project/src:/opt/airflow/project \
   -e EMBEDDING_MODEL=BAAI/bge-small-en-v1.5 -e FASTEMBED_CACHE_DIR=/opt/airflow/cache/fastembed \
   -e POSTGRES_USER=chain_reader -e POSTGRES_PASSWORD=test-chain-reader -e POSTGRES_DB=datasetdb \
   -e POSTGRES_ADDRESS_DOCKER=postgres -e OPENSEARCH_ADDRESS_DOCKER=opensearch -e OPENSEARCH_PORT_DOCKER=9200 \
   -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1 -e RAYON_NUM_THREADS="$tt" \
   "${extra[@]}" \
-  --entrypoint /opt/airflow/transform-venv/bin/python search-stack-airflow:3.3.2 "${pyx[@]}" /wrap/cpu.py /probe/batch-memory.py "$n" "$fill" "$t" "$sb")
+  --entrypoint /opt/airflow/transform-venv/bin/python "$image" "${pyx[@]}" /wrap/cpu.py /probe/batch-memory.py "$n" "$fill" "$t" "$sb")
 pid=$(docker inspect -f '{{.State.Pid}}' "$cid")
 echo "case $case_ container ${cid:0:12} pid $pid"
 if [ "$mode" = fp ]; then

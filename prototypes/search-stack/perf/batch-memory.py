@@ -23,6 +23,12 @@ With BULK_OUT=<file in a writable mount> it also writes the bulk body it would s
 two images make of the same records (patch 0001, change cpu-budget task 3.9). With the budget's variables add `-e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 -e MKL_NUM_THREADS=1
 -e RAYON_NUM_THREADS=T`. In an image with patch 0002 the image's own sub-batch is already 32.
 
+For a large warehouse (staging; change embedding-fp32-model, D6): SAMPLE=1 loads only N non-deleted events
+of the closed runs, ordered by a hash of their id (the same N on every run, spread over all runs) instead
+of every closed run's events; CUT=<chars> cuts each record's own text to its first CHARS characters (the
+short set, before any FILL). In an image with patch 0004, `-e EMBEDDING_MODEL_PATH=` embeds with fastembed's
+download instead of the image's float32 file (the "before" of a before/after).
+
 Reads the warehouse with the read-only role (POSTGRES_* in the environment). The writes are replaced:
 psycopg's connection inside transform_batch_impl is a fake that records statements, and the OpenSearch bulk
 serializes every action as opensearch-py does, then returns success. Prints VmHWM (peak RSS) per stage.
@@ -40,7 +46,18 @@ def st():
             for l in f
             if l.startswith(("VmSize", "VmRSS", "VmHWM", "Threads"))
         }
-    return f"RSS {d['VmRSS']:>11}  peak {d['VmHWM']:>11}  size {d['VmSize']:>11}  threads {d['Threads']}"
+    # PSS divides shared pages among their users, USS counts private ones (change embedding-fp32-model, D6)
+    with open("/proc/self/smaps_rollup") as f:
+        r = {
+            l.split(":")[0]: int(l.split()[1])
+            for l in f
+            if l.split(":")[0] in ("Pss", "Private_Clean", "Private_Dirty")
+        }
+    pss, uss = r["Pss"], r["Private_Clean"] + r["Private_Dirty"]
+    return (
+        f"RSS {d['VmRSS']:>11}  peak {d['VmHWM']:>11}  size {d['VmSize']:>11}  threads {d['Threads']}"
+        f"  PSS {pss:>8} kB  USS {uss:>8} kB"
+    )
 
 
 n, fill, threads, embed_batch = (int(a) for a in (sys.argv[1:5] + ["0"])[:4])
@@ -52,12 +69,21 @@ from planning.transform_planning import load_batch
 
 print("imported   ", st(), flush=True)
 
-# the VM's real events: every closed run, loaded as the DAG loads a batch
+# the VM's real events: every closed run, loaded as the DAG loads a batch; SAMPLE=1: N of them by a hash of
+# their id, each loaded alone the same way
 with psycopg.connect(**core.PostgresConfig().connection_params) as c:
-    runs = c.execute(
-        "SELECT hr.id, min(he.id::text), max(he.id::text) FROM harvest_runs hr JOIN harvest_events he ON he.harvest_run_id = hr.id "
-        "WHERE hr.status = 'closed' GROUP BY hr.id"
-    ).fetchall()
+    if os.environ.get("SAMPLE"):
+        runs = c.execute(
+            "SELECT he.harvest_run_id, he.id::text, he.id::text FROM harvest_events he "
+            "JOIN harvest_runs hr ON he.harvest_run_id = hr.id "
+            "WHERE hr.status = 'closed' AND NOT he.is_deleted ORDER BY md5(he.id::text) LIMIT %s",
+            (n,),
+        ).fetchall()
+    else:
+        runs = c.execute(
+            "SELECT hr.id, min(he.id::text), max(he.id::text) FROM harvest_runs hr JOIN harvest_events he ON he.harvest_run_id = hr.id "
+            "WHERE hr.status = 'closed' GROUP BY hr.id"
+        ).fetchall()
 real = [
     e
     for r in runs
@@ -115,10 +141,12 @@ words = [
 filler = " ".join(words[i * 7 % len(words)] for i in range(fill))
 text_of = core.get_embedding_text_from_fields
 texts = []
+cut = int(os.environ.get("CUT", "0"))
 
 
 def text_with_fill(src):
-    texts.append((text_of(src) + " " + filler) if fill else text_of(src))
+    own = text_of(src)[:cut] if cut else text_of(src)
+    texts.append((own + " " + filler) if fill else own)
     return texts[-1]
 
 

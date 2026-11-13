@@ -1,0 +1,7 @@
+# The conversion's packages in the image build's model stage (warehouse-airflow.Dockerfile), not in the
+# image: onnx (Apache-2.0; 1.23.2 the current release on PyPI, 2026-11-13) and numpy at the transform
+# venv's version. The lock file requirements-onnx.txt (with hashes) is made from this one:
+#   uv pip compile --no-build --generate-hashes --python-platform x86_64-manylinux_2_28 \
+#     --python-version 3.13 requirements-onnx.in -o requirements-onnx.txt
+onnx==1.23.2
+numpy==2.4.4

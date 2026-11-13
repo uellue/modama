@@ -37,6 +37,15 @@ See proposal.md, "Why". Current state:
   - `cpu-budget`'s ("casts 53 float16 tensors", "the GELU is not fused");
   - the research note's ("conversion of 53 fp16 weight tensors", "1 % Cast");
   - this change's first draft ("about 1 % on long texts").
+
+  Task 1.4 repeated it with the built image: `perf/wrap/run.sh plain 32 500 1 0` with `ORT_PROFILE=1` and `perf/wrap/ortsum.py`, one run of 32 texts × 512 tokens each, 2026-11-13, with the VM loaded by another agent's stack (load average 15 to 30).
+
+  | | production file (`BEFORE=1`) | float32 file |
+  |---|---|---|
+  | kernel time | 14.7 s | 13.3 s (−10 %) |
+  | operators | Attention 39.1 %, MatMul 28.3 % (24), FusedMatMul 19.1 % (12), Mul 5.2 % (48), Add 3.2 % (38), SkipLayerNormalization 2.7 %, Tanh 1.1 % (12), Cast 0.9 % (53) | MatMul 53.0 % (36), Attention 42.4 % (12), FastGelu 2.7 % (12), SkipLayerNormalization 1.5 %, Cast 0.0 % (2) |
+
+  The GELU runs fused as FastGelu, and the 53 Casts are down to the graph's own 2.
 - **E2. Size** (`docs/research/embedding-throughput.md`, section 1): 33.4 M parameters, 133 MB in float32. Measured: the converted weight file is 132,848,640 bytes and the graph 45,749 bytes. The note's expectation of "identical numbers if only the storage changes" does not hold (E6).
 - **E3. The conversion** (`perf/grace-embedding/prepare_model.py`, `to_fp32`). Every float16 initializer and Constant becomes float32, Casts to float16 now cast to float, float16 inputs and outputs become float, and `value_info` is dropped. There is no `onnx.checker` run, because LayerNormalization at opset 11 is accepted by ONNX Runtime but not by the checker. The weights go to one external file (`size_threshold=1024`). **onnx 1.23.2 writes that file with mode 0600** even under umask 0002 (reproduced on 2026-11-13: `model_optimized.onnx` 0664, `model_optimized.onnx.data` 0600). Copied as it is, the worker's user could not read it if another user owns it.
 - **E4. VM quick run of the grace benchmark** (2026-11-13 06:51 UTC). It was not in the repository; its files were copied to `/var/tmp/fp32-model/vm-quick-run/` (temporary). It used 4 cores, the load was 3.5 at the start, and each case is one sample of 2 to 4 s. On synthetic short texts, at 4 × 1, CPU per text was 37.3 ms with the production file against 32.1 and 30.5 ms with the float32 file.
@@ -61,6 +70,26 @@ See proposal.md, "Why". Current state:
     - float vectors, float32 file against production file: the same top-10 sets for every query, and the same order in 97 %;
     - the 7-bit stand-in alone (production against itself, quantised against not): overlap 0.970, same order 26 %;
     - both quantised, float32 file against production file: overlap 0.997.
+
+  Task 1.3 repeated this with `embedding-model/agreement.py`, 2026-11-13, in `/var/tmp/fp32-model/venv` (fastembed 0.8.0, onnxruntime 1.24.4, as production):
+
+  ```bash
+  FASTEMBED_CACHE_DIR=/var/tmp/fp32-model/fe /var/tmp/fp32-model/venv/bin/python -B \
+    prototypes/search-stack/embedding-model/agreement.py UPSTREAM FP32 /var/tmp/fp32-model/agreement
+  ```
+
+  The two folders are the test's (`/var/tmp/fp32-model/files/`, temporary); the output is in `/var/tmp/fp32-model/agreement.log`.
+
+  | | bitwise identical | largest difference | minimum cosine |
+  |---|---|---|---|
+  | short, 512 texts | 0 | 5.04e-4 | 0.99999964 |
+  | mixed, 512 texts | 0 | 5.75e-4 | 0.99999964 |
+  | long, 64 texts | 0 | 4.76e-4 | 0.99999974 |
+
+  Ranking: 192 short queries (`gen_texts.py`, seed 5), each embedded alone, against 832 mixed records (seed 4), top 10 by cosine. The 7-bit stand-in quantises with one step for all components, (max − min) / 127 over the corpus: 6.6e-3, rougher than the review's.
+  - (a) float32 file against production file, float vectors: overlap 0.998, same order 93 %;
+  - (b) production file, quantised against not: overlap 0.968, same order 28 %;
+  - (c) both quantised, float32 file against production file: overlap 0.993, same order 75 %.
 
   So the change of file moves results less than the index's own quantisation does.
 
@@ -94,7 +123,12 @@ Alternatives:
 - One file without external data (it fits under protobuf's 2 GB): avoids the separate file's mode, but ONNX Runtime then reads the weights rather than mapping them, and E4's memory numbers are for external data. Not taken unless task 3.3 shows that the mapping gains nothing.
 - Making the CPU provider run the float16 graph without the casts: it has no float16 kernels for these operators, and no session option changes that. The float32 file is the route.
 
-**D2. The conversion is `prepare_model.py`'s `to_fp32`, as a script of the stack.** It goes in `prototypes/search-stack/embedding-model/fp32.py`, with the commands `convert` (E3, the marker, the modes) and `check` (D4). Its test is `test_fp32.py` next to it, run with pytest in `/var/tmp/fp32-model/venv`. That venv is made from `perf/grace-embedding/requirements-cpu.in` (production's fastembed 0.8.0, onnxruntime 1.24.4, tokenizers and numpy, plus onnx 1.23.2) and pytest. Not from the `.txt` lock next to it, which is compiled for aarch64. The crawler's pytest has neither onnx nor ONNX Runtime. The test fetches the pinned graph from the Hub. Without the network it fails and says so (AGENTS.md, "Fail, don't skip"). `prepare_model.py` stays as it is, so that the grace folder remains a self-contained copy. Once, the two outputs for the same input are compared by SHA-256 (task 1.2).
+**D2. The conversion is `prepare_model.py`'s `to_fp32`, as a script of the stack.** It goes in `prototypes/search-stack/embedding-model/fp32.py`, with the commands `convert` (E3, the marker, the modes) and `check` (D4). Its test is `test_fp32.py` next to it, run with pytest in `/var/tmp/fp32-model/venv`. That venv is made from `perf/grace-embedding/requirements-cpu.in` (production's fastembed 0.8.0, onnxruntime 1.24.4, tokenizers and numpy, plus onnx 1.23.2) and pytest. Not from the `.txt` lock next to it, which is compiled for aarch64. The crawler's pytest has neither onnx nor ONNX Runtime. The test fetches the pinned graph from the Hub. Without the network it fails and says so (AGENTS.md, "Fail, don't skip"). `prepare_model.py` stays as it is, so that the grace folder remains a self-contained copy; `test_fp32.py` compares both outputs for the same input by SHA-256 (task 1.2).
+
+As built:
+- The build stage installs onnx from a hash lock of its own, `embedding-model/requirements-onnx.txt` (onnx 1.23.2, numpy 2.4.4, protobuf, ml-dtypes, typing-extensions; compiled for x86_64 and Python 3.13, the image's). It makes the check's texts with `gen_texts.py` from the named build context `texts` (`perf/grace-embedding/`).
+- `check` takes the sets as `NAME=FILE` arguments.
+- `embedding-model/agreement.py` runs the full sets and the ranking test of E6 by hand (task 1.3).
 
 **D3. The warehouse loads the file through fastembed (patch 0004).** `0004-embedding-model-file.patch` does three things:
 - It adds `specific_model_path=os.environ.get('EMBEDDING_MODEL_PATH') or None` to the `TextEmbedding` call that 0002 shaped.
@@ -117,9 +151,9 @@ Alternatives:
 
 | What | Known | Still to measure |
 |---|---|---|
-| Disk | +132.9 MB in the image (2.82 GB today, about +5 %). The float16 file stays in the volume, unused by the batches. Staging's disk is watched (`monitor.sh`). | The built folder's size, task 2.3 |
+| Disk | The folder is 128 MB (`du -sh`; the weight file 132,848,640 bytes). The image grew from 2.82 to 2.96 GB (`docker images`, task 2.3). The float16 file stays in the volume, unused by the batches. Staging's disk is watched (`monitor.sh`). | — |
 | RAM per batch process | Lower: USS 205 against 297 MB at 4 × 1 on short texts (E4); peak at 512 tokens 1,245 against 1,322 MB (E5). The CPU budget's 1.6 GiB stays (Q8). | 8 processes on the VM (task 3.3), 16 on staging (task 4.2) |
-| Build time | One more stage: fetch 66 MB, convert, embed the check's texts twice, open the file once. | Task 2.3 |
+| Build time | One more stage, measured on the VM on 2026-11-13 under load from another agent's stack (load average about 11). On a clean cache: fetching the five files 1.6 s, then onnx venv, conversion and check 83.8 s (the conversion is done after about 3 s), and opening the file as uid 50000 0.9 s. The whole image took 1 min 28 s. With the stage cached, the build takes 2 s. | — |
 | A new build dependency, **`onnx` 1.23.2** | The current PyPI release, licence Apache-2.0 (PyPI's `license_expression`, read on 2026-11-13). Only in the discarded stage and in the script's test venv. | — |
 | Drift from upstream | Pins on all five files: a changed tokenizer changes vectors too. A changed fastembed description stops the build (spec). The marker stops a batch under another `EMBEDDING_MODEL`. The search API still downloads unpinned at its first start, as today. | The README's "Upgrade" gets the steps for a stopped build: re-pin, task 1.3 again, decide on a re-index |
 | File modes | onnx writes the weight file 0600 (E3). The script sets 0644, and the build opens the file as uid 50000. | — |
@@ -132,10 +166,11 @@ None of these is a distinct disadvantage in @weber's sense (item 283). Memory an
 - **Order and repeats:** cases run in the order A B B A B A, so three repeats each; the median is reported, with the spread.
 - **Go rule:** go if the mixed set's gain is at least 5 % and more than twice the spread between repeats.
 - **Instruments:** `cpu-budget`'s `perf/batch-memory.py`, `perf/wrap/run.sh`, `cpu.py`, `embcmp.py` and `lengths.py`. Gaps found while planning (AGENTS.md, "Own instruments first"):
-  - `batch-memory.py` loads every closed harvest run's events before it picks N; on staging that is 1.45 M records. It gets an opt-in fixed sample: N non-deleted events ordered by a hash of their event id (representative and repeatable, review S7), and `MAX_TOKENS` for the short set.
+  - `batch-memory.py` loads every closed harvest run's events before it picks N; on staging that is 1.45 M records. It gets an opt-in fixed sample, `SAMPLE=1`: N non-deleted events ordered by `md5` of their event id (representative and repeatable, review S7), each loaded as the DAG loads a batch. It also gets `CUT=<chars>`, which cuts each record's own text for the short set. That is simpler than a token filter, which would have to compute the texts before the transform does.
   - Its memory line gets PSS and USS from `/proc/self/smaps_rollup`.
   - `embcmp.py` gets the largest absolute difference.
-- **Sets:** short (`MAX_TOKENS=64`), mixed (the sample as it is), long (FILL 500). N = 250, T = 1, the image's sub-batch of 32.
+  - `wrap/run.sh` gets `PROJECT` (staging's network and cache: `search-staging`), `IMAGE`, and `BEFORE=1` (`-e EMBEDDING_MODEL_PATH=`).
+- **Sets:** short (`CUT=200`), mixed (the sample as it is), long (FILL 500). N = 250, T = 1, the image's sub-batch of 32.
 - **On staging, @weber runs the commands**, and only while `dc exec crawler modama-chain status` shows no harvest and no indexing running. No `up`, image start or measurement container runs during either. The build waits for the same window.
 
 **D7. The grace benchmark.** `perf/grace-embedding/` measures the float32 file on aarch64 (CPU steps F and G) and on the GPU. The CPU kernels there are different, so its numbers neither confirm nor rule out x86's. This change does not wait for it. When grace's results come, they add the same conversion's vector agreement on a second architecture. On the GPU the float16 file computes in float16; that is grace's question.
@@ -165,5 +200,5 @@ The reviewer's answers are recorded as leans, and the tasks assume them. @weber 
 - **Q4. Pre-packing off?** Lean, and the reviewer's answer: leave it on. fastembed exposes no option for it, and the saving is about 80 MB of USS per process (E4).
 - **Q5. Where `EMBEDDING_MODEL_PATH` is set.** Lean, and the reviewer's answer: `ENV` in the Dockerfile, with the marker guard of D3. Compose sets it only empty, for the way back and the before-measurement.
 - **Q6. The search API's query embedding too?** Lean, and the reviewer's answer: not in this change; a follow-up with its own latency measurement.
-- **Q7. The fixed sample in `batch-memory.py`.** Lean, and the reviewer's answer: opt-in, ordered by a hash of the event id, plus `MAX_TOKENS`.
+- **Q7. The fixed sample in `batch-memory.py`.** Lean, and the reviewer's answer: opt-in, ordered by a hash of the event id. As built: `SAMPLE=1`, and `CUT` in place of `MAX_TOKENS` (D6).
 - **Q8. The CPU budget's 1.6 GiB per batch process.** Lean, and the reviewer's answer: keep it (peak 1,322 MB with the production file, 1,245 MB with the float32 file).

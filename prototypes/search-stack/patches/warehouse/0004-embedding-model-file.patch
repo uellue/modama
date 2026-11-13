@@ -1,0 +1,46 @@
+The embedding model from a folder of the image: EMBEDDING_MODEL_PATH
+
+What: TransformResources passes EMBEDDING_MODEL_PATH to fastembed as specific_model_path, so the batches
+load the model from that folder instead of fastembed's download; fastembed keeps its own description of
+EMBEDDING_MODEL (pooling, normalisation, tokenizer files from the folder). The folder's marker
+modama-model.json must name EMBEDDING_MODEL, or the batch stops before embedding. The log line names the
+folder. Unset or empty, nothing changes.
+
+Why: the modama search stack's image puts there the same graph stored in float32 (embedding-model/fp32.py).
+The file fastembed downloads (qdrant/bge-small-en-v1.5-onnx-q, model_optimized.onnx) is a float16 graph;
+ONNX Runtime's CPU provider has no float16 kernels for its fused nodes and casts the activations around
+them on every run. In the stack's VM (one process, 1 thread, sub-batch 32, sorted) the float32 file took
+14 % less CPU per text on short texts, 10 % on mixed and 13 % on long (512 tokens), with a minimum cosine
+of 0.9999997 to the downloaded file's vectors, not bitwise identical (change embedding-fp32-model, E5, E6).
+
+Against metadata-warehouse v1.10.0 with 0001 to 0003 applied; applied with `patch -p1` in the image build
+(modama search stack, warehouse-airflow.Dockerfile; change embedding-fp32-model, D3; @weber, 283).
+
+diff --git a/src/transform/transform_core.py b/src/transform/transform_core.py
+--- a/src/transform/transform_core.py
++++ b/src/transform/transform_core.py
+@@ -66,10 +66,22 @@
+
+         # ONNX Runtime threads; unset: one per core, pinned to the same cores in every batch process
+         threads = int(os.environ['EMBEDDING_THREADS']) if os.environ.get('EMBEDDING_THREADS') else None
++        # a model folder of the image (the float32 file); unset or empty: fastembed's own download
++        model_path = os.environ.get('EMBEDDING_MODEL_PATH') or None
++        if model_path:
++            folder_model = json.loads((Path(model_path) / 'modama-model.json').read_text())['model']
++            if folder_model.lower() != EMBEDDING_MODEL.lower():
++                raise ValueError(
++                    f'EMBEDDING_MODEL_PATH {model_path} holds {folder_model}, not EMBEDDING_MODEL {EMBEDDING_MODEL}'
++                )
+         self.embedding_transformer = TextEmbedding(
+-            model_name=EMBEDDING_MODEL, cache_dir=FASTEMBED_CACHE_DIR, threads=threads
++            model_name=EMBEDDING_MODEL,
++            cache_dir=FASTEMBED_CACHE_DIR,
++            threads=threads,
++            specific_model_path=model_path,
+         )
+-        logger.info(f'Setting up embedding transformer with model {EMBEDDING_MODEL}')
++        source = model_path or "fastembed's download"
++        logger.info(f'Setting up embedding transformer with model {EMBEDDING_MODEL} from {source}')
+
+         opensearch_config = OpenSearchConfig()
+         self.client = OpenSearch(
