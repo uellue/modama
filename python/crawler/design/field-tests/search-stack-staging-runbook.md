@@ -226,8 +226,9 @@ On the server, in the stack's folder, with the `dc` shorthand of step 12. Not du
 crawl if it can be helped: `--build` stops a running crawl, which is then recorded as
 failed, and the timer catches up at once.
 
-**U1.** Before pulling, note the deployed commit; after pulling, see whether the new code
-brings a migration (a file listed means: one comes):
+**U1.** Staging builds from the shared checkout, so nobody pulls or rebases there: the
+change arrives when it lands in that checkout. Before it lands, note the deployed commit;
+after, see whether the new code brings a migration (a file listed means: one comes):
 
 ```bash
 deployed=$(git rev-parse HEAD); echo "$deployed"
