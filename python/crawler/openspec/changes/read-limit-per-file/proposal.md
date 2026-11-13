@@ -24,7 +24,7 @@ Request: @weber, 329 (2026-11-13): "yes, build the per-file limit. I'm not sure 
 
 Behaviour towards the user: a folder of many files of one format is recognised as the same files in subfolders are (10,000 MRC files: 10,000 `em/mrc` datasets instead of 10,000 single files); a format that reads more than 64 KiB of a file leaves a warning, which `review` lists; a file a format may not read further keeps its single-file dataset and a warning, where the folder's whole result for that format went before. Folders whose format was skipped under the old rule stay so until their listing changes (the fingerprint has no version of the core's code): `crawl --path`, or a raised crawler version.
 
-Out of scope: flagging reads through `inspect`; a time bound per file; `common/zspy`'s double read of `zarr.json` (flagged, in BACKLOG); the per-format read sizes beyond listing them (design).
+Out of scope: flagging reads through `inspect`; a time bound per file; the per-format read sizes beyond listing them (design).
 
 ## Capabilities
 

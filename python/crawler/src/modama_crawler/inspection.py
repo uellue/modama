@@ -7,7 +7,8 @@ to `Directory.inspect`, which runs it on each file in one pool of worker
 processes per crawl, one folder at a time, with a time limit enforced from
 outside (the extraction's `_run`). In the worker, the file is opened only
 as a regular file, never through a symlink (`files.regular`), and read
-through a file object with a byte budget per file (`files.Counted`), closed
+through a file object bounded by the format's read limit per file
+(`files.Counted`; change read-limit-per-file), closed
 after the function returns.
 """
 

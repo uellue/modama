@@ -366,15 +366,23 @@ class Zspy(Zarr):
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         if d.phase != "pre" or not d.name.endswith(".zspy"):
             return
-        for dataset in super().recognize(d):
-            if root_attribute(d, "file_format") == ZSPY:
-                yield replace(dataset, basis=f"{dataset.basis}, file_format ZSpy")
+        yield from super().recognize(d)
+
+    def described(self, d: Directory, dataset: Dataset, meta: dict | None):
+        if root_attribute(d, "file_format", meta) != ZSPY:
+            return None
+        return replace(dataset, basis=f"{dataset.basis}, file_format ZSpy")
 
 
-def root_attribute(d: Directory, name: str):
-    """The value of the root's attribute `name` (v3 zarr.json's attributes, else v2
-    .zattrs), or None: none there, a file over the core's read limit, not JSON."""
-    e = d.entry(V3) or d.entry(".zattrs")
+def root_attribute(d: Directory, name: str, meta: dict | None):
+    """The value of the root's attribute `name`, or None: none there, a file over the
+    core's read limit, not JSON. A v3 store's from meta, its zarr.json as the core
+    read it, so that it is read once (review of read-limit-per-file); a v2 store's
+    from .zattrs."""
+    if d.entry(V3) is not None:
+        document = meta.get("attributes") if meta is not None else None
+        return document.get(name) if isinstance(document, dict) else None
+    e = d.entry(".zattrs")
     if e is None or e.kind != "file" or e.size > READ_LIMIT:
         return None
     if (data := start(d, e, READ_LIMIT)) is None:
@@ -383,8 +391,6 @@ def root_attribute(d: Directory, name: str):
         document = json.loads(data)
     except ValueError:
         return None
-    if isinstance(document, dict) and e.name == V3:
-        document = document.get("attributes")
     return document.get(name) if isinstance(document, dict) else None
 
 

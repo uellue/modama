@@ -2,11 +2,12 @@
 
 import time
 
+from modama_crawler import files
 from modama_crawler.formats import SLOW, Directory, Entry, run_post
 from modama_crawler.testing import recognise
 
 from modama_formats_em.de import INFO
-from modama_formats_em.testing import claimed_first
+from modama_formats_em.testing import claimed_first, stale
 
 ACQUISITION = {
     "/20241021_00405_info.txt",
@@ -73,6 +74,24 @@ def test_stems_that_nest(collection_tests, tmp_path):
             "/20241021_00405_x_info.txt",
             "/20241021_00405_x_movie.mrc",
         },
+    }
+
+
+def test_an_unread_info_file_of_a_longer_stem(collection_tests, tmp_path, monkeypatch):
+    # Review of read-limit-per-file: an info file that cannot be read (or is
+    # refused over the read limit) keeps its stem's files out of the shorter
+    # stem's acquisition; they stay as they are without em/de
+    monkeypatch.setattr(
+        files, "regular", stale("20241021_00405_x_info.txt", files.regular)
+    )
+    result = recognise(collection_tests, "nested_stems", tmp_path)
+    assert {d.anchor: (d.format, set(d.members)) for d in result.datasets} == {
+        "/20241021_00405_info.txt": (
+            "em/de",
+            {"/20241021_00405_info.txt", "/20241021_00405_movie.mrc"},
+        ),
+        "/20241021_00405_x_info.txt": ("", {"/20241021_00405_x_info.txt"}),
+        "/20241021_00405_x_movie.mrc": ("", {"/20241021_00405_x_movie.mrc"}),
     }
 
 

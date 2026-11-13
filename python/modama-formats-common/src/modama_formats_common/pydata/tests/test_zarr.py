@@ -101,6 +101,23 @@ def test_a_zspy_store_that_hyperspy_did_not_write(collection_tests, tmp_path):
     assert (d.format, d.type) == ("common/zarr", "application/x-zarr")
 
 
+def test_the_zarr_json_of_a_zspy_store_is_read_once(collection_tests, tmp_path):
+    # Review of read-limit-per-file (360a): 40 KiB read twice was over 64 KiB
+    store = tmp_path / "big.zspy"
+    store.mkdir()
+    attributes = {"file_format": values.ZSPY, "notes": "x" * (40 << 10)}
+    (store / "zarr.json").write_text(
+        json.dumps({"zarr_format": 3, "node_type": "group", "attributes": attributes})
+    )
+    result = walk(tmp_path, collection_tests.collection.formats)
+    (d,) = result.datasets
+    assert (d.format, d.basis) == (
+        "common/zspy",
+        "zarr.json: zarr_format 3, node_type group, file_format ZSpy",
+    )
+    assert result.all_warnings() == []
+
+
 def test_a_hyperspy_store_named_zarr(collection_tests, tmp_path):
     zspy(tmp_path, "scan.zarr")
     d = datasets(collection_tests, tmp_path)["scan.zarr"]

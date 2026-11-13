@@ -22,7 +22,7 @@ class Zarr(Format):
         marker = d.entry(V3)
         if marker is not None and marker.kind == "file":
             # The marker's presence decides the collapse; its content only adds detail
-            basis, warnings = f"{V3} present", ()
+            basis, warnings, meta = f"{V3} present", (), None
             if marker.size > READ_LIMIT:
                 warnings = (f"{V3} is {marker.size} bytes, too large to inspect",)
             else:
@@ -32,16 +32,31 @@ class Zarr(Format):
                         raise TypeError(f"not a JSON object but {type(meta).__name__}")
                     basis = f"{V3}: zarr_format {meta.get('zarr_format')}, node_type {meta.get('node_type')}"
                 except (TypeError, ValueError, UnicodeDecodeError) as e:
-                    warnings = (f"{V3} cannot be parsed: {e}",)
-            yield Dataset(anchor=d.rel, collapsed=True, basis=basis, warnings=warnings)
+                    meta, warnings = None, (f"{V3} cannot be parsed: {e}",)
+            found = Dataset(
+                anchor=d.rel, collapsed=True, basis=basis, warnings=warnings
+            )
+            if (kept := self.described(d, found, meta)) is not None:
+                yield kept
             return
         for name in V2:
             marker = d.entry(name)
             if marker is not None and marker.kind == "file":
-                yield Dataset(
+                found = Dataset(
                     anchor=d.rel, collapsed=True, basis=f"{name} present (Zarr v2)"
                 )
+                if (kept := self.described(d, found, None)) is not None:
+                    yield kept
                 return
+
+    def described(
+        self, d: Directory, dataset: Dataset, meta: dict | None
+    ) -> Dataset | None:
+        """The store's dataset as this format gives it, None if the store is not of
+        its type; meta is the parsed zarr.json, None for a v2 store or one not read,
+        so that a subtype reads it only once (common/zspy; review of
+        read-limit-per-file)."""
+        return dataset
 
 
 COLLECTION = Collection("zarr", [Zarr()])
