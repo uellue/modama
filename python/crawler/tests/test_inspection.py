@@ -38,6 +38,7 @@ def entry_of(path, mime="application/octet-stream"):
 def directory(tmp_path, entries):
     d = Directory("/", str(tmp_path), list(entries), [], "post", uid=1, mtime=0.5)
     d._format = "t/inspect"
+    d._limit = 1024  # the format's read limit per file, as a format call sets it
     return d
 
 
@@ -83,7 +84,7 @@ def test_reading_a_file_at_any_offset_within_the_budget(tmp_path):
     (tmp_path / "a.bin").write_bytes(b"s" * 100 + b"m" * 1000 + b"e" * 100)
     e = entry_of(tmp_path / "a.bin")
     d = directory(tmp_path, [e])
-    got = d.inspect([e], ends_and_start, 1024)
+    got = d.inspect([e], ends_and_start)
     assert got[e.rel].kind == inspection.RESULT
     assert got[e.rel].result == ["e" * 100, "s" * 100]
     assert got[e.rel].read == 200
@@ -107,7 +108,7 @@ def test_an_entry_replaced_by_a_symlink_or_a_fifo_after_the_listing_is_not_read(
     os.mkfifo(folder / "fifo.bin")
     d = directory(folder, entries)
     start = time.monotonic()
-    got = d.inspect(entries, ends_and_start, 1024)
+    got = d.inspect(entries, ends_and_start)
     assert time.monotonic() - start < 30  # the FIFO's open did not block
     assert {x.kind for x in got.values()} == {inspection.NOT_REGULAR}
     assert d.unanswered is None and not d.retry
@@ -120,7 +121,6 @@ def test_an_entry_replaced_by_a_symlink_is_not_read_for_its_first_bytes(tmp_path
     (tmp_path / "a.bin").unlink()
     (tmp_path / "a.bin").symlink_to(tmp_path / "secret.bin")
     d = directory(tmp_path, [e])
-    d._budget = 100
     with pytest.raises(OSError) as raised:
         d.read(e, 6)
     assert isinstance(raised.value, files.NotRegular)
@@ -158,7 +158,7 @@ def test_a_read_error_inside_an_inspection(tmp_path, monkeypatch):
     e = entry_of(tmp_path / "a.bin")
     d = directory(tmp_path, [e])
     d.inspector = Fixed()
-    got = d.inspect([e], two_reads, None)
+    got = d.inspect([e], two_reads)
     assert got[e.rel].kind == inspection.UNANSWERED
     assert d.unanswered is not None and d.unanswered[0] == e.rel
 
@@ -178,7 +178,7 @@ def test_an_inspection_that_fails(tmp_path):
     (tmp_path / "a.bin").write_bytes(b"x")
     e = entry_of(tmp_path / "a.bin")
     d = directory(tmp_path, [e])
-    got = d.inspect([e], fails, 1024)
+    got = d.inspect([e], fails)
     assert got[e.rel].kind == inspection.FAILED
     assert "a bug" in got[e.rel].detail
     assert d.retry
@@ -192,7 +192,7 @@ def test_an_inspection_that_hangs(tmp_path):
     d = directory(tmp_path, entries)
     d.inspector = Inspector(2, time_limit=10.0)
     try:
-        got = d.inspect(entries, hangs_if_named_hang, 1024)
+        got = d.inspect(entries, hangs_if_named_hang)
     finally:
         d.inspector.close()
     assert got["/hang.bin"].kind == inspection.TIMEOUT
@@ -207,7 +207,7 @@ def test_an_inspection_that_crashes_its_process(tmp_path):
         (tmp_path / name).write_bytes(b"x")
     entries = [entry_of(tmp_path / "crash.bin"), entry_of(tmp_path / "fine.bin")]
     d = directory(tmp_path, entries)
-    got = d.inspect(entries, crashes_if_named_crash, 1024)
+    got = d.inspect(entries, crashes_if_named_crash)
     assert got["/crash.bin"].kind == inspection.DEAD
     assert got["/fine.bin"].result == "alive"
     assert d.retry
@@ -223,7 +223,7 @@ class Inspects(Format):
     reacts_to = frozenset({"text/plain"})
 
     def recognize(self, d):
-        got = d.inspect(d.of_type("text/plain"), pid, 1024)
+        got = d.inspect(d.of_type("text/plain"), pid)
         PIDS.extend(x.result for x in got.values())
         return [Dataset(anchor=rel) for rel in got]
 
@@ -261,7 +261,7 @@ def test_an_inspection_once_the_walk_stops(tmp_path):
     e = entry_of(tmp_path / "a.bin")
     d = directory(tmp_path, [e])
     d.inspector = Inspector(2, stopping=lambda: True)
-    got = d.inspect([e], pid, 1024)
+    got = d.inspect([e], pid)
     assert got[e.rel].kind == inspection.STOPPED
     assert not d.warnings and d.retry
     assert not d.inspector.pool.alive  # no process started for it
@@ -272,7 +272,7 @@ def test_an_inspection_in_the_pre_order_call_is_refused(tmp_path):
     e = entry_of(tmp_path / "a.bin")
     d = Directory("/", str(tmp_path), [e], [], "pre", uid=1, mtime=0.5)
     with pytest.raises(ValueError, match="post-order"):
-        d.inspect([e], pid, 1024)
+        d.inspect([e], pid)
 
 
 def sleeps(f):
@@ -287,7 +287,7 @@ class Sleeps(Format):
     reacts_to = frozenset({"text/plain"})
 
     def recognize(self, d):
-        d.inspect(d.of_type("text/plain"), sleeps, 1024)
+        d.inspect(d.of_type("text/plain"), sleeps)
         return []
 
 

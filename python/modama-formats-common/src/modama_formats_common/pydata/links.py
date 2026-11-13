@@ -15,10 +15,9 @@ into a path that is opened.
 import re
 from collections.abc import Iterable
 
-# Per file, the same on every crawl (decision 342): objects and links listed,
-# and bytes read (the real master: 1,125 and 483 KB)
+# Per file, the same on every crawl (decision 342): objects and links listed (the
+# real master: 1,125); the bytes read are bounded by Hdf5Links.read_limit
 MAX_LISTED = 5000
-BUDGET = 4 << 20
 # Per folder: fewer HDF5 files have nothing to link to, more are not listed
 MIN_FILES, MAX_FILES = 2, 200
 # The names of HDF5 files among the files an earlier format claimed, whose types

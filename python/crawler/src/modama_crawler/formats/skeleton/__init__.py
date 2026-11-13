@@ -65,8 +65,15 @@ class Acquisition(Format):
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for header in d.of_type(HEADER):
             # The signature only, as a content rule would test it: a text file
-            # named like a header gets the type it has without the name
-            if d.read(header, len(SIGNATURE)) != SIGNATURE:
+            # named like a header gets the type it has without the name. A file
+            # that cannot be read, or one over the read limit, is skipped: it
+            # keeps its type, and the other files' outcome stands
+            try:
+                start = d.read(header, len(SIGNATURE))
+            except OSError as error:
+                d.cannot_read(header, error)
+                continue
+            if start != SIGNATURE:
                 d.not_of_type(header, f"no {SIGNATURE.decode()} header")
                 continue
             frames = d.entry(f"{PurePath(header.name).stem}.skf")

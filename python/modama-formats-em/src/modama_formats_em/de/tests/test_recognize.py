@@ -2,7 +2,7 @@
 
 import time
 
-from modama_crawler.formats import BYTE_BUDGET, SLOW, Directory, Entry, run_post
+from modama_crawler.formats import SLOW, Directory, Entry, run_post
 from modama_crawler.testing import recognise
 
 from modama_formats_em.de import INFO
@@ -140,7 +140,7 @@ def test_many_acquisitions_in_one_folder(collection_tests, tmp_path):
             )
     d = Directory("/", str(tmp_path), entries, [], "post", uid=7, mtime=1.0)
     start = time.monotonic()
-    datasets, _ = run_post(d, collection_tests.collection.formats, SLOW, BYTE_BUDGET)
+    datasets, _ = run_post(d, collection_tests.collection.formats, SLOW)
     elapsed = time.monotonic() - start
     print(f"{n} acquisitions recognised in {elapsed:.2f} s")
     assert len(datasets) == n

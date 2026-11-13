@@ -85,7 +85,7 @@ def test_pair_with_basis_and_single_file_fallback():
     d = directory(
         [entry("a.txt"), entry("a.txt.bak", "application/x-trash"), entry("b.txt")]
     )
-    datasets, adoptions = run_post(d, collect(TextPairs()), 5.0, 1 << 20)
+    datasets, adoptions = run_post(d, collect(TextPairs()), 5.0)
     by_anchor = {x.anchor: x for x in datasets}
     assert by_anchor["/a.txt"].members == ("/a.txt", "/a.txt.bak")
     assert by_anchor["/a.txt"].basis == "has a .bak sibling"
@@ -97,7 +97,7 @@ def test_pair_with_basis_and_single_file_fallback():
 
 def test_unknown_file_becomes_octet_stream_dataset():
     d = directory([entry("blob", "application/octet-stream")])
-    datasets, _ = run_post(d, [], 5.0, 1 << 20)
+    datasets, _ = run_post(d, [], 5.0)
     assert [(x.anchor, x.type) for x in datasets] == [
         ("/blob", "application/octet-stream")
     ]
@@ -118,7 +118,7 @@ def test_many_datasets_in_one_directory():
 
     d = directory([entry(f"{i}.txt") for i in range(20_000)])
     start = time.monotonic()
-    datasets, _ = run_post(d, collect(Each()), 5.0, 1 << 20)
+    datasets, _ = run_post(d, collect(Each()), 5.0)
     elapsed = time.monotonic() - start
     assert len(datasets) == 20_000 and {x.format for x in datasets} == {"t/each"}
     assert elapsed < 3, f"{elapsed:.1f} s"
@@ -126,7 +126,7 @@ def test_many_datasets_in_one_directory():
 
 def test_higher_priority_wins_shared_file():
     d = directory([entry("a.txt"), entry("a.txt.bak", "application/x-trash")])
-    datasets, _ = run_post(d, collect(Greedy(), TextPairs()), 5.0, 1 << 20)
+    datasets, _ = run_post(d, collect(Greedy(), TextPairs()), 5.0)
     assert [x.format for x in datasets] == ["t/textpairs"]
     assert d.warnings == []
 
@@ -167,9 +167,7 @@ def test_a_claimed_entry_is_not_offered_to_later_formats():
         ],
         children=[child],
     )
-    datasets, adoptions = run_post(
-        d, collect(PairsAndChildren(), Later()), 5.0, 1 << 20
-    )
+    datasets, adoptions = run_post(d, collect(PairsAndChildren(), Later()), 5.0)
     # The folder stays an entry: what is claimed is its child dataset
     assert seen == [(["b.txt", "sub"], ["b.txt"], [False, False, True], [])]
     assert d.warnings == []
@@ -197,7 +195,7 @@ def test_a_companion_claimed_by_another_format_is_named_as_such():
     d = directory(
         [entry("a.txt"), entry("a.txt.bak", "application/x-trash"), entry("b.txt")]
     )
-    run_post(d, collect(TextPairs(), Companion()), 5.0, 1 << 20)
+    run_post(d, collect(TextPairs(), Companion()), 5.0)
     assert d.claimed == {"a.txt": "t/textpairs", "a.txt.bak": "t/textpairs"}
     assert d.warnings == [
         (
@@ -221,7 +219,7 @@ def test_a_later_claim_on_a_claimed_entry():
     d = directory(
         [entry("a.txt"), entry("a.txt.bak", "application/x-trash"), entry("b.txt")]
     )
-    datasets, _ = run_post(d, collect(TextPairs(), Namer()), 5.0, 1 << 20)
+    datasets, _ = run_post(d, collect(TextPairs(), Namer()), 5.0)
     assert [(x.anchor, x.format) for x in datasets] == [
         ("/a.txt", "t/textpairs"),
         ("/b.txt", ""),
@@ -240,11 +238,9 @@ def test_sibling_format_runs_only_with_its_type_present():
             calls.append(d.phase)
             return ()
 
-    run_pre(
-        directory([entry("a.txt", None)], phase="pre"), collect(Spy()), 5.0, 1 << 20
-    )
-    run_post(directory([entry("a.txt")]), collect(Spy()), 5.0, 1 << 20)
-    run_post(directory([entry("a.png", "image/png")]), collect(Spy()), 5.0, 1 << 20)
+    run_pre(directory([entry("a.txt", None)], phase="pre"), collect(Spy()), 5.0)
+    run_post(directory([entry("a.txt")]), collect(Spy()), 5.0)
+    run_post(directory([entry("a.png", "image/png")]), collect(Spy()), 5.0)
     assert calls == ["post"]
 
 
@@ -257,7 +253,7 @@ def test_claim_outside_directory_is_rejected():
             yield Dataset(anchor="/elsewhere/file", basis="nope")
 
     d = directory([entry("a.txt")])
-    datasets, _ = run_post(d, collect(Outside()), 5.0, 1 << 20)
+    datasets, _ = run_post(d, collect(Outside()), 5.0)
     assert [x.anchor for x in datasets] == ["/a.txt"]
     assert any("anchor is not a member" in text for _, text in d.warnings)
 
@@ -265,7 +261,7 @@ def test_claim_outside_directory_is_rejected():
 def test_adopting_a_child_sets_its_parent():
     child = Dataset(anchor="/sub", type="x/series", mtime=9.0)
     d = directory([entry("readme.txt")], children=[child])
-    datasets, adoptions = run_post(d, collect(Adopter()), 5.0, 1 << 20)
+    datasets, adoptions = run_post(d, collect(Adopter()), 5.0)
     collection = next(x for x in datasets if x.anchor == "/")
     assert collection.parts == ("/sub",) and adoptions == {"/sub": "/"}
     assert collection.mtime == 9.0 and collection.uid == 1
@@ -277,17 +273,17 @@ def test_undeclared_nesting_is_warned():
         collection = False
 
     d = directory([], children=[Dataset(anchor="/sub", type="x/series")])
-    datasets, _ = run_post(d, collect(NotDeclared()), 5.0, 1 << 20)
+    datasets, _ = run_post(d, collect(NotDeclared()), 5.0)
     assert "is not a collection type but adopts /sub" in datasets[0].warnings[0]
 
 
-def test_read_budget(tmp_path):
+def test_read_limit(tmp_path):
     (tmp_path / "a.txt").write_bytes(b"x" * 100)
     e = Entry(
         "a.txt", str(tmp_path / "a.txt"), "/a.txt", "file", 100, 1, 1, 7, "text/plain"
     )
     d = directory([e])
-    d._budget = 64
+    d._limit = 64
     assert d.read(e, 64) == b"x" * 64
     with pytest.raises(BudgetExceeded):
         d.read(e, 1)
@@ -301,30 +297,9 @@ def test_read_fetches_only_what_is_asked(tmp_path):
     (tmp_path / "a.raw").write_bytes(bytes(size))
     e = Entry("a.raw", str(tmp_path / "a.raw"), "/a.raw", "file", size, 1, 1, 7, None)
     d = directory([e])
-    d._budget = size
     data, read = bytes_read(lambda: d.read(e, 100))
     assert data == bytes(100)
     assert read < 64 * 1024
-
-
-def test_format_over_budget_is_skipped(tmp_path):
-    (tmp_path / "a.txt").write_bytes(b"x" * 100)
-    e = Entry(
-        "a.txt", str(tmp_path / "a.txt"), "/a.txt", "file", 100, 1, 1, 7, "text/plain"
-    )
-
-    class Hungry(Format):
-        type = "x/hungry"
-        reacts_to = frozenset({"text/plain"})
-
-        def recognize(self, d):
-            d.read(e, 100)
-            yield Dataset(anchor=e.rel)
-
-    d = directory([e])
-    datasets, _ = run_post(d, collect(Hungry()), 5.0, byte_budget=10)
-    assert datasets[0].format == ""
-    assert any("skipped: reading 100 bytes" in text for _, text in d.warnings)
 
 
 def test_a_slow_formats_result_is_kept(caplog):
@@ -339,7 +314,7 @@ def test_a_slow_formats_result_is_kept(caplog):
             yield Dataset(anchor="/a.txt")
 
     d = directory([entry("a.txt")])
-    datasets, _ = run_post(d, collect(Slow()), slow=0.01, byte_budget=1)
+    datasets, _ = run_post(d, collect(Slow()), slow=0.01)
     assert datasets[0].format == "t/slow"
     assert d.warnings == [] and not d.retry
     assert "x/slow" in caplog.text or "t/slow" in caplog.text
@@ -366,7 +341,7 @@ def test_second_directory_anchor_is_rejected():
             yield Dataset(anchor=d.rel, members=("/b.txt",))
 
     d = directory([entry("a.txt"), entry("b.txt")])
-    datasets, _ = run_post(d, collect(First(), Second()), 5.0, 1)
+    datasets, _ = run_post(d, collect(First(), Second()), 5.0)
     assert [(x.anchor, x.format) for x in datasets] == [
         ("/", "t/first"),
         ("/b.txt", ""),
@@ -383,7 +358,7 @@ def test_claim_of_a_file_elsewhere_is_rejected():
             yield Dataset(anchor="/a.txt", members=("/a.txt", "/elsewhere/b.txt"))
 
     d = directory([entry("a.txt")])
-    datasets, _ = run_post(d, collect(Reacher()), 5.0, 1)
+    datasets, _ = run_post(d, collect(Reacher()), 5.0)
     assert datasets[0].format == ""  # stays a single file
     assert (
         "/a.txt",
@@ -400,7 +375,7 @@ def test_pre_order_dataset_that_does_not_collapse_is_ignored():
             yield Dataset(anchor=d.rel, basis="too early")
 
     d = directory([entry("x", None)], phase="pre")
-    assert run_pre(d, collect(Eager()), 5.0, 1) is None
+    assert run_pre(d, collect(Eager()), 5.0) is None
     assert (
         "/",
         "t/eager: ignored a pre-order dataset that doesn't collapse /",
@@ -417,7 +392,7 @@ def test_core_owned_fields_are_reset():
             yield Dataset(anchor="/a.txt", parent="/elsewhere", collapsed=True)
 
     d = directory([entry("a.txt")])
-    datasets, _ = run_post(d, collect(Sneaky()), 5.0, 1)
+    datasets, _ = run_post(d, collect(Sneaky()), 5.0)
     assert datasets[0].parent is None and datasets[0].collapsed is False
     assert "t/sneaky: parent and collapsed are set by the core" in datasets[0].warnings
 
@@ -431,7 +406,7 @@ def test_crashing_format_does_not_stop_recognition():
             raise RuntimeError("boom")
 
     d = directory([entry("a.txt")])
-    datasets, _ = run_post(d, collect(Crash()), 5.0, 1)
+    datasets, _ = run_post(d, collect(Crash()), 5.0)
     assert [x.anchor for x in datasets] == ["/a.txt"]
     assert any("failed: RuntimeError('boom')" in text for _, text in d.warnings)
 
@@ -446,13 +421,13 @@ def test_pre_order_collapse():
                 yield Dataset(anchor=d.rel, collapsed=True, basis="MARKER present")
 
     d = directory([entry("MARKER", None)], phase="pre")
-    ds = run_pre(d, collect(Marker()), 5.0, 1)
+    ds = run_pre(d, collect(Marker()), 5.0)
     assert ds.collapsed and ds.type == "x/marked" and ds.members == () and ds.uid == 1
     assert (
         ds.mtime == 0.5
     )  # the directory's own mtime: the contents were not visited (R37)
     assert (
-        run_pre(directory([entry("x", None)], phase="pre"), collect(Marker()), 5.0, 1)
+        run_pre(directory([entry("x", None)], phase="pre"), collect(Marker()), 5.0)
         is None
     )
 

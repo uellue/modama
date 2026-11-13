@@ -7,9 +7,12 @@ from collections import defaultdict
 from urllib.parse import quote
 
 EXTRACTION_FAILED = "extraction failed"
-# The crawler's fixed markers: formats.WANTED_TWICE (decision 344), NOT_INSPECTED (340,
-# hdf5-links) and extraction.SLOW_EXTRACTION (352, slow-extractions)
-MARKERS = ("two formats want it", "not inspected", "slow extraction")
+# The crawler's fixed markers: formats.WANTED_TWICE (decision 344) and NOT_INSPECTED (340, hdf5-links)
+MARKERS = ("two formats want it", "not inspected")
+# READ_MUCH and OVER_LIMIT: what recognition read of one file (change read-limit-per-file)
+MARKERS += ("read more than 64 KiB", "over its read limit")
+# extraction.SLOW_EXTRACTION: a success over 10 s (352, slow-extractions)
+MARKERS += ("slow extraction",)
 OTHER = "other warnings"
 KINDS = (EXTRACTION_FAILED, *MARKERS, OTHER)
 NO_FORMAT = "no format named"

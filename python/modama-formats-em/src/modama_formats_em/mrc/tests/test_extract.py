@@ -336,3 +336,54 @@ def test_a_sidecar_claimed_by_another_format(collection_tests, tmp_path):
         f"/{STEM}.mrc",
         f"em/mrc: {STEM}.xml is claimed by probe/claim; two formats want it",
     ) in result.all_warnings()
+
+
+# The read limit per file (spec recognition, change read-limit-per-file)
+
+
+def test_a_flat_folder_and_the_same_files_in_100_subfolders(collection_tests, tmp_path):
+    # 10,000 MRC files, 211 bytes read of each: over the old budget of 1 MiB per
+    # folder (about 4,970 files), which dropped em/mrc in the flat folder only
+    data = (one_file(tmp_path) / "one.mrc").read_bytes()
+    flat, nested = tmp_path / "flat", tmp_path / "nested"
+    flat.mkdir()
+    for i in range(10_000):
+        (flat / f"m{i:05d}.mrc").write_bytes(data)
+        sub = nested / f"s{i // 100:02d}"
+        sub.mkdir(parents=True, exist_ok=True)
+        (sub / f"m{i:05d}.mrc").write_bytes(data)
+
+    def found(tree):
+        result = walk(tree, collection_tests.collection.formats)
+        files = sorted(
+            (d.anchor.rsplit("/", 1)[-1], d.type, d.format, d.basis)
+            for d in result.datasets
+            if d.members
+        )
+        return files, result.all_warnings()
+
+    in_flat, warned = found(flat)
+    assert len(in_flat) == 10_000 and {d[2] for d in in_flat} == {"em/mrc"}
+    assert found(nested) == (in_flat, warned) and warned == []
+
+
+def test_an_mrc_file_over_the_read_limit_is_skipped(
+    collection_tests, tmp_path, monkeypatch
+):
+    # em/mrc reads 211 bytes of each; with a limit of 100 each file is refused,
+    # and the format goes on with the next file instead of ending its call
+    from modama_formats_em.mrc import Mrc
+
+    tree = collection_tests.materialise("written_by_mrcfile", tmp_path)
+    monkeypatch.setattr(Mrc, "read_limit", 100)
+    result = walk(tree, collection_tests.collection.formats)
+    assert {(d.anchor, d.format) for d in result.datasets} == {
+        ("/image.mrc", ""),
+        ("/stack.mrcs", ""),
+    }
+    assert sorted(t for _, t in result.all_warnings()) == [
+        f"em/mrc: {name} over its read limit of 100 bytes (211 asked for after 0); "
+        "not read further"
+        for name in ("image.mrc", "stack.mrcs")
+    ]
+    assert not any(listing.retry for listing in result.listings.values())

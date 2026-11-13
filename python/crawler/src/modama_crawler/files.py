@@ -43,8 +43,12 @@ def regular(path: str) -> int:
     return fd
 
 
-class BudgetExceeded(Exception):
-    """A read past a file's or a format call's byte budget."""
+class BudgetExceeded(OSError):
+    """A read past a file's byte budget (a format's read limit per file).
+
+    An OSError, so that a format skips the file as one it cannot read, and
+    goes on with its other files (change read-limit-per-file).
+    """
 
 
 class Counted(io.RawIOBase):

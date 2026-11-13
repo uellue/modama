@@ -158,6 +158,9 @@ class Hdf5Links(Format):
     reacts_to = frozenset(
         {"application/vnd.hdfgroup.hdf5", "application/x.nexus", "application/x.hspy"}
     )
+    # Per file, the same on every crawl (decision 342): the listing of the real
+    # master read 483 KB (change read-limit-per-file: a declared, larger limit)
+    read_limit = 4 << 20
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         from modama_crawler.inspection import RESULT
@@ -179,7 +182,7 @@ class Hdf5Links(Format):
                 f"{links.MAX_FILES}: links not listed",
             )
             return
-        got = d.inspect(listable, links.listed, links.BUDGET)
+        got = d.inspect(listable, links.listed)
         by_name = {e.name: e for e in hdf5}
         candidates = set(by_name)  # what may be a target: not a file found broken
         named: dict[str, dict] = {}
