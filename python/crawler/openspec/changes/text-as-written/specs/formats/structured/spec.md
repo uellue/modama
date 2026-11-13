@@ -37,8 +37,24 @@ Where the rendering is still longer than 4,096 characters, it SHALL be made agai
 - **WHEN** a generated trace export of 2.7 MB, `{"data": [{"traceID": …, "spans": [2,000 spans, each with tags and logs], "processes": {…}}], "total": 0}`, is extracted
 - **THEN** its text shows the first spans as the step that fits keeps them, then `"… (N more items)"` for the rest, and ends with `"total": 0}`, valid JSON of at most 4,096 characters
 
+#### Scenario: A rendering still too long
+- **WHEN** a JSON document has 200,000 keys
+- **THEN** its text starts with the first keys, has a line `… N characters left out …` and ends with the last key (the values after the walk's 10,000 as `"… (more values left out)"`), and only one rendering is made
+
 ### Requirement: A credential in a structured document
-A JSON, YAML or TOML document in which the shared check `values.credential` left out a value SHALL never be shown as written, whatever its length: it SHALL be shown as its rendering (requirement "A long document shortened in place"), each such value as `"… (left out: may be a credential)"`. An INI or `.cfg` file SHALL have each line the check flags replaced by `… (a line left out: may be a credential)`, its leading whitespace kept.
+A JSON, YAML or TOML document in which the shared check `values.credential` left out a value, or whose walk its bounds cut, or in which a line may hold one, SHALL never be shown as written: it SHALL be shown as its rendering (requirement "A long document shortened in place"), such a value as `"… (left out: may be a credential)"`, such a name as `"… (a name left out: may be a credential)"`. An INI or `.cfg` file SHALL be shown by the text area's rule "A credential is left out of the text".
+
+#### Scenario: An INI value on continuation lines
+- **WHEN** `[db]` has `password =`, then `    hunter2ini`, then `host = db.example`
+- **THEN** `hunter2ini` is nowhere in the record, and its text ends with `host = db.example`
+
+#### Scenario: An alias bomb before a password
+- **WHEN** a YAML file nests aliases to 9 levels, then has `password:` and `  hunter2b` below it
+- **THEN** `cut_at_entries` is set and `hunter2b` is nowhere in the record
+
+#### Scenario: A URL with a password as a name
+- **WHEN** a JSON document is `{"users": {"postgres://admin:hunter2key@db/x": 1}, "kept": 2}`
+- **THEN** `hunter2key` is nowhere in the record, and `original_metadata` is `kept` 2
 
 #### Scenario: A Compose file with a password
 - **WHEN** a YAML file has `services.db.environment` [`POSTGRES_PASSWORD=hunter2`, `POSTGRES_USER=u`], `services.db.image` `postgres` and the comment `# test only`
@@ -48,8 +64,12 @@ A JSON, YAML or TOML document in which the shared check `values.credential` left
 - **WHEN** `[db]` has `host = db.example` and `password = hunter2`
 - **THEN** its text is `[db]`, `host = db.example` and `… (a line left out: may be a credential)`
 
+#### Scenario: YAML that does not parse, with a password
+- **WHEN** a YAML file has `password: |`, `  hunter2y` and `bad: [`
+- **THEN** it has a `parse error`, and `hunter2y` is nowhere in the record
+
 ### Requirement: A document that does not parse is shown as text
-A JSON, YAML, TOML, INI or `.cfg` file that its reader refuses SHALL NOT fail its extraction: `original_metadata` is empty; `mapped_metadata` has `parse error`, the reader's message, and `encoding` and `lines` as the text area counts them; the summary line is the encoding and the line count; `values["text"]` is its text by the text area's rules (whole, or head and tail; lines that may hold a credential left out).
+A JSON, YAML, TOML, INI or `.cfg` file that its reader refuses (a document nested too deep too) SHALL NOT fail its extraction: `original_metadata` is empty; `mapped_metadata` has `parse error`, the reader's message, and `encoding` and `lines` as the text area counts them; the summary line is the encoding and the line count; `values["text"]` is its text by the text area's rules (whole, or head and tail; lines that may hold a credential left out).
 
 #### Scenario: A comma missing between two members
 - **WHEN** `stem-shape.json` (13 lines, 263 bytes) closes `"camera_length" : { … }` on line 5 and starts `"detectors" : {` on line 6 without a comma between them

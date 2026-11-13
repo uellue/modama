@@ -48,31 +48,65 @@ def textual(value) -> bool:
 SECRET = (
     r"passw(or)?d|pwd|passphrase|secret|token|api[-_]?key|private[-_]?key"
     r"|credential|authorization|auth(?!or)"
+    # names that end in _PASS or _PW (DB_PASS, SMTP_PW; review of text-as-written)
+    r"|_pass(?![a-z])|_pw(?![a-z])"
 )
 SECRET_NAME = re.compile(SECRET, re.IGNORECASE)
+# A PEM private key's first line (RFC 7468: "-----BEGIN PRIVATE KEY-----"; OpenSSH
+# and OpenSSL write OPENSSH, RSA, EC, ENCRYPTED … before it); not a certificate
+PRIVATE_KEY_BEGIN = r"-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----"
+# Tokens by their documented prefixes: GitHub ("GitHub's token formats",
+# docs.github.com, About authentication to GitHub), GitLab ("Token prefixes",
+# docs.gitlab.com/security/tokens), Slack ("Token types", docs.slack.dev), AWS
+# access key IDs ("Understanding unique ID prefixes", AKIA and ASIA, AWS IAM
+# User Guide, IAM identifiers); the number of characters after them is ours
+TOKEN = (
+    r"\b(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_"
+    r"|glpat-|gloas-|gldt-|glrtr?-|glcbt-|glptt-|glft-|glimt-|glagent-|glwt-"
+    r"|glsoat-|glffct-|xoxb-|xoxp-|xapp-|xoxe\.xapp-|xwfp-)[\w.-]{8,}"
+    r"|\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b"
+)
+# Every branch costs linear time in the text (review of text-as-written: a line
+# of " --" and "pass" repeated took hours): a name is matched from its start
+# only, its secret word found once (atomic), the rest possessive
 SECRET_VALUE = re.compile(
     # such a name, then = or : and a value (POSTGRES_PASSWORD=x, "token": x)
-    rf"(?:{SECRET})[\w-]*[\"']?\s*[=:]\s*\S"
+    rf"(?<![\w-])(?>[\w-]*?(?:{SECRET}))[\w-]*+[\"']?\s*+[=:]\s*+\S"
     # a command line's option (--requirepass x, --password=x)
-    rf"|(?:^|\s)--?[\w-]*(?:{SECRET}|pass)[\w-]*[\s=]+\S"
+    rf"|(?:^|(?<=\s))--?(?>[\w-]*?(?:{SECRET}|pass))[\w-]*+[\s=]++\S"
     # a URL with a user's password (postgres://admin:x@db/x)
-    r"|://[^/@\s]+:[^/@\s]*@"
+    r"|://[^/@\s:]*+:[^/@\s]*+@"
     # an HTTP authorization's value (Basic …, Bearer …): a token of 8 or more
     # characters with a digit, +, / or = (not "Basic settings")
-    r"|\b(?:Basic|Bearer)\s+(?=[\w+/=.-]*[\d+/=])[\w+/=.-]{8,}",
+    r"|\b(?:Basic|Bearer)\s++(?=[\w+/=.-]*?[\d+/=])[\w+/=.-]{8,}"
+    rf"|{PRIVATE_KEY_BEGIN}|{TOKEN}",
     re.IGNORECASE,
 )
+
+
+# A line that starts with such a name and `=` or `:`, its value maybe on the next lines
+# (INI's continuation, a YAML block; review of text-as-written, M3)
+SECRET_NAME_LINE = re.compile(
+    rf"\s*+[\"']?(?>[\w.-]*?(?:{SECRET}))[\w.-]*+[\"']?\s*+[=:]", re.IGNORECASE
+)
+
+
+def credential_line(line: str) -> bool:
+    """Whether a line of a text may hold a credential: as credential() finds it in a
+    text, or a name of SECRET that starts the line, followed by `=` or `:`, a value or not."""
+    return bool(SECRET_NAME_LINE.match(line)) or credential("", line)
 
 
 def credential(name: str, value) -> bool:
     """Whether a value may be a credential, by its name (a dotted path) or its text, best effort.
 
-    True when the name has a word of SECRET, or a text (or a text in a list)
-    has such a word followed by `=` or `:` and a value, a command line option
-    with such a word or `pass` and a value, a URL with a password, or an
-    HTTP authorization's value. The formats leave such values out.
+    True when the name has a word of SECRET or holds what a text may not, or a
+    text (or a text in a list) has such a word followed by `=` or `:` and a
+    value, a command line option with such a word or `pass` and a value, a URL
+    with a password, an HTTP authorization's value, a private key's first line
+    or a token with a documented prefix. The formats leave such values out.
     """
-    if SECRET_NAME.search(name):
+    if SECRET_NAME.search(name) or SECRET_VALUE.search(name):
         return True
     texts = value if isinstance(value, list | tuple) else [value]
     return any(isinstance(t, str) and SECRET_VALUE.search(t) for t in texts)

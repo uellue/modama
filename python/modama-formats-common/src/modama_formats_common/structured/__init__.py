@@ -45,7 +45,7 @@ LIMIT = 8 << 20
 LARGE_HEAD = 64 << 10
 # What the readers raise for a file they refuse: shown as plain text instead
 # (JSON, TOML and decoding errors are ValueErrors)
-REFUSED = (ValueError, yaml.YAMLError, configparser.Error)
+REFUSED = (ValueError, yaml.YAMLError, configparser.Error, RecursionError)
 SAMPLE = 64 * 1024  # what csv.Sniffer sees
 DELIMITERS = ",;\t|"
 XML_NS = "http://www.w3.org/XML/1998/namespace"
@@ -153,7 +153,8 @@ class Document(Format):
         path = root + dataset.anchor
         data, size = bounded(path)
         if size > LIMIT:
-            return self.over_the_bound(data, size, path, dataset.anchor)
+            # A file that grew past LIMIT since fstat: its head as for any such file
+            return self.over_the_bound(data[:LARGE_HEAD], size, path, dataset.anchor)
         try:
             summary, values, documents = self.describe(data, dataset.anchor)
         except REFUSED as error:
@@ -164,11 +165,21 @@ class Document(Format):
         if self.shows_text and encoding is not None and data:
             mapped = values["mapped_metadata"]
             shown = written.shown(data, encoding, len(data))
-            secret = mapped.get("credentials_left_out") or shown.credentials
+            # A walk cut by its bounds did not see every value: a credential may
+            # be among those it did not see (review of text-as-written, M3)
+            secret = (
+                mapped.get("credentials_left_out")
+                or shown.credentials
+                or mapped.get("cut_at_entries") is not None
+            )
+            text = None
             if documents is not None and (secret or not shown.whole):
                 # Longer than written.TEXT, or with a credential: shortened in
                 # place, every key of what it shows (design D1, option B; D6)
-                values["text"] = shortened(documents)
+                with contextlib.suppress(RecursionError):  # very deep: as written
+                    text = shortened(documents)
+            if text is not None:
+                values["text"] = text
             else:
                 values["text"] = shown.text
                 if shown.credentials:

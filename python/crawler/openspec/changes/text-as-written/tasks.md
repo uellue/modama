@@ -24,6 +24,6 @@
 
 - [x] 4.1 The crawler's, `modama-formats-common`'s and `modama-formats-em`'s suites, also under `TZ=Europe/Berlin`; `uvx pre-commit run --all-files`. Verify: the commands' output in the hand-over.
 - [x] 4.2 Before/after examples for @weber's review (synthetic, of the snapshots' shapes), through `records.build`. Verify: in the hand-over.
-- [ ] 4.3 Review by an agent that did not write the code (main starts it), given the code and this change.
+- [x] 4.3 Review by an agent that did not write the code (main started it; "merge after changes"). Fixed, each with a test that failed first: M1 the credential check in linear time and only over the lines shown (at most 4,096 characters of a line); M2 private key blocks, names ending in `_PASS`/`_PW`, tokens by documented prefixes (shared check, decision log); M3 continuation lines of a flagged line, a walk cut by its bounds treated as "a credential may be present"; S1 a name that holds a URL with a password; S2 a rendering too long gets a tail; S3 one rendering where even the last step does not fit, the others stopped early; nits: a file that grows past the bound, a document nested too deep, the gap after a BOM; the rename `not_parsed_larger_than_bytes` named in the decision log.
 - [ ] 4.4 The search stack's end-to-end test (`./runtest.sh e2e`, main's OK for the image build).
 - [ ] 4.5 @weber looks at the six files of 2026-11-13 again in `modama-chain browse` on staging, and the trace export (307).

@@ -579,12 +579,59 @@ def test_a_log_larger_than_the_bound_shows_head_and_tail(tmp_path):
 def test_a_note_with_a_password(tmp_path):
     note = "sample: Au on C\ndb password: hunter2\n  server: postgres://admin:hunter2@db/x\n"
     found = extracted(written(tmp_path, "notes.txt", note))
+    # Lines left out next to each other are one marker (review of text-as-written)
     assert found.values["text"] == (
-        "sample: Au on C\n"
-        "… (a line left out: may be a credential)\n"
-        "  … (a line left out: may be a credential)\n"
+        "sample: Au on C\n… (2 lines left out: may hold a credential)\n"
     )
     assert found.values["mapped_metadata"]["credentials_left_out"] == 2
+
+
+# The review of text-as-written (2026-11-13)
+
+
+def test_a_long_line_of_options_costs_linear_time(tmp_path):
+    # M1: the shared check's option branch took hours on this
+    path = written(tmp_path, "opts.txt", " --" + "pass" * 250_000 + "\n")
+    start = time.monotonic()
+    found = extracted(path)
+    assert time.monotonic() - start < 2.0
+    assert len(found.values["text"]) <= 4096
+
+
+def test_a_private_key_in_a_note(tmp_path):
+    body = [
+        "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
+    ] * 3
+    note = "\n".join(
+        ["key for the stage PC:", "-----BEGIN OPENSSH PRIVATE KEY-----", *body]
+        + ["-----END OPENSSH PRIVATE KEY-----", "done"]
+    )
+    text = extracted(written(tmp_path, "notes.txt", note + "\n")).values["text"]
+    assert text == (
+        "key for the stage PC:\n… (5 lines left out: may hold a credential)\ndone\n"
+    )
+
+
+def test_names_and_tokens_in_a_note(tmp_path):
+    note = "DB_PASS=hunter2\nsmtp_pw: hunter3\nuse ghp_aBcD1234eFgH5678iJkL\nok\n"
+    found = extracted(written(tmp_path, "notes.txt", note))
+    assert found.values["text"] == ("… (3 lines left out: may hold a credential)\nok\n")
+
+
+@pytest.mark.parametrize("name", ["notes.txt", "notes.md"])
+def test_an_indented_value_below_its_name(tmp_path, name):
+    note = "sample: Au\npassword:\n    hunter2txt\n\n    more\nnext: ok\n"
+    fmt = "Markdown" if name.endswith(".md") else "Text"
+    text = extracted(written(tmp_path, name, note), fmt).values["text"]
+    assert "hunter2txt" not in text and "more" not in text
+    assert text.startswith("sample: Au\n") and text.endswith("next: ok\n")
+
+
+def test_the_gap_after_a_byte_order_mark(tmp_path):
+    lines = [f"line {i:03d} " + "x" * 50 + "\n" for i in range(166)]
+    path = written(tmp_path, "bom.txt", "".join(lines).encode("utf-8-sig"))
+    # The three bytes of the mark are not shown: they are left out too
+    assert "… 6,003 bytes left out …\n" in extracted(path).values["text"]
 
 
 def test_a_front_matter_with_a_credential(tmp_path):
