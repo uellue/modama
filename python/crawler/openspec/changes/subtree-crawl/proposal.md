@@ -46,6 +46,8 @@ The branch was 300 commits behind `crawler` when it was brought up to date on 20
 
 The leans are in the design and the code; each can be changed back cheaply.
 
+Both decided by @weber on 2026-11-13 ("269 270 yes"): Q1 option A, Q2 yes, as implemented.
+
 - **Q1 What if the last crawl of the whole tree has no recorded configuration?** Staging after the upgrade: the last full crawl ran before migration 0003, so its configuration is not known, and you run `docker compose run --rm crawl-timer modama-crawler crawl --path adhoc/libertem/libertem-test-data` before the next nightly crawl. *Option A, accept with a warning (lean):* the crawl runs and logs `WARNING the configuration of the last crawl of the whole tree is not recorded (it ran before this version): not compared`; with `MODAMA_CRAWLER_CONFIG` set by compose it is the right one anyway. *Option B, refuse:* status 2 until a full crawl has run under the new version, which costs 1 h 17 min before the first subtree crawl.
 - **Q2 Does `MODAMA_CRAWLER_CONFIG` apply to `records` too?** On staging, `docker compose exec crawler modama-crawler records /data/adhoc/libertem/libertem-test-data` would then use the deployment's formats and exclusions, as the crawl does; today it uses every installed format and no exclusions unless you pass `--config`. *Lean: yes*, it is the default for `--config` of every `modama-crawler` command, since 171 says "the configuration comes from one setting". `modama-chain browse` keeps its explicit `--config` in the compose file (a program of its own).
 
