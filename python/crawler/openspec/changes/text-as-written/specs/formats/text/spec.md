@@ -63,6 +63,10 @@ A line SHALL be left out when `values.credential_line` flags it, when it is in a
 - **WHEN** a `.txt` or `.md` file has `password:`, then `    hunter2txt`, a blank line, `    more`, then `next: ok`
 - **THEN** neither `hunter2txt` nor `more` is in its text, and `next: ok` is
 
+#### Scenario: A long last line with a credential
+- **WHEN** a text file's last line is `x` 28,000 times, ` password=HUNTER2` and `S` 1,990 times, or `password=HUNTER2` and `S` 30,000 times
+- **THEN** `HUNTER2` is not in its text (the whole line decides, not the end shown), and the gap's number of bytes is never negative
+
 #### Scenario: Only what is shown is checked
 - **WHEN** a text file holds one line of ` --` and `pass` repeated, 1 MB
 - **THEN** its extraction takes less than 2 s (the check runs over at most 4,096 characters of a line, and only over the lines shown)

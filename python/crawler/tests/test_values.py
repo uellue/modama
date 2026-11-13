@@ -135,6 +135,22 @@ def test_well_known_token_prefixes():
         assert not credential("note", text), text
 
 
+def test_pass_and_pw_as_a_whole_name():
+    # Second review of text-as-written, S1: a document's key, not a word in prose
+    for name in ("pass", "PW", "db.pass", "users[2].pw"):
+        assert credential(name, "x"), name
+    for name in ("passes", "pw_mode", "bypass"):
+        assert not credential(name, "x"), name
+    assert not credential("note", "pass: 3 of 5 samples")
+
+
+def test_an_access_key_id_in_capitals_only():
+    # Second review, S2: AWS writes its key IDs in capitals
+    assert credential("note", "key AKIAIOSFODNN7EXAMPLE")
+    assert not credential("note", "AsiaPacificSynchrotron2024: beamtime")
+    assert not credential("note", "akiaiosfodnn7example")
+
+
 def test_a_name_that_holds_a_url_with_a_password():
     assert credential("users.postgres://admin:hunter2key@db/x", 1)
 

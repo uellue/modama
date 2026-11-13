@@ -52,6 +52,10 @@ A JSON, YAML or TOML document in which the shared check `values.credential` left
 - **WHEN** a YAML file nests aliases to 9 levels, then has `password:` and `  hunter2b` below it
 - **THEN** `cut_at_entries` is set and `hunter2b` is nowhere in the record
 
+#### Scenario: pass or pw as a whole key
+- **WHEN** a JSON document is `{"user": "u", "pass": "hunter2p"}` or `{"user": "u", "pw": "hunter2p"}`, or a YAML file has `user: u` and `pass: hunter2p`
+- **THEN** `hunter2p` is nowhere in the record and `original_metadata` is `user` `u`; a text such as `pass: 3 of 5 samples` is not flagged by this rule
+
 #### Scenario: A URL with a password as a name
 - **WHEN** a JSON document is `{"users": {"postgres://admin:hunter2key@db/x": 1}, "kept": 2}`
 - **THEN** `hunter2key` is nowhere in the record, and `original_metadata` is `kept` 2

@@ -778,6 +778,21 @@ def test_a_file_that_grows_past_the_bound(collection_tests, tmp_path, monkeypatc
     assert len(extracted.values["text"]) <= 4096
 
 
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        ("login.json", '{"user": "u", "pass": "hunter2p"}'),
+        ("login.yaml", "user: u\npass: hunter2p\n"),
+        ("login2.json", '{"user": "u", "pw": "hunter2p"}'),
+    ],
+)
+def test_pass_or_pw_as_a_whole_key(collection_tests, tmp_path, name, content):
+    # Second review of text-as-written, S1
+    d = one(collection_tests, tmp_path, name, content)
+    assert "hunter2p" not in str(d.extracted)
+    assert d.original == {"user": "u"}
+
+
 def test_a_very_deep_document(collection_tests, tmp_path):
     content = "[" * 100_000 + "]" * 100_000
     d = one(collection_tests, tmp_path, "deep.json", content)

@@ -246,10 +246,16 @@ def _tail(text: _Text, floor: int) -> list[tuple[int, str, int]]:
         if tail:
             return tail
     last = len(text) - 1
+    if last < floor:
+        return []  # the head showed or left out that line already
     piece = text.text(last)[-HALF:]
     block = text.block_before(last)
-    hidden = (block is not None and text.indent(last) > block) or text.flagged(
-        last, piece
+    # The whole line decides, not only its end: a name cut off from its value
+    # (second review of text-as-written, M1)
+    hidden = (
+        (block is not None and text.indent(last) > block)
+        or text.flagged(last)
+        or text.flagged(last, piece)
     )
     return [
         (size_of(piece, text.encoding), CREDENTIAL if hidden else piece, int(hidden))
@@ -299,11 +305,12 @@ def shown(
 
 
 def _lines_in(text: _Text, head) -> int:
-    """How many lines of text the head's segments cover (a front matter or a run of lines
-    left out counts its lines; a piece of the first line counts that line)."""
+    """How many lines of text the head's segments cover whole (a front matter or a run of
+    lines left out counts its lines; a piece of the first line does not count it, so that
+    the tail may show that line's end)."""
     covered, n = 0, 0
     target = sum(s[0] for s in head)
-    while n < len(text) and covered < target:
+    while n < len(text) and covered + text.sizes[n] <= target:
         covered += text.sizes[n]
         n += 1
     return n

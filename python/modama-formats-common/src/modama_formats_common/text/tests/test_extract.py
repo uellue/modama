@@ -641,3 +641,55 @@ def test_a_front_matter_with_a_credential(tmp_path):
         "… (front matter left out: it may hold a credential)\n# Notes\n"
     )
     assert "abc123" not in str(found)
+
+
+# The second review of text-as-written (2026-11-13)
+
+
+def gap_of(text: str) -> int:
+    """The number of bytes the gap line says were left out."""
+    line = next(x for x in text.splitlines() if x.endswith("bytes left out …"))
+    return int(line.split()[1].replace(",", ""))
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # The name inside the line, the value in its last 2,000 characters
+        "x" * 28000 + " password=" + "HUNTER2" + "S" * 1990,
+        # The name at the start, the line left out whole by the head
+        "password=" + "HUNTER2" + "S" * 30000,
+    ],
+)
+def test_a_long_last_line_with_a_credential(tmp_path, line):
+    found = extracted(written(tmp_path, "one.txt", line + "\n"))
+    assert "HUNTER2" not in found.values["text"]
+    assert gap_of(found.values["text"]) >= 0
+
+
+def test_a_log_whose_last_line_holds_a_token(tmp_path):
+    lines = ["2026-11-12 10:00:00.000 INFO frame written\n"] * 30_000
+    last = "x" * 3000 + " token=HUNTER2" + "S" * 1990 + "\n"
+    path = written(tmp_path, "run.log", "".join(lines) + last)
+    assert path.stat().st_size > head.HEAD
+    text = extracted(path, "Log").values["text"]
+    assert "HUNTER2" not in text
+    assert gap_of(text) >= 0
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "x" * 30_000,
+        "a\n" + "x" * 30_000,
+        "x" * 30_000 + "\nb\n",
+        "password=1\n" + "x" * 30_000,
+        "x" * 30_000 + "\n  password=1" + "y" * 5000,
+        "line\n" * 5000,
+    ],
+)
+def test_the_gap_is_never_negative(tmp_path, content):
+    path = written(tmp_path, "t.txt", content)
+    text = extracted(path).values["text"]
+    shown = gap_of(text)
+    assert 0 <= shown <= path.stat().st_size

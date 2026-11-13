@@ -64,7 +64,8 @@ TOKEN = (
     r"\b(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_"
     r"|glpat-|gloas-|gldt-|glrtr?-|glcbt-|glptt-|glft-|glimt-|glagent-|glwt-"
     r"|glsoat-|glffct-|xoxb-|xoxp-|xapp-|xoxe\.xapp-|xwfp-)[\w.-]{8,}"
-    r"|\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b"
+    # in capitals only, as AWS writes them (not AsiaPacific…; second review, S2)
+    r"|(?-i:\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b)"
 )
 # Every branch costs linear time in the text (review of text-as-written: a line
 # of " --" and "pass" repeated took hours): a name is matched from its start
@@ -97,6 +98,17 @@ def credential_line(line: str) -> bool:
     return bool(SECRET_NAME_LINE.match(line)) or credential("", line)
 
 
+# Names that are a credential only as a whole name, a document's key, not as a word of a
+# text ("pass: 3 of 5 samples"; second review of text-as-written, S1)
+WHOLE_NAMES = frozenset({"pass", "pw"})
+
+
+def whole_name(name: str) -> bool:
+    """Whether the last part of a dotted path (`[n]` and `@` left out) is one of WHOLE_NAMES."""
+    last = name.rsplit(".", 1)[-1].split("[", 1)[0].lstrip("@")
+    return last.lower() in WHOLE_NAMES
+
+
 def credential(name: str, value) -> bool:
     """Whether a value may be a credential, by its name (a dotted path) or its text, best effort.
 
@@ -106,7 +118,7 @@ def credential(name: str, value) -> bool:
     with a password, an HTTP authorization's value, a private key's first line
     or a token with a documented prefix. The formats leave such values out.
     """
-    if SECRET_NAME.search(name) or SECRET_VALUE.search(name):
+    if SECRET_NAME.search(name) or SECRET_VALUE.search(name) or whole_name(name):
         return True
     texts = value if isinstance(value, list | tuple) else [value]
     return any(isinstance(t, str) and SECRET_VALUE.search(t) for t in texts)
