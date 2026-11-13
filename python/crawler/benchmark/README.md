@@ -12,7 +12,9 @@ counters, the cgroup's memory counters), so it works for any implementation.
 ## Setup
 
 Linux with root, cgroup v2 and systemd; the kernel and package list is in the
-requirements, 2.7. In the devvm, as root:
+requirements, 2.7. In the devvm, run `devvm bench-setup` on the host once: it installs
+that list in the VM (`/.devvm/guest/bench/setup.sh`; `strace` and `perf` come with the
+provisioning). Then, in the VM, as root:
 
 ```bash
 sudo ./nfs-up.sh                    # export /srv/modama-bench, mount it at /mnt/modama-bench
@@ -43,6 +45,24 @@ sudo python3 generate.py shapes/shape-0.05-seed1.tsv.gz /srv/modama-bench/tree
 listing of 2026-10-15, seed 1, checked by @weber for publication (2026-11-11). The same
 tree is on the real storage at `/storage/er-c-data/adhoc/datamanagement/testdata/` on
 the development server (@weber manages it).
+
+**Making a listing.** @weber makes it, nobody else (@weber, 260): it walks the whole
+production tree, about two million entries, which loads the production NFS server, and
+the listing holds real paths and names, so it stays private, in the checkout's ignored
+`.claude/survey/`. The listing of 2026-10-15 was made with `find` over the data tree's
+mount (then `/er-c-data` in the devcontainer) in the format `shape.py` reads; on the
+development server the mount is `/storage/er-c-data`:
+
+```bash
+find /storage/er-c-data -printf '%y\t%s\t%T@\t%p\n' 2> .claude/survey/find-$(date -u +%F).err |
+    gzip > .claude/survey/listing-$(date -u +%F).tsv.gz
+```
+
+The columns: the entry's type (`f` file, `d` directory, `l` symlink, …), its size in
+bytes, its mtime in seconds since 1970, and its path. Directories `find` cannot read
+are listed in the `.err` file; `design/survey.md` has what the listing of 2026-10-15
+showed. A coding agent never runs this; it works from the committed shape or asks for
+counts.
 
 Files are zeros, so the content checks see no real headers: a format reader that parses
 a header (EMPAD XML, Zarr metadata) only warns. The I/O per file is that of the real
@@ -144,3 +164,79 @@ flight after: 54,346 × 20.2 ms / 40.5 s ≈ 27, near the server's 30 session sl
 With `os.access` back for every file (D4 as decided on 2026-11-11: the file system decides
 readability, not the mode bits), on the integration branch: 54.5 s, 405 files/s, ACCESS
 21,746, GETATTR 8,938, the other counts the same; 40.2 s on the same branch before.
+
+## The I/O study's playgrounds
+
+The parallel walk was decided from two throwaway programs (2026-11-11; the change
+`parallel-walk`, design), kept as its evidence, not as code to build on:
+
+- `pywalk.py`: the crawl's I/O alone (list, lstat, the MIME check with its header read)
+  with N threads, the read modes plain, `fadvise` and `O_DIRECT`, and the magic matching
+  in worker processes; with the crawler's own MIME code. For example
+  `python benchmark/pywalk.py /mnt/modama-bench/tree --threads 32 --procs 8`.
+- `/modama-rs/crawl-io-playground/`: the same in Rust with `xdg-mime`, and io_uring for
+  the header reads (`--uring QD`); not a member of the `modama-rs` workspace. Build it
+  with `cargo build --release` in its folder; it needs a MIME database directory
+  (`--mimedb`), for example one `modama_crawler.mimedb.build` wrote.
+
+## Profiling
+
+Recipes for the crawler, checked on 2026-11-13 in the devvm with
+`modama-crawler records` on the format packages' fixtures. Measure from outside first
+(`run.sh`, `measure.sh`); profile when the counters say where to look. Busy cores are not
+useful work: the search stack's embedding kept every core busy padding short texts to
+the longest of their sub-batch, and sorting the texts by length made a batch 7.1× faster
+(`/python/crawler/openspec/changes/cpu-budget/design.md`, "Where the CPU time goes" and
+the table after it).
+
+**Where the time goes in Python: py-spy.** It is not installed in the VM; the Airflow
+image of the search stack has it as a static binary, which runs on the host too:
+
+```bash
+cid=$(docker create search-stack-airflow:3.3.2)
+docker cp "$cid:/home/airflow/.local/bin/py-spy" ~/.local/bin/py-spy && docker rm "$cid"
+py-spy record --nonblocking --subprocesses --format raw -o records.txt -- modama-crawler records PATH
+```
+
+`--subprocesses` follows the extraction and matching processes; `--nonblocking` does not
+stop the program to sample it; `--gil` samples only the thread that holds the GIL, which
+answers "is Python's lock the limit" (the staging crawl's main process held it in 36 of 3,000 samples,
+`../design/field-tests/search-stack-staging-findings.md`, run 3). `--format raw` writes collapsed stacks, one per line,
+for `sort | head` or a flame graph tool. For a running container, the search stack's
+`/prototypes/search-stack/perf/harvest-bench.sh` shows how to run py-spy in a container
+that shares the target's process namespace.
+
+**Where the time goes, Python and C together: perf.** It needs sudo
+(`kernel.perf_event_paranoid` is 3 on Debian). Python 3.14 names its own functions to
+perf when started with `PYTHONPERFSUPPORT=1` (or `-X perf`):
+
+```bash
+PYTHONPERFSUPPORT=1 modama-crawler records PATH > /dev/null 2>&1 &
+sudo perf record -F 999 -g -p $! -o perf.data
+sudo perf report -i perf.data --no-children --sort comm,dso -g none | head -20
+sudo perf report -i perf.data --no-children --sort dso,sym | head -60
+```
+
+`perf record -p` follows the worker processes started after it attached, and ends when
+the command ends. Python's functions show as `py::name:file`. For a process in a
+container, see `/prototypes/search-stack/perf/wrap/run.sh` (the map files carry the
+container's pid and are copied under the host's).
+
+**What is read, and how often: strace.**
+
+```bash
+strace -f -c -e trace=openat,read,pread64 -o summary.txt modama-crawler records PATH > /dev/null
+strace -f -e trace=openat,read,pread64 -o trace.txt modama-crawler records PATH > /dev/null
+grep -A3 'name-of-a-large-file' trace.txt
+```
+
+The first counts the calls, the second shows each one with its size: a "read-only"
+library that reads a whole file shows as a chain of full-size reads (that is how the
+office and PDF readers' whole-file reads were found, not by reading their code). The
+counts include Python's imports. In a test, count the bytes instead: the `bytes_read`
+fixture of `tests/conftest.py`, or `rchar` of `/proc/self/io`
+(`modama_formats_em.testing.rchar`).
+
+**CPUs and threads:** `modama-crawler cpu-budget` prints what the crawler will use and
+why; threads per process in a running stack: `ps -eLf`, or `indexing-probe.py`
+(`/prototypes/search-stack/README.md`, "Field-test scripts").

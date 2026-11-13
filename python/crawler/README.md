@@ -4,6 +4,21 @@ The crawler makes the ER-C data file system searchable. It walks the file tree, 
 
 Status: alpha, on the `crawler` branch. The work goes in three steps: the OAI-PMH server (rewritten), dataset recognition (the core is rewritten; more dataset shapes follow), then metadata extraction per file format. `BACKLOG.md` says what is next and what is deferred.
 
+## Start here
+
+For a person new to the crawler, the format collections or the search stack, in this order:
+
+1. "How it works" below (10 minutes): walk, extract, store, serve.
+2. "Getting started": the VM, one install line, `pytest`, then `modama-crawler records --verbose tests/`, the first instrument: what the crawler makes of a folder, and why.
+3. The search stack, `/prototypes/search-stack/README.md`, "Test deployment": `./uptest.sh && ./runtest.sh e2e`. Then open the browser on port 7655 (`http://localhost:7655/?path=/`), pick a file, and read "Looking around" there.
+4. To write formats: `src/modama_crawler/formats/TEMPLATE.md`, all of it, and the skeleton collection beside it. Then one real area as the model: `modama_formats_common/structured` is small, `modama_formats_em/dm` the most complete.
+5. "Seeing what happens" and "What to look out for" below, before your first run on real data.
+6. Look the rest up when you need it: why something is as it is, in the decision log at the end of `design/architecture.md`; what is next, in `BACKLOG.md`, "Next"; how it must behave, in `openspec/specs/`; what real data did, in `design/field-tests/`.
+
+The first hour, as an exercise that also checks your setup: with the test deployment running, crawl its tree (`docker compose exec crawl-timer modama-crawler crawl`), pick a file in the browser and trace its path through every stage (`docker compose exec crawler modama-chain trace <path>`), then change the summary line of its format (the record's first description; for a text file the formats are in `python/modama-formats-common/src/modama_formats_common/text/`) and reload the page: the live views show the change, without a build or a crawl. Undo the change afterwards.
+
+For a coding agent (Claude Code, Codex and the like): the top-level `AGENTS.md` and `AGENTS.md` here load on their own. Then this README. Then the file for the task: TEMPLATE.md and the skill `/.claude/skills/format-collection/` for a format, the runbook in `design/field-tests/` for staging, `benchmark/README.md` for performance. The first move on any "what did the system do" question is the project's own instruments ("Seeing what happens").
+
 ## How it works
 
 A crawl has four steps:
@@ -21,28 +36,28 @@ The Dublin Core mapping onto a file system is approximate. For example, the file
 
 ## Getting started
 
-We develop in a Debian 13 VM made with [devvm](https://github.com/modama-rdm/devvm). The VM shares the host checkout at `/workspaces/data-management-system`, and its provisioning (`/.devvm/provision.sh`) installs Docker, `uv` and `pre-commit`. The same steps should work on any Debian 13 machine with those. Set up once:
+We develop in a Debian 13 VM made with [devvm](https://github.com/modama-rdm/devvm): `devvm create` in the checkout on the host makes it from `/.devvm/config.env` and runs `/.devvm/provision.sh` in it once. The VM shares the host checkout at `/workspaces/data-management-system`. The provisioning installs Docker, `uv`, `pre-commit`, Node.js with the OpenSpec CLI, Rust with a C linker, `jq`, `tmux`, `htop`, `rsync`, `strace`, `perf`, `gh` and `mdbook`, sets the kernel limit OpenSearch needs, and prepares the crawler's setup: the PostgreSQL 17 server binaries without a running cluster, `shared-mime-info`, an empty `~/.venv` with Python 3.14 and the `PATH` line in `~/.bashrc`. Two opt-in commands add more: `devvm desktop-setup` (a virtual desktop, and the tools of the visual check in a terminal) and `devvm bench-setup` (the NFS benchmark's server and I/O tools, `benchmark/README.md`). Claude Code comes with `devvm setup-dev`; its plugins are in `/docs/working-with-claude.md`.
+
+Then, in the VM, the packages, once (and again in a new worktree, into a venv of its own, `AGENTS.md`):
 
 ```bash
-sudo mkdir -p /etc/postgresql-common/createcluster.d
-echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.d/no-main-cluster.conf
-sudo apt-get install -y --no-install-recommends postgresql-17 postgresql-client-17 shared-mime-info
-uv venv --python 3.14 ~/.venv
-uv pip install --python ~/.venv/bin/python -e "/workspaces/data-management-system/python/crawler[test]"
-# in ~/.bashrc:
-export PATH="$HOME/.venv/bin:/usr/lib/postgresql/17/bin:$HOME/.local/bin:$PATH"
+cd /workspaces/data-management-system
+uv pip install --python ~/.venv/bin/python -e "python/crawler[test]" -e "python/modama-formats-common[test]" -e python/modama-formats-em -e "python/search-chain[browse]"
 ```
 
-Why each step is there:
+On another Debian 13 machine, do what `provision.sh` does under "The crawler's development setup" by hand. Why each step is there:
 
 - Python 3.14 comes from `uv`, because Debian 13 ships 3.13.
 - The PostgreSQL server binaries are needed without a running cluster. The tests start their own throwaway servers through `pytest-postgresql`.
 - `shared-mime-info` provides `update-mime-database`. The crawler uses it to build its own MIME database at startup.
+- All four packages at once: the crawler's tests import both format packages (`tests/test_runs.py`), and `modama-chain` (`python/search-chain/`) is the instrument for the rest of the chain.
+
+**The machine.** The VM's 8 vCPUs, 24 GiB of memory and 120 GB of disk (`config.env`) are the floor for one search stack and one coding agent: the idle stack takes about 7 GB of memory, and `/tmp` is a RAM disk of 12 GB that counts against it. Coding agents working in parallel each run their own test suites (380 MB of temporary files for the crawler's alone, "Running tests"), so plan more memory and cores for them; a consumer laptop is not enough for that (@weber, 2026-11-13).
 
 Then, from `python/crawler/`:
 
 ```bash
-pytest                                  # the whole suite, under a minute
+pytest                                  # the whole suite, about 5 minutes on 8 CPUs
 modama-crawler records tests/           # the records a crawl of this directory would publish, no database
 modama-crawler records --verbose PATH   # the same, with why each dataset was recognised, as XML comments
 ```
@@ -160,18 +175,87 @@ The tests build every database by the migrations, so `pytest` runs the new one. 
 
 ## Adding a file format
 
-Formats are grouped into *collections*: the crawler's own under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`), others in packages of their own that register an entry point, such as `em` in `/python/modama-formats-em/` (EMPAD, Digital Micrograph, Merlin). Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one. The `em` collection is the most complete example of multi-file formats with metadata extraction.
+Formats are grouped into *collections*: the crawler's own under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`), others in packages of their own that register an entry point: `em` in `/python/modama-formats-em/` (EMPAD, Digital Micrograph with its workspaces, K2IS, Merlin, NanoMegas block files) and `common` in `/python/modama-formats-common/` (images, notebooks and other Python data-science files, office documents, plain text, structured data). Each package's README has the table of its formats. Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one, with its core requirements, the steps and the tests; `formats/skeleton/` is a working collection to copy; the skill `/.claude/skills/format-collection/` (plain Markdown) is the workflow from the person's sample files to a merged change. The `em` collection is the most complete example of multi-file formats with metadata extraction.
 
 When choosing a MIME type, use an existing one if possible. Look at freedesktop.org, Debian's package list, or reader libraries such as LiberTEM and HyperSpy. Otherwise use an unofficial `application/x.…` type, never a misleading generic one.
 
-## Tests
+## Running tests
+
+| Suite | Where, command | Tests | Time, temporary files | Needs |
+|---|---|---|---|---|
+| crawler | `python/crawler`: `pytest` | 451 | 5 to 7 min, 390 MB | the PostgreSQL binaries; both format packages installed |
+| formats, common | `python/modama-formats-common`: `pytest src`, then `TZ=Europe/Berlin pytest src` | 276 | 25 s, 320 MB | its `[test]` extra |
+| formats, EM | `python/modama-formats-em`: `pytest src`, also with `TZ=Europe/Berlin` | 135 | 25 s, 130 MB | |
+| search chain | `python/search-chain`: `pytest` | 74 | 25 s to 1 min | the `[browse]` extra; the EOSC submodules checked out |
+| end to end | `prototypes/search-stack`: `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e` | 29 checks | about 6 min on a fresh stack | Docker; a secrets folder with a language model key (its README, "Secrets for the end-to-end test") |
+| lint | the repository root: `uvx pre-commit run --all-files`, as CI runs it (ruff pinned in `.pre-commit-config.yaml`; its check leaves out `prototypes/`) | | seconds | for `prototypes/` too: `uvx ruff check`, with 7 known errors in notebooks (`BACKLOG.md`) |
+
+Times measured on 2026-11-13 in the VM (8 vCPUs), each suite alone; with other coding agents' suites running at the same time they take longer (the crawler's 6.5 min next to a second suite). Keep temporary files out of the shared `/tmp`: `pytest --basetemp /var/tmp/<you>/pytest` and `TMPDIR=/var/tmp/<you>/tmp`. While you iterate, run the tests the change most likely affects first, one run per case (`AGENTS.md`, standing rules); before a merge and after every merge into `crawler`, all suites, since one package's change can move another's results (a format package installed changes the crawler's tests: TEMPLATE.md, "Core requirements", 11). No CI job runs these suites or the end-to-end test yet (R13); for the crawler's area CI runs the pre-commit hooks only (`/.github/workflows/ci.yml`).
 
 - `tests/` covers the OAI-PMH protocol (including real client libraries: `sickle`, `oaipmh`, and `oaipmh-scythe`, which the EOSC harvester uses), the walk, the format runner, selection, MIME detection, rendering, records, the CLI and the schema migrations (`test_migrations.py`, with a database made before migrations from `tests/migrations/before_migrations.sql`). Responses are validated against the OAI-PMH XSDs. Matching the spec and working with real clients turned out to be different things, so we test both.
 - Each collection's `tests/` holds fixture trees and their expected recognition results, run by the pytest plugin in `testing.py`. After an intended change, re-record the expectations with `pytest --regen-expected <collection dir>` and review the diff before committing.
 - `pytest --cov` reports coverage.
-- Lint and format run from the repository root, as CI and the commit hook do: `uvx ruff format --check --diff && uvx ruff check`.
+- Lint and format run from the repository root, as the table says; the commit hook runs the same hooks on the files of a commit (`pre-commit install` once).
 
 The recognition result is the oracle throughout: what the fixture tests compare, what `store.py` writes, and what `records` prints.
+
+## Seeing what happens
+
+The project has its own instruments for every question of the kind "what did the system do, and why". **Use them first.** Go to raw interfaces (`docker exec … python`, SQL, the stores' HTTP APIs, `awk` over a listing) only when an instrument cannot answer, and then that is a finding about the instrument: fix it, or put it in `BACKLOG.md` (@weber, 2026-11-13; `design/kaizen.md`, notes). The gap of `trace` for files inside collapsed folders (248) showed only because someone ran `trace` on staging instead of going around it.
+
+| Instrument | The question it answers | Where it is described |
+|---|---|---|
+| `modama-crawler records --verbose PATH` | which datasets the crawler makes of a folder, of which format, and why; the records it would publish; no database | "Getting started" |
+| `modama-crawler runs`, `cpu-budget` | the crawls, their counts, warnings and errors; the extractor identity and what the next crawl extracts again; how many processes and threads a crawl will use | "Running the crawler" |
+| `modama-chain status` | the last crawl, harvest and indexing, and the freshness time T: every file older than T is in the search | `/python/search-chain/README.md` |
+| `modama-chain trace PATH` | where one path went between the tree and a search hit, stage by stage, with flags for the known ways to get lost (`BEFORE-HARVEST-WINDOW`, `SYNCED-WITHOUT-DOCUMENT`, `STALE`) | the same, "Output" |
+| `modama-chain browse` | for one file, side by side, what each stage stored and what the checkout's code makes of it now; an edit to a format shows on reload | the same, "browse" |
+| `monitor.sh`, `field-test/` scripts, the recorded terminal | a run on staging over hours: load, memory, containers, NFS counters, the indexing's tasks and batches | `/prototypes/search-stack/README.md`, "Field-test scripts" |
+| `benchmark/run.sh`, `measure.sh` | what NFS did for one command: operations, bytes, round trips, memory, against an emulated production mount | `benchmark/README.md` |
+| `rchar`, the `bytes_read` fixture, strace | how many bytes a format or a library reads, and in which pieces | `benchmark/README.md`, "Profiling"; `tests/conftest.py` |
+| py-spy, perf | where the time goes, in Python and in C | `benchmark/README.md`, "Profiling" |
+| `rabbitmqctl list_queues`, OpenSearch `_count` | whether the broker's queues have consumers; how many documents the search can find | `/prototypes/search-stack/README.md`, "Looking around" |
+
+Two measures of what the instruments did: before `trace` existed, a fresh coding agent needed 24 tool calls to diagnose two faults in the chain; `browse` found four bugs in real data on its first afternoon on staging (2026-11-12: the Merlin header below, a missing block-file format, DM keeping 14 of 157 tags, K2IS putting 307 tags into its summary line).
+
+## Finding and fixing an issue on real data
+
+1. **See it.** In browse, a snapshot ("Save for Claude"), `trace`, or a crawl's warnings on staging (`modama-crawler runs`; the field-test findings in `design/field-tests/`).
+2. **Ours or upstream's?** Read the error where it is raised: in our code, in a reader library, or in the file. Compare with a second reader where there is one (`ncempy_tags.py` beside the DM tests), and check which version of the library actually runs (the worker's image, not your venv).
+3. **Cut a reproducer.** A real file goes into the repository only with its owner's agreement, and only what the rules and the extractor read: the header, not the data (`blockfile/tests/cut-header.sh` and `k2is/tests/cut-capture.sh` in `python/modama-formats-em`, beside the fixtures they made). Otherwise compose a file that has the offending lines, or generate one. Record where it came from and what was cut in `fixtures.toml`; recipes per format: `design/testing.md`, "Deriving small files from real-world cases".
+4. **Show the test failing** on the old code, with the fixture and a test named after the spec scenario you add.
+5. **Fix, merge, run all suites**, and reload browse on the real file.
+6. **An upstream bug** goes into `BACKLOG.md`, "Sync with upstream", as *worked around here*, with how to report it.
+
+The worked example, the Merlin header (2026-11-12): staging's run 3 failed 97 of 104 Merlin headers, and @weber saw one in browse with `UnicodeDecodeError`. The cause was upstream's: RosettaSciIO's `parse_hdr_file` reads the header as UTF-8, and the Merlin software writes "µ" as the single byte 0xB5 (`Sensor Bias (V, µA)`). The reproducer is composed, not copied: a header with the lines of a public test header, plus the two lines quoted from the staging file's error message (`merlin/tests/generate.py`, fixture `not_utf8` in `fixtures.toml`). The fix reads the header in Latin-1 ourselves (`modama_formats_em/merlin/__init__.py`, `read_header`), the test checks `Sensor Bias (V, µA)`, and `BACKLOG.md` "Sync with upstream" has the upstream fix.
+
+On staging, the order matters (@weber, 2026-11-11): first the instruments and a reproducer, then a baseline run, then the fixes, one at a time. Write down what you expect before a run (files per second, bytes per file, how long), and compare afterwards.
+
+## Performance
+
+The rules; the numbers stay where they were measured (`benchmark/README.md`, `design/field-tests/`, `openspec/changes/cpu-budget/design.md`).
+
+- **On NFS the lever is the number of requests in flight, not CPU.** Every listing, stat and read waits a round trip (16 to 43 ms for a READ on production); the parallel walk keeps about 27 in flight, which took the benchmark tree from 17 to 546 files/s. The NFS server's 30 session slots are the ceiling.
+- **Never a buffered open for a few bytes**: a buffered read fills a whole buffer, 1 MiB on our NFS (finding F12). Unbuffered for headers; for a library that reads in tiny pieces, a 64 KiB buffer with readahead off (F14: 1,154 kB down to 132 kB per DM file). "Pitfalls" below.
+- **Measure bytes read and CPU per item, not the wall time of a local run.** The VM's disk hides what NFS costs; sparse test files make READs cheap (`benchmark/README.md`).
+- **Busy is not efficient.** A full CPU can be doing useless work: the embedding padded short texts to the longest of their sub-batch, and sorting them by length made a batch 7.1× faster (`openspec/changes/cpu-budget/design.md`). Profile before you add processes.
+- **Math pools count physical cores, I/O pools logical CPUs**, and one math thread per process (`/prototypes/search-stack/README.md`, "CPU budget"). Build a validator or a model once per process, not per record.
+- **A failure is retried every crawl**, so a slow failure costs its time limit every night: make failures fast.
+- **Long tasks behind RabbitMQ** need its `consumer_timeout` raised (finding F17; `/prototypes/search-stack/README.md`).
+- **Benchmark before the overnight run, and change one thing at a time.** A night on staging is a scarce run; the benchmark answers in minutes (`benchmark/`).
+
+## What to look out for
+
+Checks that caught real problems, each with what it caught. They are the experience that the instruments do not have on their own (@weber, 2026-11-13, `design/kaizen.md`, notes).
+
+- **Is a green test real?** Look at the numbers behind it, and run the cycle once more: a check that compares 0 with 0 before and after proves nothing.
+- **Is the first run on real data doing well?** Compare files per second and kB per opened file with what you wrote down before. Run 2 on staging crawled 16 files/s at 5 % CPU: waiting on I/O, which led to the parallel walk. `df -i` on the data tree's file system bounds how many files there are before you predict a duration.
+- **CPU% is not useful work.** Measure throughput; count threads per process against the physical cores (LiberTEM met the same oversubscription; `/docs/research/cpu-oversubscription.md`).
+- **A tool a person clicks needs bounded work**, sized with the worst real folder: 67,600 files of one type in one folder on staging.
+- **An emulation of upstream code needs a drift check** (`browse`'s out-of-sync check and `tests/test_sync.py` in `python/search-chain`).
+- **A reader's output looks wrong?** Compare a second reader (ncempy for DM files). Check the version that actually runs (once scythe 0.14 in the worker against 0.17 locally). Check the tree first: all 588 `.msg` files on staging were Tcl message catalogues, not e-mails.
+- **Distrust a result that matches your expectation**, and test what the real client sends: the chat's test passed while the page failed, because the page sent a model name the test did not.
+- **A named case is an example of a rule.** "Keep every Merlin header entry" became "every entry minus a skip list, for all formats" (@weber, 2026-11-12; TEMPLATE.md, checklist); ask which rule a case stands for, and apply it everywhere it holds.
 
 ## Pitfalls
 
@@ -181,6 +265,10 @@ The recognition result is the oracle throughout: what the fixture tests compare,
 - The crawler doesn't publish deletions yet (`deletedRecord=no`).
 - Stale bytecode runs under a new identity: Python checks a `.pyc` by the source's size and its mtime in whole seconds, so an edit of the same size within the same second keeps the old code while the identity changes. Keep `__pycache__` out of images (the `.dockerignore` files of the build contexts) and restart the interpreter after such an edit.
 - Read file contents unbuffered (`open(path, "rb", buffering=0)`), as `mime.py` and `Directory.read` do. A buffered open reads a whole buffer for a few bytes: 128 KiB in Python 3.14, or the block size the file system reports, 1 MiB on our NFS (field-test finding F12). `tests/conftest.py` has a `bytes_read` fixture to check it. The exception is a library that reads in many tiny pieces and seeks between them (RosettaSciIO's DM reader walks the tag tree a few bytes at a time), where unbuffered means a system call per piece: give it a buffer of NFS's read size, 64 KiB, with readahead off (`posix_fadvise` with `POSIX_FADV_RANDOM`), as `modama_formats_em.dm.parsed` does (finding F14).
+- A record must come out byte for byte the same from the same data, or every crawl gives every record a new datestamp, and the harvest and the indexing redo the whole tree. Sort what has no order of its own (tags, `json.dumps(…, sort_keys=True)`), and take numbers as the database returns them, not as Python computed them before storing.
+- The extractor identity must not depend on how the crawler is started: the console script and `python -m` once gave different digests (through `sys.path[0]`), so timer crawls and hand crawls would have extracted everything again for each other (`identity.py` and its test).
+- A schema change is a migration, never DDL in `store.py` ("Adding a migration").
+- Docker: `docker compose up -d <service>` starts the services it depends on too, which restarts one-shot init services; use `up -d --no-deps <service>`. A file bind-mounted alone (a single file, not a folder) keeps the content it had when the container started: after changing it, `docker compose up -d --force-recreate <service>`, not `restart`.
 
 ## Where to read more
 
@@ -195,7 +283,14 @@ The recognition result is the oracle throughout: what the fixture tests compare,
 | `AGENTS.md` | instructions for AI coding agents |
 | `/docs/working-with-claude.md` | how we work with Claude Code on this project, and what we learned |
 | `design/requirements-pipeline.md`, `design/walkthroughs/` | the chain crawler → harvester → warehouse → search: requirements, walk-throughs, wishlist for upstream |
-| `/python/search-chain/` | `modama-chain`: trace a path through the chain, freshness time T |
+| `/python/search-chain/` | `modama-chain`: trace a path through the chain, freshness time T, the browser |
+| `/python/modama-formats-common/`, `/python/modama-formats-em/` | the format packages: a table of their formats, "Values and units" |
+| `src/modama_crawler/formats/TEMPLATE.md`, `/.claude/skills/format-collection/` | writing formats: the rules; the workflow, with briefs for builder and reviewer |
+| `design/field-tests/` | the staging field test on real data: the runbook, and the findings of every run |
+| `benchmark/` | the crawl benchmark on an emulated NFS mount; profiling; how the survey listing is made |
+| `/prototypes/search-stack/perf/`, `/prototypes/search-stack/field-test/` | the search stack's benchmarks and probes; the field test's scripts |
+| `/docs/research/` | research notes behind decisions (CPU oversubscription, schema migrations, …) |
+| `design/hallway/` | hallway tests: a fresh tester on a tool or a document, and what they found |
 
 ## How we work
 
@@ -204,6 +299,20 @@ The recognition result is the oracle throughout: what the fixture tests compare,
 - **Specs with changes.** Larger changes go through [OpenSpec](https://openspec.dev) as a trial: a proposal, design, delta specs and tasks under `openspec/changes/<name>/`, archived into `openspec/specs/` once verified. Small fixes don't need one. `design/` remains the place for the reasoning, and the specs must not contradict it.
 - **Update everything together.** A change of behaviour updates the spec scenario, the tests, the docs and the backlog in the same commit.
 - **Proof-of-concept code** is being replaced. Don't take its structure as a model.
+- **Tools first.** Build the instrument that shows what happens alongside the feature, and use the project's instruments before going around them ("Seeing what happens").
+- **One change, as @weber runs it with coding agents:** a brief; a builder coding agent in its own worktree, spec first; an independent reviewer that did not write the code, read-only, given the code and the rules, not the author's conclusions; the main session decides on each finding; fixes; a merge into `crawler` by the main session with all suites; then the end-to-end test, and browse on real files. Reviews of the plan, before any code, caught bugs that would have deleted records (the planned `subtree-crawl`); reviews of the code caught two security issues before a merge (credentials in values; HDF5 data from outside the file).
+- **Decisions as numbered questions**, each with a lean and the strongest argument against it; the answers go into the decision log at the end of `design/architecture.md`.
+- **The reference for scale** is the night of 2026-11-12: a foundation step by one coding agent, then five builders from one brief, five reviewers, merges one at a time; the review and merge of all five took 2 h 45 min (`/.claude/skills/format-collection/`, "Several formats at once").
+
+## Questions that come up
+
+- **My worktree's tests run the main checkout's code.** `~/.venv` holds editable installs of the main checkout; use a venv of your own in a worktree (`AGENTS.md`, "Parallel coding agents").
+- **pytest fails with `No space left on device`.** `/tmp` is a 12 GB RAM disk shared by everyone in the VM: `pytest --basetemp /var/tmp/<you>/pytest` and `TMPDIR=/var/tmp/<you>/tmp`.
+- **browse does not show my change.** A change to a format, `records.py` or `render.py` shows on reload; a change to `python/search-chain/` needs `docker compose restart browse`; a new dependency needs an image build.
+- **The e2e test fails at its start with `FileExistsError`.** It builds its tree in the stack's data volume and needs a fresh stack: `./downtest.sh --reset && ./uptest.sh` first.
+- **Where is the listing of the real data tree?** Private, in `.claude/survey/` of @weber's checkout; how it is made: `benchmark/README.md`, "Making a listing". The committed shape of it (`benchmark/shapes/`) has no real names.
+- **The warehouse says `records_harvested` 0.** It is never written (an upstream gap, `BACKLOG.md`); count the run's `harvest_events`, or use `modama-chain status`.
+- **`cargo` or `gh` is not found.** A VM provisioned before 2026-11-13 lacks `gh` and `mdbook`; and `cargo` needs `. ~/.cargo/env` in a shell where rustup's installer did not add it.
 
 ## Licence
 

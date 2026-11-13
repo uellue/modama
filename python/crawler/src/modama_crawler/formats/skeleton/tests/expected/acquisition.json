@@ -1,0 +1,45 @@
+{
+  "datasets": [
+    {
+      "anchor": "/acq.skh",
+      "basis": "header with its frame file acq.skf",
+      "collapsed": false,
+      "format": "skeleton/acquisition",
+      "members": [
+        "/acq.skf",
+        "/acq.skh"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.skeleton-header",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/acq.skh": {
+      "subjects": [
+        "Example Scope 3000"
+      ],
+      "summary": [
+        "Example Scope 3000",
+        "exposure 0.5",
+        "2026-11-13 08:15:00"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "credentials_left_out": 1,
+          "frame_file_bytes": 51
+        },
+        "original_metadata": {
+          "acquired": "2026-11-13 08:15:00",
+          "detector.gain": "0",
+          "exposure": "0.5",
+          "instrument": "Example Scope 3000",
+          "operator.note": ""
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

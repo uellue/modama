@@ -334,7 +334,7 @@ with `--concurrency 1`. @weber's reading of the short-lived PIDs ("Python startu
 heavy"). The task log of the run shows at least 88 `run_filemeta_batch` batches, each
 "Transformed batch in 0.0s, 0 documents indexed": a process start for nothing, as our
 records have no file metadata of that kind. The worker's health check (`celery inspect
-ping`) starts a full Python too (96 % CPU while it runs). Measured (`.claude/field-tests/batch-times.sh`): 88 transform batches of 250
+ping`) starts a full Python too (96 % CPU while it runs). Measured (`/prototypes/search-stack/field-test/batch-times.sh`): 88 transform batches of 250
 records and 88 empty file-metadata batches; per transform batch the model load takes
 0.2 to 0.3 s (cached), the batch itself 7.2 to 8.6 s, and a new batch starts about every
 9 s. So the process start, imports and scheduling cost about 1.5 s of 9 (plus the empty
@@ -402,7 +402,7 @@ itself. Not decided.
 **F18 (matchmaker, search API): AI Mode failed on every question, then worked**
 (@weber, 2026-11-12). After the build with patch 0001 (AI Mode without login), each
 chat ended in "Something went wrong while searching"; plain search worked. Cause, from
-`.claude/field-tests/matchmaker-check.sh`: the page named the model `cesnet/agentic` in
+`/prototypes/search-stack/field-test/matchmaker-check.sh`: the page named the model `cesnet/agentic` in
 every request, the search API took it over its `DEFAULT_LLM_MODEL` (Blablador) and
 failed with "Missing credentials" (no CESNET key); its error path then raised
 `UnboundLocalError: used_model`, so the page got no error event (backlog, "Sync with

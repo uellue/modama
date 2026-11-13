@@ -169,7 +169,7 @@ existing ones. Check that it can fail, too: stop a service and run the script.
 
 ## Crawler
 
-The OAI-PMH crawler has its own developer documentation in `python/crawler/README.md` (on the `crawler` branch).
+The OAI-PMH crawler has its own developer documentation in `python/crawler/README.md` (on the `crawler` branch). Its section "Start here" is the way in for the crawler, its format collections and the search stack, for people and coding agents alike.
 
 ## Nextcloud
 

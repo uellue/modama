@@ -44,9 +44,15 @@ The principles of `python/modama-formats-em/README.md`, "Values and units: what 
 ## Setup and tests
 
 ```bash
-uv pip install --python ~/.venv/bin/python -e python/crawler[test] -e python/modama-formats-common[test]
+uv pip install --python ~/.venv/bin/python -e "python/crawler[test]" -e "python/modama-formats-common[test]"
 cd python/modama-formats-common && pytest src
+TZ=Europe/Berlin pytest src                       # once more in another time zone: dates as the file writes them
+pytest --basetemp /var/tmp/common/pytest src      # temporary files on disk, not in the shared /tmp
 ```
+
+About 25 s and 320 MB of temporary files. The crawler's README has every suite and how
+to run them side by side with other coding agents (`python/crawler/README.md`,
+"Running tests").
 
 Each area is a subpackage of `src/modama_formats_common/` with its MIME rules, fixtures and tests, written as `python/crawler/src/modama_crawler/formats/TEMPLATE.md` describes; the crawler's pytest plugin runs them. Fixtures are public test data with their licence and source in `fixtures.toml`, or generated at test time.
 

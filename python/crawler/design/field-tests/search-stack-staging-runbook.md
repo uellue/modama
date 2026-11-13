@@ -59,6 +59,23 @@ Agreed with @weber, co-admin of the server, 2026-11-10.
   it as it goes, and it stays in the agent's transcript: keep secrets off the screen.
   Look through it before anything is shared.
 
+## Before the first run
+
+The checks that caught problems on earlier runs (`python/crawler/README.md`, "What to look
+out for", "Performance"):
+
+- The instruments are ready first: `monitor.sh`, `field-test/nfs-stats.sh`, the recording,
+  and a reproducer for any issue already known; then a baseline run; then the fixes, one
+  at a time (@weber, 2026-11-11).
+- The change was measured on the benchmark first (`python/crawler/benchmark/`), so that a
+  night on staging is not spent finding what a few minutes there would show.
+- The expected numbers are written down before the run: files per second, kB read per
+  opened file, the duration (`df -i` on the data tree's file system bounds the number of
+  files). Compare them in the first minutes of the crawl; 16 files/s at 5 % CPU (run 2)
+  meant waiting on NFS.
+- The stack's broker allows long tasks (`consumer_timeout`, F17), and the coding agents
+  know that nobody pulls in the shared checkout while the run reads it.
+
 ## Settings
 
 `staging.env` in `prototypes/search-stack/` (gitignored), written in steps 3 to 7:
@@ -87,11 +104,11 @@ On the server, as yourself, one line at a time.
 cd ~/src/data-management-system/prototypes/search-stack
 ```
 
-**2.** Start the recording (a copy of kaizen's `record.sh`) into the next `run-<n>`;
-`exit` ends it:
+**2.** Start the recording (`field-test/record.sh`, a copy of kaizen's) into the next
+`run-<n>`; `exit` ends it:
 
 ```bash
-FIELD_TEST_DIR=$HOME/src/data-management-system/.claude/field-tests bash ../../.claude/field-tests/record.sh
+FIELD_TEST_DIR=$HOME/src/data-management-system/.claude/field-tests bash field-test/record.sh
 ```
 
 **2a.** In the recorded shell, check the channel: type a note at the prompt, and wait
@@ -209,7 +226,7 @@ Optional, for the performance baseline (F5), in a third terminal: the NFS counte
 data tree's mount, into the run's folder:
 
 ```bash
-../../.claude/field-tests/nfs-stats.sh "$HOME/src/data-management-system/.claude/field-tests/run-1/nfs.log"
+field-test/nfs-stats.sh /storage/er-c-data "$HOME/src/data-management-system/.claude/field-tests/run-1/nfs.log"
 ```
 
 Leave `monitor.sh` (and `nfs-stats.sh`) running overnight in a terminal that survives
@@ -226,8 +243,9 @@ On the server, in the stack's folder, with the `dc` shorthand of step 12. Not du
 crawl if it can be helped: `--build` stops a running crawl, which is then recorded as
 failed, and the timer catches up at once.
 
-**U1.** Before pulling, note the deployed commit; after pulling, see whether the new code
-brings a migration (a file listed means: one comes):
+**U1.** Staging builds from the shared checkout, so nobody pulls or rebases there: the
+change arrives when it lands in that checkout. Before it lands, note the deployed commit;
+after, see whether the new code brings a migration (a file listed means: one comes):
 
 ```bash
 deployed=$(git rev-parse HEAD); echo "$deployed"

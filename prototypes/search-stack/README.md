@@ -24,14 +24,75 @@ It is our own composition of the upstream images (EOSC metadata-warehouse `v1.10
 ./runtest.sh           # quick checks, one PASS/FAIL line each
 ./downtest.sh --reset  # stop and delete all state; ./uptest.sh then starts fresh
 ./uptest.sh && ./runtest.sh e2e   # the end-to-end test, on a fresh stack, about 6 minutes
-# The e2e test includes a chat question, which needs a language model key: a secrets folder
-# outside git whose keys.env has the key and the model (Blablador: BLABLADOR_API_KEY,
-# DEFAULT_LLM_MODEL=blablador/alias-large, FALLBACK_LLM_MODEL=blablador/alias-fast).
-# Without a key the chat test fails; E2E_CHAT=0 ./runtest.sh e2e skips it with a warning.
+# The e2e test includes a chat question, which needs a language model key ("Secrets for the
+# end-to-end test" below). Without a key the chat test fails; E2E_CHAT=0 ./runtest.sh e2e
+# skips it with a warning.
 export MODAMA_SECRETS_DIR=~/.config/modama/e2e-secrets
 ./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e
 ./downtest.sh          # stop, keeping the state
 ```
+
+### Secrets for the end-to-end test
+
+The test values in `testconf/secrets/` are throwaway and committed; only the language
+model key is real. Make a folder outside the checkout, once:
+
+```bash
+mkdir -p ~/.config/modama
+cp -r testconf/secrets ~/.config/modama/e2e-secrets
+chmod 700 ~/.config/modama/e2e-secrets
+```
+
+Then add three lines to `~/.config/modama/e2e-secrets/keys.env` with an editor:
+
+```
+BLABLADOR_API_KEY=<your key>
+DEFAULT_LLM_MODEL=blablador/alias-large
+FALLBACK_LLM_MODEL=blablador/alias-fast
+```
+
+That is all the stack needs: the Blablador key and the two models. Put no other
+provider's key there; the dummy lines copied from `testconf/secrets/keys.env` stay as
+they are. A Blablador key is a personal access token of Helmholtz Codebase:
+https://codebase.helmholtz.cloud, then *Preferences*, *Access Tokens*, *Add new token*
+with the scope `read_user`; it is valid for at most a year (Blablador's guide,
+https://sdlaml.pages.jsc.fz-juelich.de/ai/guides/blablador_api_access/). Never print
+`keys.env` (no `cat`, no `cmp` output, not in a chat); to check that the key is set:
+
+```bash
+grep -c '^BLABLADOR_API_KEY=.' ~/.config/modama/e2e-secrets/keys.env   # 1: set
+```
+
+### One stack per VM, from one checkout
+
+The stack's compose project is `search-stack` wherever it is started, so a second
+`./uptest.sh` from another worktree replaces the running one, and its image tags
+(`search-stack-crawler`, …) are shared. Agree who uses it: one benchmark of 1 h 40 min
+held up three branches (2026-11-12). `docker compose ls` shows which folder the running
+stack came from.
+
+A worktree has empty submodule folders, and the stack builds the warehouse from them
+(`../EOSC-Data-Commons/metadata-warehouse`); `python/search-chain`'s tests need them too.
+In a new worktree, once:
+
+```bash
+git submodule update --init prototypes/EOSC-Data-Commons/data-commons-search prototypes/EOSC-Data-Commons/metadata-crawlers prototypes/EOSC-Data-Commons/metadata-warehouse
+```
+
+### Housekeeping
+
+Every Airflow rebuild leaves an untagged image of about 2.8 GB (about 80 of them in the
+VM by 2026-11-13). Now and then, with the stack running so that its images are in use:
+
+```bash
+docker image prune                     # untagged images only
+docker system df                       # what is left
+```
+
+Images and volumes named `crawler-e2e*` are left over from the folder
+`prototypes/crawler-e2e/`, removed on 2026-11-11: `docker image ls 'crawler-e2e*'`,
+`docker volume ls -q --filter name=crawler-e2e`, then `docker image rm` and
+`docker volume rm` on what they list.
 
 `docker-compose.override.yml` (loaded automatically, as in `deploy/`) makes it a test deployment: ports on 127.0.0.1 (crawler 7654, browser 7655, Airflow 8081, search API 8000, matchmaker 3000, OpenSearch 9200), a volume `testdata` as the data tree, and for the end-to-end test this folder mounted into the crawler at `/e2e` and the crawler's Airflow account in the crawler too.
 
@@ -95,6 +156,40 @@ ssh -N -J <you>@<host> -L 3000:127.0.0.1:3000 -L 8000:127.0.0.1:8000 -L 8081:127
 ```
 
 Then http://localhost:3000, http://localhost:8000/search?q=ferritin&resource=datasets or http://localhost:8081. Open matchmaker as `localhost`, as above: its page sends usage statistics to EGI's Matomo (egi.matomo.cloud) unless the page's host name is `localhost` or `127.0.0.1`. Searching needs no login; its login (EGI Check-in), the FAIR check and the Data Player reach outside services.
+
+Use these first, before `docker exec … python`, SQL or the HTTP APIs; when one cannot answer the question, that is a finding about it (`python/crawler/README.md`, "Seeing what happens"). Two more for the broker and the index: `docker compose exec broker rabbitmqctl list_queues name messages consumers` (a queue with messages and 0 consumers is stuck), and OpenSearch's `curl -s 'localhost:9200/test_datacite/_count'` for the documents a search can find (`docs.count` of `_cat/indices` counts nested documents too).
+
+## Field-test scripts
+
+Read-only instruments of the staging field test (`python/crawler/design/field-tests/`), in `field-test/`. Each script's header has its exact command; most take the compose project as an argument (staging's `search-staging` by default; `search-stack` for the test deployment), and the ones read on stdin run inside a container (`dc exec -T <service> … < field-test/<script>`).
+
+| Script | What it shows |
+|---|---|
+| `monitor.sh` (this folder) | every 30 s: load, memory, disk, each container's CPU, memory and I/O, the crawls, `modama-chain status` |
+| `record.sh` | a recording of the person's terminal (output and timing), so that a coding agent can follow a run; a copy of the kaizen plugin's |
+| `nfs-stats.sh PATH LOG` | the NFS counters of the mount that holds PATH, once a minute; `docker stats` does not see NFS reads (finding F5) |
+| `nfsdelta.py LOG` | that log as rates: operations/s, round trip, requests in flight, kB received per file opened |
+| `counts.py` | the directories with the most records, and the warehouse's records of our endpoint (the harvest's progress) |
+| `index-tasks.sh` | the latest indexing run's tasks, one CSV row each with queued, started, ended |
+| `index-failures.sh` | why the latest indexing run failed: its failed tasks with the end of their logs, and the counts in the index and the crawler |
+| `batch-times.sh` | per transform batch, the model load and the batch time, from the worker's logs |
+| `indexing-probe.py` | inside the transform worker, every 10 s: each process's CPU, threads and memory, a `py-spy dump` of the busiest every 30 s |
+| `matchmaker-check.sh` | why the search page says "Something went wrong": one search sent three ways, and both logs |
+| `check-paths.sh PATHS` | whether each path in a file (one per line, for example those a chat answer linked) is a record of the crawler |
+
+## Measurements (`perf/`)
+
+Benchmarks and probes of the test deployment, from the change `cpu-budget` and the indexing and harvest work (`python/crawler/openspec/changes/cpu-budget/design.md` has the results). Each file's header has its command.
+
+| File | What it measures |
+|---|---|
+| `indexing-bench.sh`, `docker-compose.perf.yml`, `docker-compose.today.yml`, `seed.py`, `report.py` | the indexing: reset, seed N files, crawl, wait for the harvest and indexing, records/s, per-batch times, CPU per container; `today` is the worker as before the CPU budget |
+| `harvest-bench.sh`, `harvest-report.py`, `harvest-insert-timer.py` | the harvest: records/s, py-spy records of the harvester and the warehouse API, what each database insert costs |
+| `batch-probe.py`, `phase-timer.py` | inside the transform worker: each batch process's life, CPU, threads, memory; the time of each of upstream's transform steps |
+| `batch-memory.py` | peak memory of one transform batch in a throwaway container, by text length, threads and sub-batch |
+| `embed-bench.py`, `embedlat.py`, `searchlat.sh` | embedding throughput for P processes × T threads; one query's embedding latency; 100 searches' latency |
+| `validator-check.py` | that patch 0001 changes no validation result |
+| `wrap/` | `run.sh` runs `batch-memory.py` in a throwaway container under perf (`fp`, `dwarf`) or plain; `cpu.py` adds wall and CPU time to each line and switches ONNX Runtime's profile and options; `par.sh` P batches at once; `ortsum.py` sums an ONNX Runtime profile by operator; `embcmp.py` compares two bulk bodies' embeddings; `lengths.py` the texts' token lengths |
 
 ## Owners' names
 

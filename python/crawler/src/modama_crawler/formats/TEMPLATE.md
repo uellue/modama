@@ -18,6 +18,92 @@ A collection is a directory with this layout; copy it and rename:
 Register it in `pyproject.toml` under `[project.entry-points."modama.formats"]` as
 `<name> = "<package>:COLLECTION"`; the collection's name must be unique.
 
+`skeleton/` beside this file is that layout as a working collection: one made-up format
+(a header with its frame file), its MIME rules, recognition, extraction, two fixtures
+and one test per checklist rule it shows. It has no entry point, so no crawl enables
+it, and the crawler's suite runs its tests, so it stays current. Copy it to start.
+`modama_formats_common/structured` is a small real area to read next,
+`modama_formats_em/dm` the most complete.
+
+The workflow around this file (talking with the person about sample files, a spec,
+building, an independent review, the hand-over) is the skill
+`/.claude/skills/format-collection/SKILL.md`, a plain document too for those who do
+not use skills.
+
+## Core requirements
+
+Each with the test that checks it.
+
+A format:
+
+1. Single-file types are rules in the XML; Python only says what the XML cannot (files
+   that belong together, a folder that is one dataset). Test: `test_coverage`, every
+   glob, magic rule and format of yours fires on a representative fixture.
+2. Every fixture has a manifest entry with purpose, validity, licence and source
+   ("Fixtures" below). Test: `test_manifest`.
+3. Its recognition and extraction are recorded and reviewed. Test: `test_fixture`
+   against `expected/<fixture>.json`.
+4. A spec per format (`python/crawler/openspec/`, `formats/<area>/spec.md`) with
+   scenarios, and one test per scenario, named after it.
+5. Every item of the checklist at the end of this file, each with its test.
+
+A library (a package of collections):
+
+6. A package `modama-formats-<domain>`, imported as `modama_formats_<domain>`, its
+   collection `<domain>`, its formats' ids `<domain>/<format>`, with the entry point
+   above. One subpackage per area, each with its own `COLLECTION` for its tests; the
+   package's `COLLECTION` joins their formats and MIME files (`PARTS` in
+   `modama_formats_common/__init__.py`). Test: `modama-crawler records --verbose` on
+   a fixture names your ids.
+7. Its readers are dependencies of the package, pinned exactly with a comment saying
+   why that version, the current release looked up on PyPI (not recalled), with wheels
+   for Python 3.14 (the crawler's image is `python:3.14-slim-trixie`). Every new
+   dependency is named in the hand-over.
+8. A README with one table row per format (what it is recognised as, what is
+   extracted, an example summary line), a link to the "Values and units" principles of
+   `python/modama-formats-em/README.md`, and the setup and test commands.
+9. `LICENSE` for the package; `LICENSE.fixtures` beside fixtures under another
+   licence, saying where each comes from and what was cut.
+10. A `[test]` extra with what its tests need beyond the crawler's.
+11. Tests that select their own collections. The plugin runs a collection's fixtures
+    with its own definitions and the core's only. A test of yours that walks a tree
+    passes `collection_tests.collection.formats`, not everything installed: otherwise
+    another package that starts to claim the same files changes your results (the
+    crawler's `tests/test_runs.py` counted extractions of whatever was installed,
+    and changed when `common/text` began to extract `.txt` files).
+
+## Step by step
+
+**(a) A format in an existing library**, for example a new EM format in
+`python/modama-formats-em`:
+
+1. Talk with the person who has the files first: what they are, which program wrote
+   them, how they belong together, which reader the field uses (the skill's first
+   step). Look at real ones with `modama-chain browse` if the search stack runs.
+2. Write the spec: an OpenSpec change in `python/crawler/openspec/changes/` with the
+   scenarios (`AGENTS.md`, "OpenSpec").
+3. Copy `skeleton/` to `src/modama_formats_em/<area>/`; rename the collection to the
+   package's (`em`), the types, the format class, the fixtures; import the area in the
+   package's `__init__.py` and add it to `PARTS`.
+4. Find fixtures: the reader's own test files are often the best (check and record
+   their licence), or generate them with the program that writes the format.
+5. Write the tests from the scenarios, then the code, until `pytest src` in the
+   package passes. The first run records `expected/*.json` and fails: read them, then
+   run again.
+6. A row in the package's README; the dependency, if any, in its `pyproject.toml`.
+7. "Testing a format" below, all of it; then the review and the hand-over (the skill).
+
+**(b) A new library**: as (a), but first the package: copy the layout of
+`python/modama-formats-common` (`pyproject.toml` with the entry point and the
+`[test]` extra, `src/modama_formats_<domain>/__init__.py` with an empty `PARTS`,
+`README.md`, `LICENSE`), install it next to the crawler
+(`uv pip install --python <venv>/bin/python -e "python/modama-formats-<domain>[test]"`),
+and check that `modama-crawler records --verbose` on any folder still runs. For the
+search stack, a new package needs the same wiring as `em` and `common`: a build
+context in `/prototypes/search-stack/docker-compose.yml` (services `crawler` and
+`browse`), its install in `crawler.Dockerfile`, and its `src` mounted into `browse`,
+so that the browser shows a change without a build.
+
 ## Rules first, Python second
 
 Single-file types go into the XML, as valid shared-mime-info rules. Name a
@@ -185,6 +271,38 @@ and the core's only, whatever else is installed.
 
 Try a directory by hand: `modama-crawler records --verbose PATH`.
 
+## Testing a format
+
+In the package's folder, with the venv of the README's setup (in a worktree, a venv of
+your own: `python/crawler/AGENTS.md`, "Parallel coding agents"):
+
+```bash
+pytest src                          # the fixtures, the manifest, the coverage rule, your tests
+TZ=Europe/Berlin pytest src         # once more in another time zone: dates as the file writes them
+pytest -s src/<package>/<area>      # with each description and the bytes read, where a test prints them
+modama-crawler records --verbose src/<package>/<area>/tests/fixtures
+```
+
+What the tests must hold, beyond the fixtures (the skeleton has one of each):
+
+- **Bytes read**: a large generated file (a header padded to MiBs, a sparse data file
+  of a GiB) and `rchar` of `/proc/self/io` before and after the extraction; the bound is
+  what the format needs, not the file's size (`skeleton/tests/test_extract.py`,
+  `modama_formats_em.testing.rchar`). A library that claims to read lazily is measured,
+  not trusted.
+- **An entry nobody has seen**: add a made-up entry to a fixture; it must arrive in
+  `original_metadata`.
+- **The name lies**: a text file with your format's name gets the type it has without
+  the name; a renamed copy without its extension is still recognised by its content,
+  where you have a magic rule (the walk only reads a file whose name does not decide).
+- **Before and after on real files**: `modama-crawler records --verbose` on the real
+  folder you were given, and `modama-chain browse` in the search stack, before your
+  change and after it (`python/search-chain/README.md`, "browse").
+
+Then the crawler's suite (`pytest` in `python/crawler`; its tests use every installed
+package) and CI's ruff from the repository root (`uvx ruff format --check --diff`,
+`uvx ruff check`).
+
 ## Lessons from the EM formats
 
 A checklist for every new format, from what `modama-formats-em` taught (where each comes from in brackets; the decision log is `design/architecture.md`).
@@ -206,3 +324,12 @@ A checklist for every new format, from what `modama-formats-em` taught (where ea
 - [ ] **One test per spec scenario**, named after it. (`tests/test_mime.py`; AGENTS.md, "Writing tests")
 - [ ] **No version to raise**: any change to the installed code changes the extractor identity, and the next crawl extracts every dataset again. Expect that cost with every merge. (`identity.py`, "Extracting metadata" above)
 - [ ] **Look at real files** with `modama-chain browse` before and after. (`python/search-chain/README.md`, "browse")
+
+From the common formats (night of 2026-11-12; the reviews of the changes `common-*` in `python/crawler/openspec/changes/`):
+
+- [ ] **"Read-only" libraries that read the whole file**: some readers read everything to parse a little: pypdf's recovery of a file without `%%EOF` at its end, openpyxl's shared strings, Pillow's EPS and WEBP readers. Found by measuring (`rchar`, strace: `python/crawler/benchmark/README.md`, "Profiling"), not by reading their code. Bound the input before you call such a reader, or leave the format without extraction and say so in the README. (`modama-formats-common` README, PDF, Office Open XML, EPS, WEBP rows)
+- [ ] **YAML 1.1**: PyYAML reads `10:30` as 630, `NO` as False and a timestamp as a date in another zone. Use the package's loader that keeps plain values as written (`modama_formats_common/yamldoc.py`), never the full loader.
+- [ ] **No encoding detector**: decide a text's encoding from a byte order mark, then ASCII, then UTF-8, else the one fixed fallback; a statistical detector named one in nine short German notes wrongly. (`modama_formats_common/text/head.py`)
+- [ ] **Never read outside the file**: no link, include or reference followed to another file (HDF5 external storage, virtual datasets and external links; XML entities, through defusedxml; reStructuredText includes). A record is seen by more people than the file, and the crawl must not depend on other files. (the review's blocker in change `common-pydata`, its proposal, "Applied"; `modama_formats_common/pydata/hdf5.py`)
+- [ ] **Untrusted content**: no pickle loaded, no code run, no network; sizes checked before a ZIP member or an XML document is read (decompression and entity bombs).
+- [ ] **Priorities**: domain formats (EM, office, pydata) at 60 and above, one that drops a type at 61 or more, so that it runs before the formats that are to claim the new type; images at 50; the generic structured formats at 21 and plain text at 20, after everything that may claim a text file as a member. (`modama_formats_common/structured/__init__.py`, `text/__init__.py`)

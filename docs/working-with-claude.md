@@ -83,6 +83,13 @@ Step zero before distilling anything: what exists. Sources: Anthropic's official
 
 What none of them do, and ours did: start from the project's requirements, write expectations before running, ask the manager questions during the test, judge a real terminal by eye, and verify every finding adversarially.
 
+## Practices of the crawler work, November 2026
+
+- **An open-items page.** While @weber is away or busy, the agent keeps a page (a claude.ai artifact) with every numbered item and question, its status, the details folded out, and a box for the answer; answers come back through the page, and the agent keeps it current. It made long stretches of parallel work possible without blocking on the chat; @weber wants it developed as a feature of the kaizen plugin (`python/crawler/design/kaizen.md`, notes).
+- **A cost estimate before a long stretch.** Before a loop of expensive runs, many coding agents or a night without check-ins, the agent says what it will cost and asks; no fixed ceiling, so that productive work is not stopped (`python/crawler/AGENTS.md`, standing rules).
+- **Tools before the goal.** The observation tools (the crawler's `records`, `modama-chain trace` and `browse`, py-spy, perf, NFS counters, the NFS benchmark) let a host of issues be fixed in about a day; they are worth building early, and using before going around them (`python/crawler/README.md`, "Seeing what happens").
+- **Compute.** Agentic development needs far more memory and cores per developer than a laptop has: a search stack, several coding agents with their own test suites, and a RAM disk `/tmp` shared by all of them (`python/crawler/README.md`, "Getting started").
+
 ## Media competency for agents
 
 @weber's night thought: unwanted or harmful instructions could spread between agents through any platform where one agent's output is read by another (issues, wikis, comments, generated files, the data tree itself), the way conspiracy theories, challenges and scams spread among people. The defence is the model's judgement ("is that a good idea, should I be doing that, is that plausible?") and standing instructions for critical evaluation of external content.
@@ -138,7 +145,9 @@ Parallelise recognition and metadata extraction; profile before choosing (the fu
 Development moves to a VM made with https://github.com/modama-rdm/devvm, so that the EOSC warehouse, the harvester and the crawler run together for end-to-end work; the devcontainer is retired. What the agent setup needs to survive the move, and where it is:
 
 - **Agent memory and session history** live in `~/.claude/projects/<slug>/` where the slug is the checkout path with slashes replaced by dashes (`-workspaces-data-management-system`). The devcontainer kept them on a named volume; the last copy is in the checkout's gitignored `.claude/home-backup/` (made by `.devcontainer/backup-claude-home.sh`, without the login credential). In the VM, devvm shares the host checkout at `/workspaces/<folder>`: if the folder name stays `data-management-system`, the slug is the same and the memory is restored with `cp -a .claude/home-backup/projects/-workspaces-data-management-system ~/.claude/projects/`; with another folder name, copy it under the new slug. The `memory/` directory is the part that matters; the transcripts are for debriefs.
-- **Plugins** (kaizen) are reinstalled from GitHub: `claude plugin marketplace add uellue/skills` and `claude plugin install kaizen@uellue --scope user`, best in devvm's provisioning.
+- **Plugins** are reinstalled from GitHub, after Claude Code itself (`devvm setup-dev` installs it, after the provisioning has run). The VM uses two (state 2026-11-13):
+  - kaizen 0.6.0-dev.2 from the branch `field-tests-269` of @weber's marketplace, to be replaced by the tag of 0.6.0 once it exists: `claude plugin marketplace add uellue/skills#field-tests-269`, then `claude plugin install kaizen@uellue --scope user`. The crawler's standing rules (`python/crawler/AGENTS.md`) name the version they were merged from.
+  - mattpocock-skills 1.3.2 (`/mattpocock-skills:tdd`, `:code-review`, …): `claude plugin marketplace add mattpocock/skills`, then `claude plugin install mattpocock-skills@mattpocock --scope user`. The marketplace is not pinned; `claude plugin list` shows the version installed.
 - **The read-only GitLab token** is in the checkout's gitignored `.claude/gitlab-token`; it travels with a shared checkout, and devvm passes no host credentials otherwise.
 - **Reference material** in the checkout's ignored `.claude/`: `survey/` (the listing of the data tree), `review/` (the full reviewer and verifier texts, the mechanical scan), `playtest/` (the tester's report, trees, run script and screenshots).
 - **The pyxdg fork** was a sibling checkout on the host (`/workspaces/pyxdg`). Not needed since 2026-11-04: the crawler works with pyxdg 0.28 from PyPI, because it runs `update-mime-database` itself instead of through the fork's `install_mime_info`.
