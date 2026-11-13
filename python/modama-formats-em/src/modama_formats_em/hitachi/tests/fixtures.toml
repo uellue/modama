@@ -1,0 +1,34 @@
+[pair]
+purpose = "representative"
+validity = "parser-only: a TIFF written by tifffile 2026.11.8 and its .txt header, written at test time in the layout of a real Hitachi S/TEM pair (change em-hitachi, design D1: the header's keys in their order, CRLF in the .txt and \\r in the TIFF's description, InstrumentName in the .txt against Instrument name in the TIFF, tag 65500's items, a tag 65501 of 15,156 hexadecimal characters), every value made up; nothing that writes the format wrote it"
+licence = "MIT"
+source = "modama_formats_em.hitachi.tests.generate:pair"
+generator = "modama_formats_em.hitachi.tests.generate:pair"
+
+[notes_beside_tif]
+purpose = "reproducer"
+validity = "parser-only: the pair's TIFF beside a .txt of its stem that holds notes, not the header"
+licence = "MIT"
+source = "modama_formats_em.hitachi.tests.generate:notes_beside_tif"
+generator = "modama_formats_em.hitachi.tests.generate:notes_beside_tif"
+
+[lone_tif]
+purpose = "reproducer"
+validity = "parser-only: the pair's TIFF without its header"
+licence = "MIT"
+source = "modama_formats_em.hitachi.tests.generate:lone_tif"
+generator = "modama_formats_em.hitachi.tests.generate:lone_tif"
+
+[lone_txt]
+purpose = "reproducer"
+validity = "parser-only: the pair's header without its TIFF"
+licence = "MIT"
+source = "modama_formats_em.hitachi.tests.generate:lone_txt"
+generator = "modama_formats_em.hitachi.tests.generate:lone_txt"
+
+[last_suffix]
+purpose = "reproducer"
+validity = "parser-only: a pair whose TIFF's name holds dots (a_x50.0k_0001.tif) and a note a_x50.txt, named after the part before the first dot"
+licence = "MIT"
+source = "modama_formats_em.hitachi.tests.generate:last_suffix"
+generator = "modama_formats_em.hitachi.tests.generate:last_suffix"

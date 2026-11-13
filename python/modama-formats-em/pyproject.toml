@@ -11,6 +11,10 @@ version = "0.0.1.dev0"
 dependencies = [
     "defusedxml",
     "modama-crawler",
+    # hitachi: the pair's values are its TIFF's as the image area reads them
+    # (modama_formats_common.image.tiff), installed beside this package from
+    # the same repository, as modama-crawler is (change em-hitachi, L9)
+    "modama-formats-common",
     # Pinned exactly: private modules, which may change in any release. merlin
     # imports rsciio.quantumdetector._api (MIBProperties); dm and
     # k2is import rsciio.digitalmicrograph._api (DigitalMicrographReader,

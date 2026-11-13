@@ -23,6 +23,13 @@ licence = "MIT"
 source = "modama_formats_common.image.tests.generate:tifffile_tiff"
 generator = "modama_formats_common.image.tests.generate:tifffile_tiff"
 
+[hitachi_tif]
+purpose = "representative"
+validity = "parser-only: written by tifffile 2026.11.8 at test time in the layout of a real Hitachi S/TEM TIFF (change em-hitachi, design D1: its header's keys in their order in ImageDescription with \\r line ends, tag 65500's items with the glued repeat, a tag 65501 of 15,156 hexadecimal characters, 32 rows more than the header's Data size), every value made up; nothing that writes the format wrote it"
+licence = "MIT"
+source = "modama_formats_common.image.tests.generate:lone_hitachi_tif"
+generator = "modama_formats_common.image.tests.generate:lone_hitachi_tif"
+
 [camera_jpeg]
 purpose = "representative"
 validity = "vendor-written: a 480x360 JPEG from a Canon PowerShot S40 (2003), with EXIF (IFD0, Exif IFD with MakerNote and UserComment, Interop IFD, IFD1 with a thumbnail) and JFIF; read by Pillow 13.0.0 on 2026-11-12"

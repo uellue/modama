@@ -1,0 +1,128 @@
+{
+  "datasets": [
+    {
+      "anchor": "/a_x50.0k_0001.tif",
+      "basis": "header a_x50.0k_0001.txt",
+      "collapsed": false,
+      "format": "em/hitachi",
+      "members": [
+        "/a_x50.0k_0001.tif",
+        "/a_x50.0k_0001.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/x-hitachi-sem",
+      "warnings": []
+    },
+    {
+      "anchor": "/a_x50.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/a_x50.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/a_x50.0k_0001.tif": {
+      "subjects": [],
+      "summary": [
+        "HF3300",
+        "HAADF",
+        "Analysis",
+        "Accelerating voltage 300000 (unit unknown)",
+        "Magnification 50000",
+        "PixelSize 0.5 (unit unknown)",
+        "Au on C",
+        "ImageWidth 64",
+        "ImageLength 96",
+        "BitsPerSample 8",
+        "2024/01/15",
+        "09:30:00"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "axes": "YX",
+          "dtype": "uint8",
+          "first_page_shape": [
+            96,
+            64
+          ]
+        },
+        "original_metadata": {
+          "65500.@Confidential.ScanTimeX": "0.02",
+          "65500.@Confidential.ScanTimeY": "12.5",
+          "65500.@Confidential.Stage tilt axis": "Y",
+          "65500.@Fld.FldImgPropModeID": "7",
+          "65500.@Fld.FldImgPropReserveDbl1": "-1",
+          "65500.@Fld.FldImgPropReserveDbl2": "2",
+          "65500.@Fld.FldImgPropSubmodeID": "3",
+          "BitsPerSample": 8,
+          "Compression": "NONE",
+          "ImageLength": 96,
+          "ImageWidth": 64,
+          "PhotometricInterpretation": "MINISBLACK",
+          "ResolutionUnit": "INCH",
+          "RowsPerStrip": 96,
+          "SamplesPerPixel": 1,
+          "SemImageFile.Accelerating voltage": "300000",
+          "SemImageFile.Add embed of property": "off",
+          "SemImageFile.Brightness": "1000",
+          "SemImageFile.Calibration": "1.0",
+          "SemImageFile.Calibration factor X": "1",
+          "SemImageFile.Calibration factor Y": "1",
+          "SemImageFile.Capture speed": "10s",
+          "SemImageFile.Contrast": "2000",
+          "SemImageFile.Data display combine": "off",
+          "SemImageFile.Data size": "64x64",
+          "SemImageFile.Date": "2024/01/15",
+          "SemImageFile.Emission": "10",
+          "SemImageFile.File name": "a_x50.0k_0001.tif",
+          "SemImageFile.Image comment": "Test pattern",
+          "SemImageFile.Image number": "0007",
+          "SemImageFile.Instrument name": "HF3300",
+          "SemImageFile.Keyword1": "300 kV",
+          "SemImageFile.Keyword2": "500",
+          "SemImageFile.Magnification": "50000",
+          "SemImageFile.OBJ aperture": "0",
+          "SemImageFile.Operation mode": "Analysis",
+          "SemImageFile.PixelSize": "0.5",
+          "SemImageFile.Raster rotation angle": "0.0",
+          "SemImageFile.SA aperture": "0",
+          "SemImageFile.STEM camera length": "40",
+          "SemImageFile.STEM condenser aperture": "2",
+          "SemImageFile.SampleName": "Au on C",
+          "SemImageFile.Scan speed": "Fast",
+          "SemImageFile.Screen mode": "320",
+          "SemImageFile.Signal name": "HAADF",
+          "SemImageFile.Stage position R": "0",
+          "SemImageFile.Stage type": "2",
+          "SemImageFile.StagePositionA": "0",
+          "SemImageFile.StagePositionT": "1.5",
+          "SemImageFile.StagePositionX": "100",
+          "SemImageFile.StagePositionY": "-20",
+          "SemImageFile.StagePositionZ": "5",
+          "SemImageFile.Sub mode": "Normal",
+          "SemImageFile.TEM condenser aperture": "1",
+          "SemImageFile.Time": "09:30:00",
+          "XResolution": [
+            96,
+            1
+          ],
+          "YResolution": [
+            96,
+            1
+          ]
+        },
+        "text": "[SemImageFile]\nInstrumentName=HF3300\nDate=2024/01/15\nTime=09:30:00\nImage comment=Test pattern\nKeyword1=300 kV\nKeyword2=500\nSampleName=Au on C\nMagnification=50000\nOperation mode=Analysis\nSub mode=Normal\nSignal name=HAADF\nSTEM camera length=40\nAccelerating voltage=300000\nEmission=10\nFile name=a_x50.0k_0001.tif\nImage number=0007\nData size=64x64\nScreen mode=320\nData display combine=off\nAdd embed of property=off\nScan speed=Fast\nCapture speed=10s\nStagePositionX=100\nStagePositionY=-20\nStagePositionZ=5\nStagePositionT=1.5\nStagePositionA=0\nStage position R=0\nStage type=2\nRaster rotation angle=0.0\nCalibration=1.0\nCalibration factor X=1\nCalibration factor Y=1\nPixelSize=0.5\nBrightness=1000\nContrast=2000\nTEM condenser aperture=1\nSTEM condenser aperture=2\nOBJ aperture=0\nSA aperture=0\n"
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

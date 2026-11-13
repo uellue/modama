@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- A Hitachi electron microscope image: a TIFF and its text header of the
+       same name, a `.txt` whose first line is `[SemImageFile]`. The type is
+       Gwyddion's (modules/file/hitachi-sem.c, "Hitachi SEM data", a .txt +
+       image pair; Debian's list of types desktop applications declare names
+       it for the package gwyddion); the header of an S/TEM has the same first
+       line (change em-hitachi, design D2). No rules of ours: a .txt is typed
+       by its name without being read, and a glob would make every .txt be
+       read; the Hitachi format gives this type to the pair (design D4). -->
+  <mime-type type="application/x-hitachi-sem">
+    <comment>Hitachi electron microscope image with its header</comment>
+  </mime-type>
+</mime-info>

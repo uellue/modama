@@ -111,6 +111,109 @@ def eps(target: Path) -> None:
     Image.fromarray(pattern(48, 64)).convert("RGB").save(target / "figure.eps")
 
 
+# A Hitachi electron microscope's header (change em-hitachi, design D1): the
+# keys of a real S/TEM's header in their order, every value made up; the
+# instrument writes `InstrumentName` in the .txt and `Instrument name` in the
+# TIFF's description
+HITACHI_HEADER = (
+    ("Instrument name", "HF3300"),
+    ("Date", "2024/01/15"),
+    ("Time", "09:30:00"),
+    ("Image comment", "Test pattern"),
+    ("Keyword1", "300 kV"),
+    ("Keyword2", "500"),
+    ("SampleName", "Au on C"),
+    ("Magnification", "50000"),
+    ("Operation mode", "Analysis"),
+    ("Sub mode", "Normal"),
+    ("Signal name", "HAADF"),
+    ("STEM camera length", "40"),
+    ("Accelerating voltage", "300000"),
+    ("Emission", "10"),
+    ("File name", None),  # the TIFF's name
+    ("Image number", "0007"),
+    ("Data size", "64x64"),
+    ("Screen mode", "320"),
+    ("Data display combine", "off"),
+    ("Add embed of property", "off"),
+    ("Scan speed", "Fast"),
+    ("Capture speed", "10s"),
+    ("StagePositionX", "100"),
+    ("StagePositionY", "-20"),
+    ("StagePositionZ", "5"),
+    ("StagePositionT", "1.5"),
+    ("StagePositionA", "0"),
+    ("Stage position R", "0"),
+    ("Stage type", "2"),
+    ("Raster rotation angle", "0.0"),
+    ("Calibration", "1.0"),
+    ("Calibration factor X", "1"),
+    ("Calibration factor Y", "1"),
+    ("PixelSize", "0.5"),
+    ("Brightness", "1000"),
+    ("Contrast", "2000"),
+    ("TEM condenser aperture", "1"),
+    ("STEM condenser aperture", "2"),
+    ("OBJ aperture", "0"),
+    ("SA aperture", "0"),
+)
+# Tag 65500 as the instrument writes it: `"@<group>"<key>=<value>` items
+# separated by \r, the last ones repeated once, the first repeat glued to the
+# item before it; values made up
+HITACHI_TAG_65500 = (
+    '"@Fld"FldImgPropReserveDbl1=-1\r"@Fld"FldImgPropReserveDbl2=2\r'
+    '"@Fld"FldImgPropModeID=7\r"@Fld"FldImgPropSubmodeID=3\r'
+    '"@Confidential"ScanTimeX=0.02\r"@Confidential"ScanTimeY=12.5\r'
+    '"@Confidential"Stage tilt axis=Y"@Confidential"ScanTimeX=0.02\r'
+    '"@Confidential"ScanTimeY=12.5\r"@Confidential"Stage tilt axis=Y'
+)
+# Tag 65501: 15,156 hexadecimal characters, as in the real file; what they hold is unknown
+HITACHI_TAG_65501 = ("0123456789ABCDEF" * 948)[:15156]
+
+
+def hitachi_lines(tif_name: str, instrument_key: str = "Instrument name", **changed):
+    """The header's lines, `[SemImageFile]` first, with values changed or added by key."""
+    header = dict(HITACHI_HEADER)
+    header["File name"] = tif_name
+    header.update(changed)
+    lines = ["[SemImageFile]"]
+    for key, value in header.items():
+        key = instrument_key if key == "Instrument name" else key
+        lines.append(key if value is None else f"{key}={value}")
+    return lines
+
+
+def hitachi_tif(
+    path: Path, description: str | None = None, tag_65500: str = HITACHI_TAG_65500
+) -> None:
+    """A TIFF as a Hitachi microscope writes it: 64 x 96 pixels (a 64 x 64 image and 32 rows more),
+    the header in its description with \\r line ends, the private tags 65500 and 65501."""
+    import tifffile
+
+    if description is None:
+        description = "\r".join(hitachi_lines(path.name))
+    tifffile.imwrite(
+        path,
+        pattern(96, 64),
+        description=description,
+        metadata=None,
+        software=False,  # the instrument writes none
+        photometric="minisblack",
+        resolution=(96, 96),
+        resolutionunit="INCH",
+        extratags=[
+            (65500, "s", 0, tag_65500, True),
+            (65501, "s", 0, HITACHI_TAG_65501, True),
+        ],
+    )
+
+
+def lone_hitachi_tif(target: Path) -> None:
+    """A Hitachi TIFF without its .txt header."""
+    target.mkdir(parents=True)
+    hitachi_tif(target / "grid2_x50.0k_HAADF_0007.tif")
+
+
 def text_named_tif(target: Path) -> None:
     """A text file named like a TIFF."""
     target.mkdir(parents=True)
