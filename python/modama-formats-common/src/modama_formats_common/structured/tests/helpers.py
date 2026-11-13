@@ -1,11 +1,12 @@
 """Recognising and extracting fixtures and one-file trees as the crawl does, in this process."""
 
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 from modama_crawler.formats import Dataset, Extracted, Extraction
 from modama_crawler.records import description
-from modama_crawler.testing import CollectionTests
+from modama_crawler.testing import CollectionTests, bytes_read
 from modama_crawler.walk import walk
 
 
@@ -14,7 +15,7 @@ class Described:
     dataset: Dataset
     extracted: Extracted | None
     description: str
-    bytes_read: int  # by the extractor: rchar before and after the call
+    bytes_read: int  # by the extractor (modama_crawler.testing.bytes_read)
 
     @property
     def original(self) -> dict:
@@ -23,15 +24,6 @@ class Described:
     @property
     def mapped(self) -> dict:
         return self.extracted.values["mapped_metadata"]
-
-
-def rchar() -> int:
-    """Bytes this process has read so far, from /proc/self/io (Linux), as modama_formats_em.testing."""
-    for line in Path("/proc/self/io").read_text().splitlines():
-        key, _, value = line.partition(":")
-        if key == "rchar":
-            return int(value)
-    raise RuntimeError("no rchar in /proc/self/io")
 
 
 def described_tree(ct: CollectionTests, tree: Path) -> dict[str, Described]:
@@ -43,10 +35,8 @@ def described_tree(ct: CollectionTests, tree: Path) -> dict[str, Described]:
         extracted = None
         read = 0
         if fmt is not None:
-            fmt.extract(d, str(tree))  # once first: rchar counts imports too
-            before = rchar()
-            extracted = fmt.extract(d, str(tree))
-            read = rchar() - before
+            fmt.extract(d, str(tree))  # once first: imports count too
+            extracted, read = bytes_read(partial(fmt.extract, d, str(tree)))
             d = replace(d, extraction=Extraction(fmt.id, "", d.stamp, extracted))
         out[d.anchor] = Described(d, extracted, description(d), read)
     return out
