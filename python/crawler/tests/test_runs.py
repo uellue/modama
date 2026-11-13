@@ -445,6 +445,47 @@ def test_runs_estimate_covers_both(conn, env, dm4_tree):
     )
 
 
+# "The runs command estimates the single files a format may now claim" (290)
+
+SINGLE_FILE = f"{NO_EXTRACTION}, format = '', basis = 'single file'"
+
+
+def test_runs_an_estimate_by_type(conn, env, dm4_tree):
+    shutil.copy(DM4, dm4_tree / "two/d.dm4")
+    current, ingredients = crawled(conn, env, dm4_tree)
+    old, before = older(ingredients)
+    conn.execute(
+        "UPDATE crawl_runs SET identity = %s, identity_ingredients = %s",
+        (old, Jsonb(before)),
+    )
+    conn.execute(
+        "UPDATE datasets SET extractor_identity = %s WHERE anchor LIKE '/one/%%'",
+        (old,),
+    )
+    # As stored by a crawl before em/dm4 was installed
+    conn.execute(f"{SINGLE_FILE} WHERE anchor LIKE '/two/%%'")
+    conn.commit()
+    run = shell(f"{CRAWLER} runs", env)
+    assert run.returncode == 0
+    assert run.stderr.startswith(
+        f"note: extraction identity {identity.short(current)} is installed; the next crawl "
+        f"extracts again em/dm4 2 datasets stored under {identity.short(old)} "
+        "(rosettasciio 0.14.0 -> 0.15.0); under a minute on "
+    )
+    assert run.stderr.endswith(
+        " processes, plus single files a format may now claim: about 2 by type\n"
+    )
+
+
+def test_runs_single_files_alone_print_no_note(conn, env, dm4_tree):
+    crawled(conn, env, dm4_tree)
+    # As when the installed format declined the file
+    conn.execute(f"{SINGLE_FILE} WHERE anchor LIKE '/two/%%'")
+    conn.commit()
+    run = shell(f"{CRAWLER} runs", env)
+    assert (run.returncode, run.stderr) == (0, "")
+
+
 def test_runs_when_nothing_changed(conn, env, dm4_tree):
     crawled(conn, env, dm4_tree)
     run = shell(f"{CRAWLER} runs", env)
