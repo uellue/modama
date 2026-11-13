@@ -166,7 +166,13 @@ def test_a_name_that_holds_a_url_with_a_password():
     ],
 )
 def test_a_long_adversarial_line_costs_linear_time(line):
-    start = time.monotonic()
-    credential("line", line)
-    credential("line", line * 25)  # 1 MB
-    assert time.monotonic() - start < 0.5
+    # A line 4 times as long takes about 4 times as long; quadratic, 16 times. The
+    # ratio of this process's CPU times, not a bound in seconds: another suite
+    # running beside it made one fail (1 MB took up to 0.45 s of a 0.5 s bound)
+    def cpu(text: str) -> float:
+        start = time.process_time()
+        credential("line", text)
+        return time.process_time() - start
+
+    one = cpu(line * 25)  # 1 MB
+    assert cpu(line * 100) < 8 * max(one, 0.01)
