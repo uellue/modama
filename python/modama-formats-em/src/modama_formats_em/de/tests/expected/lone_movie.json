@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/20241021_00405_movie.mrc",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/20241021_00405_movie.mrc"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/octet-stream",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

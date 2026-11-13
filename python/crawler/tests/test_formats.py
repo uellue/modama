@@ -16,6 +16,7 @@ from modama_crawler.formats import (
     run_post,
     run_pre,
 )
+from modama_crawler.testing import bytes_read
 
 
 def entry(name, mime="text/plain", kind="file", mtime=1.0, uid=7):
@@ -100,6 +101,27 @@ def test_unknown_file_becomes_octet_stream_dataset():
     assert [(x.anchor, x.type) for x in datasets] == [
         ("/blob", "application/octet-stream")
     ]
+
+
+def test_many_datasets_in_one_directory():
+    # Review of em-de, 2026-11-13 (M2): each dataset's fill built a map of the
+    # directory's entries, so a folder of n datasets took time n² (16,000 DE
+    # acquisitions: 33 s in the runner alone); a folder of single files of a
+    # format (images, texts) as well
+    class Each(Format):
+        type = "x/each"
+        reacts_to = frozenset({"text/plain"})
+
+        def recognize(self, d):
+            for e in d.of_type("text/plain"):
+                yield Dataset(anchor=e.rel, basis="each")
+
+    d = directory([entry(f"{i}.txt") for i in range(20_000)])
+    start = time.monotonic()
+    datasets, _ = run_post(d, collect(Each()), 5.0, 1 << 20)
+    elapsed = time.monotonic() - start
+    assert len(datasets) == 20_000 and {x.format for x in datasets} == {"t/each"}
+    assert elapsed < 3, f"{elapsed:.1f} s"
 
 
 def test_higher_priority_wins_shared_file():
@@ -273,16 +295,16 @@ def test_read_budget(tmp_path):
         d.read(entry("other.txt"), 1)
 
 
-def test_read_fetches_only_what_is_asked(tmp_path, bytes_read):
+def test_read_fetches_only_what_is_asked(tmp_path):
     # Field-test finding F12: see test_mime.test_sniffing_reads_only_the_magic
     size = 4 << 20
     (tmp_path / "a.raw").write_bytes(bytes(size))
     e = Entry("a.raw", str(tmp_path / "a.raw"), "/a.raw", "file", size, 1, 1, 7, None)
     d = directory([e])
     d._budget = size
-    before = bytes_read()
-    assert d.read(e, 100) == bytes(100)
-    assert bytes_read() - before < 64 * 1024
+    data, read = bytes_read(lambda: d.read(e, 100))
+    assert data == bytes(100)
+    assert read < 64 * 1024
 
 
 def test_format_over_budget_is_skipped(tmp_path):

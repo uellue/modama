@@ -7,12 +7,13 @@ import os
 import time
 import zipfile
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 import pytest
 from modama_crawler.formats import Dataset, Extracted, Extraction
 from modama_crawler.records import description
-from modama_crawler.testing import recognise
+from modama_crawler.testing import bytes_read, recognise
 from modama_crawler.walk import walk
 
 from modama_formats_common.office import ole, pdf
@@ -20,15 +21,6 @@ from modama_formats_common.office.common import MAX_PART, OverBudget
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
-
-def rchar() -> int:
-    """Bytes this process has read so far, from /proc/self/io (Linux)."""
-    for line in Path("/proc/self/io").read_text().splitlines():
-        key, _, value = line.partition(":")
-        if key == "rchar":
-            return int(value)
-    raise RuntimeError("no rchar in /proc/self/io")
 
 
 @dataclass
@@ -55,10 +47,8 @@ def crawled(ct, tree: Path) -> list[Described]:
         fmt = formats.get(d.format)
         if fmt is None:
             continue
-        fmt.extract(d, str(tree))  # once first: rchar counts the reads of imports too
-        before = rchar()
-        extracted = fmt.extract(d, str(tree))
-        read = rchar() - before
+        fmt.extract(d, str(tree))  # once first: the reads of imports count too
+        extracted, read = bytes_read(partial(fmt.extract, d, str(tree)))
         d = replace(d, extraction=Extraction(fmt.id, "", d.stamp, extracted))
         out.append(Described(d, extracted, description(d), read))
         print(f"{d.anchor}: {out[-1].description!r}, {read} bytes read of {d.size}")
@@ -408,12 +398,14 @@ def test_only_the_metadata_is_read(collection_tests, tmp_path):
 
 def extracted_reading(path: Path) -> tuple[object, int]:
     """What pdf.extract gives or raises for path, and the bytes it read."""
-    before = rchar()
-    try:
-        outcome = pdf.extract(str(path))
-    except Exception as error:  # noqa: BLE001  the error is the outcome tested
-        outcome = error
-    return outcome, rchar() - before
+
+    def outcome():
+        try:
+            return pdf.extract(str(path))
+        except Exception as error:  # noqa: BLE001  the error is the outcome tested
+            return error
+
+    return bytes_read(outcome)
 
 
 def test_a_cut_off_pdf(tmp_path):

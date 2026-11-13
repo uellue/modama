@@ -472,12 +472,25 @@ def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Data
     return datasets
 
 
-def _fill(ds: Dataset, fmt: Format, d: Directory, mtime: float, uid: int) -> Dataset:
+def _fill(
+    ds: Dataset,
+    fmt: Format,
+    d: Directory,
+    mtime: float,
+    uid: int,
+    files: dict[str, Entry] | None = None,
+    children: dict[str, Dataset] | None = None,
+) -> Dataset:
+    """The core's fields of a format's dataset. run_post passes its maps of the
+    directory's files and children: built here for each dataset, they made a
+    folder of n datasets take time n² (review of em-de, M2)."""
     members = tuple(
         sorted(set(ds.members) | ({ds.anchor} if ds.anchor != d.rel else set()))
     )
-    files = {e.rel: e for e in d.entries}
-    children = {c.anchor: c for c in d.children}
+    if files is None:
+        files = {e.rel: e for e in d.entries}
+    if children is None:
+        children = {c.anchor: c for c in d.children}
     return replace(
         ds, members=members, type=fmt.type, format=fmt.id, version=fmt.version,
         mtime=mtime, uid=uid, size=sum(files[m].size for m in members if m in files),
@@ -582,7 +595,7 @@ def run_post(
             filled = _fill(
                 replace(ds, members=tuple(sorted(members)), parts=tuple(sorted(parts)),
                         warnings=warnings, parent=None, collapsed=False),
-                fmt, d, max(mtimes, default=d.mtime), uid,
+                fmt, d, max(mtimes, default=d.mtime), uid, files, children,
             )  # fmt: skip
             out.append(filled)
             for p in parts:

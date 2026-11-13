@@ -1,0 +1,25 @@
+The files in fixtures/ are test files of RosettaSciIO
+(https://github.com/hyperspy/rosettasciio), from rsciio/tests/data/mrc/ at its
+tag v0.15.0, written by Direct Electron's DE-Server:
+
+- fixtures/acquisition_274/: the files 20241021_00405_*, unchanged.
+- fixtures/lone_info_272/20230925_01497_info.txt: info.txt, unchanged, renamed
+  after its Dataset Name.
+- fixtures/xy_scan_275/: Custom_info.txt, Custom_movie.mrc and
+  Custom_scan_coordinates.csv, unchanged, renamed 20250429_06699_info.txt,
+  20250429_06699_0_movie.mrc and 20250429_06699_scan_coordinates.csv after their
+  Dataset Name.
+- fixtures/tem_272/, tem_diffracting_272/, stem_272/: 3DTEM_scan_info.txt,
+  3DTEMDiffracting_scan_info.txt and 3DSTEM_scan_info.txt, unchanged, each
+  renamed 20230925_01497_info.txt after its Dataset Name.
+- fixtures/roi_random_275/20250429_06688_info.txt: ROI_Random_Scan_info.txt,
+  unchanged, renamed after its Dataset Name.
+
+The generated fixtures (generate.py) are copies of acquisition_274's files,
+renamed or with one line added.
+
+Copyright 2007-2026 The HyperSpy developers.
+
+They are distributed under the GNU General Public License, version 3 or (at
+your option) any later version, as RosettaSciIO is; the licence text is in
+../../../../COPYING.rosettasciio, copied from RosettaSciIO's COPYING.txt.

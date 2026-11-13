@@ -17,7 +17,8 @@ dependencies = [
     # ImageObject), and dm.first_image repeats file_reader's steps (0.15.0), as
     # test_first_image_is_what_file_reader_gives checks. The extra blockfile
     # brings scikit-image, which rsciio.blockfile imports (decision 227);
-    # blockfile imports rsciio.utils._date_time (serial_date_to_datetime)
+    # blockfile imports rsciio.utils._date_time (serial_date_to_datetime);
+    # de imports rsciio.mrc._api (read_de_metadata_file)
     "rosettasciio[blockfile]==0.15.0",
     # mrc: CCP-EM's reader, the field's; pinned exactly as mrc reads the header
     # with mrcfile.mrcinterpreter.MrcInterpreter on a buffer of its 1024 bytes
