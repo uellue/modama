@@ -176,6 +176,21 @@ def other_identities(
     ).fetchall()
 
 
+def first_extractions(
+    conn: psycopg.Connection, formats: list[str]
+) -> tuple[list[tuple[str, int]], float | None]:
+    """(format, datasets) of the stored datasets of these formats without an extraction, and the stored extractions' mean seconds (280)."""
+    groups = conn.execute(
+        "SELECT format, count(*) FROM datasets WHERE extractor IS NULL AND format = ANY(%s)"
+        " GROUP BY 1 ORDER BY 1",
+        (formats,),
+    ).fetchall()
+    if not groups:
+        return [], None
+    (mean,) = conn.execute("SELECT avg(extract_seconds) FROM datasets").fetchone()
+    return groups, mean
+
+
 @dataclass(frozen=True)
 class Run:
     run_id: int
