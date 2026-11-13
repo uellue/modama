@@ -31,6 +31,7 @@ import json
 import os
 import shutil
 import tomllib
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -85,6 +86,29 @@ class CollectionTests:
         else:
             shutil.copytree(self.fixtures_dir / name, path, symlinks=True)
         return path
+
+
+def rchar() -> tuple[int, int]:
+    """Bytes this process has read so far (`rchar` of /proc/self/io, Linux), and the
+    size of this read of it, which the kernel adds to the counter after the read.
+    No /proc/self/io is an error, not a skip."""
+    text = Path("/proc/self/io").read_bytes()
+    for line in text.decode().splitlines():
+        key, _, value = line.partition(":")
+        if key == "rchar":
+            return int(value), len(text)
+    raise RuntimeError("no rchar in /proc/self/io")
+
+
+def bytes_read[T](work: Callable[[], T]) -> tuple[T, int]:
+    """work's result and the bytes this process read while it ran, with read(2) and
+    the like (TEMPLATE.md, "Testing a format"): the counter after, less the counter
+    before and the read that gave it, exactly, without a margin (200,000 reads back
+    to back: the counter grew by exactly the size of the read before, every time).
+    Run the work once before measuring, so that imports and caches do not count."""
+    before, own = rchar()
+    result = work()
+    return result, rchar()[0] - before - own
 
 
 def collection_tests_for(module) -> CollectionTests:

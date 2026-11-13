@@ -14,20 +14,12 @@ from pathlib import Path
 import h5py
 import nbformat
 import numpy
+from modama_crawler.testing import bytes_read
 from modama_crawler.walk import walk
 
 from modama_formats_common.pydata import notebook, values
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def rchar() -> int:
-    """Bytes this process has read so far, from /proc/self/io (Linux)."""
-    for line in Path("/proc/self/io").read_text().splitlines():
-        key, _, value = line.partition(":")
-        if key == "rchar":
-            return int(value)
-    raise RuntimeError("no rchar in /proc/self/io")
 
 
 class Opened:
@@ -69,11 +61,7 @@ def extracted(ct, tree: Path, name: str):
     d = datasets(ct, tree)[name]
     fmt = next(f for f in ct.collection.formats if f.id == d.format)
     fmt.extract(d, str(tree))
-    before = rchar()
-    own = rchar() - before  # rchar's own read of /proc/self/io
-    before = rchar()
-    x = fmt.extract(d, str(tree))
-    read = rchar() - before - own
+    x, read = bytes_read(lambda: fmt.extract(d, str(tree)))
     json.dumps([x.summary, x.subjects, x.values], allow_nan=False)  # storable
     print(f"{name}: {x.summary} {x.subjects}, {read} bytes read")
     return x, read

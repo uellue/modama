@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from modama_crawler.formats import Collection, Dataset, Extraction, Format
 from modama_crawler.records import build
+from modama_crawler.testing import bytes_read
 from modama_crawler.walk import walk
 
 from modama_formats_common import text
@@ -32,23 +33,10 @@ def written(tmp_path: Path, name: str, content: str | bytes) -> Path:
     return path
 
 
-def rchar() -> int:
-    """Bytes this process has read so far, from /proc/self/io (Linux)."""
-    for line in Path("/proc/self/io").read_text().splitlines():
-        key, _, value = line.partition(":")
-        if key == "rchar":
-            return int(value)
-    raise RuntimeError("no rchar in /proc/self/io")
-
-
-def bytes_read(path: Path, fmt: str) -> int:
-    """Bytes the extraction of path reads, without what reading /proc/self/io reads."""
+def extraction_reads(path: Path, fmt: str) -> int:
+    """Bytes the extraction of path reads (modama_crawler.testing.bytes_read)."""
     extracted(path, fmt)  # once first: imports read files too
-    before = rchar()
-    own = rchar() - before
-    before = rchar()
-    extracted(path, fmt)
-    return rchar() - before - own
+    return bytes_read(lambda: extracted(path, fmt))[1]
 
 
 # Each text document is a dataset of its type
@@ -137,11 +125,8 @@ def test_a_file_typed_by_its_content(collection_tests, tmp_path):
     found = FORMATS["Text"].extract(d, str(tmp_path))
     assert found.summary == ["ascii", "lines at least 2621"]
     FORMATS["Text"].extract(d, str(tmp_path))  # once first: imports read files too
-    before = rchar()
-    own = rchar() - before
-    before = rchar()
-    FORMATS["Text"].extract(d, str(tmp_path))
-    assert rchar() - before - own <= head.SNIFFED_HEAD
+    _, read = bytes_read(lambda: FORMATS["Text"].extract(d, str(tmp_path)))
+    assert read <= head.SNIFFED_HEAD
 
 
 # The encoding as detected
@@ -197,7 +182,7 @@ def test_a_log_larger_than_the_bound(tmp_path):
     log = tmp_path / "acquisition.log"
     assert extracted(log, "Log").summary == ["ascii", "lines at least 20164"]
     # Its head, and its last 16 KiB for the text's tail (text-as-written)
-    assert bytes_read(log, "Log") <= head.HEAD + 16384
+    assert extraction_reads(log, "Log") <= head.HEAD + 16384
 
 
 def test_a_utf_8_character_cut_by_the_bound(tmp_path):
@@ -423,7 +408,7 @@ def test_a_large_report(tmp_path):
     path = written(tmp_path, "report.html", page)
     assert path.stat().st_size > 3 << 20
     assert extracted(path, "Html").values["original_metadata"] == {"title": "Report"}
-    assert bytes_read(path, "Html") <= head.HEAD
+    assert extraction_reads(path, "Html") <= head.HEAD
 
 
 def test_the_declared_encoding_where_the_bytes_are_not_utf_8(tmp_path):
@@ -569,7 +554,7 @@ def test_a_long_note_within_the_head(tmp_path):
     assert text == "".join(lines[:33]) + "… 6,000 bytes left out …\n" + "".join(
         lines[-33:]
     )
-    assert bytes_read(path, "Text") == path.stat().st_size
+    assert extraction_reads(path, "Text") == path.stat().st_size
 
 
 def test_one_very_long_line(tmp_path):
@@ -588,7 +573,7 @@ def test_a_log_larger_than_the_bound_shows_head_and_tail(tmp_path):
     shown = len("".join(lines[:38])) + len("".join(lines[-38:]))
     assert f"… {log.stat().st_size - shown:,} bytes left out …\n" in text
     assert len(text) <= 4096
-    assert bytes_read(log, "Log") <= head.HEAD + 16384
+    assert extraction_reads(log, "Log") <= head.HEAD + 16384
 
 
 def test_a_note_with_a_password(tmp_path):

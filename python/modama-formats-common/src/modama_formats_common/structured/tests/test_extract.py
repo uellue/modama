@@ -322,8 +322,7 @@ def test_a_csv_file_larger_than_the_bound(collection_tests, tmp_path):
     assert d.mapped["header"] is True
     assert "rows" not in d.mapped
     assert 0 < d.mapped["rows_at_least"] < rows
-    # rchar counts reading /proc/self/io too: a few hundred bytes
-    assert d.bytes_read <= LIMIT + 1 + 1024
+    assert d.bytes_read <= LIMIT + 1
 
 
 # Every key of an INI or .cfg file is kept
@@ -358,7 +357,7 @@ def test_a_json_file_over_the_bound(collection_tests, tmp_path):
         "mapped_metadata": {"not_parsed_larger_than_bytes": 8388608}
     }
     assert d.extracted.summary == []
-    assert d.bytes_read < 65536 + 16384 + 1024  # rchar counts /proc/self/io too
+    assert d.bytes_read == 65536  # its head; no tail of what is not text
 
 
 def test_more_entries_than_the_bound(collection_tests, tmp_path):
@@ -667,7 +666,7 @@ def test_a_trace_export_of_9_mib(collection_tests, tmp_path):
     content = json.dumps(trace(7_500), indent=4)
     assert len(content) > LIMIT
     d = one(collection_tests, tmp_path, "trace.json", content)
-    assert d.bytes_read <= 65536 + 16384 + 1024  # rchar counts /proc/self/io too
+    assert d.bytes_read == 65536 + 16384
     assert d.mapped == {"not_parsed_larger_than_bytes": LIMIT}
     head, gap, tail = text_of(d).partition(" bytes left out …\n")
     assert head.startswith('{\n    "data": [\n') and gap
