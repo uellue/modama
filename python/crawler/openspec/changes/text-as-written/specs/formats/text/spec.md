@@ -45,11 +45,31 @@ When a file typed by its name is larger than the head the extractor reads (requi
 - **THEN** its text starts with its first lines, then a line `… N bytes left out …` with N its size minus the bytes of the lines shown, then its last lines, at most 4,096 characters in all; and the extractor read at most 1,048,576 + 16,384 bytes of it
 
 ### Requirement: A credential is left out of the text
-Every line of the text for which the shared check `values.credential("", line)` is true SHALL be replaced by `… (a line left out: may be a credential)`, its leading whitespace kept; a Markdown front matter in which the check flagged a value SHALL be replaced as a whole by `… (front matter left out: it may hold a credential)`. `mapped_metadata.credentials_left_out` SHALL count the lines too.
+A line SHALL be left out when `values.credential_line` flags it, when it is in a private key block (BEGIN to END), or when it continues a flagged line (indented deeper); lines left out next to each other SHALL be one line `… (a line left out: may be a credential)` or `… (N lines left out: may hold a credential)`, indented as the first. A front matter with a flagged value SHALL be one line `… (front matter left out: it may hold a credential)`. `credentials_left_out` counts the lines.
 
 #### Scenario: A note with a password
 - **WHEN** `notes.txt` has the lines `sample: Au on C`, `db password: hunter2` and `  server: postgres://admin:hunter2@db/x`
-- **THEN** its text is `sample: Au on C`, `… (a line left out: may be a credential)` and `  … (a line left out: may be a credential)`, `hunter2` is nowhere in the record, and `mapped_metadata` has `credentials_left_out` 2
+- **THEN** its text is `sample: Au on C` and `… (2 lines left out: may hold a credential)`, `hunter2` is nowhere in the record, and `mapped_metadata` has `credentials_left_out` 2
+
+#### Scenario: A private key in a note
+- **WHEN** a note has a line, a private key block of 5 lines (`-----BEGIN OPENSSH PRIVATE KEY-----`, its base64 lines, `-----END OPENSSH PRIVATE KEY-----`) and the line `done`
+- **THEN** its text is the line, `… (5 lines left out: may hold a credential)` and `done`
+
+#### Scenario: Names and tokens in a note
+- **WHEN** a note has `DB_PASS=hunter2`, `smtp_pw: hunter3`, `use ghp_aBcD1234eFgH5678iJkL` and `ok`
+- **THEN** its text is `… (3 lines left out: may hold a credential)` and `ok`
+
+#### Scenario: An indented value below its name
+- **WHEN** a `.txt` or `.md` file has `password:`, then `    hunter2txt`, a blank line, `    more`, then `next: ok`
+- **THEN** neither `hunter2txt` nor `more` is in its text, and `next: ok` is
+
+#### Scenario: A long last line with a credential
+- **WHEN** a text file's last line is `x` 28,000 times, ` password=HUNTER2` and `S` 1,990 times, or `password=HUNTER2` and `S` 30,000 times
+- **THEN** `HUNTER2` is not in its text (the whole line decides, not the end shown), and the gap's number of bytes is never negative
+
+#### Scenario: Only what is shown is checked
+- **WHEN** a text file holds one line of ` --` and `pass` repeated, 1 MB
+- **THEN** its extraction takes less than 2 s (the check runs over at most 4,096 characters of a line, and only over the lines shown)
 
 #### Scenario: A front matter with a credential
 - **WHEN** a Markdown file's front matter has `title: Notes` and `api_key: abc123`, followed by the line `# Notes`

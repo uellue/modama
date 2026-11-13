@@ -18,7 +18,7 @@ Skill step 1, 2026-11-13, through the main session (hallway test):
 
 Decision 293 (@weber): real MRC files from open archives as fixtures. Read as: public files of each kind the tree holds (EPU micrographs and movies with FEI extended headers first, then maps, tomograms and stacks), each cut to the bytes the format reads.
 
-Questions put to @weber on 2026-11-13 (295 to 298, through the main session: 295 the summary line, 296 EPU's sidecars, 297 labels, 298 the `FEI1` fixture's licence), open; the leans below are applied meanwhile.
+Questions put to @weber on 2026-11-13 (295 to 298, through the main session: 295 the summary line, 296 EPU's sidecars, 297 labels, 298 the `FEI1` fixture's licence); the leans below were applied meanwhile. Answered by @weber on 2026-11-13: 295 "fine for now", to be refined with people; 296 "Is there a 1:1 match? If yes, group please!", which became the change `em-mrc-sidecars`; 297 "Yes, good for now"; 298 "Yes Sounds good!".
 
 ## Public files used (decision 293)
 

@@ -13,7 +13,7 @@
 - [x] 2.1 Public files from EMPIAR and EMDB (CC0, verified on EBI's pages) and `mrcfile`'s `FEI1` file, each cut by `mrc/tests/cut-header.sh` to the main header and the FEI record: fixtures `epu_falcon`, `epu_movie`, `fei1`, `particle_stack`, `emdb_tomogram`, with URL, licence and the sha256 of original and cut in `fixtures.toml` and `LICENSE.fixtures`. Downloads in `/var/tmp/mrc-293/`, deleted after. Verify: `test_manifest`, `expected/*.json` reviewed.
 - [x] 2.2 The first record of an FEI extended header as `extended_header.<name>`, with its skip list; 32-bit floats as `mrcfile` widens them (after the review, @weber 309); text up to its first NUL; the summary line cut to a few entries. Verify: `test_extract.py`, one test per scenario of "The first record of an FEI extended header is extracted" and "Only the headers are read", red first (7 failed before the code), then green.
 - [x] 2.3 README row; BACKLOG "Sync with upstream": `mrcfile`'s NumPy 2.5 deprecation (upstream issue #75, pull request #76). Verify: by eye.
-- [ ] 2.4 Questions 295 to 298 to @weber (summary line, EPU's sidecars, labels, the `FEI1` fixture's licence); the leans applied meanwhile.
+- [x] 2.4 Questions 295 to 298 to @weber (summary line, EPU's sidecars, labels, the `FEI1` fixture's licence); answered 2026-11-13 (proposal), the sidecars in the change `em-mrc-sidecars`.
 
 ## 3. Checks and review
 

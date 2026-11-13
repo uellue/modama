@@ -1,6 +1,7 @@
 """Extraction (spec formats/structured), one test per scenario, named after it."""
 
 import base64
+import importlib
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ from random import Random
 
 import pytest
 import yaml
+from modama_crawler.formats import Dataset
 from modama_crawler.records import build
 
 from modama_formats_common.structured import LIMIT
@@ -688,6 +690,114 @@ def test_a_large_json_lines_log(collection_tests, tmp_path):
         "documents at least": complete,
     }
     assert d.extracted.summary == ["start", "acquire", "version 2.1"]
+
+
+# The review of text-as-written (2026-11-13)
+
+
+def test_an_ini_value_on_continuation_lines(collection_tests, tmp_path):
+    content = "[db]\npassword =\n    hunter2ini\nhost = db.example\n"
+    d = one(collection_tests, tmp_path, "setup.ini", content)
+    assert "hunter2ini" not in str(d.extracted)
+    assert text_of(d).endswith("host = db.example\n")
+
+
+def test_yaml_that_does_not_parse_with_a_password(collection_tests, tmp_path):
+    content = "password: |\n  hunter2y\nbad: [\n"
+    d = one(collection_tests, tmp_path, "broken.yaml", content)
+    assert "parse error" in d.mapped
+    assert "hunter2y" not in str(d.extracted)
+
+
+def test_an_alias_bomb_before_a_password(collection_tests, tmp_path):
+    lines = [f"a: &a [{', '.join(['x'] * 10)}]"]
+    for i in range(1, 9):
+        prev, name = chr(ord("a") + i - 1), chr(ord("a") + i)
+        lines.append(f"{name}: &{name} [{', '.join([f'*{prev}'] * 10)}]")
+    content = "\n".join(lines) + "\npassword:\n  hunter2b\n"
+    d = one(collection_tests, tmp_path, "bomb.yaml", content)
+    assert d.mapped["cut_at_entries"]
+    assert "hunter2b" not in str(d.extracted)
+
+
+def test_a_url_with_a_password_as_a_key(collection_tests, tmp_path):
+    content = '{"users": {"postgres://admin:hunter2key@db/x": 1}, "kept": 2}'
+    d = one(collection_tests, tmp_path, "users.json", content)
+    assert "hunter2key" not in str(d.extracted)
+    assert d.original == {"kept": 2}
+
+
+def test_a_rendering_still_too_long_has_a_tail(collection_tests, tmp_path):
+    document = {f"key_{i:06d}": i for i in range(200_000)}
+    d = one(collection_tests, tmp_path, "many.json", json.dumps(document))
+    head, gap, tail = text_of(d).partition(" characters left out …\n")
+    assert head.startswith('{"key_000000": 0') and gap
+    # Every key; the values after the walk's bound of 10,000 as a marker
+    assert tail.endswith('"key_199999": "… (more values left out)"}')
+
+
+def test_a_document_of_many_keys_is_rendered_once(
+    collection_tests, tmp_path, monkeypatch
+):
+    shortened = importlib.import_module("modama_formats_common.structured.shortened")
+    calls = []
+    original = shortened.rendering
+    monkeypatch.setattr(
+        shortened, "rendering", lambda *a: calls.append(a[1:]) or original(*a)
+    )
+    document = {f"key_{i:06d}": i for i in range(200_000)}
+    one(collection_tests, tmp_path, "many.json", json.dumps(document))
+    # One rendering per extraction (the helper extracts twice: imports first)
+    assert calls == [shortened.STEPS[-1]] * 2
+
+
+def test_a_file_that_grows_past_the_bound(collection_tests, tmp_path, monkeypatch):
+    from modama_formats_common import structured
+
+    (tmp_path / "growing.json").write_text(json.dumps(list(range(2_000_000))))
+    # The extraction alone sees the size of before the file grew (fstat), the
+    # recognition the real one
+    real = os.fstat
+    small = os.stat_result((0,) * 6 + (LIMIT,) + (0,) * 3)
+    monkeypatch.setattr(
+        structured.os, "fstat", lambda fd: small if fd > 2 else real(fd)
+    )
+    heads = []
+    shown = structured.written.shown
+    monkeypatch.setattr(
+        structured.written,
+        "shown",
+        lambda data, *a, **k: heads.append(len(data)) or shown(data, *a, **k),
+    )
+    extracted = structured.Json().extract(
+        Dataset(anchor="/growing.json"), str(tmp_path)
+    )
+    assert extracted.values["mapped_metadata"]["not_parsed_larger_than_bytes"] == LIMIT
+    # Its first 64 KiB as the head of its text, as for any file over the bound
+    assert heads and max(heads) <= 65536
+    assert len(extracted.values["text"]) <= 4096
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        ("login.json", '{"user": "u", "pass": "hunter2p"}'),
+        ("login.yaml", "user: u\npass: hunter2p\n"),
+        ("login2.json", '{"user": "u", "pw": "hunter2p"}'),
+    ],
+)
+def test_pass_or_pw_as_a_whole_key(collection_tests, tmp_path, name, content):
+    # Second review of text-as-written, S1
+    d = one(collection_tests, tmp_path, name, content)
+    assert "hunter2p" not in str(d.extracted)
+    assert d.original == {"user": "u"}
+
+
+def test_a_very_deep_document(collection_tests, tmp_path):
+    content = "[" * 100_000 + "]" * 100_000
+    d = one(collection_tests, tmp_path, "deep.json", content)
+    assert "parse error" in d.mapped
+    assert len(text_of(d)) <= 4096
 
 
 def test_a_pretty_printed_document_is_not_json_lines(collection_tests, tmp_path):

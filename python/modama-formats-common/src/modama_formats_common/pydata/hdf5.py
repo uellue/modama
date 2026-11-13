@@ -3,19 +3,27 @@
 Every attribute of the file, its groups and datasets, each dataset's shape and
 dtype, and the value of each scalar dataset, as dotted names, minus a skip
 list per format (spec formats/pydata, "An HDF5 file is described by a walk of
-its objects"). No array is read, no link to another file followed, nothing
-read from outside the file.
+its objects"); its external links and virtual-dataset sources as written,
+counting-up links as one entry (change hdf5-links, design D2). No array is
+read, no link to another file followed, nothing read from outside the file;
+every file is opened through a file object of a descriptor opened without
+following a symlink (design D4).
 """
 
 import math
+import os
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 
 import h5py
 import numpy
+from modama_crawler import files
 from modama_crawler.formats.values import MAX_CHARS
 from numpy.lib.format import dtype_to_descr
 
+from . import links
 from .values import (
     MAX_ENTRIES,
     MAX_ITEMS,
@@ -24,7 +32,6 @@ from .values import (
     headline,
     hyperspy,
     matches,
-    no_readahead,
     plain,
 )
 
@@ -44,13 +51,19 @@ def matlab(name: str, value) -> bool:
     return name.split(".", 1)[0] in ("#refs#", "#subsystem#")
 
 
-def opened(path: str) -> h5py.File:
-    """The file opened for reading with HDF5's own driver, which reads what the library
-    asks for (no Python buffer), readahead off, and without HDF5's file lock: on NFS a
-    lock can fail or wait, and a crawler must not get in a writer's way."""
-    f = h5py.File(path, "r", locking=False)
-    no_readahead(f.id.get_vfd_handle())
-    return f
+@contextmanager
+def opened(path: str) -> Iterator[h5py.File]:
+    """The file opened for reading through an unbuffered file object (files.Counted)
+    of a descriptor opened only as a regular file, never through a symlink, readahead
+    off, and without HDF5's file lock: on NFS a lock can fail or wait, and a crawler
+    must not get in a writer's way. Not by path with HDF5's own driver, which opens
+    the target of an absolute external link if anything dereferences it (review of
+    hdf5-links, SHOULD 6). h5py's file is closed before the file object."""
+    with (
+        files.Counted(files.regular(path), name=path) as raw,
+        h5py.File(raw, "r", locking=False) as f,
+    ):
+        yield f
 
 
 def dtype_name(dt: numpy.dtype):
@@ -92,7 +105,19 @@ def outside(dataset: h5py.Dataset) -> str | None:
     return None
 
 
-def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
+@dataclass
+class Linked:
+    """What a walk found of a file's links to other files, as written (design D2, D3)."""
+
+    external: list[str] = field(default_factory=list)  # each external link's file
+    virtual: list[str] = field(default_factory=list)  # each mapping onto another file
+    # Per run of external links: its first dotted name, its files in order, its path
+    runs: list[tuple[str, list[str], str]] = field(default_factory=list)
+
+
+def walked(
+    f: h5py.File, skip: Skip = nothing, linked: Linked | None = None
+) -> tuple[dict, dict]:
     """original_metadata and the mapped note of a cut, from the file's objects in stored order.
 
     Depth first, each object once (by its address), hard links only: an
@@ -101,10 +126,15 @@ def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
     with dots as found (a name holding a dot is not escaped). Nothing is read
     from outside the file: a virtual dataset gives its dtype and the extent its
     first mapping declares, a dataset with external storage no value (spec
-    formats/pydata, "Nothing is read from outside the file").
+    formats/pydata, "Nothing is read from outside the file"). A group's
+    external links are listed as written, before its members, runs of them as
+    one entry (`<first> … <last>.external_link`), and a virtual dataset's
+    sources in other files (`.virtual_sources`); each link counts as an
+    object. What was found of them goes into `linked`, if given.
     """
     walk = Walk()
     seen: set[int] = set()
+    linked = linked if linked is not None else Linked()
 
     def add(name: str, value) -> None:
         value = plain(value)
@@ -148,6 +178,14 @@ def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
             if dcpl.get_virtual_count() > 0:
                 add(f"{dotted}.shape", list(dcpl.get_virtual_vspace(0).shape))
             add(f"{dotted}.dtype", dtype_name(obj.dtype))
+            mappings = [
+                (dcpl.get_virtual_filename(i), dcpl.get_virtual_dsetname(i))
+                for i in range(dcpl.get_virtual_count())
+            ]
+            others = [(f, p) for f, p in mappings if f != "."]
+            if others:
+                linked.virtual += [f for f, _ in others]
+                add(f"{dotted}.virtual_sources", links.source_runs(others))
             return
         if obj.shape == () and where is None:
             if small(obj.dtype):
@@ -159,9 +197,10 @@ def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
         add(f"{dotted}.shape", list(obj.shape or ()))
         add(f"{dotted}.dtype", dtype_name(obj.dtype))
 
-    def hard_links(group: h5py.Group) -> list[bytes]:
-        """The names of group's hard links in the order the file stores them, no
-        more than objects can still be walked and one to tell that there are more.
+    def hard_links(group: h5py.Group) -> tuple[list[bytes], list[bytes]]:
+        """The names of group's hard and external links in the order the file stores
+        them, no more than objects can still be walked and one to tell that there
+        are more.
 
         The stored order is the names' order in the groups most writers write
         (h5py's default, HDF5's symbol tables), another in groups of the newer
@@ -169,19 +208,50 @@ def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
         links first: on a group of 200,000 links, 393 MB read of a 32 MB file,
         against 69 kB for the first 5,000 in stored order."""
         names: list[bytes] = []
+        external: list[bytes] = []
         room = MAX_OBJECTS - walk.objects
 
         def listed(name: bytes, info) -> bool | None:
             if info.type == h5py.h5l.TYPE_HARD:
                 names.append(name)
-            return True if len(names) > room else None
+            elif info.type == h5py.h5l.TYPE_EXTERNAL:
+                external.append(name)
+            return True if len(names) + len(external) > room else None
 
         group.id.links.iterate(listed, info=True, order=h5py.h5.ITER_NATIVE)
-        return names
+        return names, external
+
+    def external_links(group: h5py.Group, prefix: str, names: list[bytes]) -> None:
+        """The group's external links as written, sorted by name, runs as one entry."""
+        found = []
+        for raw in names:
+            if walk.objects >= MAX_OBJECTS:
+                break
+            file, path = group.id.links.get_val(raw)  # as written, never followed
+            name, file = raw.decode("utf-8", "replace"), file.decode("utf-8", "replace")
+            found.append((name, file, path.decode("utf-8", "replace")))
+            walk.objects += 1
+        if len(found) < len(names):
+            walk.over()  # the cut is said: the counts are not complete (review, S2)
+        start = 0
+        ordered = sorted(found, key=lambda t: t[0].encode())
+        for first, last, ffile, lfile, path, count in links.runs(found):
+            files_ = [file for _, file, _ in ordered[start : start + count]]
+            start += count
+            linked.external += files_
+            linked.runs.append((f"{prefix}{first}", files_, path))
+            if not walk.over():
+                add(
+                    f"{prefix}{links.entry(first, last)}.external_link",
+                    [links.entry(ffile, lfile), path],
+                )
 
     def members(group: h5py.Group, prefix: str) -> bool:
         """Walks the members of group; False when a limit stopped the walk."""
-        for raw in hard_links(group):
+        hard, external = hard_links(group)
+        if external:
+            external_links(group, prefix, external)
+        for raw in hard:
             if walk.over():
                 return False
             name = raw.decode("utf-8", "replace")
@@ -212,14 +282,117 @@ def walked(f: h5py.File, skip: Skip = nothing) -> tuple[dict, dict]:
     return walk.result()
 
 
-def described(path: str, skip: Skip | None = None) -> tuple[dict, dict]:
-    """original_metadata and the mapped note of a cut; without a skip list, HyperSpy's
-    for a file that says it is HyperSpy's (older HyperSpy wrote .hdf5), else none."""
+def described(
+    path: str, skip: Skip | None = None, linked: Linked | None = None
+) -> tuple[dict, dict]:
+    """original_metadata, and as mapped values the note of a cut and the link counts;
+    without a skip list, HyperSpy's for a file that says it is HyperSpy's (older
+    HyperSpy wrote .hdf5), else none."""
+    linked = linked if linked is not None else Linked()
     with opened(path) as f:
         if skip is None:
             said = f.attrs.get("file_format")
             skip = hyperspy if said in ("HyperSpy", b"HyperSpy") else nothing
-        return walked(f, skip)
+        original, mapped = walked(f, skip, linked)
+    return original, {**mapped, **counts(path, linked)}
+
+
+def counts(path: str, linked: Linked) -> dict:
+    """The link counts of a file with links to other files (design D3), by distinct
+    target name other than its own: `found` a regular file of that name in the file's
+    folder, `dangling` none, `elsewhere` never looked up. The folder is listed once
+    (one scandir, the entries' types from it), nothing opened; an error of the
+    listing raises, and the extraction fails, to be tried again next crawl."""
+    if not linked.external and not linked.virtual:
+        return {}
+    names: set[str] = set()
+    elsewhere: set[str] = set()
+    for file, virtual in [(f, False) for f in linked.external] + [
+        (f, True) for f in linked.virtual
+    ]:
+        name = links.matched(file, virtual)
+        if name is None:
+            elsewhere.add(file)
+        else:
+            names.add(name)
+    names.discard(os.path.basename(path))
+    regular: set[str] = set()
+    if names:
+        with os.scandir(os.path.dirname(path) or ".") as listing:
+            regular = {
+                e.name
+                for e in listing
+                if e.name in names and e.is_file(follow_symlinks=False)
+            }
+    return {
+        "external_links": len(linked.external),
+        "virtual_sources": len(linked.virtual),
+        "found": len(regular),
+        "dangling": len(names - regular),
+        "elsewhere": len(elsewhere),
+    }
+
+
+def structure(path: str, target: str) -> tuple[list, object] | None:
+    """The shape and dtype of the dataset at target in the HDF5 file at path, reached
+    one component at a time by hard links only (`links.get_info`), never through a
+    soft or external link (design D4, D6); None if it is not there that way, or is
+    virtual (its shape could open its sources). No array is read.
+
+    Raises Unreadable when h5py cannot read the file's contents (not HDF5, a broken
+    checksum); an error of the file system (a read the file system did not answer)
+    is raised as it is, so that the extraction fails and is tried again (second
+    code review of hdf5-links, S1)."""
+    with files.Counted(files.regular(path), name=path) as raw:
+        try:
+            with h5py.File(raw, "r", locking=False) as f:
+                obj = h5py.h5g.open(f.id, b"/")
+                for part in (p for p in target.split("/") if p):
+                    name = part.encode()
+                    if not isinstance(obj, h5py.h5g.GroupID):
+                        return None
+                    if not obj.links.exists(name):
+                        return None
+                    if obj.links.get_info(name).type != h5py.h5l.TYPE_HARD:
+                        return None
+                    obj = h5py.h5o.open(obj, name)
+                if not isinstance(obj, h5py.h5d.DatasetID):
+                    return None
+                if obj.get_create_plist().get_layout() == h5py.h5d.VIRTUAL:
+                    return None
+                return list(obj.shape), dtype_name(obj.dtype)
+        except (OSError, KeyError, ValueError, RuntimeError) as e:
+            if raw.error is not None:
+                raise raw.error from e
+            raise Unreadable(f"{type(e).__name__}: {e}") from e
+
+
+class Unreadable(Exception):
+    """h5py could not read an HDF5 file's contents: the same file gives the same error."""
+
+
+def linked_data(values: dict, linked: Linked, members: dict[str, str]) -> list[str]:
+    """For each run of external links, the shape and dtype of its first target that is
+    a member (name -> path) and can be read, under the run's first dotted name (design
+    D6); the names of the members that could not be read, gone or replaced since
+    recognition or broken, which are skipped (code review of hdf5-links, S4)."""
+    not_read: list[str] = []
+    for dotted, files_, target in linked.runs:
+        for file in files_:
+            name = links.matched(file)
+            if name not in members or name in not_read:
+                continue
+            try:
+                found = structure(members[name], target)
+            except (files.NotRegular, FileNotFoundError, Unreadable):
+                # Gone or replaced since recognition, or broken; any other error
+                # of the file system fails the extraction, to be tried again
+                not_read.append(name)
+                continue
+            if found is not None and len(values) <= MAX_ENTRIES - 2:
+                values[f"{dotted}.shape"], values[f"{dotted}.dtype"] = found
+            break
+    return not_read
 
 
 # The summary line, the one positive list (TEMPLATE.md): a NeXus entry's title,
@@ -240,14 +413,26 @@ TITLES = ("*.title", "Experiments.*.metadata.General.title")
 # order (decision 324) and the root's file_time, a NeXus root attribute
 LARGEST = 3
 UNTITLED = ("*.start_time", "*.definition", "file_time")
+# Before the arrays of a file without a title: a NeXus NXdetector's description,
+# "name/manufacturer/model/etc. information" (NeXus manual; hdf5-links, D7, Q5)
+DETECTOR = ("*.instrument.detector.description",)
+# At the end of every line: the link counts of mapped_metadata, 0 left out; the
+# names are ours, an exception named in TEMPLATE.md (decision 331)
+COUNTS = ("external_links", "virtual_sources", "dangling", "elsewhere")
 # Subjects: what names a technique, as found
 TERMS = ("*.definition", "Experiments.*.metadata.Signal.signal_type")
 
 
-def summary(values: dict) -> list[str]:
+def summary(values: dict, mapped: dict | None = None) -> list[str]:
     if headline(values, TITLES):
-        return headline(values, HEADLINE)
-    return arrays(values)[:LARGEST] + headline(values, UNTITLED)
+        line = headline(values, HEADLINE)
+    else:
+        line = (
+            headline(values, DETECTOR)
+            + arrays(values)[:LARGEST]
+            + headline(values, UNTITLED)
+        )
+    return line + headline(mapped or {}, COUNTS)
 
 
 def encoded(name: str) -> bool:

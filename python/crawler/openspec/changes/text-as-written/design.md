@@ -136,6 +136,15 @@ A record reaches everyone who can search; the file only those who can read it (R
 - a JSON, YAML or TOML document in which the check flagged a value (by its path or its text) is never shown as written: it is rendered by B from the parsed document, the value replaced by `"… (left out: may be a credential)"`, whatever its length. The parsed document knows where the value is, also for a value on the line after its name (a YAML block scalar);
 - an INI or `.cfg` file, an invalid document and any other text: a line in which the check finds a credential (`credential("", line)`: a name such as `password` followed by `=` or `:` and a value, an option such as `--requirepass x`, a URL with a password, `Basic …`) is replaced by `… (a line left out: may be a credential)`, its indentation kept. Best effort, as the check is: a value on the line after its name is not caught there (a Markdown front matter's block scalar); for Markdown, a front matter in which the check flagged a value is left out of the text as a whole, a line `… (front matter left out: it may hold a credential)` in its place.
 
+Known limits of the line-by-line check, after the reviews of 2026-11-13 (best effort, as the shared check is; each only where a document falls back to its text, or for plain text):
+
+- broken TOML with `"""` strings (a value over several lines that are not indented);
+- broken YAML with a list at the same indentation as its name (`password:` then `- x`);
+- JSON whose value is on the line after its name (`{"password":` then `"x"`) in a file that does not parse;
+- a netrc file's `password x` (no `=` or `:`);
+- Markdown's `**Password**: x` (the name inside emphasis);
+- a private key block whose BEGIN line lies before the tail window of a file larger than its head (the tail's lines are checked on their own).
+
 ## D7 Encoding, line ends, cutting
 
 - The text is decoded as the text area decides (BOM, ASCII, UTF-8, else Windows-1252; `common-text` D1), the structured files' text too (changed while applying: their readers keep UTF-8, else Latin-1; the text area's rule also reads UTF-16 with a BOM). A text that is not text (a NUL byte) has no `text`.

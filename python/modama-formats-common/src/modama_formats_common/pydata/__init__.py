@@ -104,7 +104,7 @@ class Hdf5(Single):
         from . import hdf5
 
         original, mapped = hdf5.described(path)
-        return original, mapped, hdf5.summary(original)
+        return original, mapped, hdf5.summary(original, mapped)
 
     def terms(self, original):
         from . import hdf5
@@ -136,6 +136,132 @@ class Hspy(Nexus):
 
     def fits(self, data):
         return data.startswith(HDF5) and b"HyperSpy" in data
+
+
+class Hdf5Links(Format):
+    """An `.h5` file whose external links or virtual-dataset sources name HDF5 files
+    of its folder, with those files: one dataset, whatever the names (change
+    hdf5-links, design D4, D5; spec formats/pydata, "HDF5 files linked by a file of
+    their folder are one dataset").
+
+    Recognition lists the links of the folder's `.h5` files in the crawl's worker
+    processes (`Directory.inspect`, `links.listed`), only in a folder with 2 to 200
+    HDF5 files; a target name is only compared with the folder's names. A file
+    whose inspection failed, timed out or killed its worker names nothing this
+    crawl and is a plain HDF5 file, flagged `not inspected` by the core (340).
+    """
+
+    type = "application/vnd.hdfgroup.hdf5"
+    name = "hdf5links"
+    display_name = "HDF5 file with linked files"
+    priority = 62  # before common/nexus, common/hspy (61) and common/hdf5 (60)
+    reacts_to = frozenset(
+        {"application/vnd.hdfgroup.hdf5", "application/x.nexus", "application/x.hspy"}
+    )
+
+    def recognize(self, d: Directory) -> Iterable[Dataset]:
+        from modama_crawler.inspection import RESULT
+
+        from . import links
+
+        hdf5 = [e for e in d.entries if e.mime in self.reacts_to]
+        listable = [e for e in hdf5 if e.mime == self.type and e.name.endswith(".h5")]
+        # A file an earlier format claimed is not offered, but may be a link's
+        # target, to flag as two formats wanting it (344; code review, S3);
+        # only those named as HDF5 files count (second code review, S2)
+        claimed = [n for n in d.claimed if n.lower().endswith(links.NAMES)]
+        if not listable or len(hdf5) + len(claimed) < links.MIN_FILES:
+            return
+        if len(hdf5) > links.MAX_FILES:
+            d.warn(
+                d.rel,
+                f"{self.id}: {len(hdf5)} HDF5 files, over the limit of "
+                f"{links.MAX_FILES}: links not listed",
+            )
+            return
+        got = d.inspect(listable, links.listed, links.BUDGET)
+        by_name = {e.name: e for e in hdf5}
+        candidates = set(by_name)  # what may be a target: not a file found broken
+        named: dict[str, dict] = {}
+        for e in listable:
+            x = got[e.rel]
+            if x.kind != RESULT or not x.result["hdf5"]:
+                candidates.discard(e.name)
+                continue
+            if "error" in x.result:
+                # The library's own error for this state of the file: final,
+                # not tried again until the file changes (code review, S1)
+                d.warn(
+                    e.rel, f"{self.id}: {e.name}: links not listed, {x.result['error']}"
+                )
+                continue
+            named[e.name] = x.result
+            if x.result["cut"]:
+                d.warn(
+                    e.rel,
+                    f"{self.id}: {e.name}: links listed up to {links.MAX_LISTED} objects",
+                )
+            for t in sorted(set(x.result["external"] + x.result["virtual"])):
+                if t in d.claimed and t != e.name:
+                    d.claimed_elsewhere(e.rel, t)
+        targets = {
+            x: {
+                t
+                for t in found["external"] + found["virtual"]
+                if t != x and t in candidates
+            }
+            for x, found in named.items()
+        }
+        anchors, shared, blocked = links.grouped(targets)
+        notes: dict[str, list[str]] = {}
+        for t, xs in shared.items():
+            for x in xs:
+                others = ", ".join(y for y in xs if y != x)
+                notes.setdefault(x, []).append(
+                    f"{t} is also linked by {others}, so it is in neither's dataset"
+                )
+        for x, namers in blocked.items():
+            notes.setdefault(x, []).append(
+                f"names {', '.join(sorted(targets[x]))}, "
+                f"named by {', '.join(namers)}: no anchor"
+            )
+        for x, texts in notes.items():
+            d.note(by_name[x], "; ".join(texts))
+        for x, members in anchors.items():
+            found = named[x]
+            how = [
+                kind
+                for kind, key in (
+                    ("external links", "external"),
+                    ("virtual-dataset sources", "virtual"),
+                )
+                if set(found[key]) & set(members)
+            ]
+            yield Dataset(
+                anchor=by_name[x].rel,
+                members=tuple(by_name[m].rel for m in members),
+                basis=f"{' and '.join(how)} to {len(members)} HDF5 files of this folder",
+            )
+
+    def extract(self, dataset: Dataset, root: str) -> Extracted:
+        """The anchor's walk, its link counts, and the linked data's structure from the
+        first member of each run of links (design D6)."""
+        from . import hdf5
+
+        linked = hdf5.Linked()
+        original, mapped = hdf5.described(root + dataset.anchor, linked=linked)
+        members = {
+            m.rsplit("/", 1)[-1]: root + m
+            for m in dataset.members
+            if m != dataset.anchor
+        }
+        if not_read := hdf5.linked_data(original, linked, members):
+            mapped["not_read"] = not_read  # the master's values stay (review, S4)
+        return Extracted(
+            summary=hdf5.summary(original, mapped),
+            subjects=hdf5.terms(original),
+            values={"original_metadata": original, "mapped_metadata": mapped},
+        )
 
 
 class Matlab(Single):
@@ -268,6 +394,7 @@ COLLECTION = Collection(
         Hdf5(),
         Nexus(),
         Hspy(),
+        Hdf5Links(),
         Matlab(),
         Notebook(),
         Python(),

@@ -165,11 +165,11 @@ def test_a_compressed_workspace_that_cannot_be_read(
     collection_tests, tmp_path, monkeypatch
 ):
     # As for .dmw (code review finding 1): it keeps its type, the other stands
-    from modama_crawler import formats
+    from modama_crawler import files
 
     tree = collection_tests.materialise("compressed_workspace", tmp_path)
     (tree / "broken.dmwx").write_text("hello\n")
-    monkeypatch.setattr(formats, "open", stale("broken.dmwx"), raising=False)
+    monkeypatch.setattr(files, "regular", stale("broken.dmwx", files.regular))
     result = walk(tree, collection_tests.collection.formats)
     datasets = {d.anchor: d for d in result.datasets}
     assert datasets["/exemplary_workspace.dmwx"].format == "em/dmwx"
@@ -188,11 +188,11 @@ def test_a_compressed_workspace_that_cannot_be_read(
 
 def test_a_dmw_file_that_cannot_be_read(collection_tests, tmp_path, monkeypatch):
     # Code review finding 1: one unreadable .dmw keeps its type, and the other's dataset stands
-    from modama_crawler import formats
+    from modama_crawler import files
 
     tree = collection_tests.materialise("workspace", tmp_path)
     (tree / "broken.dmw").write_text("hello\n")
-    monkeypatch.setattr(formats, "open", stale("broken.dmw"), raising=False)
+    monkeypatch.setattr(files, "regular", stale("broken.dmw", files.regular))
     result = walk(tree, collection_tests.collection.formats)
     datasets = {d.anchor: d for d in result.datasets}
     assert datasets["/exemplary_workspace.dmw"].format == "em/dmw"
