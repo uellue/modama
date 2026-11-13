@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from unittest import mock
 
+from modama_crawler import records
 from modama_crawler.formats import Directory
 from modama_crawler.walk import walk
 from modama_formats_common import image, text
@@ -101,6 +102,11 @@ def test_a_header_without_its_tiff(collection_tests, tmp_path):
     tree = collection_tests.materialise("lone_txt", tmp_path)
     (d,) = walk(tree, everything(collection_tests)).datasets
     assert (d.format, d.type, d.anchor) == ("common/text", "text/plain", TXT)
+    formats = {f.id: f for f in everything(collection_tests)}
+    extracted = formats[d.format].extract(d, str(tree))
+    assert extracted.values["text"] == generate.header_text(generate.TIF).replace(
+        "\r\n", "\n"
+    )
 
 
 def test_the_header_cannot_be_read(collection_tests, tmp_path):
@@ -171,6 +177,31 @@ def test_a_value_the_two_files_disagree_on(tmp_path):
     )
     assert "Magnification 60000" in extracted.summary
     assert "Magnification=50000" in txt.read_text()
+
+
+# The pair's text is its header as written
+
+
+def test_the_header_as_written(collection_tests, tmp_path):
+    (pair,) = described(collection_tests, "pair", tmp_path)
+    values = pair.dataset.extraction.extracted.values
+    expected = generate.header_text(generate.TIF).replace("\r\n", "\n")
+    assert len(expected.splitlines()) == 41
+    assert values["text"] == expected
+    assert "InstrumentName=HF3300\n" in values["text"]
+    assert "SemImageFile.Instrument name" in values["original_metadata"]
+    assert "SemImageFile.InstrumentName" not in values["original_metadata"]
+    # The record's second description is the text
+    names = records.format_names(collection_tests.collection.formats)
+    assert records.dc_metadata(pair.dataset, names)["description"][1] == expected
+
+
+def test_a_line_that_may_hold_a_credential(tmp_path):
+    generate.write_pair(tmp_path, **{"Image comment": "password: hunter2"})
+    (d,) = walk(tmp_path, hitachi.COLLECTION.formats).datasets
+    extracted = hitachi.Hitachi().extract(d, str(tmp_path))
+    assert "hunter2" not in extracted.values["text"]
+    assert extracted.values["mapped_metadata"]["credentials_left_out"] == 1
 
 
 # Only the headers are read

@@ -105,7 +105,8 @@
             96,
             1
           ]
-        }
+        },
+        "text": "[SemImageFile]\nInstrumentName=HF3300\nDate=2024/01/15\nTime=09:30:00\nImage comment=Test pattern\nKeyword1=300 kV\nKeyword2=500\nSampleName=Au on C\nMagnification=50000\nOperation mode=Analysis\nSub mode=Normal\nSignal name=HAADF\nSTEM camera length=40\nAccelerating voltage=300000\nEmission=10\nFile name=grid2_x50.0k_HAADF_0007.tif\nImage number=0007\nData size=64x64\nScreen mode=320\nData display combine=off\nAdd embed of property=off\nScan speed=Fast\nCapture speed=10s\nStagePositionX=100\nStagePositionY=-20\nStagePositionZ=5\nStagePositionT=1.5\nStagePositionA=0\nStage position R=0\nStage type=2\nRaster rotation angle=0.0\nCalibration=1.0\nCalibration factor X=1\nCalibration factor Y=1\nPixelSize=0.5\nBrightness=1000\nContrast=2000\nTEM condenser aperture=1\nSTEM condenser aperture=2\nOBJ aperture=0\nSA aperture=0\n"
       }
     }
   },

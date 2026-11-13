@@ -55,10 +55,22 @@ class Hitachi(Format):
             )
 
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        """The TIFF's values as the image area gives them (spec formats/hitachi, "The pair's values are its TIFF's")."""
+        """The TIFF's values as the image area gives them, the header's text as written
+        (spec formats/hitachi, "The pair's values are its TIFF's", "The pair's text is its header as written")."""
+        from modama_formats_common import written
         from modama_formats_common.image import tiff
+        from modama_formats_common.text import head
 
-        return tiff.extract(root + dataset.anchor)
+        extracted = tiff.extract(root + dataset.anchor)
+        path = root + next(m for m in dataset.members if m != dataset.anchor)
+        found = head.read(path)
+        if found.encoding is not None:
+            shown = written.of_head(found, path)
+            extracted.values["text"] = shown.text
+            if shown.credentials:
+                mapped = extracted.values["mapped_metadata"]
+                mapped["credentials_left_out"] = shown.credentials
+        return extracted
 
 
 # This part of the collection, for its tests; the package's COLLECTION joins the parts.

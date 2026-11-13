@@ -28,8 +28,12 @@ The format `em/hitachi` (priority 60, reacting to `image/tiff`) SHALL make one d
 - **THEN** the TIFF and the `.txt` are datasets of their own formats, the crawl warns at the `.txt` that it cannot be read, and the directory is recognised again next crawl
 
 #### Scenario: The pair's files are not offered to the formats after it
-- **WHEN** a pair is recognised in a crawl with every installed format
-- **THEN** the crawl has no warning "already claimed" for the TIFF or the `.txt` (spec `recognition`, "Formats run in priority order with exclusive claims")
+- **WHEN** a pair is recognised with the image and text areas' formats too
+- **THEN** it is the directory's only dataset, and the crawl warns of nothing (spec `recognition`, "Formats run in priority order with exclusive claims")
+
+#### Scenario: The header claimed by another format
+- **WHEN** a format of higher priority claims the pair's `.txt` (decision 344)
+- **THEN** the crawl warns at the TIFF `em/hitachi: <name>.txt is claimed by <format>; two formats want it`, and the TIFF is left to the formats after `em/hitachi`
 
 ### Requirement: The pair's values are its TIFF's
 The extractor SHALL give the pair the summary line, `original_metadata` and `mapped_metadata` that the image area's TIFF extractor gives its TIFF (spec `formats/image`), and SHALL NOT parse the `.txt` into values.
@@ -46,8 +50,12 @@ The extractor SHALL give the pair the summary line, `original_metadata` and `map
 The extractor SHALL put the `.txt`'s text into `values["text"]` by the rules of change `text-as-written` (spec `formats/text`: the text as written, head and tail of a long text, a credential left out), so that it becomes the record's second description (spec `records`).
 
 #### Scenario: The header as written
-- **WHEN** the fixture `pair` is extracted (its `.txt` 42 lines with CRLF line ends)
-- **THEN** `values["text"]` is the `.txt`'s 42 lines with line feeds, `InstrumentName` spelled as the `.txt` spells it; `original_metadata` has `SemImageFile.Instrument name` as tag 270 spells it and no `SemImageFile.InstrumentName`; the record's second description is the text
+- **WHEN** the fixture `pair` is extracted (its `.txt` 41 lines with CRLF line ends)
+- **THEN** `values["text"]` is the `.txt`'s 41 lines with line feeds, `InstrumentName` spelled as the `.txt` spells it; `original_metadata` has `SemImageFile.Instrument name` as tag 270 spells it and no `SemImageFile.InstrumentName`; the record's second description is the text
+
+#### Scenario: A line that may hold a credential
+- **WHEN** the pair's `.txt` has the line `Image comment=password: hunter2`
+- **THEN** `hunter2` is not in the text, and `mapped_metadata` has `credentials_left_out` 1
 
 ### Requirement: Only the headers are read
 The extractor SHALL read the TIFF as the image area reads one (spec `formats/image`, "Only the header is read") and the `.txt` as the text area reads a text; never the TIFF's image data.

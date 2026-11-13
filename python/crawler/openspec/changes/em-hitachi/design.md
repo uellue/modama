@@ -4,7 +4,7 @@ Looked at on 2026-11-13 in the VM, with throwaway scripts outside the repository
 
 ## D1 The real pair
 
-**The `.txt`** (876 bytes, ASCII, CRLF line ends, ending with CRLF): the line `[SemImageFile]`, then 41 lines `key=value`, no blank line, no other section. Keys, in the file's order:
+**The `.txt`** (876 bytes, ASCII, CRLF line ends, ending with CRLF): the line `[SemImageFile]`, then 40 lines `key=value` (41 lines in all), no blank line, no other section. Keys, in the file's order:
 
 `InstrumentName`, `Date` (`yyyy/mm/dd`), `Time` (`hh:mm:ss`), `Image comment`, `Keyword1` (a voltage with its unit, as text), `Keyword2`, `SampleName`, `Magnification`, `Operation mode`, `Sub mode`, `Signal name`, `STEM camera length`, `Accelerating voltage`, `Emission`, `File name` (the TIFF's name), `Image number`, `Data size` (`<w>x<h>`), `Screen mode`, `Data display combine`, `Add embed of property`, `Scan speed`, `Capture speed`, `StagePositionX`, `StagePositionY`, `StagePositionZ`, `StagePositionT`, `StagePositionA`, `Stage position R`, `Stage type`, `Raster rotation angle`, `Calibration`, `Calibration factor X`, `Calibration factor Y`, `PixelSize`, `Brightness`, `Contrast`, `TEM condenser aperture`, `STEM condenser aperture`, `OBJ aperture`, `SA aperture`.
 
@@ -15,13 +15,13 @@ Keys are written in two styles (`StagePositionX` beside `Stage position R`, `Pix
 | Tag | Shape in the sample | Today's values (`common/tiff`) |
 |---|---|---|
 | 254 `NewSubfileType`, 256 `ImageWidth` (1024), 257 `ImageLength` (1056), 258 `BitsPerSample` (8), 259 `Compression` (none), 262 `PhotometricInterpretation` (min-is-black), 277 `SamplesPerPixel` (1), 278 `RowsPerStrip`, 282/283 `XResolution`/`YResolution`, 296 `ResolutionUnit` | baseline tags; one strip | kept as they are; `StripOffsets`, `StripByteCounts` skipped (layout) |
-| 270 `ImageDescription` | 837 bytes: the `.txt`'s block with `\r` line ends, 41 lines | one string of 835 characters with `\r` in it (it passes `values.textual`, which allows line ends; a longer one, over 1,000 characters, would be left out whole) |
+| 270 `ImageDescription` | 837 bytes: the `.txt`'s block with `\r` line ends, 41 lines (40 keys) | one string of 835 characters with `\r` in it (it passes `values.textual`, which allows line ends; a longer one, over 1,000 characters, would be left out whole) |
 | 65500 (private, ASCII) | 320 bytes: items `"@<group>"<key>=<value>` separated by `\r`: `"@Fld"FldImgPropReserveDbl1`, `…ReserveDbl2`, `…ModeID`, `…SubmodeID`, `"@Confidential"ScanTimeX`, `…ScanTimeY`, `…Stage tilt axis`; the last three repeated once, the first repeat glued to the item before it without `\r` (`…Stage tilt axis=<v>"@Confidential"ScanTimeX=<v>`) | one string, key `65500` |
 | 65501 (private, ASCII) | 15,157 bytes: 15,156 characters `0-9A-F` and the terminating NUL | left out: over 1,000 characters (`values.textual`) |
 
 tifffile sets none of its vendor flags (`is_fei`, `is_sem`, …) for this file: it has no Hitachi reader. The strip starts at byte 16,536, right after tag 65501's value; the IFD is at byte 8. So the file's first 16,536 bytes hold every tag and no pixel.
 
-**Tag 270 against the `.txt`**: 40 of the 41 keys are the same, with the same values; one is spelled differently (`.txt` `InstrumentName`, tag 270 `Instrument name`, same value). The `.txt` has CRLF and a final line end, tag 270 `\r` between lines and none at the end. Tag 65500's seven properties are in neither.
+**Tag 270 against the `.txt`**: 39 of the 40 keys are the same, with the same values; one is spelled differently (`.txt` `InstrumentName`, tag 270 `Instrument name`, same value). The `.txt` has CRLF and a final line end, tag 270 `\r` between lines and none at the end. Tag 65500's seven properties are in neither.
 
 **Tag 65500 and the `.txt`**: tag 65500's keys are not in the `.txt`. What its keys mean is not documented anywhere I found.
 
@@ -98,6 +98,8 @@ Today (`formats/__init__.py`, `run_post`): formats run in descending priority; a
 
 The recognition spec already says "an entry or child dataset claimed by a dataset SHALL NOT be available to formats that run later"; A makes `of_type` do what it says. The warning stays for a claim that reaches the runner anyway. Lean: A, in this change, as the first format that needs it (Q9).
 
+**Settled elsewhere before the build** (2026-11-13): bug 311 made the runner leave every claimed file out of the entries it offers the formats after the one that claimed it (by type and by name), and decision 344 added `Directory.claimed` (who claimed a file the format is not offered) and `Directory.claimed_elsewhere` (a warning ending in "two formats want it", collected for review). This change therefore has no runner part and no `recognition` delta. `em/hitachi` asks `d.claimed` for the `.txt` of each TIFF's stem: when another format took it, the TIFF gets the warning and is left to the formats after `em/hitachi` (spec `formats/hitachi`, "The header claimed by another format"). The header itself cannot be checked then (it is not offered), so the warning may flag a `.txt` that is not Hitachi's; no format above 60 claims `.txt` files today.
+
 ## D9 Bytes read
 
 - Recognition: 14 bytes of each `.txt` next to a TIFF of its stem.
@@ -105,9 +107,11 @@ The recognition spec already says "an entry or child dataset claimed by a datase
 
 ## D10 Fixtures
 
-No public Hitachi pair with a licence was found (D2). Lean (Q11): generated at test time with tifffile (`generate.py`): a TIFF of 64 × 96 pixels (a `Data size` of 64x64 and 32 rows more), its tag 270 the made-up header with `\r` line ends and the real file's 41 keys in their order, tag 65500 with the real file's item syntax (seven items, the glued repeat), tag 65501 with 15,156 hexadecimal characters; the `.txt` the same block with CRLF and the `InstrumentName` spelling. `validity = "parser-only"`, as nothing that writes the format wrote it. Plus reproducers: a TIFF and a `.txt` of its stem with notes (no pair); a lone TIFF; a lone `.txt`; a header with a key nobody has seen. A cut of the real pair (its first 16,536 bytes and the `.txt`, unchanged; `validity = "vendor-written"`, cut) would be the representative fixture the TEMPLATE asks for, only if @weber agrees to publish its values under a licence.
+No public Hitachi pair with a licence was found (D2). Lean (Q11): generated at test time with tifffile (`generate.py`): a TIFF of 64 × 96 pixels (a `Data size` of 64x64 and 32 rows more), its tag 270 the made-up header with `\r` line ends and the real file's 40 keys in their order, tag 65500 with the real file's item syntax (seven items, the glued repeat), tag 65501 with 15,156 hexadecimal characters; the `.txt` the same block with CRLF and the `InstrumentName` spelling. `validity = "parser-only"`, as nothing that writes the format wrote it. Plus reproducers: a TIFF and a `.txt` of its stem with notes (no pair); a lone TIFF; a lone `.txt`; a header with a key nobody has seen. A cut of the real pair (its first 16,536 bytes and the `.txt`, unchanged; `validity = "vendor-written"`, cut) would be the representative fixture the TEMPLATE asks for, only if @weber agrees to publish its values under a licence.
 
 ## Questions to @weber, with leans
+
+Answered on 2026-11-13: all leans accepted (313); Q4: the `@Confidential` items kept as the file says them; Q11: fixtures generated from the sample's layout, values made up (314). Q9 became moot (D8). Q1's second part (which instruments the other folders hold) and Q5 (what tag 65501 is) stay open.
 
 - **Q1** The pair: the `.txt` of the TIFF's stem, by its first line `[SemImageFile]` (lean); or also by the header's `File name` naming the TIFF. Are all 411 in the listing from the S/TEM of the sample, or do the other folders hold SEM (SU-series, S-4800) or HF3300 pairs whose header may be spelled otherwise?
 - **Q2** Type `application/x-hitachi-sem`, Gwyddion's (lean), though the sample's instrument is an S/TEM; or `image/tiff` for the dataset (a search by format finds it among TIFFs); or `application/x.hitachi-em` of our own.
