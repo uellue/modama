@@ -255,6 +255,18 @@ def test_one_pool_for_the_crawl(tmp_path, monkeypatch):
     assert made == []  # nothing to inspect, no process
 
 
+def test_an_inspection_once_the_walk_stops(tmp_path):
+    # Second code review, nits: no exception for the runner to log as "failed"
+    (tmp_path / "a.bin").write_bytes(b"x")
+    e = entry_of(tmp_path / "a.bin")
+    d = directory(tmp_path, [e])
+    d.inspector = Inspector(2, stopping=lambda: True)
+    got = d.inspect([e], pid, 1024)
+    assert got[e.rel].kind == inspection.STOPPED
+    assert not d.warnings and d.retry
+    assert not d.inspector.pool.alive  # no process started for it
+
+
 def test_an_inspection_in_the_pre_order_call_is_refused(tmp_path):
     (tmp_path / "a.bin").write_bytes(b"x")
     e = entry_of(tmp_path / "a.bin")
@@ -295,19 +307,22 @@ mimedb.build(selection.discover().values(), database)
 mimedb.activate(database)
 stop = threading.Event()
 signal.signal(signal.SIGTERM, lambda *_: stop.set())
+class Stopped(Exception):
+    pass
 def progress(directories, files):
     if stop.is_set():
-        raise SystemExit(143)
-def check():
-    if stop.is_set():
-        raise SystemExit(143)
+        raise Stopped
 fmt = test_inspection.Sleeps()
 Collection("t", [fmt])
 print("walking", flush=True)
 try:
-    walk(Path({tree!r}), [fmt], progress=progress, processes=2, check=check)
+    walk(Path({tree!r}), [fmt], progress=progress, processes=2, stopping=stop.is_set)
 except KeyboardInterrupt:
     sys.exit(130)
+except Stopped:
+    pass
+if stop.is_set():  # as the crawl checks SIGTERM after its walk
+    sys.exit(143)
 """
 
 
@@ -321,7 +336,10 @@ def test_stopping_does_not_wait_for_the_inspections(tmp_path, stop):
         tests=str(Path(__file__).parent), scratch=str(tmp_path), tree=str(tree)
     )
     run = subprocess.Popen(
-        [sys.executable, "-c", script], stdout=subprocess.PIPE, text=True
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     assert run.stdout.readline() == "walking\n"
     time.sleep(4)  # the first folders inspect, the others wait for the pool
@@ -337,3 +355,5 @@ def test_stopping_does_not_wait_for_the_inspections(tmp_path, stop):
     # Ten folders of 20 s on 2 workers, one folder at a time, would take 200 s
     assert time.monotonic() - start < 30
     assert run.returncode == (143 if stop == signal.SIGTERM else 130)
+    # Quietly: no task's exception left for asyncio to print (code review 2, nit)
+    assert "never retrieved" not in run.stderr.read()

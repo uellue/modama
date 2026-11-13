@@ -337,21 +337,38 @@ def structure(path: str, target: str) -> tuple[list, object] | None:
     """The shape and dtype of the dataset at target in the HDF5 file at path, reached
     one component at a time by hard links only (`links.get_info`), never through a
     soft or external link (design D4, D6); None if it is not there that way, or is
-    virtual (its shape could open its sources). No array is read."""
-    with opened(path) as f:
-        obj = h5py.h5g.open(f.id, b"/")
-        for part in (p for p in target.split("/") if p):
-            raw = part.encode()
-            if not isinstance(obj, h5py.h5g.GroupID) or not obj.links.exists(raw):
-                return None
-            if obj.links.get_info(raw).type != h5py.h5l.TYPE_HARD:
-                return None
-            obj = h5py.h5o.open(obj, raw)
-        if not isinstance(obj, h5py.h5d.DatasetID):
-            return None
-        if obj.get_create_plist().get_layout() == h5py.h5d.VIRTUAL:
-            return None
-        return list(obj.shape), dtype_name(obj.dtype)
+    virtual (its shape could open its sources). No array is read.
+
+    Raises Unreadable when h5py cannot read the file's contents (not HDF5, a broken
+    checksum); an error of the file system (a read the file system did not answer)
+    is raised as it is, so that the extraction fails and is tried again (second
+    code review of hdf5-links, S1)."""
+    with files.Counted(files.regular(path), name=path) as raw:
+        try:
+            with h5py.File(raw, "r", locking=False) as f:
+                obj = h5py.h5g.open(f.id, b"/")
+                for part in (p for p in target.split("/") if p):
+                    name = part.encode()
+                    if not isinstance(obj, h5py.h5g.GroupID):
+                        return None
+                    if not obj.links.exists(name):
+                        return None
+                    if obj.links.get_info(name).type != h5py.h5l.TYPE_HARD:
+                        return None
+                    obj = h5py.h5o.open(obj, name)
+                if not isinstance(obj, h5py.h5d.DatasetID):
+                    return None
+                if obj.get_create_plist().get_layout() == h5py.h5d.VIRTUAL:
+                    return None
+                return list(obj.shape), dtype_name(obj.dtype)
+        except (OSError, KeyError, ValueError, RuntimeError) as e:
+            if raw.error is not None:
+                raise raw.error from e
+            raise Unreadable(f"{type(e).__name__}: {e}") from e
+
+
+class Unreadable(Exception):
+    """h5py could not read an HDF5 file's contents: the same file gives the same error."""
 
 
 def linked_data(values: dict, linked: Linked, members: dict[str, str]) -> list[str]:
@@ -367,8 +384,10 @@ def linked_data(values: dict, linked: Linked, members: dict[str, str]) -> list[s
                 continue
             try:
                 found = structure(members[name], target)
-            except (OSError, KeyError, ValueError, RuntimeError):
-                not_read.append(name)  # NotRegular (a symlink now) is an OSError
+            except (files.NotRegular, FileNotFoundError, Unreadable):
+                # Gone or replaced since recognition, or broken; any other error
+                # of the file system fails the extraction, to be tried again
+                not_read.append(name)
                 continue
             if found is not None and len(values) <= MAX_ENTRIES - 2:
                 values[f"{dotted}.shape"], values[f"{dotted}.dtype"] = found

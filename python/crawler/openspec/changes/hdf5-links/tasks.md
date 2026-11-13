@@ -58,6 +58,13 @@ Nothing here starts before @weber has answered the open questions of `design.md`
 - [x] 7.6 S4, a member gone or replaced at extraction is skipped, named in `mapped_metadata.not_read`, the master's values kept. Verify: `test_a_member_gone_at_extraction[removed, a symlink]`.
 - [x] 7.7 Nits: over its budget warned without `not inspected` (`test_a_file_over_its_budget`, `test_a_budget_breach_stays_raised`); `inspect` refused in the pre-order call (`test_an_inspection_in_the_pre_order_call_is_refused`); a ring of any length remarked (`test_three_files_that_name_each_other_in_a_ring`, `test_two_files_that_name_each_other`); one wording for a shared target at every file that names it (`test_a_file_two_masters_link`).
 
+## 8. The second code review's findings (of c5614a59), each with a test that failed first
+
+- [x] 8.1 `crawler` merged (00294963, with `em/de` and the faster `_fill`): README and BACKLOG resolved, `crawler`'s newer 344 entries kept (`modama-chain review`), the marker `not inspected` pointed at `modama-chain review --marker 'not inspected'`.
+- [x] 8.2 S1, a temporary read error of a member at extraction fails the extraction (tried again, extractor-identity D9): `structure` raises the file system's error as it is, `Unreadable` for h5py's errors about the contents; `linked_data` skips `NotRegular`, `FileNotFoundError` and `Unreadable` only. Verify: `test_a_member_that_does_not_answer_at_extraction[EIO, ESTALE]` (failed first: the extraction succeeded with `not_read`).
+- [x] 8.3 S2, a lone `.h5` beside a claimed file of another kind is not opened: only claimed names with the HDF5 types' suffixes count (`links.NAMES`). Verify: `test_one_hdf5_file_alone_is_not_opened_beside_a_claimed_file` (failed first: an inspection pool was made).
+- [x] 8.4 Nits: on SIGTERM no thread raises (`walk(stopping=)`, a flag, instead of `check=`; `InspectionStopped` a `BaseException` turned into the outcome *stopped*). Verify: `test_stopping_does_not_wait_for_the_inspections[SIGTERM]` now also checks stderr for "never retrieved" (failed first), `test_an_inspection_once_the_walk_stops`. `links.listed` catches only h5py's errors (`library`, `LibraryError`). Verify: `test_an_error_of_our_own_code_is_not_final` (failed first). `not_read` in design D3's table.
+
 ## Workflow follow-up
 
 - @weber merges; staging crawls the folder of `scan_00026` and the other folders with `*master*` files; browse shows one record per acquisition.

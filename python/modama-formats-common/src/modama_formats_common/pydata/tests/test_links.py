@@ -4,6 +4,7 @@ The fixture `linked_scan` and the variants built here are written by h5py
 after the structure of a real Eiger 4M master (names and shapes only).
 """
 
+import errno
 import os
 import subprocess
 import sys
@@ -438,6 +439,30 @@ def test_one_hdf5_file_alone_is_not_opened(collection_tests, tmp_path, pools):
     assert pools == []
 
 
+class ClaimsNotes(Format):
+    """A probe at priority 70 that claims notes.txt, as common/docx claims a .docx."""
+
+    type = "x/notes"
+    priority = 70
+    reacts_to = frozenset({"text/plain"})
+
+    def recognize(self, d):
+        for e in d.of_type("text/plain"):
+            yield Dataset(anchor=e.rel, basis="probe")
+
+
+def test_one_hdf5_file_alone_is_not_opened_beside_a_claimed_file(
+    collection_tests, tmp_path, pools
+):
+    # Second code review, S2: a claimed file of another kind is no HDF5 file
+    h5(tmp_path / "m.h5", d1=("d1.h5", "/data"))
+    (tmp_path / "notes.txt").write_text("notes\n")
+    probe = ClaimsNotes()
+    Collection("t", [probe])
+    walk(tmp_path, [*collection_tests.collection.formats, probe])
+    assert pools == []
+
+
 def test_too_many_hdf5_files_in_a_folder(collection_tests, tmp_path, pools):
     h5(tmp_path / "m.h5", d1=("f0001.h5", "/data"), d2=("f0002.h5", "/data"))
     for i in range(1, 201):
@@ -502,6 +527,22 @@ def test_a_corrupt_master_is_a_final_result(collection_tests, scan):
     assert not any(listing.retry for listing in result.listings.values())
 
 
+def test_an_error_of_our_own_code_is_not_final(scan, monkeypatch):
+    # Second code review, nit: only h5py's errors are a final result; ours raise,
+    # and the inspection's outcome "failed" is tried again next crawl
+    from modama_crawler import files
+
+    def broken(file, virtual=False):
+        raise KeyError("a bug of ours")
+
+    monkeypatch.setattr(links, "matched", broken)
+    with (
+        files.Counted(files.regular(str(scan / "scan_master.h5"))) as f,
+        pytest.raises(KeyError),
+    ):
+        links.listed(f)
+
+
 def test_one_group_of_many_links(collection_tests, tmp_path):
     # Code review, S2: the links of one large group are counted as HDF5 hands them
     # over and cut at 5,000; the extraction says its walk was cut. (100,000 links
@@ -554,6 +595,29 @@ def test_a_link_target_another_format_claimed(collection_tests, tmp_path):
     ) in result.all_warnings()
 
 
+@pytest.mark.parametrize("code", [errno.EIO, errno.ESTALE])
+def test_a_member_that_does_not_answer_at_extraction(
+    collection_tests, scan, monkeypatch, code
+):
+    # Second code review, S1: a temporary read error fails the extraction, to be
+    # tried again next crawl (extractor-identity D9), not stored as `not_read`
+    from modama_crawler import files
+
+    d = datasets(collection_tests, scan)["scan_master.h5"]
+    fmt = next(f for f in collection_tests.collection.formats if f.id == d.format)
+    real = files.regular
+
+    def failing(path):
+        if path.endswith(DATA[0]):
+            raise OSError(code, os.strerror(code), path)
+        return real(path)
+
+    monkeypatch.setattr(files, "regular", failing)
+    with pytest.raises(OSError) as raised:
+        fmt.extract(d, str(scan))
+    assert raised.value.errno == code
+
+
 @pytest.mark.parametrize("change", ["removed", "a symlink"])
 def test_a_member_gone_at_extraction(collection_tests, scan, change):
     # Code review, S4: the master's values stay, the member is said not read
@@ -584,8 +648,8 @@ def test_three_files_that_name_each_other_in_a_ring(collection_tests, tmp_path):
 
 
 def test_a_listing_that_times_out(collection_tests, scan, monkeypatch):
-    def short(workers=None, check=None):
-        return inspection.Inspector(workers, time_limit=0.01, check=check)
+    def short(workers=None, stopping=None):
+        return inspection.Inspector(workers, time_limit=0.01, stopping=stopping)
 
     monkeypatch.setattr(walk_module, "Inspector", short)
     result = walk(scan, collection_tests.collection.formats)

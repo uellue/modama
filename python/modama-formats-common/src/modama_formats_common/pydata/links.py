@@ -21,6 +21,9 @@ MAX_LISTED = 5000
 BUDGET = 4 << 20
 # Per folder: fewer HDF5 files have nothing to link to, more are not listed
 MIN_FILES, MAX_FILES = 2, 200
+# The names of HDF5 files among the files an earlier format claimed, whose types
+# are not offered: the globs of the HDF5 types (pydata.xml) and Velox's .emd
+NAMES = (".h5", ".hdf5", ".hdf", ".nxs", ".hspy", ".emd")
 
 DIGITS = re.compile(r"(\d+)")
 
@@ -144,20 +147,21 @@ def listed(f) -> dict:
                     found.append((name, info.type))
                     return None
 
-                gid.links.iterate(take, info=True, order=h5py.h5.ITER_NATIVE)
+                library(gid.links.iterate, take, info=True, order=h5py.h5.ITER_NATIVE)
                 for name, kind in found:
                     if kind == h5py.h5l.TYPE_EXTERNAL:
-                        file = gid.links.get_val(name)[0].decode("utf-8", "replace")
-                        if (target := matched(file)) is not None:
+                        file = library(gid.links.get_val, name)[0]
+                        target = matched(file.decode("utf-8", "replace"))
+                        if target is not None:
                             external.add(target)
                     elif kind == h5py.h5l.TYPE_HARD:
-                        obj = h5py.h5o.open(gid, name)
+                        obj = library(h5py.h5o.open, gid, name)
                         if isinstance(obj, h5py.h5g.GroupID):
                             stack.append(obj)
                         elif isinstance(obj, h5py.h5d.DatasetID):
                             virtual |= sources(obj)
-        except (RuntimeError, SystemError, KeyError, ValueError, OSError) as e:
-            return {"hdf5": True, "error": f"{type(e).__name__}: {e}"}
+        except LibraryError as e:
+            return {"hdf5": True, "error": str(e)}
     return {
         "hdf5": True,
         "external": sorted(external),
@@ -171,15 +175,29 @@ def sources(dataset) -> set[str]:
     h5py DatasetID; nothing for any other layout), from its creation property list."""
     import h5py
 
-    dcpl = dataset.get_create_plist()
-    if dcpl.get_layout() != h5py.h5d.VIRTUAL:
+    dcpl = library(dataset.get_create_plist)
+    if library(dcpl.get_layout) != h5py.h5d.VIRTUAL:
         return set()
     found = set()
-    for i in range(dcpl.get_virtual_count()):
-        file = dcpl.get_virtual_filename(i)
+    for i in range(library(dcpl.get_virtual_count)):
+        file = library(dcpl.get_virtual_filename, i)
         if file != "." and (target := matched(file, virtual=True)):
             found.add(target)
     return found
+
+
+class LibraryError(Exception):
+    """h5py's own error while listing: the same file gives the same error."""
+
+
+def library(call, *args, **kwargs):
+    """call(*args, **kwargs), one of h5py's, its errors as LibraryError: only the
+    library's errors are a final result, not ours (second code review, nit). The
+    classes are those LiberTEM's HDF5 dataset catches while it walks a file."""
+    try:
+        return call(*args, **kwargs)
+    except (RuntimeError, SystemError, KeyError, ValueError, OSError) as e:
+        raise LibraryError(f"{type(e).__name__}: {e}") from e
 
 
 def grouped(

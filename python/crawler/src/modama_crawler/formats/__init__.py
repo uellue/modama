@@ -269,7 +269,7 @@ class Directory:
         returning plain data. Only in the post-order call: the pre-order call
         has names and sizes only, and no pool of the crawl.
         """
-        from ..inspection import OVER_BUDGET, RETRIED, UNANSWERED, Inspector
+        from ..inspection import OVER_BUDGET, RETRIED, STOPPED, UNANSWERED, Inspector
 
         if self.phase != "post":
             raise ValueError(f"{self.rel}: inspect in the post-order call only")
@@ -287,6 +287,8 @@ class Directory:
         for e, x in zip(entries, got, strict=True):
             if x.kind == UNANSWERED:
                 self.did_not_answer(e.rel, OSError(x.errno, x.detail, e.path))
+            elif x.kind == STOPPED:
+                self.retry = True  # the crawl is stopping: nothing of it is final
             elif x.kind in RETRIED:
                 self.retry = True
                 self.warn(

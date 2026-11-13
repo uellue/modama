@@ -37,6 +37,7 @@ UNANSWERED = "the file system did not answer"
 FAILED = "failed"
 TIMEOUT = "timed out"
 DEAD = "its process died"
+STOPPED = "not run, the walk is stopping"
 # Tried again next crawl (decision 340)
 RETRIED = frozenset({FAILED, TIMEOUT, DEAD})
 
@@ -114,10 +115,13 @@ class Inspector:
     format call waiting for the lock blocks its walk thread (design D5).
 
     Stopping does not wait for the inspections (code review of hdf5-links,
-    M1): `check` (the crawl's SIGTERM check, as extraction's) is asked before
-    a folder's inspections start and every second while they run, and
-    `stop` (the walk ending, Ctrl-C) makes every running and waiting `run`
-    end at once, its workers killed, raising InspectionStopped.
+    M1): `stopping` (whether the crawl got SIGTERM) is asked before a
+    folder's inspections start and every second while they run, and `stop`
+    (the walk ending, Ctrl-C) does the same; either ends every running and
+    waiting `run` at once, its workers killed, every file's outcome STOPPED.
+    No exception leaves the walk's thread (second code review, nit: asyncio
+    printed every thread's Terminated as "never retrieved"); the walk stops
+    where the crawl checks SIGTERM, at its next folder or after it.
     """
 
     def __init__(
@@ -125,36 +129,37 @@ class Inspector:
         workers: int | None = None,
         time_limit: float = TIME_LIMIT,
         memory: int | None = MEMORY,
-        check: Callable[[], None] | None = None,
+        stopping: Callable[[], bool] | None = None,
     ):
         self.pool = Pool(workers or default_workers(), memory, keep=True)
         self.time_limit = time_limit
         self._lock = threading.Lock()
-        self._check_outside = check
+        self._stopping = stopping
         self._stopped = threading.Event()
 
     def _check(self) -> None:
-        if self._stopped.is_set():
+        if self._stopped.is_set() or (self._stopping and self._stopping()):
             raise InspectionStopped("the walk is stopping")
-        if self._check_outside is not None:
-            self._check_outside()
 
     def run(
         self, fn: Callable, paths: list[str], budget: int | None
     ) -> list[Inspected]:
         tasks = [(fn, path, budget) for path in paths]
-        self._check()
-        with self._lock:
-            self._check()  # another folder's turn may have ended in a stop
-            raw = _run(
-                tasks,
-                self.pool.workers,
-                self.time_limit,
-                self.pool.memory,
-                check=self._check,
-                work=_inspect,
-                pool=self.pool,
-            )
+        try:
+            self._check()
+            with self._lock:
+                self._check()  # another folder's turn may have ended in a stop
+                raw = _run(
+                    tasks,
+                    self.pool.workers,
+                    self.time_limit,
+                    self.pool.memory,
+                    check=self._check,
+                    work=_inspect,
+                    pool=self.pool,
+                )
+        except InspectionStopped:
+            return [Inspected(STOPPED) for _ in paths]
         return [outcome(r) for r in raw]
 
     def stop(self) -> None:
@@ -165,5 +170,7 @@ class Inspector:
         self.pool.close()
 
 
-class InspectionStopped(Exception):
-    """The walk is stopping: no inspection runs or waits any more."""
+class InspectionStopped(BaseException):
+    """The walk is stopping: no inspection runs or waits any more. A BaseException, so
+    that nothing on the way (a format's `except Exception`, the runner's `_call`)
+    takes it for a failure; `Inspector.run` turns it into the outcome STOPPED."""

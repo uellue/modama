@@ -127,6 +127,10 @@ Recognition and extraction SHALL compare a target name with the names of the fol
 - **WHEN** a folder holds one HDF5 file and a text file
 - **THEN** recognition reads nothing of the HDF5 file
 
+#### Scenario: One HDF5 file alone is not opened beside a claimed file
+- **WHEN** a folder holds one HDF5 file and a text file that a format before `common/hdf5links` claimed (as `common/docx` claims a `.docx`)
+- **THEN** recognition reads nothing of the HDF5 file: only claimed files named as HDF5 files (`.h5`, `.hdf5`, `.hdf`, `.nxs`, `.hspy`, `.emd`) count toward the two
+
 #### Scenario: Too many HDF5 files in a folder
 - **WHEN** a folder holds 201 HDF5 files, one of which links two others
 - **THEN** none is opened by recognition, each is a dataset of its own, and the folder has a warning saying 201 HDF5 files are over the limit of 200
@@ -169,6 +173,10 @@ The extractor of `common/hdf5links` SHALL give, for each entry of external links
 #### Scenario: A member gone at extraction
 - **WHEN** after recognition `scan_data_000001.h5` of `linked_scan` is removed, or replaced by a symlink
 - **THEN** the master's extraction keeps its values, `mapped_metadata.not_read` is `["scan_data_000001.h5"]`, `entry.data.data_000001.shape` comes from the next member of the run, and `dangling` counts it
+
+#### Scenario: A member that does not answer at extraction
+- **WHEN** opening `scan_data_000001.h5` of `linked_scan` at extraction fails with `EIO` or `ESTALE`
+- **THEN** the master's extraction fails with that error, and the next crawl tries it again (extractor-identity D9), instead of storing it as `not_read`
 
 ## MODIFIED Requirements
 

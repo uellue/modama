@@ -167,8 +167,10 @@ class Hdf5Links(Format):
         hdf5 = [e for e in d.entries if e.mime in self.reacts_to]
         listable = [e for e in hdf5 if e.mime == self.type and e.name.endswith(".h5")]
         # A file an earlier format claimed is not offered, but may be a link's
-        # target, to flag as two formats wanting it (344; code review, S3)
-        if not listable or (len(hdf5) < links.MIN_FILES and not d.claimed):
+        # target, to flag as two formats wanting it (344; code review, S3);
+        # only those named as HDF5 files count (second code review, S2)
+        claimed = [n for n in d.claimed if n.lower().endswith(links.NAMES)]
+        if not listable or len(hdf5) + len(claimed) < links.MIN_FILES:
             return
         if len(hdf5) > links.MAX_FILES:
             d.warn(
