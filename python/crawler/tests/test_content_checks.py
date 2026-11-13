@@ -400,7 +400,12 @@ def test_the_new_types_detection_does_not_use_the_formats_budget(tmp_path):
     )  # fmt: skip
     assert e.mime == TAGS
     d = Dir("/", str(tmp_path), [e], [], "post", uid=st.st_uid, mtime=st.st_mtime)
-    datasets, _ = run_post(d, formats(Tags()), 5.0, byte_budget=1_000)
+
+    class Limited(Tags):
+        name = "tags"
+        read_limit = 1_000
+
+    datasets, _ = run_post(d, formats(Limited()), 5.0)
     (ds,) = datasets
     assert (ds.type, ds.format) == ("text/plain", "")
     assert d.warnings == []
@@ -417,7 +422,6 @@ def test_not_of_type_is_refused_in_the_pre_order_call_and_for_another_entry(tmp_
     with pytest.raises(ValueError, match="not an entry"):
         d.not_of_type(other, "x")
     new = d.not_of_type(e, "x")
-    d._budget = 100
     # The old entry is refused from now on, as d.read refuses another directory's
     with pytest.raises(ValueError, match="not an entry"):
         d.read(e, 4)

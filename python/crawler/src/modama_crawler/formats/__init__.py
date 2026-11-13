@@ -39,8 +39,16 @@ REFUSED = frozenset({errno.EACCES, errno.EPERM})
 WANTED_TWICE = "two formats want it"
 # In every warning about a file whose inspection failed, timed out or killed its
 # process, and only there: it is tried again next crawl (Directory.inspect,
-# decision 340). A file over its budget is not tried again and not so marked
+# decision 340). A file over its read limit is not tried again and not so marked
 NOT_INSPECTED = "not inspected"
+# What a format may read of one file in one call, through either reader, unless it
+# declares more (Format.read_limit); past FLAG_PER_FILE it is flagged for review, in
+# a warning with the marker READ_MUCH; a file over the limit is refused, in a warning
+# with the marker OVER_LIMIT (change read-limit-per-file)
+LIMIT_PER_FILE = 1 << 20
+FLAG_PER_FILE = 64 << 10
+READ_MUCH = "read more than 64 KiB"
+OVER_LIMIT = "over its read limit"
 
 
 def not_visible(err: OSError) -> bool:
@@ -208,7 +216,11 @@ class Directory:
         self.mtime = mtime
         self.warnings: list[tuple[str, str]] = []
         self._by_name = {e.name: e for e in entries}
-        self._budget = 0
+        # Of the format being called (_call): its limit per file, the bytes read of
+        # each file rel, the files refused
+        self._limit = LIMIT_PER_FILE
+        self._read: dict[str, int] = {}
+        self._refused: set[str] = set()
         self.retry = False  # a format met a read error
         # (file rel, error) of the first read the file system did not answer, whatever
         # the format made of it: the crawl keeps the stored datasets (listing-errors D2, D3)
@@ -235,36 +247,60 @@ class Directory:
         return [e for e in self.entries if e.mime == mime]
 
     def read(self, entry: Entry, n: int) -> bytes:
-        """The first n bytes of an entry of this directory, within the byte budget."""
+        """The first n bytes of an entry of this directory, within the calling format's read limit per file.
+
+        The bytes read of each file are counted per format call, as
+        files.Counted counts them: past FLAG_PER_FILE the crawl warns once,
+        with READ_MUCH; a read that would take them past the limit is refused
+        before it reads, with a warning naming the file and OVER_LIMIT, and so
+        is every later read of that file in the call. The refusal is a
+        BudgetExceeded, an OSError: the format skips the file as one it cannot
+        read (cannot_read), and the file stays as it would be without the
+        format. Not tried again: the same file gives the same outcome (change
+        read-limit-per-file).
+        """
         if self._by_name.get(entry.name) is not entry:
             raise ValueError(f"{entry.rel} is not an entry of {self.rel}")
-        if n > self._budget:
-            raise BudgetExceeded(f"reading {n} bytes of {entry.rel} exceeds the budget")
-        self._budget -= n
+        done = self._read.get(entry.rel, 0)
+        if entry.rel in self._refused or done + n > self._limit:
+            if entry.rel not in self._refused:
+                self._refused.add(entry.rel)
+                self.warn(
+                    entry.rel,
+                    f"{self._format}: {entry.name} {OVER_LIMIT} of {self._limit} bytes "
+                    f"({n} asked for after {done}); not read further",
+                )
+            raise BudgetExceeded(
+                f"reading {n} bytes of {entry.rel} after {done} exceeds its read "
+                f"limit of {self._limit} bytes"
+            )
         try:
             # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole
             # buffer; never through a symlink the entry may have become since
             # its listing (hdf5-links, design D4)
             with files.Counted(files.regular(entry.path), name=entry.rel) as f:
-                return f.read(n)
+                data = f.read(n)
         except OSError as e:
             # noted here, so that it counts also when the format catches it (review 3)
             self.did_not_answer(entry.rel, e)
             raise
+        self._read[entry.rel] = done + len(data)
+        if done <= FLAG_PER_FILE < done + len(data):
+            self.warn(entry.rel, f"{self._format}: {READ_MUCH} of {entry.name}")
+        return data
 
-    def inspect(
-        self, entries: list[Entry], fn: Callable, budget: int | None
-    ) -> dict[str, Inspected]:
+    def inspect(self, entries: list[Entry], fn: Callable) -> dict[str, Inspected]:
         """fn(file object) for each entry, in worker processes; the outcome per entry rel.
 
         Each file is opened only as a regular file, never through a symlink,
-        read through a file object with `budget` bytes per file, and given the
+        read through a file object with the calling format's read limit per
+        file (change read-limit-per-file), and given the
         inspector's time limit, enforced from outside (change hdf5-links,
         design D5). A read the file system did not answer is noted
         (did_not_answer); a function that fails, times out or kills its
         process leaves a warning with NOT_INSPECTED, and the directory is
-        recognised again next crawl (decision 340); a file over its budget
-        leaves a warning, without that marker: the same file gives the same
+        recognised again next crawl (decision 340); a file over the limit
+        leaves a warning with OVER_LIMIT, not NOT_INSPECTED: the same file gives the same
         outcome, so it is not tried again. fn is a module-level function
         returning plain data. Only in the post-order call: the pre-order call
         has names and sizes only, and no pool of the crawl.
@@ -280,7 +316,7 @@ class Directory:
             return {}
         inspector = self.inspector or Inspector()
         try:
-            got = inspector.run(fn, [e.path for e in entries], budget)
+            got = inspector.run(fn, [e.path for e in entries], self._limit)
         finally:
             if inspector is not self.inspector:
                 inspector.close()
@@ -298,12 +334,16 @@ class Directory:
                 )
             elif x.kind == OVER_BUDGET:
                 self.warn(
-                    e.rel, f"{self._format}: {e.name} {x.detail}; not read further"
+                    e.rel,
+                    f"{self._format}: {e.name} {OVER_LIMIT} of {self._limit} bytes; "
+                    "not read further",
                 )
         return {e.rel: x for e, x in zip(entries, got, strict=True)}
 
     def did_not_answer(self, rel: str, error: OSError) -> None:
-        """Note the first error of the "did not answer" class (listing-errors D1)."""
+        """Note the first error of the "did not answer" class (listing-errors D1); a read refused over the limit is not one."""
+        if isinstance(error, BudgetExceeded):
+            return
         if self.unanswered is None and not not_visible(error):
             self.unanswered = (rel, error)
 
@@ -312,7 +352,7 @@ class Directory:
 
         Only a type from the one best name rule is dropped; any other stays,
         with a warning (spec recognition, recognition-checks-content D1, D2).
-        Finding the new type is not charged to the byte budget (decision 166);
+        Finding the new type is not charged to the read limit (decision 166);
         a read error keeps the type (cannot_read), so that one unreadable file
         does not change the rest of the directory's result.
         """
@@ -355,7 +395,11 @@ class Directory:
 
         For a read error on one file while checking it, so that the rest of the
         format's result stands (spec recognition, "A read error on one file").
+        A read refused over the read limit keeps the type too, but read has
+        warned already, and it is not tried again (change read-limit-per-file).
         """
+        if isinstance(error, BudgetExceeded):
+            return
         self.warn(
             entry.rel,
             f"{self._format}: cannot read {entry.name}: {error.strerror or error}; "
@@ -388,6 +432,9 @@ class Format:
     name: str = ""  # set by Collection: the class name, lowercased, unless given
     id: str = ""  # set by Collection: collection/name
     display_name: str = ""  # for dc:subject; default: MIME type's comment, else id
+    # Bytes recognition may read of one file in one call; a format that needs more
+    # declares it here, an explicit number for review (change read-limit-per-file)
+    read_limit: int = LIMIT_PER_FILE
 
     def recognize(self, directory: Directory) -> Iterable[Dataset]:
         return ()
@@ -432,19 +479,18 @@ class Collection:
             f.id = f"{self.name}/{f.name}"
 
 
-# Per format call. The byte budget is enforced; a call slower than SLOW is
-# logged and keeps its result, since the time depends on the load (stopping a
-# call that hangs is deferred to worker subprocesses, architecture G).
+# Per format call. A call slower than SLOW is logged and keeps its result, since
+# the time depends on the load (stopping a call that hangs is deferred to worker
+# subprocesses, architecture G). Reads are bounded per file (Format.read_limit).
 SLOW = 5.0
-BYTE_BUDGET = 1 << 20
 
 
 def ordered(formats: Iterable[Format]) -> list[Format]:
     return sorted(formats, key=lambda f: (-f.priority, f.id))
 
 
-def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Dataset]:
-    d._budget = byte_budget
+def _call(fmt: Format, d: Directory, slow: float) -> list[Dataset]:
+    d._limit, d._read, d._refused = fmt.read_limit, {}, set()
     d._format = fmt.id
     # A discarded call leaves every type as it was, and its warnings go with
     # its result (D3): not_of_type replaces the list, so the old one is the
@@ -459,6 +505,8 @@ def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Data
         d._by_name = {x.name: x for x in entries}
         del d.warnings[warned:]
         if isinstance(e, BudgetExceeded):
+            # A refused read the format did not catch: a bug of the format, which
+            # loses its result for the folder (change read-limit-per-file, D2)
             d.warn(d.rel, f"{fmt.id} skipped: {e}")
         else:
             d.warn(d.rel, f"{fmt.id} failed: {e!r}")
@@ -508,14 +556,12 @@ def stamp(members: Iterable[Entry], part_stamps: Iterable[str] = ()) -> str:
     return hashlib.sha256(json.dumps([state, list(part_stamps)]).encode()).hexdigest()
 
 
-def run_pre(
-    d: Directory, formats: Iterable[Format], slow: float, byte_budget: int
-) -> Dataset | None:
+def run_pre(d: Directory, formats: Iterable[Format], slow: float) -> Dataset | None:
     """The pre-order call: the first collapsed dataset for the directory itself wins."""
     for fmt in ordered(formats):
         if DIRECTORY not in fmt.reacts_to:
             continue
-        for ds in _call(fmt, d, slow, byte_budget):
+        for ds in _call(fmt, d, slow):
             if ds.collapsed and ds.anchor == d.rel:
                 return _fill(ds, fmt, d, d.mtime, d.uid)
             d.warn(
@@ -526,7 +572,7 @@ def run_pre(
 
 
 def run_post(
-    d: Directory, formats: Iterable[Format], slow: float, byte_budget: int
+    d: Directory, formats: Iterable[Format], slow: float
 ) -> tuple[list[Dataset], dict[str, str]]:
     """The post-order call. Returns the directory's datasets and the adoptions (child anchor -> parent anchor).
 
@@ -547,7 +593,7 @@ def run_post(
         if DIRECTORY not in fmt.reacts_to and not (fmt.reacts_to & present):
             continue
         before = set(d.notes)
-        datasets = _call(fmt, d, slow, byte_budget)
+        datasets = _call(fmt, d, slow)
         _check_order(d, order[:i], fmt, set(d.notes) - before)
         for ds in datasets:
             members = set(ds.members) | ({ds.anchor} if ds.anchor in files else set())

@@ -143,7 +143,7 @@ class Pair(Format):
         # d.phase is "pre" (names and sizes only; return a collapsed dataset to stop the descent)
         # or "post" (entries with MIME types, d.children = datasets of subdirectories)
         for header in d.of_type("application/x.example-header"):
-            data = d.read(header, 64 * 1024)  # the only I/O, counted against the budget
+            data = d.read(header, 64 * 1024)  # the only I/O, counted per file
             raw = d.entry("the-name-the-header-says")  # a sibling, or None
             if raw is None:
                 d.warn(
@@ -191,12 +191,14 @@ class Workspace(Format):
   a `.gtg` with its 8 sector files whatever the `.gtg` holds (a broken
   capture, reported at extraction), and checks only a `.gtg` without them.
 - The core finds the new type with a read that does not count against your
-  budget. A read error there keeps the file's type and warns at it
+  read limit. A read error there keeps the file's type and warns at it
   (`d.cannot_read`), and the directory is recognised again next crawl; your
-  call goes on. Where one file's read error must not decide the others'
-  outcome, catch `OSError` around your own `d.read` of it and call
-  `d.cannot_read(e, error)` too (`modama_formats_em.dm.header`). An exception
-  out of `recognize` discards all of your datasets of the directory.
+  call goes on. Catch `OSError` around your own `d.read` of each file and
+  call `d.cannot_read(e, error)`, then go on with the next file
+  (`modama_formats_em.dm.header`, the skeleton): so one file's read error
+  does not decide the others' outcome, and a read refused over your read
+  limit (below) skips that file only. An exception out of `recognize`
+  discards all of your datasets of the directory.
 - A file of your type that is odd but kept (a variant nobody has seen yet)
   can be flagged for a person with `d.note(e, "file of interest: …")`: the
   note goes into its dataset's basis, its type stays.
@@ -213,19 +215,27 @@ class Workspace(Format):
   `em/k2is`).
 - Order: a format that runs before yours does not see the new type. Give
   yours a higher priority than the formats that are to claim the new types.
-- A reader has two forms. `d.read(e, n)` gives a file's first bytes, against
-  the call's budget (1 MiB). Where recognition needs a library to parse a
-  file (h5py for an HDF5 file's links), `d.inspect(entries, fn, budget)`
+- A reader has two forms, both within your format's read limit per file:
+  1 MiB of each file in one call, however many files the folder holds, or
+  more where the format declares it, `read_limit = 4 << 20` as a class
+  attribute, an explicit number for review (`common/hdf5links`). Past
+  64 KiB of one file through `d.read` the crawl warns
+  `read more than 64 KiB`, for review; a read that would pass the limit is
+  refused with an `OSError` (`BudgetExceeded`), warned
+  `over its read limit`, and so is every later read of that file in the
+  call (change read-limit-per-file). `d.read(e, n)` gives a file's first
+  bytes. Where recognition needs a library to parse a
+  file (h5py for an HDF5 file's links), `d.inspect(entries, fn)`
   runs `fn(f)` on each file in the crawl's worker processes, one folder at a
   time, with a time limit enforced from outside, and returns one outcome per
   file (`modama_crawler.inspection`): `fn` is a module-level function that
-  gets a read-only file object with `budget` bytes per file, closes what it
+  gets a read-only file object with the read limit per file, closes what it
   opens on it (`with h5py.File(f, "r", locking=False) as h5:`), and returns
   plain data. Both readers open a file only as a regular file, never through
   a symlink it may have become since the listing (`files.regular`). An
   inspection that fails, times out or kills its process leaves a warning
   with the marker `not inspected` and the directory is recognised again
-  next crawl (decision 340); one over its budget leaves a warning; a read
+  next crawl (decision 340); one over the read limit leaves a warning; a read
   the file system did not answer keeps the folder's stored datasets
   (`common/hdf5links`; change hdf5-links, design D5).
   The crawl warns when a format that ran earlier reacts to a dropped file's
@@ -368,6 +378,7 @@ A checklist for every new format, from what `modama-formats-em` taught (where ea
 - [ ] **The values become the record's second description**, one `name: value` line each, sorted by name, empty values left out there: names and values must read well that way. (234, change `tags-in-the-record`)
 - [ ] **A text file that stands for itself gives its text instead** (`values["text"]`, through `modama_formats_common.written`: as written up to 4,096 characters, else head and tail, a line that may hold a credential left out); the record's second description is then the text, not the tag lines. (change `text-as-written`)
 - [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. - [ ] **Read only what is needed**: headers, never a whole large file; the tree is on NFS, about 1.5 million files, some of hundreds of GB. Unbuffered reads, or a 64 KiB buffer with readahead off for a reader that reads in tiny pieces (README, "Pitfalls", F12, F14). `extract` runs with a time limit. Count the bytes read in a test (`modama_crawler.testing.bytes_read`). (@weber 2026-11-12; block files: the header plus one buffer)
+- [ ] **Recognition reads little of each file**: a header's first bytes, at most 64 KiB of one file (more is flagged, `read more than 64 KiB`), never past the read limit of 1 MiB unless the format declares a larger `read_limit`; every `d.read` in an `except OSError` that calls `d.cannot_read` and goes on with the next file, with a test that a file over the limit is skipped while the others are recognised. ("A file that is not of its name's type" above; change read-limit-per-file; `em/mrc`, the skeleton)
 - [ ] **Time-zone independent output**: a date and time as the file writes it, without a reader's conversion to the local time zone, and a test under another `TZ`. (`modama_formats_em.blockfile`, `test_the_acquisition_time_as_written`)
 - [ ] **Recognition by content where names lie**: a glob plus magic, a subtype (`sub-class-of`) where one exists, and `d.not_of_type` to fall back to the type the file has without its name rule. ("A file that is not of its name's type" above; DM by header whatever the name, `.blo` without `IMGBLO`)
 - [ ] **Fixtures**: public test data with licence and source in `fixtures.toml`, or generated at test time by the software that writes the format; small (cut to what the rules and extractor read if need be, the cut in `validity`); no copyrighted content without a licence. (Fixtures above; @weber 2026-11-12: "Use publicly available test data")

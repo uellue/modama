@@ -231,6 +231,32 @@ def test_the_markers_are_the_crawlers():
     assert formats.WANTED_TWICE == MARKERS[0]
     # NOT_INSPECTED comes with hdf5-links (decision 340); checked once it is there
     assert getattr(formats, "NOT_INSPECTED", MARKERS[1]) == MARKERS[1]
+    assert (formats.READ_MUCH, formats.OVER_LIMIT) == MARKERS[2:4]
+
+
+def test_files_recognition_read_much_of(db):
+    fill(
+        db,
+        [
+            ("/s", "/s/a.zspy", "common/zspy: read more than 64 KiB of zarr.json"),
+            (
+                "/s",
+                "/s/b.mrc",
+                (
+                    "em/mrc: b.mrc over its read limit of 1048576 bytes "
+                    "(2097152 asked for after 0); not read further"
+                ),
+            ),
+        ],
+    )
+    r = run(db, "modama-chain review")
+    assert "## read more than 64 KiB\n" in r.stdout
+    assert "## over its read limit\n" in r.stdout
+    assert "## other warnings" not in r.stdout
+    assert r.stderr.splitlines() == [
+        "read more than 64 KiB, common/zspy: 1",
+        "over its read limit, em/mrc: 1",
+    ]
 
 
 def test_the_database_unreachable(db):

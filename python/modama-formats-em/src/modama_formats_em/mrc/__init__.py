@@ -157,8 +157,15 @@ class Mrc(Format):
         offset, word = MAP_WORD
         taken = set()  # sidecars given to an MRC file of this folder already
         for e in d.of_type(TYPE):
-            # The signature only, as the magic rule tests it
-            if d.read(e, offset + len(word))[offset:] != word:
+            # The signature only, as the magic rule tests it; a file that cannot
+            # be read keeps its type, the other files' outcome stands (also
+            # one over the read limit: change read-limit-per-file)
+            try:
+                head = d.read(e, offset + len(word))
+            except OSError as error:
+                d.cannot_read(e, error)
+                continue
+            if head[offset:] != word:
                 d.not_of_type(e, f"no {word.decode()} at byte {offset}")
                 continue
             stem = e.name.rpartition(".")[0] or e.name

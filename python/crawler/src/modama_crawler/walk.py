@@ -28,7 +28,6 @@ from pathspec import GitIgnoreSpec
 
 from . import files, mime
 from .formats import (
-    BYTE_BUDGET,
     REFUSED,
     SLOW,
     Dataset,
@@ -306,7 +305,7 @@ async def _refusal(root, names, formats, excluded, ignores, pool):
         st = await io(os.lstat, dirpath)
         pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
         active = [f for f in formats if not path_ignored(f.id, rel, ignores)]
-        collapsed = await io(run_pre, pre, active, SLOW, BYTE_BUDGET)
+        collapsed = await io(run_pre, pre, active, SLOW)
         if collapsed is not None:
             return rel, (
                 f"is collapsed by {collapsed.format} ({collapsed.basis}),"
@@ -550,7 +549,7 @@ async def _walk(
             collapsed = next((d for d in stored if d.collapsed), None)
         else:
             pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
-            collapsed = await io(run_pre, pre, active, SLOW, BYTE_BUDGET)
+            collapsed = await io(run_pre, pre, active, SLOW)
             if pre.unanswered is not None and kept is not None:
                 # whatever the formats answered without that read (D2, review 12)
                 return keep(unanswered(rel, *pre.unanswered, whole=True))
@@ -646,7 +645,7 @@ async def _walk(
         children = [d for d in subtree if d.parent is None]
         post = Directory(rel, dirpath, typed, children, "post", st.st_uid, st.st_mtime)
         post.inspector = inspector
-        datasets, adoptions = await io(run_post, post, active, SLOW, BYTE_BUDGET)
+        datasets, adoptions = await io(run_post, post, active, SLOW)
         return (
             datasets,
             adoptions,
@@ -666,7 +665,7 @@ async def _walk(
             entries = await entries_of(dirpath, rel, Result())
             st = await io(os.lstat, dirpath)
             pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
-            collapsed = await io(run_pre, pre, formats_for(rel), SLOW, BYTE_BUDGET)
+            collapsed = await io(run_pre, pre, formats_for(rel), SLOW)
             result.warnings.extend(pre.warnings)
             if collapsed is not None:
                 formats_here = formats_for(rel)
