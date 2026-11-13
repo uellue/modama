@@ -21,6 +21,7 @@ from .values import (
     MAX_OBJECTS,
     Walk,
     headline,
+    hyperspy,
     matches,
     no_readahead,
     plain,
@@ -34,15 +35,6 @@ Skip = Callable[[str, object], bool]
 def nothing(name: str, value) -> bool:
     """The skip list of plain HDF5 and NeXus files: only what values.textual refuses."""
     return False
-
-
-def hyperspy(name: str, value) -> bool:
-    """HyperSpy's skip list (spec formats/pydata, "A HyperSpy file is described as
-    HyperSpy stores it"): its internal state (`metadata._HyperSpy`: folding) and its
-    placeholder for None, `_None_`."""
-    return "._HyperSpy." in f".{name}." or (
-        isinstance(value, str) and value == "_None_"
-    )
 
 
 def matlab(name: str, value) -> bool:

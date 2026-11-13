@@ -54,6 +54,9 @@ authors = [
 [project.optional-dependencies]
 test = [
     "pytest",
+    # pydata: writes the Zarr fixtures at test time (3.4.2 of 2026-10-27, MIT,
+    # pure Python); pinned, as the recorded results depend on what it writes
+    "zarr==3.4.2",
 ]
 
 [project.entry-points."modama.formats"]

@@ -20,6 +20,7 @@ from modama_crawler.formats.values import MAX_ITEMS, credential, textual
 # HDF5 file is bounded")
 ZIP = b"PK\x03\x04"  # a ZIP's local file header (APPNOTE 4.3.7)
 HDF5 = b"\x89HDF\r\n\x1a\n"  # the HDF5 signature
+ZSPY = "ZSpy"  # the root attribute file_format of RosettaSciIO's .zspy stores
 
 MAX_ENTRIES = extraction.MAX_ITEMS
 MAX_OBJECTS = 5000
@@ -92,6 +93,15 @@ def plain(value):
     if isinstance(value, list | tuple):
         return [plain(v) for v in value]
     return value
+
+
+def hyperspy(name: str, value) -> bool:
+    """HyperSpy's skip list, of its HDF5 and its Zarr stores (specs formats/pydata, "A
+    HyperSpy file is described as HyperSpy stores it", and formats/pydata-zarr): its
+    internal state (`metadata._HyperSpy`: folding) and its placeholder for None, `_None_`."""
+    return "._HyperSpy." in f".{name}." or (
+        isinstance(value, str) and value == "_None_"
+    )
 
 
 def matches(pattern: str, name: str) -> bool:

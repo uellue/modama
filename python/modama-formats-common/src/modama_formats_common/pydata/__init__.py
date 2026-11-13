@@ -10,14 +10,18 @@ recognition, and lose that type when they are not what it says
 (Directory.not_of_type).
 """
 
+import json
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
+from modama_crawler.formats.zarr import READ_LIMIT, V3
+from modama_crawler.formats.zarr import Zarr as CoreZarr
 
 # The readers' modules import h5py, NumPy, SciPy and nbformat (0.2 s): in the
 # extractors only, so that recognition and the other commands start without them
-from .values import HDF5, ZIP, start
+from .values import HDF5, ZIP, ZSPY, start
 
 HERE = Path(__file__).parent
 
@@ -197,6 +201,57 @@ class Pickle(Single):
         return {"protocol": protocol}, {}, [f"protocol {protocol}"]
 
 
+class Zarr(CoreZarr):
+    """A Zarr store, recognised as the core's zarr/zarr recognises it (markers, basis,
+    warnings), which it runs before, described by its metadata files (spec
+    formats/pydata-zarr); without this collection, the core's format collapses it."""
+
+    priority = 81
+
+    def extract(self, dataset: Dataset, root: str) -> Extracted:
+        from . import zarrstore
+
+        original, mapped = zarrstore.described(root + dataset.anchor)
+        return Extracted(
+            summary=zarrstore.summary(original),
+            subjects=zarrstore.terms(original),
+            values={"original_metadata": original, "mapped_metadata": mapped},
+        )
+
+
+class Zspy(Zarr):
+    """A Zarr store named .zspy whose root attributes say file_format ZSpy, as
+    RosettaSciIO's zspy writer writes them; any other .zspy is a common/zarr store."""
+
+    type = "application/x.zspy"
+    display_name = "HyperSpy Zarr store"
+    priority = 82
+
+    def recognize(self, d: Directory) -> Iterable[Dataset]:
+        if d.phase != "pre" or not d.name.endswith(".zspy"):
+            return
+        for dataset in super().recognize(d):
+            if root_attribute(d, "file_format") == ZSPY:
+                yield replace(dataset, basis=f"{dataset.basis}, file_format ZSpy")
+
+
+def root_attribute(d: Directory, name: str):
+    """The value of the root's attribute `name` (v3 zarr.json's attributes, else v2
+    .zattrs), or None: none there, a file over the core's read limit, not JSON."""
+    e = d.entry(V3) or d.entry(".zattrs")
+    if e is None or e.kind != "file" or e.size > READ_LIMIT:
+        return None
+    if (data := start(d, e, READ_LIMIT)) is None:
+        return None
+    try:
+        document = json.loads(data)
+    except ValueError:
+        return None
+    if isinstance(document, dict) and e.name == V3:
+        document = document.get("attributes")
+    return document.get(name) if isinstance(document, dict) else None
+
+
 # This part of the collection, for its tests; the package's COLLECTION joins the parts
 COLLECTION = Collection(
     "pydata",
@@ -211,6 +266,8 @@ COLLECTION = Collection(
         Python(),
         Python3(),
         Pickle(),
+        Zarr(),
+        Zspy(),
     ],
     mime_files=(HERE / "pydata.xml",),
 )

@@ -1,0 +1,10 @@
+{
+    "_type": "UniformDataAxis",
+    "is_binned": false,
+    "name": "kx",
+    "navigate": false,
+    "offset": 0.0,
+    "scale": 0.05,
+    "size": 16,
+    "units": "1/nm"
+}

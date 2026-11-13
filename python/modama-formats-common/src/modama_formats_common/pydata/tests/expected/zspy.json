@@ -1,0 +1,106 @@
+{
+  "datasets": [
+    {
+      "anchor": "/scan.zspy",
+      "basis": ".zgroup present (Zarr v2), file_format ZSpy",
+      "collapsed": true,
+      "format": "common/zspy",
+      "members": [],
+      "parent": null,
+      "parts": [],
+      "type": "application/x.zspy",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/scan.zspy": {
+      "subjects": [
+        "electron_diffraction"
+      ],
+      "summary": [
+        "4D-STEM scan",
+        "electron_diffraction",
+        "shape [4, 4, 16, 16]"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "zarr_format": 2
+        },
+        "original_metadata": {
+          "Experiments.4D-STEM scan.attributes._lazy": false,
+          "Experiments.4D-STEM scan.axis-0._type": "UniformDataAxis",
+          "Experiments.4D-STEM scan.axis-0.is_binned": false,
+          "Experiments.4D-STEM scan.axis-0.name": "x",
+          "Experiments.4D-STEM scan.axis-0.navigate": true,
+          "Experiments.4D-STEM scan.axis-0.offset": 0.0,
+          "Experiments.4D-STEM scan.axis-0.scale": 1.5,
+          "Experiments.4D-STEM scan.axis-0.size": 4,
+          "Experiments.4D-STEM scan.axis-0.units": "nm",
+          "Experiments.4D-STEM scan.axis-1._type": "UniformDataAxis",
+          "Experiments.4D-STEM scan.axis-1.is_binned": false,
+          "Experiments.4D-STEM scan.axis-1.name": "y",
+          "Experiments.4D-STEM scan.axis-1.navigate": true,
+          "Experiments.4D-STEM scan.axis-1.offset": 0.0,
+          "Experiments.4D-STEM scan.axis-1.scale": 1.5,
+          "Experiments.4D-STEM scan.axis-1.size": 4,
+          "Experiments.4D-STEM scan.axis-1.units": "nm",
+          "Experiments.4D-STEM scan.axis-2._type": "UniformDataAxis",
+          "Experiments.4D-STEM scan.axis-2.is_binned": false,
+          "Experiments.4D-STEM scan.axis-2.name": "kx",
+          "Experiments.4D-STEM scan.axis-2.navigate": false,
+          "Experiments.4D-STEM scan.axis-2.offset": 0.0,
+          "Experiments.4D-STEM scan.axis-2.scale": 0.05,
+          "Experiments.4D-STEM scan.axis-2.size": 16,
+          "Experiments.4D-STEM scan.axis-2.units": "1/nm",
+          "Experiments.4D-STEM scan.axis-3._type": "UniformDataAxis",
+          "Experiments.4D-STEM scan.axis-3.is_binned": false,
+          "Experiments.4D-STEM scan.axis-3.name": "ky",
+          "Experiments.4D-STEM scan.axis-3.navigate": false,
+          "Experiments.4D-STEM scan.axis-3.offset": 0.0,
+          "Experiments.4D-STEM scan.axis-3.scale": 0.05,
+          "Experiments.4D-STEM scan.axis-3.size": 16,
+          "Experiments.4D-STEM scan.axis-3.units": "1/nm",
+          "Experiments.4D-STEM scan.data.chunks": [
+            4,
+            4,
+            16,
+            16
+          ],
+          "Experiments.4D-STEM scan.data.compressor.blocksize": 0,
+          "Experiments.4D-STEM scan.data.compressor.clevel": 1,
+          "Experiments.4D-STEM scan.data.compressor.cname": "zstd",
+          "Experiments.4D-STEM scan.data.compressor.id": "blosc",
+          "Experiments.4D-STEM scan.data.compressor.shuffle": 1,
+          "Experiments.4D-STEM scan.data.dimension_separator": "/",
+          "Experiments.4D-STEM scan.data.dtype": "<u2",
+          "Experiments.4D-STEM scan.data.fill_value": 0,
+          "Experiments.4D-STEM scan.data.filters": null,
+          "Experiments.4D-STEM scan.data.order": "C",
+          "Experiments.4D-STEM scan.data.shape": [
+            4,
+            4,
+            16,
+            16
+          ],
+          "Experiments.4D-STEM scan.metadata.Acquisition_instrument.TEM.beam_energy": 300.0,
+          "Experiments.4D-STEM scan.metadata.Acquisition_instrument.TEM.camera_length": 120.0,
+          "Experiments.4D-STEM scan.metadata.General.original_filename": "scan.mib",
+          "Experiments.4D-STEM scan.metadata.General.title": "4D-STEM scan",
+          "Experiments.4D-STEM scan.metadata.Signal.quantity": "Counts",
+          "Experiments.4D-STEM scan.metadata.Signal.signal_type": "electron_diffraction",
+          "Experiments.4D-STEM scan.original_metadata.Acquisition_parameters.Dwelltime.unit": "ms",
+          "Experiments.4D-STEM scan.original_metadata.Acquisition_parameters.Dwelltime.value": 10,
+          "Experiments.4D-STEM scan.original_metadata.Acquisition_parameters.camera_length.unit": "mm",
+          "Experiments.4D-STEM scan.original_metadata.Acquisition_parameters.camera_length.value": 120,
+          "Experiments.4D-STEM scan.original_metadata.made_up_section.made_up_key": "made-up value",
+          "Experiments.4D-STEM scan.package": "pyxem",
+          "Experiments.4D-STEM scan.package_version": "0.0.0",
+          "file_format": "ZSpy",
+          "file_format_version": "3.3"
+        }
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

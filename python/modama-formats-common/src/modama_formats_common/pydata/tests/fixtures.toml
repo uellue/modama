@@ -96,3 +96,23 @@ validity = "invalid-by-design for Python 3: a Python 2 script with a print state
 licence = "MIT"
 source = "modama_formats_common.pydata.tests.generate:python2"
 generator = "modama_formats_common.pydata.tests.generate:python2"
+
+[zspy]
+purpose = "representative"
+validity = "vendor-written: scan.zspy, written by RosettaSciIO 0.15.0's zspy writer (zarr 2.18.7) on 2026-11-13 from a signal dictionary shaped like a pyxem 4D-STEM scan (4 x 4 x 16 x 16 uint16, signal type electron_diffraction), made-up values, an entry nobody has seen, without consolidated metadata, as the four .zspy stores of the October listing"
+licence = "MIT"
+source = "write-zspy.py beside this file, run as its docstring says; written again on 2026-11-13, identical (diff -r)"
+
+[zarr_stores]
+purpose = "representative"
+validity = "vendor-written by zarr-python at test time: abTEM-like groups, v2 and v3 (root attributes laid out as abTEM 1.0.11's ArrayObject.to_zarr writes them, made-up values, an array array0 of 8 x 8 x 16 x 16 float32), the v3 one with .ipynb_checkpoints/zarr-checkpoint.json inside it as the staging sample has one; a v2 group store holding another store"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:zarr_stores"
+generator = "modama_formats_common.pydata.tests.generate:zarr_stores"
+
+[zarr_broken_root]
+purpose = "reproducer"
+validity = "invalid-by-design: a store whose zarr.json is not JSON (spec formats/pydata-zarr, \"A broken root\")"
+licence = "MIT"
+source = "modama_formats_common.pydata.tests.generate:zarr_broken_root"
+generator = "modama_formats_common.pydata.tests.generate:zarr_broken_root"
