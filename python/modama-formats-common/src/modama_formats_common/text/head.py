@@ -30,6 +30,7 @@ class Head:
     complete: bool  # data is the whole file
     encoding: str | None  # None: not text
     text: str  # data decoded, "" when encoding is None
+    size: int  # the file's size, from fstat
 
 
 def decodes(data: bytes, encoding: str, complete: bool) -> bool:
@@ -81,7 +82,7 @@ def read(path: str, bound: int = HEAD) -> Head:
     complete = size <= bound
     found = encoding(data, complete)
     text = "" if found is None else decoded(data, found, complete)
-    return Head(data, complete, found, text)
+    return Head(data, complete, found, text, size)
 
 
 def lines(head: Head) -> dict:

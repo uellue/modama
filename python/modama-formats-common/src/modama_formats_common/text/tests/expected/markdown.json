@@ -41,7 +41,8 @@
           "first heading": "Session 2026-11",
           "lines": 3
         },
-        "original_metadata": {}
+        "original_metadata": {},
+        "text": "# Session 2026-11\n\nRaw data in `raw/`.\n"
       }
     },
     "/note.md": {
@@ -69,7 +70,8 @@
             "lamella"
           ],
           "title": "Lamella preparation"
-        }
+        },
+        "text": "---\ntitle: Lamella preparation\nauthor:\n  - name: A. Example\n    affiliation: ER-C\ndate: 2026-11-12T10:00:00+01:00\ntags: [FIB, lamella]\ndraft: false\n---\n\nLamella preparation\n===================\n\nSteps as done on the day.\n\n# Thinning\n\nFinal thinning at 5 kV.\n"
       }
     }
   },

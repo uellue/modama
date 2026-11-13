@@ -7,7 +7,8 @@ import time
 from pathlib import Path
 
 import pytest
-from modama_crawler.formats import Collection, Dataset, Format
+from modama_crawler.formats import Collection, Dataset, Extraction, Format
+from modama_crawler.records import build
 from modama_crawler.walk import walk
 
 from modama_formats_common import text
@@ -195,7 +196,8 @@ def test_a_log_larger_than_the_bound(tmp_path):
     generate.big_log(tmp_path)
     log = tmp_path / "acquisition.log"
     assert extracted(log, "Log").summary == ["ascii", "lines at least 20164"]
-    assert bytes_read(log, "Log") <= head.HEAD
+    # Its head, and its last 16 KiB for the text's tail (text-as-written)
+    assert bytes_read(log, "Log") <= head.HEAD + 16384
 
 
 def test_a_utf_8_character_cut_by_the_bound(tmp_path):
@@ -513,3 +515,97 @@ def test_a_bibliography_larger_than_the_bound(tmp_path, caplog):
     complete = first[: first.rfind("\n@")].count("@article")
     assert found.values["mapped_metadata"]["entries at least"] == complete
     assert not [r for r in caplog.records if r.levelname in ("WARNING", "ERROR")]
+
+
+# The text as written (change text-as-written)
+
+INFO = (
+    "run 1: tilt series, 1 degree steps\n"
+    "1-10: focus series, 2 nm steps\n"
+    "11: reference without specimen\n"
+    "note: drift after 11, stage relaxed for 10 min\n"
+)
+
+
+def test_a_note_in_a_session_folder(tmp_path):
+    found = extracted(written(tmp_path, "info.txt", INFO))
+    assert found.values["text"] == INFO
+    assert found.summary == ["ascii", "lines 4"]
+    d = Dataset(anchor="/info.txt", extraction=Extraction("common/text", "", "", found))
+    assert build(d, {})[1]["description"][1] == INFO
+
+
+def test_windows_line_ends_and_a_byte_order_mark(tmp_path):
+    generate.encodings(tmp_path)
+    assert extracted(tmp_path / "notes_utf8_bom.txt").values["text"] == generate.NOTES
+    # UTF-16 with a BOM and CRLF, as Windows PowerShell 5 writes it, too
+    assert extracted(tmp_path / "notes_utf16.txt").values["text"] == generate.NOTES
+
+
+def test_a_western_8_bit_text(tmp_path):
+    data = "Änderung: Blende 50 µm, 20 °C".encode("cp1252")
+    found = extracted(written(tmp_path, "notes.txt", data))
+    assert found.values["text"] == "Änderung: Blende 50 µm, 20 °C"
+
+
+def test_markdown_with_front_matter(tmp_path):
+    generate.markdown(tmp_path)
+    found = extracted(tmp_path / "note.md", "Markdown")
+    assert found.values["text"] == (tmp_path / "note.md").read_text()
+    assert found.values["original_metadata"]["title"] == "Lamella preparation"
+
+
+def test_html_and_binary_content(tmp_path):
+    generate.html_docutils(tmp_path)
+    generate.not_text(tmp_path)
+    assert "text" not in extracted(tmp_path / "tools.html", "Html").values
+    assert "text" not in extracted(tmp_path / "frames.txt").values
+
+
+def test_a_long_note_within_the_head(tmp_path):
+    lines = [f"line {i:03d} " + "x" * 50 + "\n" for i in range(166)]  # 60 each
+    path = written(tmp_path, "long.txt", "".join(lines))
+    text = extracted(path).values["text"]
+    assert text == "".join(lines[:33]) + "… 6,000 bytes left out …\n" + "".join(
+        lines[-33:]
+    )
+    assert bytes_read(path, "Text") == path.stat().st_size
+
+
+def test_one_very_long_line(tmp_path):
+    line = "".join(f"{i:010d}" for i in range(10_000))  # 100,000 characters
+    text = extracted(written(tmp_path, "one.txt", line)).values["text"]
+    assert text == line[:2000] + "\n… 96,000 bytes left out …\n" + line[-2000:]
+
+
+def test_a_log_larger_than_the_bound_shows_head_and_tail(tmp_path):
+    generate.big_log(tmp_path)
+    log = tmp_path / "acquisition.log"
+    lines = log.read_text().splitlines(keepends=True)
+    text = extracted(log, "Log").values["text"]
+    assert text.startswith("".join(lines[:38]))
+    assert text.endswith("".join(lines[-38:]))
+    shown = len("".join(lines[:38])) + len("".join(lines[-38:]))
+    assert f"… {log.stat().st_size - shown:,} bytes left out …\n" in text
+    assert len(text) <= 4096
+    assert bytes_read(log, "Log") <= head.HEAD + 16384
+
+
+def test_a_note_with_a_password(tmp_path):
+    note = "sample: Au on C\ndb password: hunter2\n  server: postgres://admin:hunter2@db/x\n"
+    found = extracted(written(tmp_path, "notes.txt", note))
+    assert found.values["text"] == (
+        "sample: Au on C\n"
+        "… (a line left out: may be a credential)\n"
+        "  … (a line left out: may be a credential)\n"
+    )
+    assert found.values["mapped_metadata"]["credentials_left_out"] == 2
+
+
+def test_a_front_matter_with_a_credential(tmp_path):
+    note = "---\ntitle: Notes\napi_key: abc123\n---\n# Notes\n"
+    found = extracted(written(tmp_path, "x.md", note), "Markdown")
+    assert found.values["text"] == (
+        "… (front matter left out: it may hold a credential)\n# Notes\n"
+    )
+    assert "abc123" not in str(found)
