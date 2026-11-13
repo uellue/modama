@@ -1,0 +1,16 @@
+# Provenance of every fixture (TEMPLATE.md, "Fixtures"). A real format's
+# representative fixture is a file as found in the wild, or written at test time
+# by the software that writes the format; this format is made up, so its files
+# are written by hand.
+
+[acquisition]
+purpose = "representative"
+validity = "parser-only: the skeleton's made-up format, a header with a GUI setting, an empty value and a credential, and its frame file"
+licence = "MIT"
+source = "written by hand for the skeleton collection"
+
+[misnamed]
+purpose = "reproducer"
+validity = "invalid-by-design: a text file named notes.skh without the SKELETON 1 header"
+licence = "MIT"
+source = "written by hand for the skeleton collection"

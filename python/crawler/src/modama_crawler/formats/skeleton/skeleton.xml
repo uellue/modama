@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+  <!-- The skeleton's made-up format (__init__.py). A real one uses the type
+       already used in the wild for the format, else an unofficial
+       application/x.<name> type (TEMPLATE.md, "Rules first, Python second"). -->
+  <mime-type type="application/x.skeleton-header">
+    <comment>Header of a skeleton acquisition</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.skh"/>
+    <!-- Recognises a header without its name, as a renamed copy -->
+    <magic priority="60">
+      <match type="string" offset="0" value="SKELETON 1"/>
+    </magic>
+  </mime-type>
+  <mime-type type="application/x.skeleton-frames">
+    <comment>Frames of a skeleton acquisition</comment>
+    <glob pattern="*.skf"/>
+  </mime-type>
+</mime-info>

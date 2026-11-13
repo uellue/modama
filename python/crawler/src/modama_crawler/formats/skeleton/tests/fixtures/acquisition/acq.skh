@@ -1,0 +1,8 @@
+SKELETON 1
+instrument = Example Scope 3000
+exposure = 0.5
+acquired = 2026-11-13 08:15:00
+detector.gain = 0
+operator.note =
+window.position = 120, 80
+api_key = abc123secret456

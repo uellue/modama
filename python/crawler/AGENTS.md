@@ -69,7 +69,8 @@ src/modama_crawler/
 │   ├── values.py   # textual(value): whether a value can be shown as text, the check every collection shares
 │   ├── core/       # vendored freedesktop.org.xml (GPL-2.0-or-later) + er-c.xml curation (ties that force content checks)
 │   ├── collapse/   # environments, .git, .svn, __pycache__, .ipynb_checkpoints, node_modules: collapsed pre-order
-│   └── zarr/       # Zarr v2 and v3 stores, collapsed pre-order; nested stores belong to the outer one
+│   ├── zarr/       # Zarr v2 and v3 stores, collapsed pre-order; nested stores belong to the outer one
+│   └── skeleton/   # a made-up format to copy for a new collection; no entry point, so never enabled; its tests run with the suite
 ├── mime.py         # MIME type of one file per the shared-mime-info checking order; ties -> common ancestor
 ├── mimedb.py       # builds the per-deployment MIME database from the enabled collections only
 ├── selection.py    # entry-point discovery, ruff-style select/ignore, per-path ignores, crawl excludes

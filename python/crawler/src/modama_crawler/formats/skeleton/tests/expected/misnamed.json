@@ -1,0 +1,19 @@
+{
+  "datasets": [
+    {
+      "anchor": "/notes.skh",
+      "basis": "single file; skeleton/acquisition: not application/x.skeleton-header, no SKELETON 1 header",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/notes.skh"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "text/plain",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}
