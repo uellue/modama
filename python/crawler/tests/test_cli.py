@@ -334,8 +334,8 @@ def test_dataset_warnings_are_reported_without_verbose(tmp_path):
 # The crawler with one more revision than the code has, standing in for a newer crawler
 NEWER_CRAWLER = (
     f"{sys.executable} -c 'import sys; from modama_crawler import cli, schema; "
-    'schema.HEAD = "0099_crawl_runs_scope"; '
-    'schema.known = lambda: {"0001_baseline", "0002_extractor_identity", "0099_crawl_runs_scope"}; '
+    'schema.HEAD = "0099_probe"; '
+    'schema.known = lambda: {"0001_baseline", "0002_extractor_identity", "0003_crawl_runs_scope", "0099_probe"}; '
     "sys.exit(cli.main())'"
 )
 
@@ -350,7 +350,7 @@ def test_one_migration_missing(conn, env, tree):
     run = typed(f"{NEWER_CRAWLER} crawl --root {tree}", env)
     assert run.returncode == 2
     assert run.stderr.endswith(
-        f"ERROR the database schema is at {schema.HEAD}, this crawler needs 0099_crawl_runs_scope: "
+        f"ERROR the database schema is at {schema.HEAD}, this crawler needs 0099_probe: "
         "run modama-crawler migrate\n"
     )
     assert conn.execute("SELECT count(*) FROM crawl_runs").fetchall() == [(0,)]

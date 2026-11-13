@@ -43,6 +43,16 @@ def test_a_second_crawl_is_refused(conn, env, tree):
     assert shell(f"{CRAWLER} crawl --root {tree}", env).returncode == 0
 
 
+def test_a_subtree_crawl_while_the_timers_crawl_runs(conn, env, tree):
+    with other_connection(conn) as holder:
+        holder.execute("SELECT pg_advisory_lock(%s, %s)", CRAWL_LOCK)
+        run = shell(f"{CRAWLER} crawl --root {tree} --path sub", env)
+        assert run.returncode == 1
+        assert "another crawl is running on this database" in run.stderr
+        assert "Traceback" not in run.stderr
+        assert run_count(conn) == 0
+
+
 def test_a_crashed_crawl_leaves_no_lock(conn, env, tree):
     holder = subprocess.Popen(
         [

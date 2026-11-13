@@ -194,6 +194,42 @@ def test_runs_newest_first(conn, env, tree):
     assert "No such file" in lines[0]
 
 
+def test_a_subtree_crawl_records_its_path(conn, env, tree):
+    assert shell(f"{CRAWLER} crawl --root {tree}", env).returncode == 0
+    run = shell(f"{CRAWLER} crawl --root {tree} --path /sub", env)
+    assert run.returncode == 0, run.stderr
+    conn.commit()
+    assert conn.execute(
+        "SELECT outcome, root, scope FROM crawl_runs ORDER BY run_id"
+    ).fetchall() == [("finished", str(tree), None), ("finished", str(tree), "/sub")]
+
+
+def test_a_run_records_its_configuration(conn, env, tree, tmp_path):
+    config = tmp_path / "full.toml"
+    config.write_text(
+        '[formats]\nignore = ["zarr"]\n\n[formats.per-path-ignores]\n"old/" = ["em"]\n\n'
+        '[crawl]\nexclude = [".snapshot/"]\n'
+    )
+    run = shell(f"{CRAWLER} --config {config} crawl --root {tree}", env)
+    assert run.returncode == 0, run.stderr
+    conn.commit()
+    assert conn.execute("SELECT config FROM crawl_runs").fetchone()[0] == {
+        "file": str(config),
+        "select": [],
+        "ignore": ["zarr"],
+        "per_path_ignores": {"old/": ["em"]},
+        "exclude": [".snapshot/"],
+    }
+
+
+def test_a_subtree_crawls_line(conn, env, tree):
+    for path in ("", "--path sub"):
+        assert shell(f"{CRAWLER} crawl --root {tree} {path}", env).returncode == 0
+    subtree, full = shell(f"{CRAWLER} runs", env).stdout.splitlines()
+    assert subtree.endswith(f"  {tree}  sub"), subtree
+    assert full.endswith(f"  {tree}"), full
+
+
 def test_piped_into_head(conn, env):
     for _ in range(3):
         run_id = start_run(conn, "/data")

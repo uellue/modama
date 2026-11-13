@@ -116,13 +116,14 @@ def trigger_and_wait(urls, check=True):
     wait_for(run["dag_run_id"], check)
 
 
-def crawl(trigger=True):
-    """Crawl; the crawler starts the harvest itself, which this waits for. Without trigger: crawl only."""
+def crawl(trigger=True, path=None):
+    """Crawl, with a path a subtree crawl; the crawler starts the harvest itself, which this waits for. Without trigger: crawl only."""
     env = dict(os.environ)
     if not trigger:
         env.pop("MODAMA_CRAWLER_AIRFLOW_URL")
     run = subprocess.run(
-        ["modama-crawler", "crawl", "--root", str(DATA)],
+        ["modama-crawler", "crawl", "--root", str(DATA)]
+        + ([] if path is None else ["--path", path]),
         check=True,
         capture_output=True,
         text=True,
@@ -740,6 +741,52 @@ def test_a_changed_record_replaces_the_old_one(tree):
     hits = http(f"{SEARCH}/search?q=ferritin&resource=datasets")["hits"]
     assert [h["_source"]["url"] for h in hits].count(url) == 1, hits
     assert_consistent(path)
+
+
+def creator_and_datestamp(path):
+    with crawler_db() as conn:
+        return conn.execute(
+            "SELECT metadata->'creator'->>0, datestamp FROM records WHERE metadata->'title'->>0 = %s",
+            (path,),
+        ).fetchone()
+
+
+def test_a_subtree_crawl_harvests_only_its_changed_record(tree):
+    # change subtree-crawl, task 4.1: two files change owner, one inside the
+    # subtree and one outside; crawl --path brings exactly the first to the search
+    inside, outside = "subtree/inside.txt", "elsewhere/outside.txt"
+    for name in (inside, outside):
+        (DATA / name).parent.mkdir()
+        (DATA / name).write_text(f"{name}\n")
+    crawl()
+    t_before, _, _ = freshness()
+    before = {name: creator_and_datestamp("/" + name) for name in (inside, outside)}
+    time.sleep(2)  # datestamps have seconds granularity
+    os.chown(DATA / inside, 10001, -1)  # alice
+    os.chown(DATA / outside, 10002, -1)  # bob
+    try:
+        crawl(path="subtree")  # starts the harvest and waits for it
+        assert creator_and_datestamp("/" + outside) == before[outside]
+        creator, datestamp = creator_and_datestamp("/" + inside)
+        assert (creator, datestamp > before[inside][1]) == ("Alice Anderson", True)
+        with warehouse_db() as conn:
+            last, status, _ = harvest_runs(conn)[-1]
+            assert status == "closed" and event_count(conn, last) == (1, 0)
+        http(f"{OPENSEARCH}/{INDEX}/_refresh", method="POST")
+        url = next(u for t, u in oracle().values() if t == "/" + inside)
+        docs = http(f"{OPENSEARCH}/{INDEX}/_search", {"query": {"term": {"_id": url}}})[
+            "hits"
+        ]["hits"]
+        assert [
+            [c.get("creatorName") for c in d["_source"]["creators"]] for d in docs
+        ] == [["Alice Anderson"]], docs
+        assert_consistent("/" + inside)
+        # T stays at the crawl of the whole tree; the crawl line names the subtree
+        t_after, _, lines = freshness()
+        assert t_after == t_before
+        assert lines[0].endswith("subtree crawl of subtree"), lines
+    finally:
+        os.chown(DATA / outside, 0, -1)  # as the crawler stored it
 
 
 @pytest.fixture(scope="module")

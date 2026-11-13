@@ -97,6 +97,144 @@ def _digest(st: os.stat_result, entries: list[Entry]) -> str:
     return hashlib.sha256(json.dumps(state).encode()).hexdigest()
 
 
+def _io(pool: ThreadPoolExecutor) -> Callable[..., asyncio.Future]:
+    """io(fn, *args): run fn in the thread pool, started now, awaited later; in the running loop."""
+    loop = asyncio.get_running_loop()
+    return lambda fn, *args: loop.run_in_executor(pool, fn, *args)
+
+
+async def _entries(
+    io, excluded: GitIgnoreSpec, dirpath: str, rel: str, notes: Result
+) -> list[Entry]:
+    """The directory's regular files and subdirectories, sorted by name.
+
+    Symlinks, special files and files the crawler cannot read are skipped:
+    they would not make useful records. Skips and name problems go into
+    `notes` (a throwaway Result), so that the caller can drop them if the
+    directory turns out to be collapsed. Raises OSError if the directory
+    itself cannot be listed. The entries are stat'ed in parallel.
+    """
+    names = []
+    for name in await io(_names, dirpath):
+        try:
+            name.encode()
+        except UnicodeEncodeError:
+            notes.warnings.append(
+                (rel, f"skipped a name that is not valid UTF-8: {name!r}")
+            )
+            continue
+        names.append(name)
+    stats = await asyncio.gather(
+        *(io(_stat, os.path.join(dirpath, name)) for name in names)
+    )
+    entries = []
+    for name, got in zip(names, stats, strict=True):
+        path = os.path.join(dirpath, name)
+        child_rel = rel.rstrip("/") + "/" + name
+        if isinstance(got, OSError):
+            notes.warnings.append((child_rel, f"cannot stat: {got.strerror}"))
+            continue
+        st, readable = got
+        kind = _kind(st.st_mode)
+        if path_excluded(child_rel, excluded, is_dir=kind == "dir"):
+            continue
+        if kind not in ("file", "dir"):
+            notes.skipped.append((child_rel, kind))
+            continue
+        if kind == "file" and not readable:
+            notes.skipped.append((child_rel, "not readable"))
+            continue
+        entries.append(
+            Entry(
+                name,
+                path,
+                child_rel,
+                kind,
+                st.st_size,
+                st.st_mtime,
+                st.st_ctime,
+                st.st_uid,
+            )
+        )
+    return entries
+
+
+MISSING = "does not exist"  # refusal()'s reason for a folder that is not there
+
+
+def refusal(
+    root: Path | str,
+    path: str,
+    formats: list[Format],
+    *,
+    exclude: Iterable[str] = (),
+    per_path_ignores: dict[str, list[str]] | None = None,
+    threads: int = DEFAULT_THREADS,
+) -> tuple[str, str] | None:
+    """Why the crawl of the whole tree would not walk the folder `path` ("/a/b", below root): (folder, reason), or None.
+
+    From root down to path, the file system is asked (AGENTS.md): each folder
+    below root gets an lstat (a symlink, a file or nothing is not walked) and
+    is matched against the exclusions; each folder down to path, path
+    included, is listed; each folder above path gets the pre-order call of
+    the formats active there after per-path ignores, as in the walk, and a
+    collapsed one is not entered. Path itself may be collapsed. The reason
+    for a folder that is not there is MISSING (change subtree-crawl, D2).
+    """
+    pool = ThreadPoolExecutor(threads, thread_name_prefix="walk")
+    try:
+        return asyncio.run(
+            _refusal(
+                os.path.abspath(str(root)),
+                [p for p in path.split("/") if p],
+                formats,
+                compile_patterns(exclude),
+                compile_per_path(per_path_ignores or {}),
+                pool,
+            )
+        )
+    finally:
+        pool.shutdown(cancel_futures=True)
+
+
+async def _refusal(root, names, formats, excluded, ignores, pool):
+    io = _io(pool)
+    rel, dirpath = "/", root
+    for depth in range(len(names) + 1):
+        if depth:
+            rel = rel.rstrip("/") + "/" + names[depth - 1]
+            dirpath = os.path.join(dirpath, names[depth - 1])
+            try:
+                kind = _kind((await io(os.lstat, dirpath)).st_mode)
+            except FileNotFoundError:
+                return rel, MISSING
+            except OSError as e:
+                return rel, f"cannot be read: {e.strerror}"
+            if kind == "symlink":
+                return rel, "is a symlink, which a crawl does not follow"
+            if kind != "dir":
+                return rel, "is not a directory"
+            if path_excluded(rel, excluded, is_dir=True):
+                return rel, "is excluded by [crawl] exclude"
+        try:
+            if depth == len(names):
+                await io(_names, dirpath)
+                return None
+            entries = await _entries(io, excluded, dirpath, rel, Result())
+        except OSError as e:
+            return rel, f"cannot be listed: {e.strerror}"
+        st = await io(os.lstat, dirpath)
+        pre = Directory(rel, dirpath, entries, [], "pre", st.st_uid, st.st_mtime)
+        active = [f for f in formats if not path_ignored(f.id, rel, ignores)]
+        collapsed = await io(run_pre, pre, active, SLOW, BYTE_BUDGET)
+        if collapsed is not None:
+            return rel, (
+                f"is collapsed by {collapsed.format} ({collapsed.basis}),"
+                " and a crawl does not enter it"
+            )
+    return None
+
+
 def walk(
     root: Path | str,
     formats: list[Format],
@@ -108,6 +246,7 @@ def walk(
     threads: int = DEFAULT_THREADS,
     processes: int = 0,
     top: str | None = None,
+    start: str | None = None,
 ) -> Result:
     """Recognise the tree under root.
 
@@ -117,6 +256,10 @@ def walk(
     first that collapses, else top recognised without entering its
     subfolders (no children, so no adoption); no datasets if top is
     excluded, a symlink or not a folder (change chain-browse, D5).
+    With `start`, a folder below root ("/a/b"), the subtree under it alone,
+    with anchors relative to root, as the crawl of the whole tree walks it;
+    whether that crawl reaches it is refusal()'s question (change
+    subtree-crawl, D2, D3). It raises like root when it cannot be listed.
     `progress`, if given, is called after each directory is listed with the
     numbers of directories and files listed so far. With `previous`, the last
     crawl under the same rules, a directory whose listing and those of all
@@ -156,6 +299,7 @@ def walk(
                 pool,
                 None if matchers is None else mime.match_in(matchers),
                 None if top is None else "/" + top.strip("/"),
+                None if start is None else "/" + start.strip("/"),
             )
         )
     finally:  # also on an error or a signal: queued work is dropped
@@ -174,14 +318,11 @@ async def _walk(
     pool: ThreadPoolExecutor,
     match: Callable | None,
     top: str | None = None,
+    start: str | None = None,
 ) -> Result:
-    loop = asyncio.get_running_loop()
     result = Result()
     seen = [0, 0]  # directories, files
-
-    def io(fn, *args) -> asyncio.Future:
-        """Run fn in the thread pool: started now, awaited later."""
-        return loop.run_in_executor(pool, fn, *args)
+    io = _io(pool)
 
     def detect(path: str) -> tuple[str, tuple[str, ...] | None] | OSError:
         try:
@@ -195,58 +336,8 @@ async def _walk(
     def formats_for(rel: str) -> list[Format]:
         return [f for f in formats if not path_ignored(f.id, rel, ignores)]
 
-    async def entries_of(dirpath: str, rel: str, notes: Result) -> list[Entry]:
-        """The directory's regular files and subdirectories, sorted by name.
-
-        Symlinks, special files and files the crawler cannot read are skipped:
-        they would not make useful records. Skips and name problems go into
-        `notes` (a throwaway Result), so that the caller can drop them if the
-        directory turns out to be collapsed. Raises OSError if the directory
-        itself cannot be listed. The entries are stat'ed in parallel.
-        """
-        names = []
-        for name in await io(_names, dirpath):
-            try:
-                name.encode()
-            except UnicodeEncodeError:
-                notes.warnings.append(
-                    (rel, f"skipped a name that is not valid UTF-8: {name!r}")
-                )
-                continue
-            names.append(name)
-        stats = await asyncio.gather(
-            *(io(_stat, os.path.join(dirpath, name)) for name in names)
-        )
-        entries = []
-        for name, got in zip(names, stats, strict=True):
-            path = os.path.join(dirpath, name)
-            child_rel = rel.rstrip("/") + "/" + name
-            if isinstance(got, OSError):
-                notes.warnings.append((child_rel, f"cannot stat: {got.strerror}"))
-                continue
-            st, readable = got
-            kind = _kind(st.st_mode)
-            if path_excluded(child_rel, excluded, is_dir=kind == "dir"):
-                continue
-            if kind not in ("file", "dir"):
-                notes.skipped.append((child_rel, kind))
-                continue
-            if kind == "file" and not readable:
-                notes.skipped.append((child_rel, "not readable"))
-                continue
-            entries.append(
-                Entry(
-                    name,
-                    path,
-                    child_rel,
-                    kind,
-                    st.st_size,
-                    st.st_mtime,
-                    st.st_ctime,
-                    st.st_uid,
-                )
-            )
-        return entries
+    def entries_of(dirpath: str, rel: str, notes: Result):
+        return _entries(io, excluded, dirpath, rel, notes)
 
     async def visit(dirpath: str, rel: str) -> tuple[list[Dataset], bool]:
         """The datasets of the subtree, and whether it is unchanged since the last crawl."""
@@ -254,8 +345,8 @@ async def _walk(
         try:
             entries = await entries_of(dirpath, rel, notes)
         except OSError as e:
-            if rel == (top or "/"):
-                raise  # the root or top itself: the caller asked for it, so it is an error
+            if rel == (top or start or "/"):
+                raise  # the root, top or start itself: the caller asked for it, so it is an error
             result.skipped.append((rel, f"cannot list directory: {e.strerror}"))
             log.info("%s: skipped, cannot list directory: %s", rel, e.strerror)
             # Unchanged if it could not be listed last time either; its entry
@@ -381,7 +472,9 @@ async def _walk(
             rel, dirpath = child.rel, child.path
         return None
 
-    if top is None:
+    if start is not None:
+        found = (await visit(os.path.join(root, start.lstrip("/")), start))[0]
+    elif top is None:
         found = (await visit(root, "/"))[0]
     elif (found := await above()) is None:
         found = (await visit(os.path.join(root, top.lstrip("/")), top))[0]

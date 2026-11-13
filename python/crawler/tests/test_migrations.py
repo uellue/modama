@@ -249,11 +249,11 @@ def test_a_database_made_before_migrations(postgresql, fresh):
         f"INFO tables made before migrations found: adopted as 0001_baseline\n"
         f"INFO schema migrated from none to {schema.HEAD}\n"
     )
-    # 0002 drops datasets.extract_retry, the last column, and adds five to crawl_runs
+    # 0002 drops datasets.extract_retry, the last column, and adds five to crawl_runs; 0003 two more
     after = rows_of(postgresql)
     assert after.pop("datasets") == [row[:-1] for row in rows.pop("datasets")]
     assert after.pop("crawl_runs") == [
-        (*row, *[None] * 5) for row in rows.pop("crawl_runs")
+        (*row, *[None] * 7) for row in rows.pop("crawl_runs")
     ]
     assert after == rows
     assert migrate.upgrade(conninfo_of(fresh)) == 0
@@ -477,6 +477,24 @@ def test_0002_keeps_the_stored_extractions(conn, tmp_path):
     assert "t/stand: 1 tried again after a failure, 0 now succeed" in report.lines()
 
 
+# 0003_crawl_runs_scope (change subtree-crawl, D5)
+
+
+def test_0003_downgrade_deletes_the_subtree_runs(conn):
+    full = start_run(conn, "/data")
+    subtree = start_run(conn, "/data", scope="/adhoc/lib")
+    for run_id in (full, subtree):
+        end_run(conn, run_id, "finished", directories=1, files=1)
+    run = alembic(conn, "downgrade", "0002_extractor_identity")
+    assert run.returncode == 0, run.stderr
+    # the older code would count a subtree run as a crawl of the whole tree
+    assert selected(conn, "SELECT run_id FROM crawl_runs") == [(full,)]
+    assert alembic(conn, "upgrade", "head").returncode == 0
+    assert selected(conn, "SELECT run_id, scope, config FROM crawl_runs") == [
+        (full, None, None)
+    ]
+
+
 # A downgrade with no way back refuses with the step
 
 
@@ -513,10 +531,15 @@ def test_every_downgrade_undoes_its_revision_or_refuses(conn, fresh):
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
+    def move(c, revision):
+        """To exactly that revision, from above or below (upgrade alone stays above it)."""
+        assert alembic(c, "upgrade", revision).returncode == 0
+        assert alembic(c, "downgrade", revision).returncode == 0
+
     script = ScriptDirectory.from_config(Config(str(ALEMBIC_INI)))
-    for revision in script.walk_revisions():
+    for revision in script.walk_revisions():  # the head first
         down = revision.down_revision or "base"
-        assert alembic(conn, "upgrade", revision.revision).returncode == 0
+        move(conn, revision.revision)
         at = schema_of(conn)
         run = alembic(conn, "downgrade", down)
         if run.returncode != 0:
@@ -525,7 +548,7 @@ def test_every_downgrade_undoes_its_revision_or_refuses(conn, fresh):
             )
             assert schema_of(conn) == at
             continue
-        assert alembic(fresh, "upgrade", down).returncode == 0
+        move(fresh, down)
         assert schema_of(conn) == schema_of(fresh)
         assert alembic(conn, "upgrade", revision.revision).returncode == 0
         assert schema_of(conn) == at

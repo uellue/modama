@@ -1,6 +1,7 @@
 """Selecting formats and finding collections (the `format-selection` spec)."""
 
 import pytest
+from conftest import CRAWLER, shell
 from modama_crawler import selection
 from modama_crawler.selection import (
     Config,
@@ -83,6 +84,39 @@ exclude = ["/scratch/**"]
         ["/scratch/**"],
     )
     assert load_config(None) == Config()
+
+
+# The configuration file comes from one setting (change subtree-crawl, D8)
+
+
+def anchors(conn) -> list[str]:
+    conn.commit()
+    return [a for (a,) in conn.execute("SELECT anchor FROM datasets ORDER BY 1")]
+
+
+def test_the_setting_names_the_file(conn, env, tree, tmp_path):
+    config = tmp_path / "full.toml"
+    config.write_text('[crawl]\nexclude = ["sub/"]\n')
+    run = shell(
+        f"{CRAWLER} crawl --root {tree}", {**env, "MODAMA_CRAWLER_CONFIG": str(config)}
+    )
+    assert run.returncode == 0, run.stderr
+    assert anchors(conn) == ["/a.txt", "/b.txt"]
+    assert conn.execute("SELECT config->>'file' FROM crawl_runs").fetchone() == (
+        str(config),
+    )
+
+
+def test_the_command_line_wins(conn, env, tree, tmp_path):
+    setting, other = tmp_path / "setting.toml", tmp_path / "other.toml"
+    setting.write_text('[crawl]\nexclude = ["sub/"]\n')
+    other.write_text('[crawl]\nexclude = ["b.txt"]\n')
+    run = shell(
+        f"{CRAWLER} --config {other} crawl --root {tree}",
+        {**env, "MODAMA_CRAWLER_CONFIG": str(setting)},
+    )
+    assert run.returncode == 0, run.stderr
+    assert anchors(conn) == ["/a.txt", "/sub/c.txt"]
 
 
 def test_installed_collections_and_duplicates(monkeypatch):

@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 
 from .extraction import Report
 from .formats import Dataset, Extracted, Extraction, Listing, Result
-from .records import build
+from .records import build, oai_identifier
 
 # Advisory lock keys (two 32-bit integers; the database is the crawler's own).
 # CRAWL_LOCK: one crawl at a time, held by the crawl's session and released by
@@ -59,17 +59,26 @@ def try_read_lock(conn: psycopg.Connection) -> bool:
     return taken
 
 
-def start_run(conn: psycopg.Connection, root: str) -> int:
+def start_run(
+    conn: psycopg.Connection,
+    root: str,
+    *,
+    scope: str | None = None,
+    config: dict | None = None,
+) -> int:
     """Record a new crawl run and commit it, so that it is visible while the walk runs. Returns its id.
 
     The start time is cut to the second, like record datestamps, so that it is
     never after a datestamp the crawl writes: every file whose ctime is before
-    it was there when the walk began.
+    it was there when the walk began. `scope` is a subtree crawl's path
+    ("/a/b"), None for a crawl of the whole tree; `config` the configuration
+    it runs with (subtree-crawl D5).
     """
     now = datetime.now(UTC).replace(microsecond=0)
     ((run_id,),) = conn.execute(
-        "INSERT INTO crawl_runs (root, started_at, updated_at) VALUES (%s, %s, now()) RETURNING run_id",
-        (root, now),
+        "INSERT INTO crawl_runs (root, started_at, updated_at, scope, config)"
+        " VALUES (%s, %s, now(), %s, %s) RETURNING run_id",
+        (root, now, scope, None if config is None else Jsonb(config)),
     ).fetchall()
     conn.commit()
     return run_id
@@ -189,12 +198,14 @@ class Run:
     spot_check: dict | None  # SpotCheck.to_json()
     error: str | None
     age: timedelta  # since the last update, by the database's clock, so that readers on other hosts agree
+    # a subtree crawl's path, "/a/b"; None for a crawl of the whole tree
+    scope: str | None = None
 
 
 _RUN_SELECT = """SELECT run_id, root, started_at, updated_at, finished_at, outcome,
     directories, files, datasets, warnings, records_changed, extractions_run,
     extractions_reused, extractions_failed, directories_unchanged, identity,
-    reextracted, spot_check, error, now() - updated_at AS age
+    reextracted, spot_check, error, now() - updated_at AS age, scope
     FROM crawl_runs"""
 
 
@@ -212,10 +223,18 @@ def get_run(conn: psycopg.Connection, run_id: int) -> Run:
 
 
 def last_finished(conn: psycopg.Connection) -> datetime | None:
-    """When the newest finished crawl ended."""
+    """When the newest finished crawl of the whole tree ended; subtree crawls do not count."""
     return conn.execute(
-        "SELECT max(finished_at) FROM crawl_runs WHERE outcome = 'finished'"
+        "SELECT max(finished_at) FROM crawl_runs WHERE outcome = 'finished' AND scope IS NULL"
     ).fetchone()[0]
+
+
+def last_full_crawl(conn: psycopg.Connection) -> tuple[str, dict | None] | None:
+    """The data root and configuration of the newest finished crawl of the whole tree, or None (subtree-crawl D2)."""
+    return conn.execute(
+        "SELECT root, config FROM crawl_runs WHERE outcome = 'finished' AND scope IS NULL"
+        " ORDER BY finished_at DESC, run_id DESC LIMIT 1"
+    ).fetchone()
 
 
 # The columns of a dataset row besides its id, in the order of _row()
@@ -342,6 +361,7 @@ def store(
     run_id: int | None = None,
     rules: str | None = None,
     check: Callable[[], None] = lambda: None,
+    scope: str | None = None,
 ) -> int:
     """Bring the stored datasets, directory listings and records up to date with the result.
 
@@ -358,13 +378,25 @@ def store(
     gets them in its next window. With a run, its rule set is stored in the
     same transaction, so that the next crawl knows what the stored datasets
     were recognised under.
+
+    With `scope`, a subtree crawl's path ("/a/b"), the result is that of the
+    subtree alone: only datasets and records under it are deleted, its
+    stored listings are deleted and none are stored, and no rule set is
+    recorded, so that the next crawl of the whole tree recognises it again
+    (subtree-crawl D4). "Under" is the path itself or a path that continues
+    it after a "/", so that a sibling "/a/bc" is not under "/a/b".
     """
+    anchors = [d.anchor for d in result.datasets]
     with conn.cursor() as cur:
         # Rows stay from crawl to crawl (D3): only what changed is written
-        cur.execute(
-            "DELETE FROM datasets WHERE anchor <> ALL(%s)",
-            ([d.anchor for d in result.datasets],),
-        )
+        if scope is None:
+            cur.execute("DELETE FROM datasets WHERE anchor <> ALL(%s)", (anchors,))
+        else:
+            gone = cur.execute(
+                "DELETE FROM datasets WHERE (directory = %s OR starts_with(directory, %s || '/'))"
+                " AND anchor <> ALL(%s) RETURNING anchor",
+                (scope, scope, anchors),
+            ).fetchall()
         for d in result.datasets:
             row = cur.execute(_UPSERT_DATASET, _row(d)).fetchone()
             if row is not None:  # inserted or changed
@@ -373,9 +405,16 @@ def store(
                     "INSERT INTO members (dataset_id, path) VALUES (%s, %s)",
                     [(row[0], m) for m in d.members],
                 )
-        cur.execute(
-            "DELETE FROM directories WHERE path <> ALL(%s)", (list(result.listings),)
-        )
+        if scope is not None:
+            cur.execute(
+                "DELETE FROM directories WHERE path = %s OR starts_with(path, %s || '/')",
+                (scope, scope),
+            )
+        else:
+            cur.execute(
+                "DELETE FROM directories WHERE path <> ALL(%s)",
+                (list(result.listings),),
+            )
         cur.executemany(
             """
             INSERT INTO directories (path, digest, pre_warnings, post_warnings, retry)
@@ -388,16 +427,22 @@ def store(
             """,
             [
                 (path, x.digest, Jsonb([list(w) for w in x.pre]), Jsonb([list(w) for w in x.post]), x.retry)
-                for path, x in result.listings.items()
+                for path, x in (result.listings.items() if scope is None else ())
             ],
         )  # fmt: skip
         records = [build(d, names) for d in result.datasets]
         # waits for the requests in flight, which are single short queries
         _store_lock(conn, check)
-        cur.execute(
-            "DELETE FROM records WHERE identifier <> ALL(%s)",
-            ([identifier for identifier, _ in records],),
-        )
+        if scope is None:
+            cur.execute(
+                "DELETE FROM records WHERE identifier <> ALL(%s)",
+                ([identifier for identifier, _ in records],),
+            )
+        else:  # records have no anchor: by the identifiers of the deleted datasets
+            cur.execute(
+                "DELETE FROM records WHERE identifier = ANY(%s)",
+                ([oai_identifier(anchor) for (anchor,) in gone],),
+            )
         changed = cur.rowcount
         now = datetime.now(UTC).replace(microsecond=0)
         cur.executemany(
@@ -413,7 +458,7 @@ def store(
         changed += cur.rowcount
         # Not before the store lock: a crawl stopped while it waits for the
         # lock would hold the run's row, and could not record its failure
-        if run_id is not None:
+        if run_id is not None and scope is None:
             cur.execute(
                 "UPDATE crawl_runs SET rules = %s WHERE run_id = %s", (rules, run_id)
             )

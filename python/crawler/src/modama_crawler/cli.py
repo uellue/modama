@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import posixpath
 import pwd
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -23,6 +25,7 @@ from psycopg_pool import ConnectionPool
 from werkzeug.serving import run_simple
 
 from . import cpus, extraction, harvest, identity, mimedb, render, schema, selection
+from . import walk as walk_module
 from .formats import Format, Result
 from .records import build, format_names
 from .server import OAIError, OAIServer, parse_range
@@ -33,6 +36,7 @@ from .store import (
     get_run,
     ingredients_of,
     last_finished,
+    last_full_crawl,
     other_identities,
     previous,
     progress_run,
@@ -185,6 +189,7 @@ def crawl_tree(
     threads: int = DEFAULT_THREADS,
     check_user: int | None = None,
     installed: tuple[str, dict] | None = None,
+    scope: str | None = None,
 ) -> tuple[Result, extraction.Report, int]:
     """Walk, extract and store one crawl: the result, the extraction report and the number of records changed.
 
@@ -193,7 +198,9 @@ def crawl_tree(
     the extractor, the files and the extractor identity are the same (D3).
     `installed` is the identity and its ingredients (`_installed()`, the
     default). With `check_user`, the user database must know that uid before
-    the store (crawl-runs spec).
+    the store (crawl-runs spec). With `scope`, a folder below root ("/a/b"),
+    a subtree crawl: that subtree alone, from scratch, nothing taken over or
+    reused, and only it stored (change subtree-crawl, D3, D4).
     """
     current, ingredients = installed or _installed()
     # The walk and extraction read the stored state for hours: one query at a
@@ -202,7 +209,7 @@ def crawl_tree(
     autocommit = conn.autocommit
     conn.commit()
     conn.autocommit = True
-    stored = previous(conn, rules)
+    stored = previous(conn, rules) if scope is None else None
 
     def on_directory(directories: int, files: int) -> None:
         if _sigterm.is_set():
@@ -221,6 +228,7 @@ def crawl_tree(
             previous=stored,
             threads=threads,
             processes=_workers() or extraction.default_workers(),
+            start=scope,
         )
     except _Stopped:
         raise Terminated("terminated (SIGTERM)") from None
@@ -230,7 +238,9 @@ def crawl_tree(
         formats,
         root,
         identity=current,
-        stored=(stored or Stored(conn)).extractions,
+        stored=(stored or Stored(conn)).extractions
+        if scope is None
+        else lambda anchors: {},
         workers=_workers(),
         memory=_memory(),
         check=_check_terminated,
@@ -244,7 +254,13 @@ def crawl_tree(
     _check_terminated()
     _check_names(check_user)
     changed = store(
-        conn, result, format_names(formats), run_id, rules, check=_check_terminated
+        conn,
+        result,
+        format_names(formats),
+        run_id,
+        rules,
+        check=_check_terminated,
+        scope=scope,
     )
     return result, report, changed
 
@@ -364,9 +380,101 @@ def _check_names(uid: int | None) -> None:
         raise NamesUnavailable(message) from None
 
 
+class _Refused(Exception):
+    """A subtree crawl that a crawl of the whole tree would not make: status 2, no run (change subtree-crawl, D2)."""
+
+
+def _subtree(root: str, path: str, formats, config, threads: int) -> str:
+    """The folder of `crawl --path PATH` as the anchors write it ("/a/b"); raises _Refused when a crawl of the whole tree would not walk it.
+
+    PATH is a canonical path, relative to the data root, normalised; a file stands for its folder (D2).
+    """
+    try:
+        path.encode()
+    except UnicodeEncodeError:
+        raise _Refused(
+            f"{path!r} is not valid UTF-8, and a crawl skips such names"
+        ) from None
+    rel = posixpath.normpath(path.strip("/") or ".")
+    if rel == ".." or rel.startswith("../"):
+        raise _Refused(f"it leaves the data root {root}")
+    missing = f"no such directory under the data root {root} (--path is relative to it)"
+    scope = "/" if rel == "." else "/" + rel
+    try:
+        st = os.lstat(os.path.join(root, rel))
+    except FileNotFoundError:
+        raise _Refused(missing) from None
+    except OSError:
+        st = None  # refusal() names the folder it cannot read
+    if st is not None and stat.S_ISREG(st.st_mode):
+        scope = posixpath.dirname(scope)
+        log.info(
+            "--path %s is a file: crawling its directory %s",
+            path,
+            scope.lstrip("/") or "/",
+        )
+    if scope == "/":
+        raise _Refused("the data root is crawled by `crawl` without --path")
+    found = walk_module.refusal(
+        root,
+        scope,
+        formats,
+        exclude=config.exclude,
+        per_path_ignores=config.per_path_ignores,
+        threads=threads,
+    )
+    if found is not None:
+        folder, reason = found
+        raise _Refused(
+            missing if reason == walk_module.MISSING else f"{folder} {reason}"
+        )
+    return scope
+
+
+# The configuration's parts a subtree crawl compares, with their names in the TOML file (D2)
+_COMPARED = {
+    "select": "select",
+    "ignore": "ignore",
+    "per_path_ignores": "per-path-ignores",
+    "exclude": "exclude",
+}
+
+
+def _same_as_full_crawls(conn, root: str, settings: dict) -> None:
+    """Raises _Refused when the last crawl of the whole tree ran under another data root or configuration (D2)."""
+    last = last_full_crawl(conn)
+    if last is None:
+        return
+    full_root, full = last
+    if full_root != root:
+        raise _Refused(
+            f"the data root is {root}, but the crawls of the whole tree ran under {full_root},"
+            " and identifiers are relative to the data root"
+        )
+    if full is None:
+        log.warning(
+            "the configuration of the last crawl of the whole tree is not recorded"
+            " (it ran before this version): not compared"
+        )
+        return
+    differ = [name for key, name in _COMPARED.items() if full.get(key) != settings[key]]
+    if differ:
+        raise _Refused(
+            f"its configuration {settings['file'] or 'none'} differs from that of the last crawl"
+            f" of the whole tree, {full.get('file') or 'none'}, in {', '.join(differ)};"
+            " a subtree crawl uses the configuration of the crawls of the whole tree"
+        )
+
+
 def cmd_crawl(args) -> int:
     _sigterm.clear()  # one crawl per process, but tests run several
     signal.signal(signal.SIGTERM, _terminate)
+    if args.path is not None and (args.select is not None or args.ignore is not None):
+        log.error(
+            "--select and --ignore cannot be used with --path: a subtree crawl uses"
+            " the formats of the crawls of the whole tree"
+        )
+        return 2
     check_user = _check_user()
     threads = _threads()
     config, formats, rules = configure(args)
@@ -374,6 +482,17 @@ def cmd_crawl(args) -> int:
     log.info("%s", _budget(cpus.usable()))
     installed = _installed()  # at the crawl's start, before any worker (D1)
     root = os.path.abspath(args.root or os.environ.get("MODAMA_DATA_ROOT", "/data"))
+    settings = {"file": None if args.config is None else str(args.config)}
+    settings |= {key: getattr(config, key) for key in _COMPARED}
+    try:
+        scope = (
+            None
+            if args.path is None
+            else _subtree(root, args.path, formats, config, threads)
+        )
+    except _Refused as e:
+        log.error("cannot crawl --path %s: %s", args.path, e)
+        return 2
     conninfo = conninfo_from_env()
     with psycopg.connect(conninfo) as conn:
         schema.check(conn)
@@ -387,7 +506,13 @@ def cmd_crawl(args) -> int:
             )
             log.error("another crawl is running on this database%s", holder)
             return 1
-        run_id = start_run(conn, root)
+        if scope is not None:
+            try:
+                _same_as_full_crawls(conn, root, settings)
+            except _Refused as e:
+                log.error("cannot crawl --path %s: %s", args.path, e)
+                return 2
+        run_id = start_run(conn, root, scope=scope, config=settings)
         # The worker processes inherit one thread per math library (R43). Set while
         # no other thread runs: libpq reads the environment in the heartbeat's
         # connect, and setenv is not safe against a concurrent getenv (D3)
@@ -406,6 +531,7 @@ def cmd_crawl(args) -> int:
                     threads=threads,
                     check_user=check_user,
                     installed=installed,
+                    scope=scope,
                 )
                 warnings = _report(result)
             except (
@@ -547,7 +673,7 @@ def _state(run: Run) -> str:
 
 
 def _run_line(run: Run) -> str:
-    """Start, state, end or last update, counts, root; the error of a failed run last."""
+    """Start, state, end or last update, counts, root, a subtree crawl's path; the error of a failed run last."""
     state = _state(run)
     if state in ("running", "stale"):
         when = f"updated {_when(run.updated_at)}"
@@ -576,6 +702,8 @@ def _run_line(run: Run) -> str:
                     f"; spot check: {differ} {'differs' if differ == 1 else 'differ'}"
                 )
     line = f"{_when(run.started_at)}  {state:<8}  {when}  {counts}  {run.root}"
+    if run.scope is not None:  # as a canonical path (crawl-runs spec)
+        line += f"  {run.scope.lstrip('/')}"
     return f"{line}  {run.error}" if state == "failed" else line
 
 
@@ -755,7 +883,9 @@ def cmd_records(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="modama-crawler")
     parser.add_argument(
-        "--config", type=Path, help="TOML file with [formats] and [crawl] sections"
+        "--config",
+        type=Path,
+        help="TOML file with [formats] and [crawl] sections; default: MODAMA_CRAWLER_CONFIG",
     )
     parser.add_argument(
         "-v",
@@ -771,7 +901,7 @@ def main(argv: list[str] | None = None) -> int:
             "--config",
             type=Path,
             default=argparse.SUPPRESS,
-            help="TOML file with [formats] and [crawl] sections",
+            help="TOML file with [formats] and [crawl] sections; default: MODAMA_CRAWLER_CONFIG",
         )
         p.add_argument(
             "--select",
@@ -790,7 +920,16 @@ def main(argv: list[str] | None = None) -> int:
 
     crawl = sub.add_parser("crawl", help="crawl MODAMA_DATA_ROOT into the database")
     crawl.add_argument(
-        "--root", type=Path, help="crawl this tree instead of MODAMA_DATA_ROOT"
+        "--root",
+        type=Path,
+        help="the data root instead of MODAMA_DATA_ROOT; a crawl treats it as the whole tree,"
+        " and --path is relative to it",
+    )
+    crawl.add_argument(
+        "--path",
+        metavar="PATH",
+        help="crawl only this folder below the data root, from scratch, and leave the rest"
+        " of the index as it is (a subtree crawl)",
     )
     selection_args(crawl)
     crawl.set_defaults(func=cmd_crawl)
@@ -844,6 +983,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     load_dotenv()
+    if args.config is None and os.environ.get("MODAMA_CRAWLER_CONFIG"):
+        # the deployment's configuration without typing it (subtree-crawl D8, answer 171)
+        args.config = Path(os.environ["MODAMA_CRAWLER_CONFIG"])
     logging.basicConfig(
         level=logging.INFO,
         stream=sys.stderr,

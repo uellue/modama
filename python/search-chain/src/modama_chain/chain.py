@@ -249,7 +249,8 @@ def crawl_line(c: crawler.Run) -> str:
                 f", {again} extracted again, "
                 f"{changed} {'result' if changed == 1 else 'results'} changed"
             )
-    return f"crawl     {state:<9} started {when(c.started_at)}  {end}  {counts}"
+    line = f"crawl     {state:<9} started {when(c.started_at)}  {end}  {counts}"
+    return f"{line}  subtree crawl of {c.scope.lstrip('/')}" if c.scope else line
 
 
 def harvest_stage(local: str, datestamp, event, last_closed) -> Stage:
@@ -343,7 +344,12 @@ def freshness(
         covered = run.until_date
     if covered is None:
         return None, "no closed harvest run has been indexed successfully"
-    done = [c for c in crawls if c.outcome == "finished" and c.finished_at <= covered]
+    # a subtree crawl says nothing about the rest of the tree
+    done = [
+        c
+        for c in crawls
+        if c.outcome == "finished" and c.scope is None and c.finished_at <= covered
+    ]
     if not done:
         return None, "no finished crawl before the end of the last indexed harvest"
     return max(c.started_at for c in done), ""
