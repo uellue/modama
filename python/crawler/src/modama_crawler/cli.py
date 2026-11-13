@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -46,6 +47,7 @@ from .store import (
     start_run,
     store,
     try_crawl_lock,
+    unanswered_before,
 )
 from .walk import DEFAULT_THREADS, walk
 
@@ -58,6 +60,10 @@ DEFAULT_BASE_URL = "http://localhost:7654/oai"
 PROGRESS_INTERVAL = 60.0
 RUNS_SHOWN = 10
 FOLLOW_POLL = 2.0
+# Folders the file system did not answer, and refused ones, named in the run and the log (listing-errors D8)
+NAMED = 100
+WITH_ERRORS = "finished with errors"  # the state of such a run (D9)
+UNANSWERED = 4  # the exit status of a crawl that finished with errors (D9)
 
 # Removed at interpreter exit; held here because the database must outlive configure
 _mime_directory: tempfile.TemporaryDirectory | None = None
@@ -212,6 +218,8 @@ def crawl_tree(
     conn.commit()
     conn.autocommit = True
     stored = previous(conn, rules) if scope is None else None
+    # Under any rule set, and in a subtree crawl too: what the file system did not answer (listing-errors D4)
+    kept = stored or Stored(conn)
 
     def on_directory(directories: int, files: int) -> None:
         if _sigterm.is_set():
@@ -231,6 +239,7 @@ def crawl_tree(
             threads=threads,
             processes=_workers() or extraction.default_workers(),
             start=scope,
+            kept=kept,
         )
     except _Stopped:
         raise Terminated("terminated (SIGTERM)") from None
@@ -240,9 +249,7 @@ def crawl_tree(
         formats,
         root,
         identity=current,
-        stored=(stored or Stored(conn)).extractions
-        if scope is None
-        else lambda anchors: {},
+        stored=kept.extractions if scope is None else lambda anchors: {},
         workers=_workers(),
         memory=_memory(),
         check=_check_terminated,
@@ -590,6 +597,8 @@ def cmd_crawl(args) -> int:
             records_changed=changed,
             extraction=report,
             ingredients=installed[1],
+            unanswered=(unanswered := _unanswered(conn, run_id, result)),
+            refused=_refused(result),
         )
     for line in report.lines():
         log.info("%s", line)
@@ -599,7 +608,112 @@ def cmd_crawl(args) -> int:
         warnings,
         changed,
     )
-    return _trigger_harvest()
+    _log_listing_errors(result, unanswered)
+    status = _trigger_harvest()
+    return UNANSWERED if unanswered else status
+
+
+def _unanswered(conn: psycopg.Connection, run_id: int, result: Result) -> dict | None:
+    """The run's record of the folders the file system did not answer, each with its history (listing-errors D8)."""
+    if not result.unanswered:
+        return None
+    started = _when(get_run(conn, run_id).started_at)
+    return {
+        "total": len(result.unanswered),
+        "kept": sum(u.kept for u in result.unanswered),
+        "by_errno": dict(sorted(Counter(u.errno for u in result.unanswered).items())),
+        "folders": [
+            {
+                "folder": u.folder,
+                "path": u.path,
+                "errno": u.errno,
+                "kept": u.kept,
+                "whole": u.whole,
+                **_history(
+                    unanswered_before(conn, run_id, u.folder), u.folder, started
+                ),
+            }
+            for u in result.unanswered[:NAMED]
+        ],
+    }
+
+
+def _history(earlier: dict | None, folder: str, started: str) -> dict:
+    """Since when and for how many crawls the folder is kept, from the newest earlier run that covered it (D8).
+
+    That run kept it when it lists the folder, or a folder above it kept whole.
+    """
+    for f in (earlier or {}).get("folders", ()):
+        above = f.get("whole") and folder.startswith(f["folder"].rstrip("/") + "/")
+        if f["folder"] == folder or above:
+            return {"since": f["since"], "crawls": f["crawls"] + 1}
+    return {"since": started, "crawls": 1}
+
+
+def _refused(result: Result) -> dict | None:
+    """The run's record of the refused folders whose datasets it removed (D8, D10)."""
+    if not result.refused:
+        return None
+    return {
+        "total": len(result.refused),
+        "removed": sum(n for _, _, n in result.refused),
+        "folders": [
+            {"folder": f, "errno": e, "removed": n}
+            for f, e, n in result.refused[:NAMED]
+        ],
+    }
+
+
+def _by_errno(errnos) -> str:
+    return ", ".join(f"{e} {n}" for e, n in sorted(Counter(errnos).items()))
+
+
+def _folders(n: int) -> str:
+    return f"{n} folder{'' if n == 1 else 's'}"
+
+
+def _log_listing_errors(result: Result, unanswered: dict | None) -> None:
+    """An error line per folder the file system did not answer, a warning per refused folder, up to NAMED each (D9)."""
+    for folder, e, removed in result.refused[:NAMED]:
+        log.warning(
+            "%s: refused (%s); its %d datasets are removed from the index",
+            folder,
+            e,
+            removed,
+        )
+    if len(result.refused) > NAMED:
+        rest = result.refused[NAMED:]
+        log.warning(
+            "and %s refused (%s), %d datasets removed",
+            _folders(len(rest)),
+            _by_errno(e for _, e, _ in rest),
+            sum(n for _, _, n in rest),
+        )
+    if unanswered is None:
+        return
+    for u, f in zip(result.unanswered, unanswered["folders"], strict=False):
+        history = (
+            f", for {f['crawls']} crawls since {f['since']}" if f["crawls"] > 1 else ""
+        )
+        log.error(
+            "%s: the file system did not answer (%s: %s, at %s); %d datasets kept%s;"
+            " tried again next crawl",
+            u.folder, u.errno, u.reason, u.path, u.kept, history,
+        )  # fmt: skip
+    rest = result.unanswered[NAMED:]
+    if rest:
+        log.error(
+            "and %d more folders the file system did not answer (%s)",
+            len(rest),
+            _by_errno(u.errno for u in rest),
+        )
+    log.error(
+        "%s: %s the file system did not answer (%s), %d datasets kept",
+        WITH_ERRORS,
+        _folders(unanswered["total"]),
+        _by_errno(u.errno for u in result.unanswered),
+        unanswered["kept"],
+    )
 
 
 def _trigger_harvest() -> int:
@@ -685,10 +799,41 @@ def _when(t: datetime) -> str:
 
 
 def _state(run: Run) -> str:
-    """finished, failed, running or stale (D3), by the database's clock."""
+    """finished, finished with errors (listing-errors D9), failed, running or stale (D3), by the database's clock."""
     if run.finished_at is not None:
-        return run.outcome
+        return (
+            WITH_ERRORS if run.outcome == "finished" and run.unanswered else run.outcome
+        )
     return "running" if run.age.total_seconds() <= 2 * PROGRESS_INTERVAL else "stale"
+
+
+def _named(folders: list[dict], total: int, history: bool) -> str:
+    """Up to three folders, with the number of the others (D9)."""
+    shown = [
+        f["folder"]
+        + (f" ({f['crawls']} crawls)" if history and f["crawls"] > 1 else "")
+        for f in folders[:3]
+    ]
+    more = f" and {total - len(shown)} more" if total > len(shown) else ""
+    return ", ".join(shown) + more
+
+
+def _listing_errors_part(run: Run) -> str:
+    """The folders the file system did not answer and the refused ones, for the run's line (D9)."""
+    part = ""
+    if run.unanswered:
+        u = run.unanswered
+        by_errno = ", ".join(f"{e} {n}" for e, n in u["by_errno"].items())
+        part += f"; did not answer: {_folders(u['total'])} ({by_errno}): " + _named(
+            u["folders"], u["total"], history=True
+        )
+    if run.refused:
+        r = run.refused
+        part += (
+            f"; refused: {_folders(r['total'])}, {r['removed']} datasets removed: "
+            + _named(r["folders"], r["total"], history=False)
+        )
+    return part
 
 
 def _run_line(run: Run) -> str:
@@ -700,7 +845,7 @@ def _run_line(run: Run) -> str:
     else:
         when = _when(run.finished_at)
         counts = f"{run.directories} directories, {run.files} files"
-        if state == "finished":
+        if state in ("finished", WITH_ERRORS):
             counts += (
                 f", {run.datasets} datasets, {run.warnings} warnings, {run.records_changed} records changed; "
                 f"extraction: {run.extractions_run} run, {run.extractions_reused} reused, "
@@ -720,7 +865,9 @@ def _run_line(run: Run) -> str:
                 counts += (
                     f"; spot check: {differ} {'differs' if differ == 1 else 'differ'}"
                 )
-    line = f"{_when(run.started_at)}  {state:<8}  {when}  {counts}  {run.root}"
+            counts += _listing_errors_part(run)
+    # as wide as the longest state, so that the columns stay aligned (review 8)
+    line = f"{_when(run.started_at)}  {state:<{len(WITH_ERRORS)}}  {when}  {counts}  {run.root}"
     if run.scope is not None:  # as a canonical path (crawl-runs spec)
         line += f"  {run.scope.lstrip('/')}"
     return f"{line}  {run.error}" if state == "failed" else line
@@ -801,6 +948,8 @@ def cmd_runs(args) -> int:
                 print(_run_line(run), flush=True)
                 shown = (run.updated_at, state)
             if state != "running":
+                if state == WITH_ERRORS:
+                    return UNANSWERED  # as the crawl's own status (D9)
                 return 1 if state == "stale" else 0
             time.sleep(FOLLOW_POLL)
             run = get_run(conn, run.run_id)

@@ -9,6 +9,7 @@ MIME types and the subdirectories' datasets. See design/architecture.md A, B, D.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import logging
@@ -22,6 +23,22 @@ from .. import mime
 log = logging.getLogger(__name__)
 
 DIRECTORY = "directory"  # in reacts_to: run on every directory, pre- and post-order
+
+# The file system's answers about a path: the crawler may not see it, or it is
+# gone. Every other error means it did not answer (change listing-errors, D1)
+NOT_VISIBLE = frozenset({errno.EACCES, errno.EPERM, errno.ENOENT, errno.ENOTDIR})
+REFUSED = frozenset({errno.EACCES, errno.EPERM})
+
+
+def not_visible(err: OSError) -> bool:
+    return err.errno in NOT_VISIBLE
+
+
+def errno_name(err: OSError) -> str:
+    """`EIO`, or the number, or `no errno`."""
+    if err.errno is None:
+        return "no errno"
+    return errno.errorcode.get(err.errno, str(err.errno))
 
 
 @dataclass(frozen=True)
@@ -83,6 +100,22 @@ class Dataset:
     extraction: Extraction | None = (
         None  # set after the walk, for formats with an extractor
     )
+    # Kept from the index because the file system did not answer; not stored (listing-errors D7)
+    kept: bool = False
+
+
+@dataclass
+class Unanswered:
+    """A folder whose stored datasets a crawl kept because the file system did not answer (listing-errors D2, D3)."""
+
+    folder: str
+    path: str  # what failed: the folder, or an entry or file in it
+    errno: str  # errno_name()
+    reason: str  # the error's text
+    whole: bool  # the folder's stored subtree is kept, else its own datasets
+    kept: int = 0  # datasets kept, set after the walk
+    # the error itself, raised when the folder is the walk's start (review of the code, 2)
+    error: OSError | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -104,6 +137,10 @@ class Result:
     skipped: list[tuple[str, str]] = field(default_factory=list)  # (path, reason)
     unchanged: int = 0  # directories whose datasets were taken over from the last crawl
     listings: dict[str, Listing] = field(default_factory=dict)  # every directory listed
+    # Folders the file system did not answer, by path (listing-errors D2, D3)
+    unanswered: list[Unanswered] = field(default_factory=list)
+    # (folder, errno name, stored datasets removed) of refused folders that had some (D10)
+    refused: list[tuple[str, str, int]] = field(default_factory=list)
 
     def all_warnings(self) -> list[tuple[str, str]]:
         """The walk's warnings and those carried by datasets, in path order."""
@@ -162,6 +199,9 @@ class Directory:
         self._by_name = {e.name: e for e in entries}
         self._budget = 0
         self.retry = False  # a format met a read error or the time limit
+        # (file rel, error) of the first read the file system did not answer, whatever
+        # the format made of it: the crawl keeps the stored datasets (listing-errors D2, D3)
+        self.unanswered: tuple[str, OSError] | None = None
         # File rel -> "<format>: not <type>, <reason>", from not_of_type; goes into the basis
         self.notes: dict[str, str] = {}
         # File rel -> "<format>: <text>", from note: also into the basis, the type kept
@@ -185,9 +225,19 @@ class Directory:
         if n > self._budget:
             raise BudgetExceeded(f"reading {n} bytes of {entry.rel} exceeds the budget")
         self._budget -= n
-        # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole buffer
-        with open(entry.path, "rb", buffering=0) as f:
-            return f.read(n)
+        try:
+            # Unbuffered, as in mime.detect_with_tie: read n bytes, not a whole buffer
+            with open(entry.path, "rb", buffering=0) as f:
+                return f.read(n)
+        except OSError as e:
+            # noted here, so that it counts also when the format catches it (review 3)
+            self.did_not_answer(entry.rel, e)
+            raise
+
+    def did_not_answer(self, rel: str, error: OSError) -> None:
+        """Note the first error of the "did not answer" class (listing-errors D1)."""
+        if self.unanswered is None and not not_visible(error):
+            self.unanswered = (rel, error)
 
     def not_of_type(self, entry: Entry, reason: str) -> Entry:
         """Say that a file is not of the type its name gave it; returns its entry with the type detection gives without it.
@@ -244,6 +294,7 @@ class Directory:
             "type kept",
         )
         self.retry = True
+        self.did_not_answer(entry.rel, error)
 
     def _undrop(self, entry: Entry) -> None:
         """Put back the entry of a file whose type a format dropped, and its note."""
@@ -328,6 +379,8 @@ def _call(fmt: Format, d: Directory, slow: float, byte_budget: int) -> list[Data
         else:
             d.warn(d.rel, f"{fmt.id} failed: {e!r}")
             d.retry = d.retry or isinstance(e, OSError)
+            if isinstance(e, OSError):
+                d.did_not_answer(d.rel, e)
         return []
     elapsed = time.monotonic() - start
     if elapsed > slow:
