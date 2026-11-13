@@ -35,6 +35,7 @@ keeps the order; a GPU batch larger than a window takes consecutive sorted windo
 timed part starts when all workers have loaded the model and warmed up.
 """
 
+import contextlib
 import json
 import math
 import os
@@ -52,9 +53,19 @@ from glob import glob
 from pathlib import Path
 
 MODEL = "BAAI/bge-small-en-v1.5"
+# the files fastembed loads for MODEL, at a pinned revision (2026-09-24, the latest on
+# 2026-11-13)
+MODEL_REPO = "qdrant/bge-small-en-v1.5-onnx-q"
+MODEL_REVISION = "aa8f8b060edb00e03bfdd08813a2949946c8ba55"
+MODEL_FILES = ["config.json", "tokenizer.json", "tokenizer_config.json"]
+MODEL_FILES += ["special_tokens_map.json", "model_optimized.onnx"]
 HERE = Path(__file__).resolve().parent
 CACHE = Path(os.environ.get("FASTEMBED_CACHE_DIR", HERE / "cache"))
 VARIANTS = CACHE / "variants"  # prepare_model.py
+# Hugging Face's caches and CUDA's kernel cache in the folder too (for the workers as well)
+os.environ["HF_HOME"] = str(CACHE / "hf")
+os.environ["HF_XET_CACHE"] = str(CACHE / "hf" / "xet")
+os.environ["CUDA_CACHE_PATH"] = str(CACHE / "cuda")
 SETS = ("short", "mixed", "long")
 # the first texts of the mixed set: every variant's vectors compared on these
 CHECK_TEXTS = 512
@@ -67,6 +78,13 @@ SORT_WINDOW = 250
 MAX_BATCH_TOKENS = 2**20  # the long set: 2048 texts of 512
 # GPU: the share of the GPU's memory all workers' ONNX Runtime arenas together may take
 GPU_MEM_FRACTION = float(os.environ.get("GPU_MEM_FRACTION", "0.5"))
+# a case's workers are stopped when not done after this long (start, load, warm-up,
+# timed part); the case is then recorded as failed
+CASE_DEADLINE_S = 900
+# a case is skipped when its estimated memory exceeds this share of MemAvailable
+MEM_SHARE = 0.5
+# the best case of each set and device runs this many times in all (the spread)
+REPEATS = 3
 # a step counts as better only if it raises texts/s by more than 3 %
 GAIN = 1.03
 PERF_EVENTS = (
@@ -195,11 +213,40 @@ def smaps() -> dict:
     }
 
 
+def model_dir() -> str:
+    """The model's files at MODEL_REVISION, downloaded on the first call."""
+    path = (
+        CACHE
+        / f"models--{MODEL_REPO.replace('/', '--')}"
+        / "snapshots"
+        / MODEL_REVISION
+    )
+    if all((path / f).exists() for f in MODEL_FILES):
+        return str(path)
+    from huggingface_hub import snapshot_download
+
+    return snapshot_download(
+        MODEL_REPO,
+        revision=MODEL_REVISION,
+        cache_dir=str(CACHE),
+        allow_patterns=MODEL_FILES,
+    )
+
+
+def embedding(**kwargs):
+    """fastembed's TextEmbedding of MODEL, from the pinned files."""
+    from fastembed import TextEmbedding
+
+    path = model_dir()
+    return TextEmbedding(
+        MODEL, cache_dir=str(CACHE), specific_model_path=path, **kwargs
+    )
+
+
 def load_model(ort, case: dict, gpu: bool):
     """fastembed's TextEmbedding, as production loads it; for a model variant or extra
     session options, with a session of our own in place of fastembed's (same tokenizer,
     same pre- and post-processing)."""
-    from fastembed import TextEmbedding
     from fastembed.common.preprocessor_utils import load_tokenizer
 
     threads, name = case["threads"], case.get("model", "prod")
@@ -209,10 +256,8 @@ def load_model(ort, case: dict, gpu: bool):
         cuda = {"gpu_mem_limit": case["gpu_mem_limit"]}
         providers = [("CUDAExecutionProvider", cuda)]
     if name == "prod" and not case.get("options"):
-        return TextEmbedding(
-            MODEL, cache_dir=str(CACHE), threads=threads, providers=providers
-        )
-    model = TextEmbedding(MODEL, cache_dir=str(CACHE), threads=threads, lazy_load=True)
+        return embedding(threads=threads, providers=providers)
+    model = embedding(threads=threads, lazy_load=True)
     inner = model.model
     path = VARIANTS / f"model-{name}.onnx"
     if name == "prod":
@@ -250,6 +295,12 @@ def windows_of(texts: list[str], sort: bool) -> list[list[int]]:
         for w in out:
             w.sort(key=lambda i: len(texts[i]))
     return out
+
+
+def wait_for(word: str) -> None:
+    """The parent's next line; at the end of input (the parent is gone) the worker ends."""
+    if sys.stdin.readline().strip() != word:
+        raise SystemExit("worker: no more input, the parent is gone")
 
 
 def worker(spec: dict) -> None:
@@ -304,7 +355,7 @@ def worker(spec: dict) -> None:
     warmup = time.monotonic() - t0
 
     print(json.dumps({"ready": True}), flush=True)
-    sys.stdin.readline()
+    wait_for("go")
     # the vectors are kept only for a check, not in a timed case (they would take memory)
     vectors = [None] * n if spec.get("save") else None
 
@@ -340,18 +391,16 @@ def worker(spec: dict) -> None:
         "providers": providers,
     }
     print(json.dumps(done), flush=True)
-    sys.stdin.readline()  # "mem": while all workers are still there
+    wait_for("mem")  # while all workers are still there
     print(json.dumps(smaps()), flush=True)
 
 
 def tokenizer_rate(path: str) -> None:
     """Texts/s of the model's tokenizer alone, in batches of 32 and 1024 (RAYON_NUM_THREADS
     set by the caller)."""
-    from fastembed import TextEmbedding
     from fastembed.common.preprocessor_utils import load_tokenizer
 
-    model = TextEmbedding(MODEL, cache_dir=str(CACHE), lazy_load=True)
-    tok, _ = load_tokenizer(Path(model.model._model_dir))
+    tok, _ = load_tokenizer(Path(model_dir()))
     with open(path) as f:
         texts = [json.loads(line)["text"] for line in f][:2000]
     out = {}
@@ -505,6 +554,7 @@ class Context:
         self.force = force
         self.gpu_mem_mib = 0  # the GPU's total memory (GPU part)
         self.tokens: dict = {}  # the sets' token lengths (cpu_reference)
+        self.done: list[dict] = []  # the cases measured so far
         self.cases = out / "cases.jsonl"
         (out / "logs").mkdir(exist_ok=True)
         self.count = 0
@@ -534,6 +584,20 @@ def runtime() -> str:
     return f"{name} {ort.__version__}"
 
 
+@contextlib.contextmanager
+def reaped(procs: list, sampler: Sampler, deadline: threading.Timer):
+    """On the way out, whatever happened (a failure, Ctrl-C, SIGTERM): no worker outlives
+    its case."""
+    try:
+        yield
+    finally:
+        deadline.cancel()
+        sampler.stop()
+        for proc in procs:
+            proc.kill()
+            proc.wait()
+
+
 def run_once(ctx: Context, case: dict, n: int, save: str | None = None) -> dict:
     """Start the case's workers, time the embedding of n texts over all of them, return
     the measurement."""
@@ -556,8 +620,17 @@ def run_once(ctx: Context, case: dict, n: int, save: str | None = None) -> dict:
     if bind:
         result["membind"] = ctx.membind
     prefix = ["numactl", f"--membind={ctx.membind}"] if bind else []
-    procs = []
-    with open(logf, "w") as err:
+    procs: list[subprocess.Popen] = []
+    sampler = Sampler(gpu)
+    late = threading.Event()
+
+    def overdue() -> None:
+        late.set()
+        for proc in procs:
+            proc.kill()
+
+    deadline = threading.Timer(CASE_DEADLINE_S, overdue)
+    with open(logf, "w") as err, reaped(procs, sampler, deadline):
         for k in range(p):
             spec = dict(
                 case,
@@ -580,7 +653,7 @@ def run_once(ctx: Context, case: dict, n: int, save: str | None = None) -> dict:
                     text=True,
                 )
             )
-        sampler = Sampler(gpu)
+        deadline.start()
         perf = None
 
         def ask(proc, line: str, expect: str) -> dict:
@@ -613,7 +686,8 @@ def run_once(ctx: Context, case: dict, n: int, save: str | None = None) -> dict:
                 perf.send_signal(signal.SIGINT)
                 perf.wait()
             mem = [ask(proc, "mem\n", '{"rss"') for proc in procs]
-        except RuntimeError:
+        # BrokenPipeError: writing to a worker that has died
+        except (RuntimeError, BrokenPipeError):
             time.sleep(0.5)  # let the worker that failed finish its message
             # SIGKILL before ours: on Linux usually the kernel's out-of-memory killer
             killed = any(proc.poll() == -signal.SIGKILL for proc in procs)
@@ -628,12 +702,16 @@ def run_once(ctx: Context, case: dict, n: int, save: str | None = None) -> dict:
             text = logf.read_text()
             lines = [x for x in text.strip().splitlines() if x.strip()]
             mine = [x for x in lines if x.startswith("worker error:")]
-            if killed:
+            if late.is_set():
+                mine = [
+                    f"deadline: not done after {CASE_DEADLINE_S} s, workers stopped"
+                ]
+            elif killed:
                 mine = ["a worker was killed (SIGKILL), probably for lack of memory"]
             last = (mine or lines or ["a worker ended without a message"])[-1]
             result["error"] = last[:600]
             oom = r"out of memory|Failed to allocate|bad_alloc|SIGKILL"
-            result["oom"] = bool(
+            result["oom"] = not late.is_set() and bool(
                 re.search(oom, "\n".join([text, *mine]), re.IGNORECASE)
             )
             return result
@@ -677,25 +755,41 @@ def variant(case: dict) -> str:
 
 def describe(case: dict) -> str:
     """One line for the log and the table: shape, batch, order, variant."""
-    if case["device"] == "cpu":
+    if case.get("callers", 1) > 1:  # threads calling one session
+        shape = f"1 process, {case['callers']} callers"
+    elif case["device"] == "cpu":
         shape = f"{case['processes']}x{case['threads']}"
         if case.get("pinned"):
             shape += " pinned"
     else:
         shape = f"{case['processes']} workers"
-    if case.get("callers", 1) > 1:
-        shape += f", {case['callers']} threads on 1 session"
     batch = (
         f"budget {case['budget']}" if case.get("budget") else f"batch {case['batch']}"
     )
     order = "sorted" if case["sorted"] else "given order"
     extra = "" if case.get("membind", True) else ", memory not bound"
+    if case.get("repeat"):
+        extra += f", repeat {case['repeat']}"
     return f"{case['device']} {case['set']:5} {variant(case):14} {shape:>13} {batch:>12} {order}{extra}"
 
 
+def memory_need_mb(ctx: Context, case: dict) -> float | None:
+    """The case's host memory, estimated from the nearest case measured before (same
+    device, set and model file): its peak per process times the processes, scaled up with
+    the batch and the callers; None before the first."""
+    key = (case["device"], case["set"], case.get("model"))
+    like = [r for r in ok(ctx.done) if (r["device"], r["set"], r.get("model")) == key]
+    if not like:
+        return None
+    near = min(like, key=lambda r: abs(math.log(r["batch"] / case["batch"])))
+    grow = max(1, case["batch"] / near["batch"])
+    grow *= max(1, case.get("callers", 1) / near.get("callers", 1))
+    return case["processes"] * near["rss_max_mb"] * grow
+
+
 def measure(ctx: Context, case: dict, rate_estimate: float | None) -> dict:
-    """One case, with enough texts for about ctx's seconds; again with more texts while
-    it was too short."""
+    """One case, with enough texts for ctx's seconds; again with more texts while it was
+    too short. Skipped where it would take more than MEM_SHARE of the available memory."""
     seconds = ctx.cfg["seconds"]
     p = case["processes"]
     each = 2 * case["batch"] if not case.get("budget") else case["budget"] // 8
@@ -705,20 +799,31 @@ def measure(ctx: Context, case: dict, rate_estimate: float | None) -> dict:
         return p * SORT_WINDOW * max(1, math.ceil(want / (p * SORT_WINDOW)))
 
     n_min = texts(p * each)
-    n = max(n_min, texts(rate_estimate * seconds)) if rate_estimate else n_min
+    # 20 % more than the estimate: a case counts only after its full time
+    n = max(n_min, texts(rate_estimate * seconds * 1.2)) if rate_estimate else n_min
+    need, free = memory_need_mb(ctx, case), mem_available_mb()
     for attempt in range(1, 4):
+        if need and need > MEM_SHARE * free:
+            r = dict(case, runtime=ctx.runtime, venv=ctx.label, texts=n, skipped=True)
+            r["error"] = (
+                f"skipped: about {need / 1024:.1f} GB of memory, more than "
+                f"{MEM_SHARE:.0%} of the {free / 1024:.1f} GB available"
+            )
+            break
         if case["device"] == "gpu" and not ctx.force and (others := gpu_others()):
             raise GpuBusy("; ".join(others))
         r = run_once(ctx, case, n)
         r["attempt"] = attempt
-        if "error" in r or r["wall_s"] >= seconds / 2 or attempt == 3:
+        if "error" in r or r["wall_s"] >= seconds or attempt == 3:
             break
-        n = max(n_min, texts(r["texts_per_s"] * seconds * 1.1))
+        n = max(n_min, texts(r["texts_per_s"] * seconds * 1.2))
+    ctx.done.append(r)
     with open(ctx.cases, "a") as f:
         f.write(json.dumps(r) + "\n")
     if "error" in r:
-        what = "OUT OF MEMORY" if r["oom"] else "FAILED"
-        log(f"  {describe(case)}: {what}: {r['error'][:300]}")
+        what = "OUT OF MEMORY" if r.get("oom") else "FAILED"
+        what = "SKIPPED" if r.get("skipped") else what
+        log(f"  {describe(case)}: {what}: {r['error'].removeprefix('skipped: ')[:300]}")
     else:
         g = r.get("gpu")
         extra = ""
@@ -836,22 +941,13 @@ def cpu_sweep(ctx: Context, set_name: str) -> list[dict]:
         for b in ctx.cfg["short_sub_batches"]:
             for case in targets:
                 run(dict(case, batch=b), best["texts_per_s"])
-    # D: other sub-batches at the best case, where they fit in memory
+    # D: other sub-batches at the best case (where they fit in memory: measure)
     best = fastest(results)
     same = case_of(best) | {"batch": 0}
     tried = {r["batch"] for r in results if case_of(r) | {"batch": 0} == same}
     for b in ctx.cfg["cpu_sub_batches"]:
-        if b in tried:
-            continue
-        # the peak grows with the sub-batch, about linearly or less
-        need = best["processes"] * best["rss_max_mb"] * b / best["batch"]
-        free = mem_available_mb()
-        if need > 0.7 * free:
-            log(
-                f"  sub-batch {b} skipped: about {need / 1024:.0f} GB, {free / 1024:.0f} GB free"
-            )
-            continue
-        run(dict(case_of(best), batch=b), best["texts_per_s"])
+        if b not in tried:
+            run(dict(case_of(best), batch=b), best["texts_per_s"])
     # E: the best in the given order (what sorting gains); without the memory binding
     best = fastest(results)
     run(dict(case_of(best), sorted=False), best["texts_per_s"])
@@ -926,12 +1022,23 @@ def gpu_sweep(ctx: Context, set_name: str) -> list[dict]:
     given order."""
     log(f"GPU, {set_name} texts ({ctx.runtime})")
     results: list[dict] = []
-    best_rate = None
     prev_best = 0.0
     longest = ctx.tokens[set_name]["max"]
 
     def fits(b: int) -> bool:
         return b * longest <= MAX_BATCH_TOKENS
+
+    def run(case: dict) -> dict:
+        # the texts for the case's time from the rate of its nearest neighbour: the same
+        # workers (else any), the nearest batch
+        done = plain(results)
+        same = [r for r in done if r["processes"] == case["processes"]] or done
+        near = min(
+            same, key=lambda r: abs(math.log(r["batch"] / case["batch"])), default=None
+        )
+        r = measure(ctx, case, near and near["texts_per_s"])
+        results.append(r)
+        return r
 
     if not all(fits(b) for b in ctx.cfg["gpu_batches"]):
         log(
@@ -943,13 +1050,11 @@ def gpu_sweep(ctx: Context, set_name: str) -> list[dict]:
         limit = None  # the smallest batch that failed
         last = 0.0
         for b in filter(fits, ctx.cfg["gpu_batches"]):
-            r = measure(ctx, gpu_case(set_name, w, b), best_rate)
-            results.append(r)
+            r = run(gpu_case(set_name, w, b))
             if "error" in r:
                 limit = b
                 break
             tried[b] = r
-            best_rate = max(best_rate or 0, r["texts_per_s"])
             if r["texts_per_s"] <= last * GAIN:
                 break
             last = r["texts_per_s"]
@@ -963,11 +1068,9 @@ def gpu_sweep(ctx: Context, set_name: str) -> list[dict]:
             for b in (top // 2, top * 2):
                 fresh = b >= 32 and b not in tried and fits(b)
                 if fresh and (limit is None or b < limit):
-                    r = measure(ctx, gpu_case(set_name, w, b), best_rate)
-                    results.append(r)
+                    r = run(gpu_case(set_name, w, b))
                     if "error" not in r:
                         tried[b] = r
-                        best_rate = max(best_rate, r["texts_per_s"])
         w_best = max(r["texts_per_s"] for r in tried.values())
         if w_best <= prev_best * GAIN:
             break
@@ -975,16 +1078,15 @@ def gpu_sweep(ctx: Context, set_name: str) -> list[dict]:
     if not ok(results):
         return results
     best = fastest(results)
-    w, b, rate = best["processes"], best["batch"], best["texts_per_s"]
+    w, b = best["processes"], best["batch"]
     for budget in ctx.cfg["gpu_budgets"]:
-        results.append(measure(ctx, gpu_case(set_name, w, b, budget=budget), rate))
+        run(gpu_case(set_name, w, b, budget=budget))
     for callers in ctx.cfg["gpu_callers"]:
-        results.append(measure(ctx, gpu_case(set_name, 1, b, callers=callers), rate))
+        run(gpu_case(set_name, 1, b, callers=callers))
     for f in ctx.cfg["gpu_fp32_factors"]:
         if fits(int(b * f)):
-            case = gpu_case(set_name, w, max(32, int(b * f)), model="fp32")
-            results.append(measure(ctx, case, rate))
-    results.append(measure(ctx, dict(case_of(best), sorted=False), rate))
+            run(gpu_case(set_name, w, max(32, int(b * f)), model="fp32"))
+    run(dict(case_of(best), sorted=False))
     return results
 
 
@@ -1052,10 +1154,7 @@ def gpu_session_hint(error: str) -> str:
 
 def mps_state() -> str:
     """Whether NVIDIA's MPS daemon runs (started by the user; this script does not)."""
-    p = subprocess.run(
-        ["pgrep", "-l", "nvidia-cuda-mps"], check=False, capture_output=True, text=True
-    )
-    return p.stdout.strip() or "not running"
+    return run(["pgrep", "-l", "nvidia-cuda-mps"]) or "not running"
 
 
 # ---------------------------------------------------------------- reference, checks, facts
@@ -1071,14 +1170,13 @@ def cpu_reference(ctx: Context) -> dict:
     the check texts (as production embeds them: sorted in windows, sub-batch 32), with
     this venv's runtime."""
     import numpy as np
-    from fastembed import TextEmbedding
 
     # the first load also downloads the model, before workers start in parallel
     t0 = time.monotonic()
-    TextEmbedding(MODEL, cache_dir=str(CACHE), threads=cores(), cuda=False)
+    embedding(threads=cores(), cuda=False)
     load_first = time.monotonic() - t0
     t0 = time.monotonic()
-    model = TextEmbedding(MODEL, cache_dir=str(CACHE), threads=cores(), cuda=False)
+    model = embedding(threads=cores(), cuda=False)
     load = time.monotonic() - t0
     texts = [r["text"] for r in load_jsonl(ctx.out / "texts-mixed.jsonl")[:CHECK_TEXTS]]
     vecs = [None] * len(texts)
@@ -1118,17 +1216,29 @@ def cosines(a, b) -> list[float]:
     )
 
 
-def check_vectors(ctx: Context, case: dict) -> dict:
-    """The case's model and options on the check texts, compared with production's CPU
-    vectors (venv-cpu's, else this venv's): the minimum cosine; recorded in checks.json."""
+def settings(case: dict) -> str:
+    """A GPU case's batch settings, as a check at them is named ('' for production's)."""
+    parts = []
+    if case.get("budget"):
+        parts.append(f"budget {case['budget']}")
+    elif case["batch"] != PRODUCTION_SUB_BATCH:
+        parts.append(f"batch {case['batch']}")
+    if case.get("callers", 1) > 1:
+        parts.append(f"{case['callers']} callers")
+    return f", at {', '.join(parts)}" if parts else ""
+
+
+def check_vectors(ctx: Context, case: dict, at_settings: bool = False) -> dict:
+    """The case's model and options (at_settings: and its batch, budget and callers) on
+    the check texts, compared with production's CPU vectors (venv-cpu's, else this
+    venv's): the minimum cosine; recorded in checks.json."""
     import numpy as np
 
     gpu = case["device"] == "gpu"
     name = f"{case['device']} {variant(case)} ({ctx.runtime})"
-    save = str(
-        ctx.out
-        / f"vectors-{ctx.label}-{case['device']}-{variant(case).replace(' ', '-')}.npy"
-    )
+    name += settings(case) if at_settings else ""
+    file = re.sub(r"[^\w.-]+", "-", name.split(" (")[0] + settings(case))
+    save = str(ctx.out / f"vectors-{ctx.label}-{file}.npy")
     probe = case_of(case) | {
         "set": "mixed",
         "processes": 1,
@@ -1136,8 +1246,9 @@ def check_vectors(ctx: Context, case: dict) -> dict:
         "sorted": True,
         "pinned": False,
     }
-    probe.pop("callers", None)
-    probe.pop("budget", None)
+    if not at_settings:
+        probe.pop("callers", None)
+        probe.pop("budget", None)
     r = run_once(ctx, probe, CHECK_TEXTS, save=save)
     if "error" in r:
         got = {"error": r["error"], "log": r["log"]}
@@ -1232,6 +1343,7 @@ def facts(ctx: Context) -> dict:
         ),
         "perf": ctx.perf_problem or f"perf stat -e {PERF_EVENTS}, per CPU case",
         "hwmon_power_sensors": list(hwmon_sensors()),
+        "model": {"repo": MODEL_REPO, "revision": MODEL_REVISION, "dir": model_dir()},
         "model_files": {
             p.name: p.stat().st_size for p in sorted(VARIANTS.glob("model-*"))
         },
@@ -1274,6 +1386,7 @@ def part_cpu(mode: str, out: Path, label: str) -> None:
         if ("model" in r or "options" in r) and variant(r) not in done:
             done.add(variant(r))
             check_vectors(ctx, r)
+    repeat_best(ctx, results)
 
 
 def part_gpu(mode: str, out: Path, label: str, force: bool) -> int:
@@ -1330,9 +1443,33 @@ def gpu_cases(ctx: Context) -> int:
             log(f"CPU, {s} texts, the best case again ({ctx.runtime})")
             best = fastest(cpu)
             measure(ctx, case_of(best), best["texts_per_s"])
+    results = []
     for s in SETS:
-        gpu_sweep(ctx, s)
+        results += gpu_sweep(ctx, s)
+    # the vectors of each set's best GPU case at its own batch, budget and callers
+    for s in SETS:
+        mine = [r for r in ok(results) if r["set"] == s]
+        if mine and settings(fastest(mine)):
+            log(f"GPU, {s} texts, the vectors of the best case at its settings")
+            check_vectors(ctx, fastest(mine), at_settings=True)
+    repeat_best(ctx, results)
     return 0
+
+
+def repeat_best(ctx: Context, results: list[dict]) -> None:
+    """The best case of each set (not int8, vectors passed) again, for REPEATS runs in
+    all: their spread is in the headline."""
+    checks = read_checks(ctx.out)
+    for s in SETS:
+        mine = [r for r in ok(results) if r["set"] == s and r.get("model") != "int8"]
+        mine = [r for r in mine if vectors_ok(checks, r)]
+        if mine:
+            best = fastest(mine)
+            log(
+                f"{best['device'].upper()}, {s} texts, the best case again (the spread)"
+            )
+            for k in range(1, REPEATS):
+                measure(ctx, case_of(best) | {"repeat": k}, best["texts_per_s"])
 
 
 def write_json(path: Path, data) -> None:
@@ -1365,8 +1502,16 @@ def perf_cols(r: dict) -> tuple[str, str]:
     return ipc, (f"{miss / r['texts'] / 1e3:.0f}k" if miss else "")
 
 
+def read_checks(out: Path) -> dict:
+    path = out / "checks.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
 def vectors_of(checks: dict, r: dict) -> dict | None:
-    return checks.get("vectors", {}).get(f"{r['device']} {variant(r)} ({r['runtime']})")
+    """The check of the case's variant at its own settings, else at production's."""
+    name = f"{r['device']} {variant(r)} ({r['runtime']})"
+    got = checks.get("vectors", {})
+    return got.get(name + settings(r)) or got.get(name)
 
 
 def vectors_ok(checks: dict, r: dict) -> bool:
@@ -1382,8 +1527,26 @@ def check_of(checks: dict, r: dict) -> str:
     got = vectors_of(checks, r)
     if not got or "min" not in got:
         return ""
+    name = f"{r['device']} {variant(r)} ({r['runtime']}){settings(r)}"
+    where = " at these settings" if name in checks["vectors"] and settings(r) else ""
+    verdict = "" if got["passed"] else " (BELOW)"
+    return f"; vectors{where}: min cosine {got['min']:.6f}{verdict}"
+
+
+def spread(cases: list[dict], b: dict) -> str:
+    """The texts/s of every run of b's case (the repeats), if more than one."""
+    runs = [
+        c["texts_per_s"]
+        for c in ok(cases)
+        if case_of(c) == case_of(b) and c["venv"] == b["venv"]
+    ]
+    if len(runs) < 2:
+        return ""
+    lo, hi = min(runs), max(runs)
+    mid = statistics.median(runs)
     return (
-        f"; vectors: min cosine {got['min']:.6f}{'' if got['passed'] else ' (BELOW)'}"
+        f"; {len(runs)} runs: {lo:.1f} to {hi:.1f}, median {mid:.1f}, "
+        f"spread {100 * (hi - lo) / mid:.1f} %"
     )
 
 
@@ -1417,11 +1580,13 @@ def headline_lines(
         groups = sorted({(c["device"], c["venv"]) for c in cases})
         for device, venv in groups:
             for kind, wanted in kinds.items():
+                # the first run of each case (a best one from its repeats is biased)
                 mine = [
                     c
                     for c in ok(cases)
                     if (c["set"], c["device"], c["venv"]) == (s, device, venv)
                     and wanted(c)
+                    and not c.get("repeat")
                 ]
                 if not mine or fastest(mine) in row.values():
                     continue
@@ -1436,6 +1601,7 @@ def headline_lines(
                     f"{describe(b).split(' ', 2)[2]}; CPU {b['cpu_ms_per_text']} ms/text"
                     + (f"; {e}" if e else "")
                     + check_of(checks, b)
+                    + spread(cases, b)
                     + ("" if kind in counted else f"; apart:{kind}")
                 )
         cpu, gpu = best_of["cpu"], best_of["gpu"]
@@ -1456,7 +1622,10 @@ def headline_lines(
 def case_line(c: dict) -> str:
     head = f"{c['runtime'][:25]:25} {describe(c):78} {c['texts']:>7}"
     if "error" in c:
-        return f"{head} {'OUT OF MEMORY' if c.get('oom') else 'FAILED: ' + c['error'][:80]}"
+        what = "FAILED: " + c["error"][:80]
+        if c.get("skipped"):
+            what = "SKIPPED: " + c["error"].removeprefix("skipped: ")[:80]
+        return f"{head} {'OUT OF MEMORY' if c.get('oom') else what}"
     g = c.get("gpu", {})
     m = c.get("mem_mb", {})
     ipc, miss = perf_cols(c)
@@ -1475,9 +1644,7 @@ def report(out: Path) -> None:
         p.stem.removeprefix("facts-"): json.loads(p.read_text())
         for p in sorted(out.glob("facts-*.json"))
     }
-    checks = {}
-    if (out / "checks.json").exists():
-        checks = json.loads((out / "checks.json").read_text())
+    checks = read_checks(out)
     first = next(iter(facts_.values()), {})
     title = (
         f"Embedding benchmark, {MODEL}, {out.name}; {first.get('machine')}, "
@@ -1535,10 +1702,11 @@ def report(out: Path) -> None:
         ),
     ]
     text = "\n".join(lines)
-    print(text)
+    # the files first: after Ctrl-C the terminal (tee) may be gone
     (out / "table.txt").write_text(text + "\n")
     summary = {"headline": headline, "checks": checks, "facts": facts_, "cases": cases}
     write_json(out / "summary.json", summary)
+    print(text)
     print(f"\nWritten: {out / 'summary.json'} (send this one) and {out / 'table.txt'}")
 
 
@@ -1548,10 +1716,9 @@ def gpu_check_command(force: bool) -> int:
         print(f"GPU check failed: {problem}")
         return 3
     import onnxruntime as ort
-    from fastembed import TextEmbedding
 
     ort.preload_dlls()
-    model = TextEmbedding(MODEL, cache_dir=str(CACHE), threads=1, cuda=True)
+    model = embedding(threads=1, cuda=True)
     providers = model.model.model.get_providers()
     if providers[0] != "CUDAExecutionProvider":
         print(
@@ -1598,8 +1765,17 @@ def main() -> int:
     return 2
 
 
+def terminated(signum, frame) -> None:
+    # SIGTERM (kill, timeout) as an exception: the workers are stopped on the way out
+    raise SystemExit(128 + signum)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, terminated)
     try:
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
+    except BrokenPipeError:  # the terminal or tee gone; the files are written
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(141)
