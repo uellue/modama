@@ -1,0 +1,22 @@
+# The embedding service on grace (README.md): the benchmark's GPU packages
+# (../perf/grace-embedding/requirements-gpu.in, which says why each is pinned so) plus
+# Starlette and uvicorn for the HTTP side. For grace only, not the stack's images.
+# The lock file requirements-gpu.txt (with hashes, for aarch64) is made from this one:
+#   uv pip compile --no-build --generate-hashes --python-platform aarch64-manylinux_2_34 \
+#     --python-version 3.12 requirements-gpu.in -o requirements-gpu.txt
+nvidia-cuda-runtime==13.0.*
+nvidia-cuda-nvrtc==13.0.*
+nvidia-nvjitlink==13.0.*
+nvidia-cublas==13.0.*
+nvidia-cufft==12.0.*
+nvidia-curand==10.4.0.*
+fastembed-gpu==0.8.0
+onnxruntime-gpu[cuda,cudnn]==1.31.1
+tokenizers==0.22.2
+numpy==2.4.4
+huggingface-hub==1.8.0
+# new with the service (change embedding-service-grace, proposal "Impact"; looked up on PyPI
+# 2026-11-13, both BSD-3-Clause): starlette 1.10.0 of 2026-10-24, uvicorn 0.54.0 of
+# 2026-09-25 (without the [standard] extras: h11, no uvloop or httptools)
+starlette==1.10.0
+uvicorn==0.54.0
