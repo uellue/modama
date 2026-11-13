@@ -33,7 +33,8 @@
           ],
           "lines": 22
         },
-        "original_metadata": {}
+        "original_metadata": {},
+        "text": "@article{example2024,\n\tauthor = {Example, A. and Example, B.},\n\ttitle = {A made-up result of 2024},\n\tjournal = {Journal of Examples},\n\tyear = {2024}\n}\n\n\n@article{example2025,\n\tauthor = {Example, A. and Example, B.},\n\ttitle = {A made-up result of 2025},\n\tjournal = {Journal of Examples},\n\tyear = {2025}\n}\n\n\n@article{example2026,\n\tauthor = {Example, A. and Example, B.},\n\ttitle = {A made-up result of 2026},\n\tjournal = {Journal of Examples},\n\tyear = {2026}\n}\n"
       }
     }
   },

@@ -78,7 +78,8 @@
           "encoding": "ascii",
           "lines": 2
         },
-        "original_metadata": {}
+        "original_metadata": {},
+        "text": "Sample 3, room temperature\nholder: double tilt\n"
       }
     },
     "/notes_utf16.txt": {
@@ -92,7 +93,8 @@
           "encoding": "UTF-16",
           "lines": 2
         },
-        "original_metadata": {}
+        "original_metadata": {},
+        "text": "Probe 3, Raumtemperatur\n\u00c4nderung: Blende 50 \u00b5m, 20 \u00b0C\n"
       }
     },
     "/notes_utf8.txt": {
@@ -106,7 +108,8 @@
           "encoding": "utf-8",
           "lines": 2
         },
-        "original_metadata": {}
+        "original_metadata": {},
+        "text": "Probe 3, Raumtemperatur\n\u00c4nderung: Blende 50 \u00b5m, 20 \u00b0C\n"
       }
     },
     "/notes_utf8_bom.txt": {
@@ -120,7 +123,8 @@
           "encoding": "UTF-8-SIG",
           "lines": 2
         },
-        "original_metadata": {}
+        "original_metadata": {},
+        "text": "Probe 3, Raumtemperatur\n\u00c4nderung: Blende 50 \u00b5m, 20 \u00b0C\n"
       }
     },
     "/notes_windows.txt": {
@@ -134,7 +138,8 @@
           "encoding": "Windows-1252",
           "lines": 2
         },
-        "original_metadata": {}
+        "original_metadata": {},
+        "text": "Probe 3, Raumtemperatur\n\u00c4nderung: Blende 50 \u00b5m, 20 \u00b0C\n"
       }
     }
   },

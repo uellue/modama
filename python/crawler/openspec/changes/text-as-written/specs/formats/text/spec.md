@@ -38,7 +38,7 @@ A text of more than 4,096 characters SHALL be shown as: the complete lines from 
 - **THEN** its text is the line's first 2,000 characters, the marker line and the line's last 2,000 characters
 
 ### Requirement: The tail of a file larger than the head
-When a file is larger than the head the extractor reads (requirement "The line count up to a bound"), the extractor SHALL read its last 16 KiB (`TAIL`, 16,384 bytes) too, without readahead, and drop the first, partial line of those bytes; never more.
+When a file typed by its name is larger than the head the extractor reads (requirement "The line count up to a bound"), the extractor SHALL read its last 16 KiB (`TAIL`, 16,384 bytes) too, without readahead, and drop the first, partial line of those bytes; never more.
 
 #### Scenario: A log larger than the bound
 - **WHEN** the log `big_log` (1.5 MiB, lines of 52 bytes) is extracted
@@ -58,7 +58,7 @@ Every line of the text for which the shared check `values.credential("", line)` 
 ## MODIFIED Requirements
 
 ### Requirement: The line count up to a bound
-The extractor SHALL read at most the first 1 MiB of a file (`HEAD`, 1,048,576 bytes), and of a file typed by its content at most the first 64 KiB (`SNIFFED_HEAD`, 65,536 bytes), without readahead, the file's size telling whether that is all of it, and the last 16 KiB of a larger file for the text's tail only; it SHALL count the line feeds in the head it decoded, as `lines` (plus a last line without one) for a whole file, as `lines at least` for a longer one, in `mapped_metadata` and the summary line.
+The extractor SHALL read at most the first 1 MiB of a file (`HEAD`, 1,048,576 bytes), and of a file typed by its content at most the first 64 KiB (`SNIFFED_HEAD`, 65,536 bytes), without readahead, the file's size telling whether that is all of it, and the last 16 KiB of a larger file typed by its name for the text's tail only; it SHALL count the line feeds in the head it decoded, as `lines` (plus a last line without one) for a whole file, as `lines at least` for a longer one, in `mapped_metadata` and the summary line.
 
 #### Scenario: A whole file
 - **WHEN** a file holds `a\nb\nc` (no line feed at the end)

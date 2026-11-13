@@ -16,6 +16,7 @@ from modama_crawler import mime
 from modama_crawler.formats import Collection, Dataset, Directory, Extracted, Format
 from modama_crawler.formats.values import credential
 
+from .. import written
 from . import head, markup
 
 
@@ -59,6 +60,9 @@ class Text(Format):
     priority = 20
     # The entries of the summary line, from original_metadata, then mapped_metadata
     HEADLINE: tuple[str, ...] = ()
+    # The file's text in values["text"], the record's second description (change
+    # text-as-written); not HTML, whose text is mostly markup
+    SHOWS_TEXT = True
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         for e in d.of_type(self.type):
@@ -90,7 +94,22 @@ class Text(Format):
         secrets = [k for k, v in original.items() if credential(k, v)]
         if secrets:
             original = {k: v for k, v in original.items() if k not in secrets}
-            mapped["credentials_left_out"] = len(secrets)
+        values = {"original_metadata": original, "mapped_metadata": mapped}
+        lines_left_out = 0
+        if self.SHOWS_TEXT:
+            # The file's text as written, a front matter that held a credential
+            # left out as a whole (change text-as-written, design D6)
+            # No tail of a file typed by its content: many, rarely documents (D2)
+            shown = written.of_head(
+                found,
+                root + dataset.anchor,
+                front_matter=bool(secrets),
+                tail=SNIFFED not in dataset.basis,
+            )
+            values["text"] = shown.text
+            lines_left_out = shown.credentials
+        if secrets or lines_left_out:
+            mapped["credentials_left_out"] = len(secrets) + lines_left_out
         summary = [
             p
             for name in self.HEADLINE
@@ -99,9 +118,7 @@ class Text(Format):
         summary.append(found.encoding)
         summary += [f"{k} {v}" for k, v in head.lines(found).items()]
         return Extracted(
-            summary=list(dict.fromkeys(summary)),
-            subjects=[],
-            values={"original_metadata": original, "mapped_metadata": mapped},
+            summary=list(dict.fromkeys(summary)), subjects=[], values=values
         )
 
 
@@ -137,6 +154,7 @@ class Html(Text):
     type = "text/html"
     reacts_to = frozenset({type})
     HEADLINE = ("title", "meta.author", "meta.generator")
+    SHOWS_TEXT = False
 
     def decode(self, found):
         """As the head's `<meta charset>` declares, where the bytes are not UTF-8 (the

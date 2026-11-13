@@ -424,6 +424,50 @@ def test_a_stored_extraction_gives_the_same_lines_whatever_the_values(conn):
     etree.fromstring(list_records(BASE_URL, [("oai:x:1", datetime.now(UTC), md)]))
 
 
+# "The file's text as the second description" (change text-as-written)
+
+
+def with_text(text, original_metadata=None) -> Dataset:
+    dataset = tagged(original_metadata)
+    values = dict(dataset.extraction.extracted.values, text=text)
+    extracted = Extracted(["300kV"], [], values)
+    return replace(dataset, extraction=replace(dataset.extraction, extracted=extracted))
+
+
+def test_a_text_in_place_of_the_tag_lines():
+    dataset = with_text('{"a": 1, "b": "x"}', {"a": 1, "b": "x"})
+    summary, text = descriptions(dataset)
+    assert summary.startswith("300kV; ")
+    assert text == '{"a": 1, "b": "x"}'
+
+
+def test_a_text_over_several_lines():
+    text = "run 1: tilt series, 1 degree steps\n1-10: focus series, 2 nm steps"
+    assert descriptions(with_text(text))[1] == text
+
+
+@pytest.mark.parametrize("text", [None, ""])
+def test_no_text_the_tag_lines_as_before(text):
+    dataset = tagged({"a": 1}) if text is None else with_text(text, {"a": 1})
+    assert descriptions(dataset)[1] == "a: 1"
+
+
+def test_the_same_record_from_a_stored_extraction_with_a_text(conn):
+    text = "sample: Au on C\r\nµm °C 日本\n" + "x" * 5000
+    extracted = Extracted(
+        ["300kV"], [], _storable({"text": text, "original_metadata": {"a": 1}})
+    )
+    fresh = replace(
+        tagged(None), stamp="s", extraction=Extraction("em/dm", "1", "", extracted)
+    )
+    store(conn, Result([fresh]), {})
+    again = replace(
+        fresh, extraction=Stored(conn).extractions([fresh.anchor])[fresh.anchor]
+    )
+    assert build(again, {}) == build(fresh, {})
+    assert build(again, {})[1]["description"][1] == text[:MAX_STRING]
+
+
 CAPTURE52 = Path(modama_formats_em.__file__).parent / "k2is/tests/fixtures/capture52"
 FIRST_TAG = "Acquisition.Device.Active Size (pixels): [1920, 1792]"
 
