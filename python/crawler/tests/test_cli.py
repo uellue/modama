@@ -83,15 +83,20 @@ def test_verbose_diagnostics_travel_with_the_records(store):
     # The properties users rely on: a comment per recognised dataset naming the
     # path and the format, directly before its record; a WARNING: comment before
     # the record it concerns; the counts at the end. Not the exact prose.
-    note = text.index("<!-- /store/a.zarr: application/x-zarr by zarr/zarr")
-    assert note < text.index(oai_identifier("/store/a.zarr"))
+    # Whichever installed Zarr format collapses the store (zarr/zarr, or one of an
+    # installed package before it, such as common/zarr)
+    note = re.search(r"<!-- /store/a\.zarr: application/x-zarr by \S+/zarr ", text)
+    assert note and note.start() < text.index(oai_identifier("/store/a.zarr"))
     warning = text.index("<!-- /broken/broken.zarr: WARNING: ")
     assert warning < text.index(oai_identifier("/broken/broken.zarr"))
     # A single file by its MIME type gets no comment of its own
     assert "<!-- /store/frames" not in text
-    # (the identity: the em collection, which has extractors, is installed)
+    # (the identity: the em collection, which has extractors, is installed); the
+    # count is that of the warning comments: a format with an extractor of the
+    # broken store adds its failure to the store's unparsable zarr.json
+    warnings = text.count(": WARNING: ")
     assert re.search(
-        r"<!-- 4 records \(1 single files by type\), 1 warnings, 0 skipped"
+        rf"<!-- 4 records \(1 single files by type\), {warnings} warnings, 0 skipped"
         r"; extraction identity [0-9a-f]{12} -->",
         text,
     )
@@ -165,15 +170,23 @@ def test_per_path_ignores_from_the_config(store):
         '[formats.per-path-ignores]\n"/store/**" = ["zarr/zarr"]\n'
         "[crawl]\nexclude = ['/config/**']\n"
     )
-    run = records("records", "--config", str(config), str(store))
+    # The crawler's collections only: an installed package's Zarr format
+    # (common/zarr) would collapse the store in zarr/zarr's place
+    run = records(
+        "records", "--select", "core,zarr", "--config", str(config), str(store)
+    )
     assert run.returncode == 0, run.stderr
     # Crawled and classified, but the Zarr format never ran on /store
     assert formats_in(run.stdout) == ["application/json", "text/plain"]
 
 
 def test_ignore_overrides_selection(store):
-    with_zarr = records("records", str(store)).stdout
-    without = records("records", "--ignore", "zarr", str(store)).stdout
+    # The crawler's collections only: an installed package's Zarr format
+    # (common/zarr) would collapse the store with zarr ignored
+    with_zarr = records("records", "--select", "core,zarr", str(store)).stdout
+    without = records(
+        "records", "--select", "core,zarr", "--ignore", "zarr", str(store)
+    ).stdout
     assert formats_in(with_zarr) == ["application/x-zarr", "text/plain"]
     assert formats_in(without) == ["application/json", "text/plain"]
     only_core = records("records", "--select", "core", str(store)).stdout
@@ -262,9 +275,12 @@ def test_comma_separated_ids(store):
     venv.mkdir()
     (venv / "pyvenv.cfg").write_text("home = /usr\n")
     (venv / "x.py").write_text("x")
-    commas = records("records", "--ignore", "collapse,zarr", str(store)).stdout
+    # The crawler's collections only: an installed package's Zarr format
+    # (common/zarr) would collapse the store with zarr ignored
+    only = ("--select", "core,collapse,zarr")
+    commas = records("records", *only, "--ignore", "collapse,zarr", str(store)).stdout
     repeated = records(
-        "records", "--ignore", "collapse", "--ignore", "zarr", str(store)
+        "records", *only, "--ignore", "collapse", "--ignore", "zarr", str(store)
     ).stdout
     assert formats_in(commas) == formats_in(repeated)
     assert "text/x-python" in formats_in(commas)  # the venv was not collapsed
@@ -311,19 +327,25 @@ def test_dataset_warnings_are_reported_without_verbose(tmp_path):
     store = tmp_path / "broken.zarr"
     store.mkdir()
     (store / "zarr.json").write_text("{not json")
-    run = records("records", str(tmp_path))
+    # The crawler's collections only: an installed package's Zarr format with an
+    # extractor (common/zarr) would claim the store and add its extraction's failure
+    run = records("records", "--select", "core,zarr", str(tmp_path))
     assert run.returncode == 0, run.stderr
     assert b"WARNING /broken.zarr: zarr.json cannot be parsed" in run.stderr
     assert b"1 records, 1 warnings" in run.stderr
     # On a terminal the warnings and the summary come after the document, where the eye lands
-    merged = shell(f"{sys.executable} -m modama_crawler records {tmp_path} 2>&1").stdout
+    merged = shell(
+        f"{sys.executable} -m modama_crawler records --select core,zarr {tmp_path} 2>&1"
+    ).stdout
     assert (
         merged.index(b"</OAI-PMH>")
         < merged.index(b"WARNING")
         < merged.index(b"1 records, 1 warnings")
     )
     # With --verbose the warning is a comment of its own, before the store's recognition comment
-    verbose = records("records", "--verbose", str(tmp_path)).stdout.decode()
+    verbose = records(
+        "records", "--verbose", "--select", "core,zarr", str(tmp_path)
+    ).stdout.decode()
     assert verbose.index("<!-- /broken.zarr: WARNING: ") < verbose.index(
         "<!-- /broken.zarr: application/x-zarr by zarr/zarr"
     )
