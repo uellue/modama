@@ -554,6 +554,21 @@ def test_a_sample_named_by_a_number(tmp_path):
     assert "SampleName 1234" in result.summary
 
 
+def test_a_credential_in_a_tiffs_tags_is_left_out(tmp_path):
+    path = tmp_path / "grid2_0007.tif"
+    description = "\r".join(
+        generate.hitachi_lines(path.name, **{"Image comment": "password: hunter2"})
+    )
+    generate.hitachi_tif(path, description, tag_65500='"@Fld"ApiKey=k1\r"@Fld"Mode=7')
+    result = of_file(path)
+    found = result.values["original_metadata"]
+    assert "SemImageFile.Image comment" not in found
+    assert "65500.@Fld.ApiKey" not in found
+    assert found["65500.@Fld.Mode"] == "7"
+    assert not [p for p in result.summary if "hunter2" in p or "k1" == p]
+    assert result.values["mapped_metadata"]["credentials_left_out"] == 2
+
+
 def test_a_broken_small_svg_file(tmp_path):
     # Read to its end: a parse error is the file's, and the extraction fails
     path = tmp_path / "broken.svg"

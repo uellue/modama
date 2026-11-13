@@ -34,6 +34,13 @@ When a TIFF's description starts with `[SemImageFile]`, the TIFF extractor SHALL
 - **WHEN** the TIFF has a tag 65501 of 15,156 hexadecimal characters
 - **THEN** `original_metadata` has no `65501` (not suitable for text, "What a TIFF's values leave out")
 
+### Requirement: A credential in a TIFF's tags is left out
+The TIFF extractor SHALL leave out of `original_metadata`, and so of the summary line, every entry for which the shared check `modama_crawler.formats.values.credential(name, value)` is true, and SHALL count them in `mapped_metadata` as `credentials_left_out`.
+
+#### Scenario: A password in Hitachi's header and a key in tag 65500
+- **WHEN** tag 270 has `Image comment=password: hunter2` and tag 65500 is `"@Fld"ApiKey=k1\r"@Fld"Mode=7`
+- **THEN** `original_metadata` has no `SemImageFile.Image comment` and no `65500.@Fld.ApiKey`, keeps `65500.@Fld.Mode` `7`, and `mapped_metadata` has `credentials_left_out` 2
+
 ### Requirement: The summary line of a Hitachi TIFF
 The image area's `HEADLINE` SHALL have, after Zeiss's pixel size and before `ImageWidth`, `SemImageFile.Instrument name`, `Signal name`, `Operation mode`, `Accelerating voltage` (followed by `(unit unknown)`), `Magnification`, `PixelSize` (followed by `(unit unknown)`), `SampleName`, and after Zeiss's date and time `SemImageFile.Date` and `Time`.
 

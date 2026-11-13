@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from unittest import mock
 
-from modama_crawler import records
+from modama_crawler import files, records
 from modama_crawler.formats import Directory
 from modama_crawler.testing import bytes_read
 from modama_crawler.walk import walk
@@ -112,14 +112,14 @@ def test_a_header_without_its_tiff(collection_tests, tmp_path):
 
 def test_the_header_cannot_be_read(collection_tests, tmp_path):
     tree = collection_tests.materialise("pair", tmp_path)
-    real = open
+    real = files.regular  # through which d.read opens a file
 
-    def refused(path, *args, **kwargs):
+    def refused(path):
         if os.path.basename(path) == TXT[1:]:
             raise PermissionError(errno.EACCES, "Permission denied")
-        return real(path, *args, **kwargs)
+        return real(path)
 
-    with mock.patch("modama_crawler.formats.open", refused, create=True):
+    with mock.patch.object(files, "regular", refused):
         result = walk(tree, everything(collection_tests))
     found = {a: d.format for a, d in by_anchor(result).items()}
     assert found == {TIF: "common/tiff", TXT: "common/text"}

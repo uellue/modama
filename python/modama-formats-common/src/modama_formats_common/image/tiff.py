@@ -3,6 +3,7 @@
 import re
 
 from modama_crawler.formats import Extracted
+from modama_crawler.formats.values import credential
 
 from .flat import entries, headline, opened, phrase
 
@@ -211,6 +212,13 @@ def extract(path: str) -> Extracted:
                     mapped["imagej_info_lines_left_out"] = lines[1]
             items.append(("imagej_metadata", imagej))
     original = dict(entries(items, skipped))
+    # The shared credential check (TEMPLATE, checklist): a description, a vendor
+    # block or Hitachi's header holds free text; a record reaches more people
+    # than the file (spec formats/image, "A credential in a TIFF's tags is left out")
+    secrets = [name for name, value in original.items() if credential(name, value)]
+    if secrets:
+        original = {k: v for k, v in original.items() if k not in secrets}
+        mapped["credentials_left_out"] = len(secrets)
     return Extracted(
         summary=headline(original, HEADLINE, say),
         subjects=[],

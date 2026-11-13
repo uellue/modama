@@ -12,6 +12,8 @@ Prerequisites: @weber's answers (2026-11-13: all leans accepted, 313; fixtures g
 - [x] 2.2 Tests for each scenario of "Hitachi's header in a TIFF's description", "Hitachi's tag 65500", "The summary line of a Hitachi TIFF" and "A number written as text in a Hitachi summary phrase"; 7 failed first (the two scenarios of other programs' tags passed: they hold what was there before). Verify: `pytest`, failing for the right reason.
 - [x] 2.3 `image/tiff.py`: the parsing of tag 270 (`sections`) and tag 65500 (`tag_items`), the `HEADLINE` entries, numbers written as text. Verify: the tests of 2.2; `pytest src` of `modama-formats-common`; `expected/hitachi_tif.json` reviewed; the other recorded results unchanged. On the real TIFF head: 40 header entries, 7 of tag 65500 (the glued item read right), no 65501, 12 summary phrases.
 
+- [x] 2.4 The shared credential check on a TIFF's tags (coordinator, after text-as-written's merge: Hitachi's header and tag 65500 carry free text; the image area lacked the check): an entry `values.credential` flags is left out and counted as `credentials_left_out`. Verify: `test_a_credential_in_a_tiffs_tags_is_left_out` failed first, then passed; no recorded result changed; the real TIFF head has none flagged.
+
 ## 3. The pair (spec `formats/hitachi`)
 
 - [x] 3.1 Area `src/modama_formats_em/hitachi/`: `hitachi.xml` declaring `application/x-hitachi-sem` with a comment only, `PARTS`, the dependency on `modama-formats-common` in `pyproject.toml`; the search stack's `crawler.Dockerfile` installs common before em. Verify: `modama-crawler records --verbose` on the real pair's copy names `em/hitachi` (one record, no warning).
