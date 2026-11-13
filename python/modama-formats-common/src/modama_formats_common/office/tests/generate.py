@@ -1,6 +1,9 @@
-"""Fixture generators: lock files, misnamed and empty files, and a PDF encrypted with AES-256 by pypdf."""
+"""Fixture generators: lock files, misnamed and empty files, an encrypted workbook, and PDFs by pypdf (AES-256, a broken XMP packet)."""
 
+import shutil
 from pathlib import Path
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def owner_file(user: str) -> bytes:
@@ -42,6 +45,32 @@ def rtf_doc(target: Path) -> None:
 def empty_pptx(target: Path) -> None:
     target.mkdir(parents=True)
     (target / "empty.pptx").write_bytes(b"")
+
+
+def encrypted_xlsx(target: Path) -> None:
+    """Word's encrypted package (protected_docx) named budget.xlsx: the OLE2 file of an encrypted Office Open XML document does not say which kind it holds."""
+    target.mkdir(parents=True)
+    shutil.copyfile(
+        FIXTURES / "protected_docx" / "testWORD_protected_passtika.docx",
+        target / "budget.xlsx",
+    )
+
+
+def pdf_broken_xmp(target: Path) -> None:
+    """A one-page PDF with a title whose XMP packet is cut off: not well-formed XML."""
+    from pypdf import PdfWriter
+
+    target.mkdir(parents=True)
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.add_metadata({"/Title": "Broken XMP"})
+    writer.xmp_metadata = (
+        b'<x:xmpmeta xmlns:x="adobe:ns:meta/">'
+        b'<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        b'<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:format>appl'
+    )
+    with open(target / "broken.pdf", "wb") as f:
+        writer.write(f)
 
 
 def pdf_aes(target: Path) -> None:
