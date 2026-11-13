@@ -40,7 +40,8 @@ separate the device from the version, the best CPU case of each set is run once 
 **Correctness.** Every variant's vectors of 512 texts are compared with production's (CPU, float16 file,
 sorted, sub-batch 32): the cosine of each pair should be at least 0.9999; the minimum is reported, and the
 headline shows it next to each best case. A variant whose vectors do not pass is shown apart, like int8,
-and is neither "best" nor in the ratio.
+and is neither "best" nor in the ratio. The GPU's vectors are checked at batch 32 first, and the best GPU
+case of each set once more at its own batch, token budget and callers.
 
 **The CPU's caches and memory.** Every process holds its own copy of the weights; threads of one process
 share one. With 72 processes the copies cannot stay in the L3 cache (Grace: one L3 of about 114 MB for all
@@ -66,9 +67,9 @@ far its vectors move.
 | A. processes × threads, sub-batch 32, sorted | 1×1, 8×1, 16×1, C×1, C/2×2, C/4×4, C/8×8, 1×C, one process per L3 domain and per NUMA node (1×1, 8×1, C×1, 1×C) |
 | B. the same, pinned | every composition of A with C cores and more than one process (only C×1) |
 | C. short texts: sub-batch 128 and 512 | at every composition of A and B with C cores (128 at the best) |
-| D. sub-batch 16, 64, 128, 256 at the best | skipped where the processes would not fit in memory (none) |
+| D. sub-batch 16, 64, 128, 256 at the best | (none) |
 | E. the best in the given order; the best without `--membind` | one case each (the second only where binding applies) |
-| F. at the best: float32 file; without pre-packing; bf16 fast math (aarch64 only); int8; one process with C threads calling one session | every set (short only) |
+| F. at the best: float32 file; without pre-packing; bf16 fast math (aarch64 only); int8; one process with C threads calling one session ("1 process, C callers") | every set (short only) |
 | G. short texts: float32 file, with and without pre-packing, at 1, 8 and C processes | 6 cases (float32 at 1 and C) |
 
 1×1 is the cost of one text on one core. Filling the cores with processes of one thread is what production
@@ -95,7 +96,8 @@ thread and with all cores.
 - At the best: batches by a token budget instead of a number of texts (4096, 16384, 65536, 262144 tokens,
   counted at each batch's longest text; TEI's default is 16384; quick: 16384); one process with 2 and 4
   threads calling one session (quick: 2); the float32 file at a quarter, the same and four times the batch
-  (quick: the same), against the production file's float16; the given order.
+  (quick: the same), against the production file's float16; the given order. Each case's number of texts
+  comes from the rate of its nearest case measured before (the same workers, the nearest batch).
 - Texts sorted by length in windows of 250, as on the CPU; a batch larger than 250 texts takes consecutive
   sorted windows (padding grows with the batch otherwise). GPU utilisation, memory and power are
   sampled with `nvidia-smi` every 200 ms during each case.
@@ -107,7 +109,13 @@ load and warm-up (not timed), the load average before it. Texts are sorted by le
 production's transform batch, in every case (recorded as `sort_window`): a worker's share is a whole number
 of windows, at least one, and each window is sorted on its own, so the rate does not depend on the share
 (on the VM, 1×1 mixed, sorting the whole share gave 3.6 texts/s at 64 texts, 6.5 at 250, 9.7 at 1000).
-Each case runs at least 20 s (quick: 3 s). Grace's power sensors (Module,
+A case counts only after its full time, 20 s (quick: 3 s): one that was shorter runs again with more texts
+(at most three times). The best case of each set and device runs three times in all; the headline gives the
+first run's texts/s and the spread of the three. Before every case, its memory is estimated from the nearest
+case measured before (peak per process × processes, scaled up with the batch); a case that would take more
+than half of the available memory (MemAvailable) is skipped and shown as SKIPPED. A case whose workers are
+not done after 15 minutes (start, load, warm-up and timed part) is stopped and shown as FAILED: deadline.
+Grace's power sensors (Module,
 Grace, CPU and SysIO power in hwmon, NVIDIA's Grace performance tuning guide) are sampled too, if the kernel
 exposes them and they are readable without root, and give joules per text.
 
@@ -119,7 +127,8 @@ lines), glibc 2.34 or newer (onnxruntime-gpu's wheels),
 an NVIDIA driver 580 or newer (CUDA 13), and access to pypi.org and huggingface.co (the model, 65 MB, at the
 pinned revision `aa8f8b060edb00e03bfdd08813a2949946c8ba55` of `qdrant/bge-small-en-v1.5-onnx-q`, is downloaded
 on the first run into `cache/`; the variants, 170 MB, are written next to it). Everything stays in the folder:
-pip runs without its cache, and `HF_HOME` (with Hugging Face's xet cache) is `cache/hf`.
+pip runs without its cache, `HF_HOME` (with Hugging Face's xet cache) is `cache/hf`, and CUDA's kernel cache
+(`CUDA_CACHE_PATH`) is `cache/cuda`. What lands outside: a Python from uv, if you use the fallback below.
 
 ```bash
 # from a checkout of the repository
@@ -133,7 +142,7 @@ ldd --version | head -1   # 2.34 or newer
 nvidia-smi                # "Driver Version: 580..." or newer, "CUDA Version: 13.x"; no other processes
                           # (grace, 2026-11-13: driver 620.70.06, CUDA 13.5, GH200 with 146831 MiB)
 free -g                   # confirm the RAM (grace, 2026-11-13: 478 GiB total, about 412 GiB available);
-                          # memory is checked before step D only (not yet before every case)
+                          # a case that would take more than half of what is available is skipped
 
 python3 -m venv venv-cpu
 venv-cpu/bin/pip install --no-cache-dir --require-hashes -r requirements-cpu.txt
@@ -144,9 +153,9 @@ venv-gpu/bin/python bench.py gpu-check
 # GPU check passed: onnxruntime-gpu 1.31.1, session providers ['CUDAExecutionProvider', ...]
 ```
 
-If `python3` is older than 3.11 or has no `venv` module: `uv venv --seed --python 3.13 venv-cpu` (and the same
+If `python3` is not 3.12 or has no `venv` module: `uv venv --seed --python 3.12 venv-cpu` (and the same
 for `venv-gpu`), then the `pip install` lines as above. uv downloads a Python of its own into
-`~/.local/share/uv/python` (outside the folder; `uv python uninstall 3.13` removes it afterwards) and keeps a
+`~/.local/share/uv/python` (outside the folder; `uv python uninstall 3.12` removes it afterwards) and keeps a
 cache in `~/.cache/uv` (`uv cache clean`).
 
 The quick provider check, without loading the model:
@@ -164,14 +173,19 @@ CUDA libraries do not load, ONNX Runtime prints "Failed to load ..." and falls b
 ## Run
 
 ```bash
-./run.sh quick   # a small grid: checks the setup end to end
-./run.sh full    # the numbers to keep
+./run.sh quick              # a small grid: checks the setup end to end
+timeout 4h ./run.sh full    # the numbers to keep; stopped after 4 hours at the latest
 ```
 
 Run `full` in `tmux` or `screen`, on an otherwise idle machine (the output records the load average before
-each case; the GPU part stops when another process uses the GPU, see "What can go wrong"). It prints each case as it goes, then the table: first, for
-each set, the best CPU and the best GPU with their settings, texts/s, joules per text where readable, the
-vectors' agreement and the ratio; then every case.
+each case; the GPU part stops when another process uses the GPU, see "What can go wrong"). It prints each
+case as it goes, then the table: first, for each set, the best CPU and the best GPU with their settings,
+texts/s, joules per text where readable, the vectors' agreement and the ratio; then every case.
+
+The table is written on every way out: when done, after a failure, after Ctrl-C and when `timeout` stops the
+run (then into `table.txt` and `summary.json` only, not on the screen). By hand, for any results folder:
+`venv-cpu/bin/python bench.py report results/<folder>`. A stopped run leaves no worker behind; check with
+`pgrep -fa "bench.py worker"`.
 
 `./run.sh quick|full cpu` or `... gpu` runs only one part (the report covers what ran); a last argument
 `--force` runs the GPU part even while other processes use the GPU.
@@ -180,18 +194,20 @@ vectors' agreement and the ratio; then every case.
 root, which this package could not check):
 
 ```bash
-export CUDA_MPS_PIPE_DIRECTORY=$HOME/mps/pipe CUDA_MPS_LOG_DIRECTORY=$HOME/mps/log
+export CUDA_MPS_PIPE_DIRECTORY=$PWD/mps/pipe CUDA_MPS_LOG_DIRECTORY=$PWD/mps/log
 mkdir -p $CUDA_MPS_PIPE_DIRECTORY $CUDA_MPS_LOG_DIRECTORY
-nvidia-cuda-mps-control -d          # start
-./run.sh full gpu
-echo quit | nvidia-cuda-mps-control # stop
+# start it, run, and stop it again however the run ends (Ctrl-C, timeout, failure)
+( trap 'echo quit | nvidia-cuda-mps-control' EXIT
+  nvidia-cuda-mps-control -d && timeout 3h ./run.sh full gpu )
+pgrep -l nvidia-cuda-mps            # nothing: the daemon is gone
 ```
 
 **How long.** On the VM (8 cores, no GPU) the quick CPU part took 12 minutes (22 cases), when a quick case's
 worker embedded 64 texts; now it embeds at least one window of 250, so quick takes longer. On grace, not
-measured; estimated from the VM's cost per text: quick more than the 15 to 30 minutes estimated with 64, full 2.5 to 3.5 hours (about 100 CPU cases,
-the long texts' at about 2 minutes each, since every worker embeds at least 250 texts; the GPU search depends
-on where it stops). Each case prints when done.
+measured; estimated from the VM's cost per text: quick more than the 15 to 30 minutes estimated with 64,
+full 2.5 to 3.5 hours (about 100 CPU cases, the long texts' at about 2 minutes each, since every worker
+embeds at least 250 texts; the GPU search depends on where it stops), plus the repeats of the best cases
+(two more runs for each set and device). Each case prints when done.
 
 ## What to send back
 
@@ -207,7 +223,10 @@ and the headline). The same table as printed is in `table.txt` next to it. If so
 | "no NVIDIA GPU visible" | `nvidia-smi` | No driver, or the GPU not passed into a container or batch job. |
 | "this venv's ONNX Runtime has no CUDA provider" or "both onnxruntime and onnxruntime-gpu are installed" | `venv-gpu/bin/pip list \| grep -i onnx` | The CPU build in `venv-gpu`. Remove `venv-gpu`, make it again with `requirements-gpu.txt` only. |
 | "the model did not start on the GPU", after "Failed to load libcublas.so.13 ..." | `nvidia-smi` (driver, CUDA version at the top); `venv-gpu/bin/pip list \| grep nvidia`; the log named in the message | Driver older than 580 (CUDA 12): ask for a newer one. CUDA or cuDNN libraries missing or of another major version: make `venv-gpu` again. |
-| pip: "No matching distribution found for onnxruntime-gpu" | `ldd --version`, `python3 --version` | glibc older than 2.34, or Python outside 3.11 to 3.14. |
+| pip: "No matching distribution found for onnxruntime-gpu" | `ldd --version`, `python3 --version` | glibc older than 2.34, or a Python other than 3.12 (the lock files'). |
+| pip: "THESE PACKAGES DO NOT MATCH THE HASHES" | | A download changed on the way or on PyPI: stop and report it; do not drop `--require-hashes`. |
+| A case "FAILED: deadline" | its log in `logs/` | Its workers were not done after 15 minutes and were stopped; the run goes on. |
+| A case "SKIPPED" | `free -g` | It would have taken more than half of the available memory; the run goes on. |
 | A case "OUT OF MEMORY" | | Expected at the largest GPU batches (the workers' share of the GPU's memory): the search stops there. |
 | "other processes use the GPU" | `nvidia-smi` | Someone else uses the GPU: wait, or ask them; `--force` runs anyway (the numbers then depend on them). |
 | A variant FAILED (for example bf16) | its log in `logs/` | Reported in the table; the other cases go on. |
@@ -226,11 +245,12 @@ before 1.29.0). The route then is another runtime, PyTorch's aarch64 CUDA 12.6 w
 - `gen_texts.py`: the synthetic record texts (standard library only; deterministic by seed; `--help`).
 - `prepare_model.py`: the float32 and int8 model files (needs `onnx`).
 - `bench.py`: the measurement (`cpu`, `gpu`, `gpu-check`, `report`; see its docstring).
-- `requirements-cpu.txt`, `requirements-gpu.txt`: the pinned packages, for grace only (not the repository's
+- `requirements-cpu.in`, `requirements-gpu.in`: the packages, for grace only (not the repository's
   dependencies): fastembed 0.8.0 / fastembed-gpu 0.8.0, onnxruntime 1.24.4 / onnxruntime-gpu 1.31.1 with
-  NVIDIA's CUDA 13 and cuDNN 9 wheels, tokenizers 0.22.2, numpy 2.4.4, huggingface-hub 1.8.0, onnx 1.23.2
-  (CPU venv only, for `prepare_model.py`; not used in production), and what these pull in. Checked on PyPI
-  on 2026-11-13: every package has a wheel for Linux aarch64 and CPython 3.13.
+  NVIDIA's CUDA 13.0 and cuDNN 9 wheels, tokenizers 0.22.2, numpy 2.4.4, huggingface-hub 1.8.0, onnx 1.23.2
+  (CPU venv only, for `prepare_model.py`; not used in production). `requirements-cpu.txt`,
+  `requirements-gpu.txt`: the lock files made from them with uv for aarch64 (manylinux 2.34) and Python
+  3.12, every package with its hashes (the command is in their first lines).
 
 Environment variables of `run.sh`: `VENV_CPU`, `VENV_GPU` (default `./venv-cpu`, `./venv-gpu`), `RESULTS`
 (default `./results`), `FASTEMBED_CACHE_DIR` (default `./cache`), `GPU_MEM_FRACTION` (default 0.5).

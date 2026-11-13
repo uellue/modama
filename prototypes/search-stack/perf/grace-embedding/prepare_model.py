@@ -1,5 +1,6 @@
 """Model files of our own for the benchmark's variants, made once from the model fastembed
-loads (qdrant/bge-small-en-v1.5-onnx-q, model_optimized.onnx), into CACHE/variants/:
+loads (qdrant/bge-small-en-v1.5-onnx-q at bench.py's MODEL_REVISION, model_optimized.onnx),
+into CACHE/variants/:
 
   model-fp32.onnx (+ model-fp32.onnx.data)
       The same graph with every float16 tensor stored as float32: the weights as
@@ -17,21 +18,16 @@ loads (qdrant/bge-small-en-v1.5-onnx-q, model_optimized.onnx), into CACHE/varian
 Does nothing for a file that already exists. CACHE is FASTEMBED_CACHE_DIR or ./cache.
 """
 
-import os
 import sys
 from pathlib import Path
 
-MODEL = "BAAI/bge-small-en-v1.5"
-HERE = Path(__file__).resolve().parent
-CACHE = Path(os.environ.get("FASTEMBED_CACHE_DIR", HERE / "cache"))
-OUT = CACHE / "variants"
+# the pinned model files, the cache directories (bench.py sets them on import)
+from bench import VARIANTS as OUT
+from bench import model_dir
 
 
 def source() -> Path:
-    from fastembed import TextEmbedding
-
-    model = TextEmbedding(MODEL, cache_dir=str(CACHE), threads=1, cuda=False)
-    return Path(model.model._model_dir) / "model_optimized.onnx"
+    return Path(model_dir()) / "model_optimized.onnx"
 
 
 def to_fp32(src: Path, dst: Path) -> None:

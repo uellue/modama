@@ -13,8 +13,8 @@ nvidia-cufft==12.0.*
 nvidia-curand==10.4.0.*
 # The lock file requirements-gpu.txt (with hashes, for aarch64) is made from this one:
 #   uv pip compile --no-build --generate-hashes --python-platform aarch64-manylinux_2_34 \
-#     --python-version 3.11 requirements-gpu.in -o requirements-gpu.txt
-# (the same packages for Python 3.11, 3.13 and 3.14; the hashes cover every file of a version)
+#     --python-version 3.12 requirements-gpu.in -o requirements-gpu.txt
+# (the same packages for Python 3.11 to 3.14; the hashes cover every file of a version)
 fastembed-gpu==0.8.0
 onnxruntime-gpu[cuda,cudnn]==1.31.1
 tokenizers==0.22.2
