@@ -120,7 +120,7 @@ The service SHALL be published on 127.0.0.1 only, SHALL refuse requests whose `H
 - **THEN** the answer is 403 and nothing is written
 
 ### Requirement: Flagged files are listed as links into the browser
-`modama-chain review` SHALL read, read-only, the stored warnings and failed extractions of the whole index and print them on stdout as Markdown (design D17, @weber 354), by kind (`extraction failed`, `two formats want it`, `not inspected`, `slow extraction`, `other warnings`), then by format (else `no format named`), each group with its count and its first entries by path, each entry a link into the browser with its text, and one summary line per group on stderr.
+`modama-chain review` SHALL read, read-only, the stored warnings and failed extractions of the whole index and print them on stdout as Markdown (design D17, @weber 354), by kind (`extraction failed`, `two formats want it`, `not inspected`, `read more than 64 KiB`, `over its read limit`, `slow extraction`, `other warnings`), then by format (else `no format named`), each group with its count and its first entries by path, each entry a link into the browser with its text, and one summary line per group on stderr.
 
 #### Scenario: Files two formats want
 - **WHEN** the index holds the warning `em/merlin: acq_2.mib is claimed by em/empad; two formats want it` at `/scan/acq.hdr`
