@@ -8,7 +8,7 @@ from modama_crawler.testing import recognise
 from modama_crawler.walk import walk
 
 from modama_formats_em.merlin import MAX_HEADER
-from modama_formats_em.testing import described
+from modama_formats_em.testing import claimed_first, described
 
 
 def test_a_frame_series_with_its_header(collection_tests, tmp_path):
@@ -16,6 +16,24 @@ def test_a_frame_series_with_its_header(collection_tests, tmp_path):
     (d,) = result.datasets
     assert (d.anchor, d.format, len(d.members)) == ("/acq.hdr", "em/merlin", 201)
     assert set(d.members) == {"/acq.hdr", *(f"/acq_{n}.mib" for n in range(1, 201))}
+
+
+def test_a_companion_claimed_by_another_format_is_named_as_such(
+    collection_tests, tmp_path
+):
+    # Spec recognition, decision 344: the series is built of the other 199
+    # frame files, and the frame file the probe took is flagged for review
+    result = claimed_first(collection_tests, "frame_series", tmp_path, "acq_1.mib")
+    by_anchor = {d.anchor: d for d in result.datasets}
+    assert by_anchor["/acq_1.mib"].format == "probe/claim"
+    acq = by_anchor["/acq.hdr"]
+    assert (acq.format, len(acq.members)) == ("em/merlin", 200)
+    assert result.all_warnings() == [
+        (
+            "/acq.hdr",
+            "em/merlin: acq_1.mib is claimed by probe/claim; two formats want it",
+        )
+    ]
 
 
 def test_frames_without_a_header(collection_tests, tmp_path):

@@ -29,6 +29,10 @@ DIRECTORY = "directory"  # in reacts_to: run on every directory, pre- and post-o
 NOT_VISIBLE = frozenset({errno.EACCES, errno.EPERM, errno.ENOENT, errno.ENOTDIR})
 REFUSED = frozenset({errno.EACCES, errno.EPERM})
 
+# The end of every warning about a file two formats want (Directory.claimed_elsewhere):
+# the marker that lists them all, to develop resolution rules (decision 344)
+WANTED_TWICE = "two formats want it"
+
 
 def not_visible(err: OSError) -> bool:
     return err.errno in NOT_VISIBLE
@@ -206,6 +210,9 @@ class Directory:
         self.notes: dict[str, str] = {}
         # File rel -> "<format>: <text>", from note: also into the basis, the type kept
         self.remarks: dict[str, str] = {}
+        # File name -> id of the format that claimed it, for the formats after it,
+        # which are not offered the file (bug 311, decision 344)
+        self.claimed: dict[str, str] = {}
         self._format = ""  # the id of the format being called
 
     @property
@@ -298,6 +305,17 @@ class Directory:
 
     def warn(self, rel: str, text: str) -> None:
         self.warnings.append((rel, text))
+
+    def claimed_elsewhere(self, rel: str, name: str) -> None:
+        """Warn at rel that the file name, which the calling format's dataset needs, is claimed by a format that ran earlier.
+
+        In one fixed wording ending in WANTED_TWICE, so that one grep or query
+        lists every such case for review (decision 344).
+        """
+        self.warn(
+            rel,
+            f"{self._format}: {name} is claimed by {self.claimed[name]}; {WANTED_TWICE}",
+        )
 
 
 class Format:
@@ -499,14 +517,16 @@ def run_post(
             out.append(filled)
             for p in parts:
                 adoptions[p] = filled.anchor
-        # What is claimed is not offered to the formats after this one (bug 311)
-        d.entries = [
-            e for e in d.entries if e.kind != "file" or e.rel not in claimed_by
-        ]
+        # What is claimed is not offered to the formats after this one (bug 311),
+        # but they can ask who claimed a file (decision 344)
+        for e in d.entries:
+            if e.kind == "file" and e.rel in claimed_by:
+                d.claimed[e.name] = claimed_by[e.rel]
+        d.entries = [e for e in d.entries if e.name not in d.claimed]
         d._by_name = {e.name: e for e in d.entries}
         d.children = [c for c in d.children if c.anchor not in claimed_by]
     for e in d.entries:  # the current entries, with the types formats dropped
-        if e.kind == "file" and e.rel not in claimed_by:
+        if e.kind == "file":
             out.append(
                 Dataset(
                     anchor=e.rel,

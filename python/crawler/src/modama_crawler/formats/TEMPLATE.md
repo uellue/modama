@@ -204,6 +204,13 @@ class Workspace(Format):
   offered to yours: it is not in `d.entries`, `d.of_type` or `d.entry`, nor
   in `d.children`. A file you name without them, and another format claimed,
   rejects your dataset with an "already claimed" warning.
+- `d.claimed` maps the name of each such file to the format that claimed it.
+  Where your dataset needs a companion (a raw file, a frame or sector file)
+  that is not offered, look there before you call it missing, and if it is
+  there, call `d.claimed_elsewhere(anchor_rel, name)`: it warns in the one
+  fixed wording that ends in `two formats want it`, by which the cases are
+  collected to develop rules for them (decision 344; `em/empad`, `em/merlin`,
+  `em/k2is`).
 - Order: a format that runs before yours does not see the new type. Give
   yours a higher priority than the formats that are to claim the new types.
   The crawl warns when a format that ran earlier reacts to a dropped file's

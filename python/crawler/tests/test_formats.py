@@ -137,19 +137,52 @@ def test_a_claimed_entry_is_not_offered_to_later_formats():
 
     child = Dataset(anchor="/sub", type="x/series")
     d = directory(
-        [entry("a.txt"), entry("a.txt.bak", "application/x-trash"), entry("b.txt")],
+        [
+            entry("a.txt"),
+            entry("a.txt.bak", "application/x-trash"),
+            entry("b.txt"),
+            entry("sub", None, "dir"),
+        ],
         children=[child],
     )
     datasets, adoptions = run_post(
         d, collect(PairsAndChildren(), Later()), 5.0, 1 << 20
     )
-    assert seen == [(["b.txt"], ["b.txt"], [False, False, True], [])]
+    # The folder stays an entry: what is claimed is its child dataset
+    assert seen == [(["b.txt", "sub"], ["b.txt"], [False, False, True], [])]
     assert d.warnings == []
     assert [(x.anchor, x.format) for x in datasets] == [
         ("/a.txt", "t/pairsandchildren"),
         ("/b.txt", ""),
     ]
     assert adoptions == {"/sub": "/a.txt"}
+
+
+def test_a_companion_claimed_by_another_format_is_named_as_such():
+    # The core's part of the scenario; each em format has its own test
+    class Companion(Format):
+        """Needs a.txt.bak, which t/textpairs claims first."""
+
+        type = "x/companion"
+        priority = 10
+        reacts_to = frozenset({DIRECTORY})
+
+        def recognize(self, d):
+            if d.entry("a.txt.bak") is None and "a.txt.bak" in d.claimed:
+                d.claimed_elsewhere("/b.txt", "a.txt.bak")
+            return ()
+
+    d = directory(
+        [entry("a.txt"), entry("a.txt.bak", "application/x-trash"), entry("b.txt")]
+    )
+    run_post(d, collect(TextPairs(), Companion()), 5.0, 1 << 20)
+    assert d.claimed == {"a.txt": "t/textpairs", "a.txt.bak": "t/textpairs"}
+    assert d.warnings == [
+        (
+            "/b.txt",
+            "t/companion: a.txt.bak is claimed by t/textpairs; two formats want it",
+        )
+    ]
 
 
 def test_a_later_claim_on_a_claimed_entry():
