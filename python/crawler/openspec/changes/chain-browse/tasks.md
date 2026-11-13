@@ -49,3 +49,8 @@ Written with the coordinator's leans of 2026-11-12 as assumptions (design D1 to 
 
 - [x] 8.1 `live.compute` for a folder: its collapse check (`walk(top=<folder>/.)`), the dataset holding it; `/api/live` for a folder; the page requests an open folder's live views; the note "a folder: no live views" from the server. Verify: `test_an_open_zarr_store` ("An open Zarr store") and `test_a_normal_folder` ("A normal folder", type detections counted), both failing on the code before; the real server on a scratch tree with a Zarr store, by curl.
 - [x] 8.2 README "browse", the backlog's line. Verify: read against the spec.
+
+## 9. Flagged files as links (D17, @weber 354, 2026-11-13)
+
+- [x] 9.1 `crawler.flagged` (the stored warnings and failed extractions), `review.py` (kinds, formats, the Markdown and the links), `modama-chain review` in `cli.py`. Verify: `tests/test_review.py`, one test per scenario of "Flagged files are listed as links into the browser", on a migrated `pytest-postgresql` database filled by the crawler's `store.store`, the commands typed as the README shows them; each fails before the code.
+- [x] 9.2 README of `modama-chain` (`review`, "What it reads"), the crawler README's "What to look out for" (the command first, the SQL as the fallback), the backlog's line of decision 344, scenario D. Verify: read against the spec.
