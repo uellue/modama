@@ -65,14 +65,36 @@ ip -4 addr show docker0                # on the staging host: the bridge address
 sudo useradd --system --create-home --shell /usr/sbin/nologin embedtunnel
 sudo install -d -m 700 -o embedtunnel -g embedtunnel ~embedtunnel/.ssh
 # ~embedtunnel/.ssh/authorized_keys (mode 600, owner embedtunnel), one line:
-#   restrict,port-forwarding,permitopen="127.0.0.1:7656",permitopen="127.0.0.1:11434" ssh-ed25519 AAAA... staging-embed-tunnel
+#   restrict,port-forwarding,permitopen="127.0.0.1:7656",permitopen="127.0.0.1:11434",command="/usr/sbin/nologin" ssh-ed25519 AAAA... staging-embed-tunnel
 ```
 
-`restrict` turns off everything (shell, agent and X11 forwarding, PTY), then
-`port-forwarding` allows forwarding again, and `permitopen` limits it to the two addresses.
-So the key opens nothing but this tunnel, even if the account's shell were changed by
-mistake. The option names are written from memory; the change `embedding-service-grace`
-checks them against sshd(8) and corrects this page.
+and in grace's `/etc/ssh/sshd_config`, at the end (then `sudo sshd -t && sudo systemctl reload ssh`):
+
+```
+Match User embedtunnel
+    AllowTcpForwarding local
+```
+
+What each part does (sshd(8), "AUTHORIZED_KEYS FILE FORMAT", and sshd_config(5); checked
+on 2026-11-13 against OpenSSH 10.0's `sshd` with a throwaway server and a real client,
+change `embedding-service-grace`, design D7):
+
+- `restrict` turns off port, agent and X11 forwarding, PTY allocation and `~/.ssh/rc`;
+  `port-forwarding` turns port forwarding on again.
+- `permitopen` limits `ssh -L` to the address named, literally: no name lookup, so the
+  unit's `-L` must say `127.0.0.1`, not `localhost` (a `localhost` forward was refused).
+  It may be given more than once ("Multiple permitopen options may be applied separated
+  by commas"); with both, both forwards worked and a third port was refused.
+- `restrict` does **not** stop a command or a shell: with only the first three options and
+  an account with a shell, `ssh … id -un` ran. The `nologin` shell stops it, and
+  `command="/usr/sbin/nologin"` stops it even if the account's shell were changed by
+  mistake. The unit's `-N` asks for no command, so the forced command never runs for it.
+- `port-forwarding` turns remote forwards (`ssh -R`) on as well, and `permitopen` does not
+  limit them: with the key line alone, `-R` opened a listener on the far end. Someone with
+  the key could then listen on grace's `127.0.0.1:7656` while the service is down and
+  receive the warehouse's requests, token included. The `Match` block allows local
+  forwards only (`AllowTcpForwarding local`); with it, `-R` was refused. `permitlisten="none"`
+  in the key line is not accepted (the key was rejected).
 
 ### On the staging host: the key and the unit
 
