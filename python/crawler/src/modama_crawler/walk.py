@@ -139,15 +139,30 @@ def _digest(st: os.stat_result, entries: list[Entry]) -> str:
     return hashlib.sha256(json.dumps(state).encode()).hexdigest()
 
 
-def _stamped(collapsed: Dataset, digest: str, path: str, formats) -> Dataset:
+def _stamped(
+    collapsed: Dataset, digest: str, path: str, formats
+) -> tuple[Dataset, str | None]:
     """A collapsed dataset stamped with its folder's listing (`digest`, the D3 limit for
     collapsed trees: nothing below is read), and with what its format says of the files
-    below that its extractor reads (Format.collapsed_state; change zarr-stores, 319)."""
+    below that its extractor reads (Format.collapsed_state; change zarr-stores, 319); and
+    the warning of a format whose collapsed_state failed.
+
+    A failure stamps the dataset with a fixed marker, not its message (which may hold
+    addresses or times): the same failure gives the same stamp on every crawl, which
+    differs from a stamp with a state, so that an extraction made while the state was
+    known is not taken for this one, and the call runs again next crawl as always."""
     fmt = next((f for f in formats if f.id == collapsed.format), None)
-    below = fmt.collapsed_state(path) if fmt is not None else None
+    warning = None
+    try:
+        below = fmt.collapsed_state(path) if fmt is not None else None
+    except Exception as e:  # noqa: BLE001  a failing format must not stop the crawl, as in _call
+        below, warning = (
+            "collapsed_state failed",
+            f"{fmt.id}: collapsed_state failed: {e!r}",
+        )
     if below is not None:
         digest = hashlib.sha256(f"{digest} {below}".encode()).hexdigest()
-    return replace(collapsed, stamp=digest)
+    return replace(collapsed, stamp=digest), warning
 
 
 def _io(pool: ThreadPoolExecutor) -> Callable[..., asyncio.Future]:
@@ -531,7 +546,9 @@ async def _walk(
         if collapsed is not None:
             # Stamped again also when taken over: what its format reads below
             # the folder may have changed under an unchanged listing
-            collapsed = await io(_stamped, collapsed, digest, dirpath, active)
+            collapsed, failed = await io(_stamped, collapsed, digest, dirpath, active)
+            if failed:  # not in the listing's warnings: the call runs every crawl
+                result.warnings.append((rel, failed))
             log.debug("%s collapsed by %s", rel, collapsed.format)
             result.listings[rel] = Listing(digest, tuple(pre_warnings), retry=pre_retry)
             result.unchanged += same
@@ -638,9 +655,11 @@ async def _walk(
             result.warnings.extend(pre.warnings)
             if collapsed is not None:
                 formats_here = formats_for(rel)
-                collapsed = await io(
+                collapsed, failed = await io(
                     _stamped, collapsed, _digest(st, entries), dirpath, formats_here
                 )
+                if failed:
+                    result.warnings.append((rel, failed))
                 return [replace(collapsed, parent=None)]
             child = next((e for e in entries if e.name == name), None)
             if child is None or child.kind != "dir":

@@ -349,7 +349,9 @@ class Format:
         """For a collapsed dataset of this format at `path` on disk: a digest of the files
         below it that its extractor reads, for the dataset's stamp; None: the folder's
         listing alone stamps it. Runs in the walk at every crawl, also when the
-        folder's listing is unchanged; must not raise (change zarr-stores, 319)."""
+        folder's listing is unchanged (change zarr-stores, 319). The same files must
+        give the same digest. May raise: the crawl then warns, naming the format, and
+        stamps the dataset with a fixed marker instead (walk._stamped)."""
         return None
 
     @property
