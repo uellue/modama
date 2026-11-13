@@ -36,7 +36,8 @@ Never copy a real file into the repository without its owner's agreement; a fixt
 from real data is cut to what the rules and the extractor read (`k2is/tests/cut-capture.sh`,
 `blockfile/tests/cut-header.sh` in `python/modama-formats-em`).
 
-Write down what you heard, in the person's words, with your reading of each answer.
+Write down what you heard, in the person's words, with your reading of each answer, in
+the proposal of step 2.
 Where an answer is an example ("the DM files from the Titan"), say whether you read it
 as the whole case or as an example of a rule.
 
@@ -73,11 +74,13 @@ For people first, plain words, at most a screen: the formats covered, for each o
 example summary line and a few `original_metadata` lines, what is left out (the skip
 list), new dependencies with versions, open questions numbered with your lean and the
 strongest argument against. Then for agents: commits, commands with output, what was
-not verified.
+not verified. It is your last message to whoever briefed you (the person, or the main
+session), not a file in the repository; your commits stay on your branch.
 
 ## 7. Merge and look
 
-The person (or the main session) merges into `crawler`, runs every suite (README,
+The person (or the main session) merges into `crawler`, never the coding agent that built
+it, runs every suite (README,
 "Running tests") and the search stack's e2e, and looks at real files in browse before
 and after. Every merge changes the extractor identity: the next crawl extracts every
 dataset again (TEMPLATE.md, "No version to raise").

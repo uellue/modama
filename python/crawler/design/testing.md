@@ -73,6 +73,8 @@ A large real-world file is shrunk for one of the two purposes, and the purpose d
 | EMPAD | truncate the raw to whole frames (130×128 float32), edit the frame count in the XML | a second reader (RosettaSciIO's `empad`), no validator |
 | DM3/DM4 | no maintained open writer; RosettaSciIO reads only; TEMDM offers an unlicensed write-back tool | only Gatan GMS; a second reader (RosettaSciIO, ncempy) is the proxy |
 | Python environment, `node_modules` | regenerate a tiny tree with the marker files | none needed |
+| Merlin (`.hdr`, `.mib`) | compose: a public header's lines with neutral values plus the offending lines quoted from the real file, and one frame of zeros behind a frame header (`merlin/tests/generate.py`, `not_utf8`, in `python/modama-formats-em`) | RosettaSciIO's `quantumdetector` reader |
+| MRC | cut to the main header and an FEI extended header's first record (`mrc/tests/cut-header.sh`), the sha256 of the original and of the cut file in `fixtures.toml` | none for the cut file, which mrcfile rejects as too short; the original's sha256 ties it to what EMDB or EMPIAR distribute |
 
 RosettaSciIO writes HSpy, ZSpy, NeXus, EMD (NCEM), TIFF, MRCZ, MSA, Blockfile, TVIPS, USID and others; it does not write DM3/DM4, EMPAD, Velox EMD, TIA, MIB or Bruker. For those, a small representative file is a *mask* (full structure, zeroed data, from a format-specific rewriter) whose validity can only be confirmed by a second reader or the vendor application, which the validity field records.
 
