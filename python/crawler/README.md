@@ -62,6 +62,8 @@ modama-crawler serve                    # OAI-PMH on port 7654
 modama-crawler cpu-budget               # the crawl's worker processes and threads on this machine, and why
 ```
 
+**Warning:** `crawl --root PATH` treats PATH as the whole repository. Pointed at a subfolder of a crawled tree, it changes the identifiers and deletes every other record from the crawler's database (the files are untouched; a full crawl brings them back). Crawl a subfolder only into a database of its own, until `crawl --path` (change `subtree-crawl`, `BACKLOG.md` "Next") lands.
+
 With `MODAMA_CRAWLER_AIRFLOW_URL` set (and `MODAMA_CRAWLER_AIRFLOW_USER`, `MODAMA_CRAWLER_AIRFLOW_PASSWORD`, an Airflow account allowed to start DAG runs), every finished crawl starts the EOSC warehouse's harvest of its own endpoint (`OAI_BASE_URL`), after its records are committed; also an unchanged crawl, so that a harvest covers it and the search's freshness time moves on. If the harvest cannot be started, the crawl still counts as finished, and the command exits with status 3. On SIGTERM (`docker stop`) a crawl records its run as failed and exits with 143; the timer passes SIGTERM on to its running crawl. `/prototypes/search-stack/` runs both, the timer and the trigger.
 
 At its end a crawl logs its extraction counts and stores them with its run, for example `extraction: 2 run, 0 reused, 1 failed; 12 directories unchanged; time per format: em/dm 3.2 s`. Extraction uses `MODAMA_CRAWLER_EXTRACT_WORKERS` processes, by default the CPUs the crawler may use up to 8, each with an address space of `MODAMA_CRAWLER_EXTRACT_MEMORY` MiB, by default 4096 (a worker with RosettaSciIO loaded maps about 140 MiB), and replaced after 100 datasets; `records` extracts too, without reusing anything.
