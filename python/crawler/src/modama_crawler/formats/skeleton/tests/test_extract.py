@@ -40,6 +40,27 @@ def test_a_text_file_named_like_a_header(collection_tests, tmp_path):
     assert "no SKELETON 1 header" in d.basis
 
 
+def test_a_header_over_the_read_limit_is_skipped(
+    collection_tests, tmp_path, monkeypatch
+):
+    # TEMPLATE.md, "A file that is not of its name's type": a file it cannot read,
+    # or may not read further, is skipped, and the format goes on with the next
+    from modama_crawler.formats.skeleton import Acquisition
+
+    tree = collection_tests.materialise("acquisition", tmp_path)
+    for ext in (".skh", ".skf"):
+        (tree / f"b{ext}").write_bytes((tree / f"acq{ext}").read_bytes())
+    monkeypatch.setattr(Acquisition, "read_limit", 4)
+    result = walk(tree, collection_tests.collection.formats)
+    assert {d.format for d in result.datasets} == {""}
+    assert len(result.datasets) == 4
+    assert sorted(t for _, t in result.all_warnings()) == [
+        f"skeleton/acquisition: {name} over its read limit of 4 bytes "
+        "(10 asked for after 0); not read further"
+        for name in ("acq.skh", "b.skh")
+    ]
+
+
 def test_every_entry_but_the_skip_list(collection_tests, tmp_path):
     tree = collection_tests.materialise("acquisition", tmp_path)
     values = extracted(collection_tests, tree).values

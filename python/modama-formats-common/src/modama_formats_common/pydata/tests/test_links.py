@@ -24,7 +24,7 @@ from modama_crawler.formats import (
 )
 from modama_crawler.walk import walk
 
-from modama_formats_common.pydata import links
+from modama_formats_common.pydata import Hdf5Links, links
 
 from . import generate
 from .test_extract import Opened, datasets, extracted
@@ -495,13 +495,16 @@ def test_a_file_of_many_objects(collection_tests, tmp_path):
 
 
 def test_a_file_over_its_budget(collection_tests, scan, monkeypatch):
-    monkeypatch.setattr(links, "BUDGET", 1000)
+    monkeypatch.setattr(Hdf5Links, "read_limit", 1000)
     result = walk(scan, collection_tests.collection.formats)
     found = {d.anchor.rsplit("/", 1)[-1]: d for d in result.datasets}
     assert found["scan_master.h5"].format == "common/hdf5"
     assert {found[n].format for n in DATA} == {"common/hdf5"}
     warned = [t for r, t in result.all_warnings() if r.endswith("scan_master.h5")]
-    assert any("budget of 1000" in t for t in warned)
+    assert (
+        "common/hdf5links: scan_master.h5 over its read limit of 1000 bytes; "
+        "not read further"
+    ) in warned
     # The same file gives the same outcome: not marked as tried again (340)
     assert not any(NOT_INSPECTED in t for t in warned)
     assert not any(listing.retry for listing in result.listings.values())

@@ -9,6 +9,8 @@ from urllib.parse import quote
 EXTRACTION_FAILED = "extraction failed"
 # The crawler's fixed markers: formats.WANTED_TWICE (decision 344) and NOT_INSPECTED (340, hdf5-links)
 MARKERS = ("two formats want it", "not inspected")
+# READ_MUCH and OVER_LIMIT: what recognition read of one file (change read-limit-per-file)
+MARKERS += ("read more than 64 KiB", "over its read limit")
 OTHER = "other warnings"
 KINDS = (EXTRACTION_FAILED, *MARKERS, OTHER)
 NO_FORMAT = "no format named"
