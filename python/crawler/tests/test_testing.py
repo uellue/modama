@@ -227,3 +227,32 @@ def test_a_reproducers_error_is_not_recorded(pytester, extracting, monkeypatch):
     result.assert_outcomes(failed=1)
     assert REFUSED in result.stdout.str()
     assert expected.read_text() == before
+
+
+# The bytes a piece of work reads (modama_crawler.testing.bytes_read), the one
+# helper of every collection's tests (code review of zarr-stores, S4)
+
+
+def test_bytes_read_when_the_counter_gains_a_digit(monkeypatch):
+    # The kernel adds a read of /proc/self/io to rchar after it; the helper must
+    # take off that very read, not another one, whose text may be a byte shorter
+    # (1 in 1,200,000 runs: one byte too many)
+    from modama_crawler.testing import bytes_read
+
+    counter = [99_985]
+
+    def proc_io(path):
+        text = f"rchar: {counter[0]}\nwchar: 0\n".encode()
+        counter[0] += len(text)
+        return text
+
+    monkeypatch.setattr(Path, "read_bytes", proc_io)
+    assert bytes_read(lambda: "done") == ("done", 0)
+
+
+def test_bytes_read_counts_what_the_work_reads(tmp_path):
+    from modama_crawler.testing import bytes_read
+
+    (tmp_path / "f").write_bytes(b"\0" * 10_000)
+    _, read = bytes_read(lambda: (tmp_path / "f").read_bytes())
+    assert read == 10_000

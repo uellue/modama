@@ -14,30 +14,12 @@ from pathlib import Path
 import h5py
 import nbformat
 import numpy
+from modama_crawler.testing import bytes_read
 from modama_crawler.walk import walk
 
 from modama_formats_common.pydata import notebook, values
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def rchar() -> tuple[int, int]:
-    """Bytes this process has read so far, from /proc/self/io (Linux), and the size of
-    this read of it, which the kernel adds to the counter after the read."""
-    text = Path("/proc/self/io").read_bytes()
-    for line in text.decode().splitlines():
-        key, _, value = line.partition(":")
-        if key == "rchar":
-            return int(value), len(text)
-    raise RuntimeError("no rchar in /proc/self/io")
-
-
-def bytes_read(work):
-    """work's result and the bytes this process read while it ran: the counter after,
-    less the counter before and the read that gave it, exactly (no margin)."""
-    before, own = rchar()
-    result = work()
-    return result, rchar()[0] - before - own
 
 
 class Opened:
@@ -91,22 +73,6 @@ def original(x) -> dict:
 
 def mapped(x) -> dict:
     return x.values["mapped_metadata"]
-
-
-def test_bytes_read_when_the_counter_gains_a_digit(monkeypatch):
-    # Code review of zarr-stores, S4: the kernel adds a read of /proc/self/io to
-    # rchar after it; the helper must take off that very read, not another one,
-    # whose text may be a byte shorter (1 in 1,200,000 runs: one byte too many)
-    counter = [99_985]
-
-    def proc_io(path):
-        text = f"rchar: {counter[0]}\nwchar: 0\n".encode()
-        counter[0] += len(text)
-        return text
-
-    monkeypatch.setattr(Path, "read_bytes", proc_io)
-    monkeypatch.setattr(Path, "read_text", lambda path: proc_io(path).decode())
-    assert bytes_read(lambda: None) == (None, 0)
 
 
 # NumPy
