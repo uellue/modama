@@ -9,6 +9,7 @@ keeps its own.
 """
 
 import configparser
+import contextlib
 import csv
 import io
 import json
@@ -18,6 +19,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
+import yaml
 from modama_crawler.formats import (
     Collection,
     Dataset,
@@ -27,8 +29,10 @@ from modama_crawler.formats import (
     Format,
 )
 
-from .. import yamldoc
+from .. import written, yamldoc
+from ..text import head as text_head
 from .entries import headline, kept, of_data, of_documents, of_xml
+from .shortened import shortened
 
 HERE = Path(__file__).parent
 # Whole documents up to 8 MiB (spec "Bounded reading"). The October listing:
@@ -36,7 +40,12 @@ HERE = Path(__file__).parent
 # files (10.5 to 26 MB, Quantum ESPRESSO output), data dumps whose first
 # entries would be data; the next largest JSON is 5.7 MB, CSV 4.4 MB
 LIMIT = 8 << 20
-NOT_READ = {"mapped_metadata": {"not_read_larger_than_bytes": LIMIT}}
+# Of a larger file: its first bytes, for the text's head and JSON Lines, and the
+# last written.TAIL bytes for its tail; nothing parsed (change text-as-written)
+LARGE_HEAD = 64 << 10
+# What the readers raise for a file they refuse: shown as plain text instead
+# (JSON, TOML and decoding errors are ValueErrors)
+REFUSED = (ValueError, yaml.YAMLError, configparser.Error)
 SAMPLE = 64 * 1024  # what csv.Sniffer sees
 DELIMITERS = ",;\t|"
 XML_NS = "http://www.w3.org/XML/1998/namespace"
@@ -64,13 +73,35 @@ def decoded(data: bytes) -> tuple[str, str]:
         return data.decode("latin-1"), "latin-1"
 
 
-def bounded(path: str) -> bytes | None:
-    """The whole file, None if it is larger than LIMIT: then nothing of it is read."""
+def bounded(path: str) -> tuple[bytes, int]:
+    """The whole file and its size; of a file larger than LIMIT its first LARGE_HEAD bytes only."""
     with open(path, "rb", buffering=0) as f:
-        if os.fstat(f.fileno()).st_size > LIMIT:
-            return None
+        size = os.fstat(f.fileno()).st_size
+        if size > LIMIT:
+            with contextlib.suppress(OSError):  # no readahead, as text.head.read
+                os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
+            return f.read(LARGE_HEAD), size
         data = f.read(LIMIT + 1)
-    return None if len(data) > LIMIT else data
+    return data, max(size, len(data))
+
+
+def refused(data: bytes, error: Exception) -> Extracted:
+    """A file its reader refuses, as plain text: the reader's message, the text area's
+    encoding and line count as the summary line, the text by the text area's rules."""
+    encoding = text_head.encoding(data, complete=True)
+    mapped = {"parse error": str(error), "encoding": encoding}
+    values = {"original_metadata": {}, "mapped_metadata": mapped}
+    if encoding is None:
+        return Extracted(summary=[], subjects=[], values=values)
+    text = text_head.decoded(data, encoding, complete=True)
+    count = text_head.lines(text_head.Head(data, True, encoding, text, len(data)))
+    mapped |= count
+    shown = written.shown(data, encoding, len(data))
+    values["text"] = shown.text
+    if shown.credentials:
+        mapped["credentials_left_out"] = shown.credentials
+    summary = [encoding, *(f"{k} {v}" for k, v in count.items())]
+    return Extracted(summary=summary, subjects=[], values=values)
 
 
 def described(
@@ -114,15 +145,61 @@ class Document(Format):
                     continue
             yield Dataset(anchor=e.rel, basis=self.basis)
 
+    # The file's text in values["text"] (change text-as-written); a file its
+    # reader refuses shown as plain text, not failed
+    shows_text = True
+
     def extract(self, dataset: Dataset, root: str) -> Extracted:
-        data = bounded(root + dataset.anchor)
-        if data is None:
-            return Extracted(summary=[], subjects=[], values=NOT_READ)
-        summary, values = self.describe(data, dataset.anchor)
+        path = root + dataset.anchor
+        data, size = bounded(path)
+        if size > LIMIT:
+            return self.over_the_bound(data, size, path, dataset.anchor)
+        try:
+            summary, values, documents = self.describe(data, dataset.anchor)
+        except REFUSED as error:
+            if not self.shows_text:
+                raise
+            return refused(data, error)
+        encoding = text_head.encoding(data, complete=True)
+        if self.shows_text and encoding is not None and data:
+            mapped = values["mapped_metadata"]
+            shown = written.shown(data, encoding, len(data))
+            secret = mapped.get("credentials_left_out") or shown.credentials
+            if documents is not None and (secret or not shown.whole):
+                # Longer than written.TEXT, or with a credential: shortened in
+                # place, every key of what it shows (design D1, option B; D6)
+                values["text"] = shortened(documents)
+            else:
+                values["text"] = shown.text
+                if shown.credentials:
+                    mapped["credentials_left_out"] = shown.credentials
         return Extracted(summary=summary, subjects=[], values=values)
 
-    def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
+    def describe(self, data: bytes, where: str) -> tuple[list[str], dict, list | None]:
+        """The summary line, the values and the parsed documents (None: not JSON-like)."""
         raise NotImplementedError
+
+    def over_the_bound(
+        self, data: bytes, size: int, path: str, where: str
+    ) -> Extracted:
+        """A file larger than LIMIT: its head (data) and tail as text, nothing parsed."""
+        mapped = {"not_parsed_larger_than_bytes": LIMIT}
+        values = {"mapped_metadata": mapped}
+        encoding = text_head.encoding(data, complete=False)
+        if encoding is None or not self.shows_text:
+            return Extracted(summary=[], subjects=[], values=values)
+        tail = written.read_tail(path, size, len(data))
+        shown = written.shown(data, encoding, size, tail)
+        values["text"] = shown.text
+        if shown.credentials:
+            mapped["credentials_left_out"] = shown.credentials
+        return Extracted(
+            summary=self.head_summary(data, mapped, where), subjects=[], values=values
+        )
+
+    def head_summary(self, data: bytes, mapped: dict, where: str) -> list[str]:
+        """The summary line of a file over the bound, from its head; none but for JSON Lines."""
+        return []
 
 
 class Json(Document):
@@ -139,9 +216,29 @@ class Json(Document):
             return None  # only whitespace in the first bytes: cannot tell
         return "no JSON value first"
 
-    def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
+    def describe(self, data: bytes, where: str):
         documents = json_documents(data)
-        return described(of_documents(documents), where, {"documents": len(documents)})
+        mapped = {"documents": len(documents)}
+        return *described(of_documents(documents), where, mapped), documents
+
+    def head_summary(self, data: bytes, mapped: dict, where: str) -> list[str]:
+        """JSON Lines recognised from the head: at least two complete lines, each a JSON
+        object or array on its own; the summary line from the first document."""
+        documents = []
+        for line in data.split(b"\n")[:-1]:  # the last line is cut by the head
+            if not line.strip():
+                continue
+            try:
+                document = json.loads(line, parse_constant=str, parse_float=as_written)
+            except ValueError:
+                return []
+            if not isinstance(document, dict | list):
+                return []
+            documents.append(document)
+        if len(documents) < 2:
+            return []
+        mapped |= {"json lines": True, "documents at least": len(documents)}
+        return described(of_data(documents[0]), where, {})[0]
 
 
 class JsonSchema(Json):
@@ -180,19 +277,20 @@ class Yaml(Document):
     type = "application/yaml"
     reacts_to = frozenset({type})
 
-    def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
+    def describe(self, data: bytes, where: str):
         documents = yamldoc.documents(data)
-        return described(of_documents(documents), where, {"documents": len(documents)})
+        mapped = {"documents": len(documents)}
+        return *described(of_documents(documents), where, mapped), documents
 
 
 class Toml(Document):
     type = "application/toml"
     reacts_to = frozenset({type})
 
-    def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
+    def describe(self, data: bytes, where: str):
         # tomllib has no hook for integers: 0x1F and 1_000 come as 31 and 1000
         document = tomllib.loads(data.decode("utf-8-sig"), parse_float=as_written)
-        return described(of_data(document), where, {})
+        return *described(of_data(document), where, {}), [document]
 
 
 class Xml(Document):
@@ -207,7 +305,11 @@ class Xml(Document):
             return None
         return "no < first"
 
-    def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
+    # Its text is mostly markup (text-as-written, Q1); a document defusedxml
+    # refuses fails, as a safety rule (D4)
+    shows_text = False
+
+    def describe(self, data: bytes, where: str):
         root, namespace, xsi = parse_xml(data)
         mapped = {"root": root.tag}
         if namespace is not None:
@@ -219,7 +321,7 @@ class Xml(Document):
             return last.startswith("@xmlns") or last.split(":")[0][1:] in xsi
 
         summary, values = described(of_xml(root), where, mapped, plumbing)
-        return [root.tag, *summary], values
+        return [root.tag, *summary], values, None
 
 
 def parse_xml(data: bytes):
@@ -329,7 +431,7 @@ class Ini(Document):
                 return None if line.startswith("[") else "no [section] first"
         return None  # empty, or comments only: cannot tell
 
-    def describe(self, data: bytes, where: str) -> tuple[list[str], dict]:
+    def describe(self, data: bytes, where: str):
         text, encoding = decoded(data)
         # As found: names' case kept, no interpolation, [DEFAULT] a section like
         # any other (no name but NUL's can be the default section's), a repeated
@@ -339,7 +441,8 @@ class Ini(Document):
         )
         parser.optionxform = str
         parser.read_string(text, source=where)
-        return described(sections(parser), where, {"encoding": encoding})
+        # Not shortened in place: an INI file is shown as written, line by line
+        return *described(sections(parser), where, {"encoding": encoding}), None
 
 
 def sections(parser: configparser.ConfigParser):

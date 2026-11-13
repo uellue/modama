@@ -1,0 +1,98 @@
+"""A parsed JSON, YAML or TOML document shortened in place: valid JSON, every key of what
+it shows, long lists and texts cut with markers, credentials left out (change
+text-as-written, design D1 option B; spec formats/structured, "A long document shortened
+in place", "Shorter steps until it fits", "A credential in a structured document").
+
+The limits come in steps, as `reprlib`'s maxlist and maxstring limit a representation:
+first the shared check's (16 items, a text not suitable for text left out), then 3 items
+and 200 characters, then 1 item and 80 characters.
+"""
+
+import json
+
+from modama_crawler.formats.values import MAX_ITEMS, credential, textual
+
+from .. import written
+from .entries import MAX_VISITS, plain
+
+# (items per list, characters per text; None: the shared check decides)
+STEPS = ((MAX_ITEMS, None), (3, 200), (1, 80))
+SECRET = "… (left out: may be a credential)"
+MORE = "… (more values left out)"  # after MAX_VISITS values: an alias bomb
+
+
+def items(n: int) -> str:
+    return f"… ({n:,} more items)"
+
+
+def characters_left_out(n: int) -> str:
+    return f"… ({n:,} characters left out)"
+
+
+def more_characters(n: int) -> str:
+    return f"… ({n:,} more characters)"
+
+
+class _Walk:
+    def __init__(self, keep: int, chars: int | None):
+        self.keep, self.chars, self.visits = keep, chars, 0
+
+    def node(self, value, path: str):
+        """value shortened; paths as entries.of_data writes them, for the credential check."""
+        self.visits += 1
+        if self.visits > MAX_VISITS:
+            return MORE
+        if isinstance(value, dict):
+            return {
+                k: self.node(v, f"{path}.{k}" if path else str(k))
+                for k, v in value.items()
+            }
+        if isinstance(value, list):
+            if any(isinstance(v, dict | list) for v in value):
+                out = [
+                    self.node(v, f"{path}[{i}]")
+                    for i, v in enumerate(value[: self.keep], 1)
+                ]
+            else:
+                # The items shown, as entries.kept checks a list: textual ones only
+                shown = [plain(v) for v in value[: self.keep]]
+                if credential(path, [v for v in shown if textual(v)]):
+                    return SECRET
+                out = [self.leaf(v, path, alone=False) for v in shown]
+            if len(value) > self.keep:
+                out.append(items(len(value) - self.keep))
+            return out
+        return self.leaf(value, path)
+
+    def leaf(self, value, path: str, alone: bool = True):
+        value = plain(value)
+        if isinstance(value, str) and not textual(value):
+            return characters_left_out(len(value))
+        if alone and credential(path, value):
+            return SECRET
+        if isinstance(value, str) and self.chars and len(value) > self.chars:
+            return value[: self.chars] + more_characters(len(value) - self.chars)
+        return value
+
+
+def rendering(documents: list, keep: int, chars: int | None) -> str:
+    """The documents shortened by one step, one line of JSON each."""
+    walk = _Walk(keep, chars)
+    lines = []
+    for i, document in enumerate(documents, 1):
+        path = f"[{i}]" if len(documents) > 1 else ""
+        lines.append(
+            json.dumps(
+                walk.node(document, path), ensure_ascii=False, separators=(", ", ": ")
+            )
+        )
+    return "\n".join(lines)
+
+
+def shortened(documents: list) -> str:
+    """The first step's rendering that fits in written.TEXT characters, else the last one's head and tail."""
+    for keep, chars in STEPS:
+        text = rendering(documents, keep, chars)
+        if len(text) <= written.TEXT:
+            return text
+    return written.shown_text(text)

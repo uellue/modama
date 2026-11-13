@@ -47,7 +47,8 @@
           "subdir": "linux-64",
           "timestamp": 1707225498123,
           "version": "1.26.4"
-        }
+        },
+        "text": "{\n  \"arch\": \"x86_64\",\n  \"build\": \"py312h0d1d6f8_0\",\n  \"build_number\": 0,\n  \"depends\": [\n    \"libblas >=3.9.0,<4.0a0\",\n    \"libgcc-ng >=12\",\n    \"python >=3.12,<3.13.0a0\",\n    \"python_abi 3.12.* *_cp312\"\n  ],\n  \"license\": \"BSD-3-Clause\",\n  \"name\": \"numpy\",\n  \"platform\": \"linux\",\n  \"subdir\": \"linux-64\",\n  \"timestamp\": 1707225498123,\n  \"version\": \"1.26.4\"\n}"
       }
     }
   },

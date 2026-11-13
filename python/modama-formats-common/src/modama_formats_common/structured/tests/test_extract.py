@@ -1,12 +1,16 @@
 """Extraction (spec formats/structured), one test per scenario, named after it."""
 
+import base64
 import json
 import logging
 import os
+import re
 import time
+from random import Random
 
 import pytest
 import yaml
+from modama_crawler.records import build
 
 from modama_formats_common.structured import LIMIT
 from modama_formats_common.structured.entries import MAX_ENTRIES
@@ -348,11 +352,13 @@ def test_a_json_file_over_the_bound(collection_tests, tmp_path):
         f.write(b"[0")
         f.truncate(9 << 20)  # sparse: nothing is written but the start
     d = described_tree(collection_tests, tree.resolve())["/big.json"]
+    # Its head and tail are read, not parsed (text-as-written); NUL bytes are
+    # not text, so it has none
     assert d.extracted.values == {
-        "mapped_metadata": {"not_read_larger_than_bytes": 8388608}
+        "mapped_metadata": {"not_parsed_larger_than_bytes": 8388608}
     }
     assert d.extracted.summary == []
-    assert d.bytes_read < 1024  # rchar counts reading /proc/self/io too
+    assert d.bytes_read < 65536 + 16384 + 1024  # rchar counts /proc/self/io too
 
 
 def test_more_entries_than_the_bound(collection_tests, tmp_path):
@@ -388,6 +394,13 @@ def test_a_yaml_merge_key_bomb(collection_tests, tmp_path):
     with pytest.raises(yaml.constructor.ConstructorError, match="merge keys give"):
         fmt.describe("\n".join(lines).encode(), "/bomb.yaml")
     assert time.monotonic() - start < 1.0
+    # The extraction does not fail: shown as a document that does not parse
+    # (text-as-written)
+    start = time.monotonic()
+    d = one(collection_tests, tmp_path / "bomb", "bomb.yaml", "\n".join(lines))
+    assert time.monotonic() - start < 1.0
+    assert d.mapped["parse error"].startswith("merge keys give more than 10000 pairs")
+    assert d.extracted.values["text"] == "\n".join(lines)
     # A merge as YAML files use it stays
     d = one(collection_tests, tmp_path, "m.yaml", "b: &b {x: 1}\nd: {<<: *b, y: 2}\n")
     assert d.original == {"b.x": 1, "d.x": 1, "d.y": 2}
@@ -459,3 +472,227 @@ def test_a_long_text_and_a_long_list(collection_tests, tmp_path):
     document = {"long": "x" * 1001, "many": list(range(17)), "kept": 1}
     d = one(collection_tests, tmp_path, "long.json", json.dumps(document))
     assert d.original == {"kept": 1}
+
+
+# The text of a structured file as written (change text-as-written)
+
+
+def text_of(d) -> str:
+    return d.extracted.values["text"]
+
+
+def test_a_simulations_parameter_file(collection_tests, tmp_path):
+    document = {
+        "name": "probe_run_001",
+        "scheme": "scan with 4D camera",
+        "data_dim": [1, 128, 128],
+        "scan": {"dims": [23, 22], "step": [0.025, 0.025], "units": "nm"},
+        "source": {"name": "SimTool", "version": "1.2.0"},
+    }
+    content = json.dumps(document, indent=2)
+    d = one(collection_tests, tmp_path, "params.json", content)
+    assert text_of(d) == content
+    record = build(d.dataset, {})[1]["description"]
+    assert record[1] == content
+
+
+def test_a_yaml_file_with_comments(collection_tests, tmp_path):
+    content = (
+        "shared:\n  project_dir: ./project   # where the model goes\n"
+        "  subtomo_size: 96\nfit_model:\n  learning_rate: 0.0004\n"
+    )
+    assert text_of(one(collection_tests, tmp_path, "config.yaml", content)) == content
+
+
+def test_a_small_settings_file_keeps_its_summary_line(collection_tests, tmp_path):
+    content = '{"editor.tabSize": 4, "python.envManager": "conda"}'
+    d = one(collection_tests, tmp_path, "settings.json", content)
+    assert d.extracted.summary == ["tabSize 4", "conda"]
+    assert d.original == {"editor.tabSize": 4, "python.envManager": "conda"}
+    assert text_of(d) == content
+
+
+def test_no_text_of_csv_and_xml(collection_tests, tmp_path):
+    tables = described(collection_tests, "csv_tables", tmp_path / "c")
+    xml = described(collection_tests, "qe_pbtio3", tmp_path / "x")
+    for d in [*tables.values(), *xml.values()]:
+        assert "text" not in d.extracted.values
+
+
+# A long document shortened in place
+
+
+def test_a_long_array_and_a_base64_string(collection_tests, tmp_path):
+    random = Random(1)
+    numbers = [round(random.random() / 100, 4) for _ in range(6000)]
+    document = {
+        "name": "probe_run_001",
+        "scheme": "scan with 4D camera",
+        "intensities": numbers,
+        "thumbnail_png": base64.b64encode(random.randbytes(15000)).decode(),
+        "source": {"name": "SimTool", "version": "1.2.0"},
+    }
+    d = one(collection_tests, tmp_path, "sim.json", json.dumps(document, indent=4))
+    first = ", ".join(json.dumps(n) for n in numbers[:16])
+    assert text_of(d) == (
+        '{"name": "probe_run_001", "scheme": "scan with 4D camera", '
+        f'"intensities": [{first}, "… (5,984 more items)"], '
+        '"thumbnail_png": "… (20,000 characters left out)", '
+        '"source": {"name": "SimTool", "version": "1.2.0"}}'
+    )
+    assert json.loads(text_of(d))["source"] == {"name": "SimTool", "version": "1.2.0"}
+
+
+def test_a_yaml_file_longer_than_the_limit(collection_tests, tmp_path):
+    lines = [f"key_{i:02d}: value number {i}  # set by hand" for i in range(40)]
+    positions = ", ".join(str(i) for i in range(1000))
+    content = "\n".join(lines) + f"\npositions: [{positions}]\n"
+    assert len(content) > 4096
+    d = one(collection_tests, tmp_path, "long.yaml", content)
+    shown = json.loads(text_of(d))
+    assert [k for k in shown] == [f"key_{i:02d}" for i in range(40)] + ["positions"]
+    assert shown["key_07"] == "value number 7"
+    assert shown["positions"] == list(range(16)) + ["… (984 more items)"]
+    assert "#" not in text_of(d)
+
+
+def trace(spans: int) -> dict:
+    """A trace export's shape, as the Jaeger UI's "Download JSON" writes it, made up."""
+    return {
+        "data": [
+            {
+                "traceID": "0" * 32,
+                "spans": [
+                    {
+                        "traceID": "0" * 32,
+                        "spanID": f"{i:016x}",
+                        "operationName": "step",
+                        "references": [{"refType": "CHILD_OF", "spanID": "0" * 16}],
+                        "startTime": 1700000000000000 + i,
+                        "duration": 100,
+                        "tags": [{"key": f"k{j}", "value": j} for j in range(3)],
+                        "logs": [{"timestamp": 1, "fields": [{"key": "m"}]}],
+                        "processID": "p1",
+                    }
+                    for i in range(spans)
+                ],
+                "processes": {"p1": {"serviceName": "worker", "tags": []}},
+                "warnings": None,
+            }
+        ],
+        "total": 0,
+    }
+
+
+def test_a_trace_export(collection_tests, tmp_path):
+    content = json.dumps(trace(2_000), indent=4)
+    assert len(content) > 2 << 20
+    d = one(collection_tests, tmp_path, "trace.json", content)
+    text = text_of(d)
+    assert len(text) <= 4096
+    # The first spans, as many as the step that fits keeps, then their number
+    assert re.search(r'"… \(1,99\d more items\)"', text)
+    assert text.endswith('"total": 0}')
+    assert json.loads(text)["data"][0]["processes"]["p1"]["serviceName"] == "worker"
+
+
+# A credential in a structured document
+
+
+def test_a_compose_file_with_a_password(collection_tests, tmp_path):
+    content = (
+        "# test only\nservices:\n  db:\n"
+        "    environment: [POSTGRES_PASSWORD=hunter2, POSTGRES_USER=u]\n"
+        "    image: postgres\n"
+    )
+    d = one(collection_tests, tmp_path, "compose.yml", content)
+    assert text_of(d) == (
+        '{"services": {"db": {"environment": "… (left out: may be a credential)", '
+        '"image": "postgres"}}}'
+    )
+    assert "hunter2" not in str(d.extracted)
+
+
+def test_an_ini_file_with_a_password(collection_tests, tmp_path):
+    content = "[db]\nhost = db.example\npassword = hunter2\n"
+    d = one(collection_tests, tmp_path, "setup.ini", content)
+    assert text_of(d) == (
+        "[db]\nhost = db.example\n… (a line left out: may be a credential)\n"
+    )
+    assert "hunter2" not in str(d.extracted)
+
+
+# A document that does not parse is shown as text
+
+STEM_SHAPE = (
+    "{\n"
+    '    "camera_length" : {\n'
+    '        "value" : 115,\n'
+    '        "unit" : "mm"\n'
+    "    }\n"
+    '    "detectors" : {\n'
+    '        "HAADF" : {\n'
+    '            "type" : "annular",\n'
+    '            "plane" : "detector",\n'
+    '            "inner_angle" : { "value" : 60, "unit" : "mrad" }\n'
+    "        }\n"
+    "    }\n"
+    "}\n"
+)
+
+
+def test_a_comma_missing_between_two_members(collection_tests, tmp_path):
+    d = one(collection_tests, tmp_path, "stem-shape.json", STEM_SHAPE)
+    assert d.extracted is not None
+    assert d.mapped == {
+        "parse error": "Expecting ',' delimiter: line 6 column 5 (char 81)",
+        "encoding": "ascii",
+        "lines": 13,
+    }
+    assert d.original == {}
+    assert d.extracted.summary == ["ascii", "lines 13"]
+    assert text_of(d) == STEM_SHAPE
+
+
+def test_yaml_that_does_not_parse(collection_tests, tmp_path):
+    d = one(collection_tests, tmp_path, "broken.yaml", "title: [unclosed\n")
+    assert "line" in d.mapped["parse error"]
+    assert text_of(d) == "title: [unclosed\n"
+
+
+# A file over the bound; JSON Lines recognised from the head
+
+
+def test_a_trace_export_of_9_mib(collection_tests, tmp_path):
+    content = json.dumps(trace(7_500), indent=4)
+    assert len(content) > LIMIT
+    d = one(collection_tests, tmp_path, "trace.json", content)
+    assert d.bytes_read <= 65536 + 16384 + 1024  # rchar counts /proc/self/io too
+    assert d.mapped == {"not_parsed_larger_than_bytes": LIMIT}
+    head, gap, tail = text_of(d).partition(" bytes left out …\n")
+    assert head.startswith('{\n    "data": [\n') and gap
+    assert tail.endswith('    "total": 0\n}')
+
+
+def test_a_large_json_lines_log(collection_tests, tmp_path):
+    first = {"event": "start", "program": "acquire", "version": "2.1"}
+    lines = [json.dumps(first)] + [
+        json.dumps({"event": "frame", "n": i}) for i in range(400_000)
+    ]
+    content = "\n".join(lines) + "\n"
+    assert len(content) > LIMIT
+    d = one(collection_tests, tmp_path, "events.json", content)
+    complete = content.encode()[:65536].count(b"\n")
+    assert d.mapped == {
+        "not_parsed_larger_than_bytes": LIMIT,
+        "json lines": True,
+        "documents at least": complete,
+    }
+    assert d.extracted.summary == ["start", "acquire", "version 2.1"]
+
+
+def test_a_pretty_printed_document_is_not_json_lines(collection_tests, tmp_path):
+    content = json.dumps(list(range(2_000_000)), indent=2)
+    assert len(content) > LIMIT
+    d = one(collection_tests, tmp_path, "numbers.json", content)
+    assert "json lines" not in d.mapped

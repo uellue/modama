@@ -27,15 +27,15 @@ A JSON, YAML or TOML document that parses and whose text has more than 4,096 cha
 - **THEN** its text is `{"name": "probe_run_001", "scheme": "scan with 4D camera", "intensities": [` its first 16 numbers `, "… (5,984 more items)"], "thumbnail_png": "… (20,000 characters left out)", "source": {"name": "SimTool", "version": "1.2.0"}}`
 
 #### Scenario: A YAML file longer than the limit
-- **WHEN** a YAML file of about 5,000 characters has 40 keys with short values, a key `positions` with a list of 500 numbers, and a comment
-- **THEN** its text is the JSON rendering of the 40 keys and values and `positions` with its first 16 numbers and `"… (484 more items)"`, without the comment
+- **WHEN** a YAML file of about 6,500 characters has 40 keys with short values and a comment each, and a key `positions` with a list of 1,000 numbers
+- **THEN** its text is the JSON rendering of the 40 keys and values and `positions` with its first 16 numbers and `"… (984 more items)"`, without the comments
 
 ### Requirement: Shorter steps until it fits
 Where the rendering is still longer than 4,096 characters, it SHALL be made again with lists of at most 3 items and texts of at most 200 characters (a longer text cut, `… (N more characters)` appended), then with 1 item and 80 characters; a rendering still too long SHALL be shown by the text area's rule "Head and tail of a long text", N then counting the characters of the rendering left out.
 
 #### Scenario: A trace export
-- **WHEN** a generated trace export of 2 MiB, `{"data": [{"traceID": …, "spans": [20,000 spans, each with tags and logs], "processes": {…}}], "total": 0}`, is extracted
-- **THEN** its text shows the first span with one item per list, `"… (19,999 more items)"`, and ends with `"total": 0}`, at most 4,096 characters
+- **WHEN** a generated trace export of 2.7 MB, `{"data": [{"traceID": …, "spans": [2,000 spans, each with tags and logs], "processes": {…}}], "total": 0}`, is extracted
+- **THEN** its text shows the first spans as the step that fits keeps them, then `"… (N more items)"` for the rest, and ends with `"total": 0}`, valid JSON of at most 4,096 characters
 
 ### Requirement: A credential in a structured document
 A JSON, YAML or TOML document in which the shared check `values.credential` left out a value SHALL never be shown as written, whatever its length: it SHALL be shown as its rendering (requirement "A long document shortened in place"), each such value as `"… (left out: may be a credential)"`. An INI or `.cfg` file SHALL have each line the check flags replaced by `… (a line left out: may be a credential)`, its leading whitespace kept.
@@ -71,7 +71,7 @@ For a JSON file over the bound, when the head's complete lines (blank lines skip
 
 #### Scenario: A large JSON Lines log
 - **WHEN** a file `events.json` of 9 MiB holds one JSON object per line, the first `{"event": "start", "program": "acquire", "version": "2.1"}`
-- **THEN** `mapped_metadata` has `json lines` true and `documents at least` the number of complete lines in its first 64 KiB, and its summary line is `start, acquire, 2.1`
+- **THEN** `mapped_metadata` has `json lines` true and `documents at least` the number of complete lines in its first 64 KiB, and its summary line is `start, acquire, version 2.1` (a text that is a number after its name, the area's rule)
 
 #### Scenario: A pretty-printed document is not JSON Lines
 - **WHEN** a pretty-printed JSON array of numbers of 9 MiB is extracted, some of whose lines are numbers alone
