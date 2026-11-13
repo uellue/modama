@@ -36,7 +36,22 @@ Formats SHALL run in descending priority, ties broken by format id, and an entry
 
 #### Scenario: Higher priority wins a shared file
 - **WHEN** two formats would each build a dataset from the same entry
-- **THEN** the dataset of the higher-priority format exists, the other does not, and a warning names both
+- **THEN** the dataset of the higher-priority format exists, the other does not, and the crawl warns of nothing
+
+#### Scenario: A claimed entry is not offered to later formats
+- **WHEN** a format claims `a.txt` and `a.txt.bak` and adopts the child dataset of the folder `sub`, and a format of lower priority that reacts to `text/plain` runs after it on a directory that also holds `b.txt`
+- **THEN** the later format finds only `b.txt` among the directory's files, by type and by name, and no child dataset, and the crawl warns of nothing; the folder `sub` stays among the directory's entries, since what is claimed is its child dataset, not the folder
+
+#### Scenario: A later claim on a claimed entry
+- **WHEN** a format of lower priority names in its dataset's members an entry that an earlier format claimed
+- **THEN** its dataset is rejected, and a warning names the entry and both formats
+
+### Requirement: A file two formats want is flagged for review
+A format SHALL be able to ask which format claimed a file of its directory that it is not offered. A format whose dataset needs such a file (a companion) SHALL warn at its anchor in one fixed wording, `<format>: <file> is claimed by <earlier format>; two formats want it`, rather than report the file as missing or short, so that one search for `two formats want it` in a crawl's warnings lists every such case, to develop rules for files two formats want (decision 344).
+
+#### Scenario: A companion claimed by another format is named as such
+- **WHEN** a test format at priority 70 claims one companion of a Merlin frame series (`acq_1.mib`), of an EMPAD pair (its raw file) or of a K2IS capture (one sector file)
+- **THEN** the crawl warns at the header or `.gtg` file, `em/<format>: <file> is claimed by <test format>; two formats want it`, and not that the file is missing or that the capture has too few sector files; Merlin builds its dataset of the other frame files, EMPAD and K2IS build none
 
 ### Requirement: Claims stay within the directory
 A format SHALL only claim its directory's own entries and whole child datasets, which it adopts as parts of its dataset; a claim on anything else SHALL be rejected with a warning.
@@ -66,9 +81,16 @@ A dataset SHALL get a parent only through a format declared as a collection type
 - **WHEN** a non-collection format adopts a child dataset
 - **THEN** the adoption stands and the result carries a warning naming both datasets
 
-### Requirement: Budgets bound every format call
-Each format call on a directory SHALL have a byte budget for reads, enforced while reading, and a time limit, checked after the call returns (isolating a format that hangs is deferred to worker subprocesses, architecture G); exceeding either SHALL discard that format's result for that directory with a warning naming the format, and SHALL NOT stop the crawl.
+### Requirement: A byte budget bounds every format call
+Each format call on a directory SHALL have a byte budget for reads, enforced while reading; exceeding it SHALL discard that format's result for that directory with a warning naming the format, and SHALL NOT stop the crawl.
 
-#### Scenario: A slow format's result is discarded
-- **WHEN** a format takes longer than the time limit on a directory
-- **THEN** its result is discarded, the directory is recognised by the remaining formats, and a warning names the format, the time it took and the limit
+#### Scenario: A format reads past its budget
+- **WHEN** a format reads more bytes on a directory than its budget allows
+- **THEN** its result is discarded, the directory is recognised by the remaining formats, and a warning names the format and the read
+
+### Requirement: A slow format call keeps its result
+A format call that takes longer than a set time SHALL keep its result and SHALL be logged with the format, the directory and the time it took; the log line SHALL NOT be one of the result's warnings, since the time depends on the load and the result must not. Stopping a call that hangs is deferred to worker subprocesses (architecture G).
+
+#### Scenario: A slow format's result is kept
+- **WHEN** a format takes longer than the set time on a directory
+- **THEN** its result is kept, the result carries no warning about it, and the log names the format, the directory and the time it took

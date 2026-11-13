@@ -30,7 +30,11 @@
   "extractions": {
     "/compound-dtype-complex.h5": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "<c16 [100] <c16",
+        "<c8 [100] <c8",
+        ">c16 [100] >c16"
+      ],
       "values": {
         "mapped_metadata": {},
         "original_metadata": {
@@ -63,7 +67,9 @@
     },
     "/vlen_string_dset.h5": {
       "subjects": [],
-      "summary": [],
+      "summary": [
+        "DS1 [4] vlen bytes"
+      ],
       "values": {
         "mapped_metadata": {},
         "original_metadata": {

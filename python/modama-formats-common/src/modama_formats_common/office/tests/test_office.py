@@ -144,9 +144,21 @@ def test_an_empty_file_named_like_a_presentation(collection_tests, tmp_path):
     assert crawled(collection_tests, tmp_path / "empty_pptx") == []
 
 
-def test_a_password_protected_word_document(collection_tests, tmp_path):
-    d = only(recognise(collection_tests, "protected_docx", tmp_path))
-    assert (d.type, d.format) == ("application/x-ole-storage", "")
+def test_an_encrypted_office_open_xml_document(collection_tests, tmp_path):
+    docx = described(collection_tests, "protected_docx", tmp_path / "a")
+    xlsx = described(collection_tests, "encrypted_xlsx", tmp_path / "b")
+    for one in (docx, xlsx):
+        assert (one.dataset.type, one.dataset.format) == (
+            "application/x-ole-storage",
+            "common/ole",
+        )
+        assert one.mapped == {"encrypted": True}
+        assert one.original == {}
+        assert one.extracted.summary == ["(encrypted)"]
+        assert one.description.startswith("(encrypted); ")
+    assert docx.dataset.basis == (
+        f"OLE2 header, named as Office Open XML; common/docx: not {DOCX}, no ZIP header"
+    )
 
 
 def test_lock_files_beside_documents(collection_tests, tmp_path):
@@ -336,6 +348,21 @@ def test_custom_entries_and_xmp_structures(collection_tests, tmp_path):
     ]
     assert values["XMP.bib:representative.bib:rep-name"] == "name of the representative"
     assert values["XMP.bib:priorities[1].rdf:value"] == "number of priority n"
+
+
+def test_a_broken_xmp_packet(collection_tests, tmp_path):
+    broken = described(collection_tests, "pdf_broken_xmp", tmp_path)
+    assert broken.original["Info.Title"] == "Broken XMP"
+    assert not any(key.startswith("XMP.") for key in broken.original)
+    assert broken.mapped["pages"] == 1
+    warning = "XMP not read: no element found: line 1, column 177"
+    assert broken.extracted.values["reader_warnings"] == [warning]
+    assert broken.extracted.summary == [
+        "Broken XMP",
+        "pypdf",
+        "pages 1",
+        f"reader warning: {warning}",
+    ]
 
 
 def test_an_encrypted_pdf_that_opens_without_a_password(collection_tests, tmp_path):

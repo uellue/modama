@@ -35,6 +35,9 @@ class K2is(Format):
 
     def recognize(self, d: Directory) -> Iterable[Dataset]:
         sectors = d.of_type(SECTOR)
+        # Sector files a format before this one claimed: named, not counted
+        # short (decision 344); by name, as their type is not offered
+        theirs = {n for n in d.claimed if n.lower().endswith(".bin")}
         taken = set()
         # The longest stem first: a sector file belongs to the longest stem it
         # starts with, whether that stem has 8 or not, so that an incomplete
@@ -50,18 +53,23 @@ class K2is(Format):
                 and s.name.lower().endswith(".bin")
             ]
             taken.update(mine)
+            others = sorted(n for n in theirs if n.startswith(stem))
+            theirs.difference_update(others)
+            for name in others:
+                d.claimed_elsewhere(tags.rel, name)
             if len(mine) == SECTORS:
                 yield Dataset(
                     anchor=tags.rel,
                     members=(tags.rel, *mine),
                     basis=f"{SECTORS} sector files {stem}*.bin",
                 )
-            elif mine:
-                d.warn(
-                    tags.rel,
-                    f"{tags.name}: {len(mine)} sector files {stem}*.bin, "
-                    f"a K2IS acquisition has {SECTORS}",
-                )
+            elif mine or others:
+                if len(mine) + len(others) != SECTORS:
+                    d.warn(
+                        tags.rel,
+                        f"{tags.name}: {len(mine)} sector files {stem}*.bin, "
+                        f"a K2IS acquisition has {SECTORS}",
+                    )
             # A lone .gtg: of the type with a DM header; a DM3 one is a file of
             # interest (decision 183); one that cannot be read keeps its type
             elif (data := header(d, tags)) is not None:

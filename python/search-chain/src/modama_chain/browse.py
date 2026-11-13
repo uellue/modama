@@ -213,10 +213,10 @@ class Browser:
         return "/" + path.strip("/"), absolute
 
     def _file(self, request: Request) -> str:
-        """The path of a regular file: live views and snapshots are for files (D3)."""
+        """The path of a regular file: snapshots are for files (D13)."""
         path, absolute = self._path(request)
         if not os.path.isfile(absolute):
-            raise BadRequest(f"not a file: {path}; a folder has no live views")
+            raise BadRequest(f"not a file: {path}; a snapshot is of a file")
         return path
 
     def _cached(self, path: str) -> dict:
@@ -307,7 +307,10 @@ class Browser:
 
     def on_live(self, request: Request) -> Response:
         self._own_page(request)  # it ends a running computation and starts one (D3)
-        path = self._file(request)
+        path, absolute = self._path(request)
+        # a file's, or an open folder's (@weber, 2026-11-13)
+        if not (os.path.isfile(absolute) or os.path.isdir(absolute)):
+            raise BadRequest(f"neither a file nor a folder: {path}")
         live_views = self.live(path, request.headers.get(TAB_HEADER))
         return self._json({"path": path, "views": views.as_dicts(live_views)})
 

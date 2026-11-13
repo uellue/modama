@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest import mock
 
-from modama_crawler.formats import Dataset, Extraction
+from modama_crawler.formats import DIRECTORY, Collection, Dataset, Extraction, Format
 from modama_crawler.records import description, format_names, subjects
 from modama_crawler.testing import CollectionTests
 from modama_crawler.walk import walk
@@ -118,3 +118,25 @@ def described(ct: CollectionTests, fixture: str, workdir: Path) -> list[Describe
             f"{max((n for s in reads.values() for n in s), default=0)}"
         )
     return out
+
+
+class _Probe(Format):
+    """probe/claim: claims one file by name, at a priority above every em format (the review of bug 311)."""
+
+    name = "claim"
+    type = "application/x.probe"
+    priority = 70
+    reacts_to = frozenset({DIRECTORY})
+
+    def __init__(self, target: str):
+        self.target = target
+
+    def recognize(self, d):
+        if d.phase == "post" and d.entry(self.target) is not None:
+            yield Dataset(anchor=f"{d.rel.rstrip('/')}/{self.target}", basis="probe")
+
+
+def claimed_first(ct: CollectionTests, fixture: str, workdir: Path, name: str):
+    """Recognise a fixture with a format `probe/claim` that claims the file `name` before this collection's formats (decision 344)."""
+    probe = Collection("probe", [_Probe(name)]).formats
+    return walk(ct.materialise(fixture, workdir), probe + ct.collection.formats)
