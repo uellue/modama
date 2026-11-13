@@ -170,6 +170,8 @@ def live_views(
     path: str,
     config: Path | None,
     before: Stored,
+    slots: live.Slots,
+    tab: str | None = None,
 ) -> list[View]:
     """The live views: the crawler's code on the checkout, then the harvester's, the warehouse's, the search API's, matchmaker's."""
     started = time.monotonic()
@@ -178,6 +180,8 @@ def live_views(
         path,
         base_url=stores.oai_url,
         config=config,
+        slots=slots,
+        tab=tab,
         stored=before.record,
     )
     took = (

@@ -6,11 +6,11 @@ Status: alpha, on the `crawler` branch. The work goes in three steps: the OAI-PM
 
 ## Start here
 
-For a person new to the crawler, the format collections or the search stack, in this order:
+For a person new to the crawler, the format collections or the search stack, in this order (a path starting with `/` in these docs, such as `/prototypes/search-stack/`, starts at the repository root):
 
 1. "How it works" below (10 minutes): walk, extract, store, serve.
 2. "Getting started": the VM, one install line, `pytest`, then `modama-crawler records --verbose tests/`, the first instrument: what the crawler makes of a folder, and why.
-3. The search stack, `/prototypes/search-stack/README.md`, "Test deployment": `./uptest.sh && ./runtest.sh e2e`. Then open the browser on port 7655 (`http://localhost:7655/?path=/`), pick a file, and read "Looking around" there.
+3. The search stack, `/prototypes/search-stack/README.md`, "Test deployment": `./uptest.sh && ./runtest.sh e2e`. Then open the browser on port 7655 (`http://localhost:7655/?path=/`), pick a file, and read "Looking around" there. Without Docker or a free stack (one per VM), go on with 4: `records --verbose` needs neither.
 4. To write formats: `src/modama_crawler/formats/TEMPLATE.md`, all of it, and the skeleton collection beside it. Then one real area as the model: `modama_formats_common/structured` is small, `modama_formats_em/dm` the most complete.
 5. "Seeing what happens" and "What to look out for" below, before your first run on real data.
 6. Look the rest up when you need it: why something is as it is, in the decision log at the end of `design/architecture.md`; what is next, in `BACKLOG.md`, "Next"; how it must behave, in `openspec/specs/`; what real data did, in `design/field-tests/`.
@@ -179,20 +179,22 @@ The tests build every database by the migrations, so `pytest` runs the new one. 
 
 ## Adding a file format
 
-Formats are grouped into *collections*: the crawler's own under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`), others in packages of their own that register an entry point: `em` in `/python/modama-formats-em/` (EMPAD, Digital Micrograph with its workspaces, K2IS, Merlin, MRC, NanoMegas block files) and `common` in `/python/modama-formats-common/` (images, notebooks and other Python data-science files, office documents, plain text, structured data). Each package's README has the table of its formats. Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one, with its core requirements, the steps and the tests; `formats/skeleton/` is a working collection to copy; the skill `/.claude/skills/format-collection/` (plain Markdown) is the workflow from the person's sample files to a merged change. The `em` collection is the most complete example of multi-file formats with metadata extraction.
+Formats are grouped into *collections*: the crawler's own under `src/modama_crawler/formats/` (`core`, `collapse`, `zarr`), others in packages of their own that register an entry point: `em` in `/python/modama-formats-em/` (EMPAD, Digital Micrograph with its workspaces, K2IS, Merlin, NanoMegas block files) and `common` in `/python/modama-formats-common/` (images, notebooks and other Python data-science files, office documents, plain text, structured data). Each package's README has the table of its formats. Each collection brings its own MIME definitions, recognisers and test fixtures. `formats/TEMPLATE.md` describes how to write one, with its core requirements, the steps and the tests; `formats/skeleton/` is a working collection to copy; the skill `/.claude/skills/format-collection/` (plain Markdown) is the workflow from the person's sample files to a merged change. The `em` collection is the most complete example of multi-file formats with metadata extraction.
 
-When choosing a MIME type, use an existing one if possible. Look at freedesktop.org, Debian's package list, or reader libraries such as LiberTEM and HyperSpy. Otherwise use an unofficial `application/x.…` type, never a misleading generic one.
+When choosing a MIME type, use an existing one if possible, otherwise an unofficial `application/x.…` type, never a misleading generic one; how to look one up: TEMPLATE.md, "Rules first, Python second".
 
 ## Running tests
 
-| Suite | Where, command | Tests | Time, temporary files | Needs |
-|---|---|---|---|---|
-| crawler | `python/crawler`: `pytest` | 451 | 5 to 7 min, 390 MB | the PostgreSQL binaries; both format packages installed |
-| formats, common | `python/modama-formats-common`: `pytest src`, then `TZ=Europe/Berlin pytest src` | 276 | 25 s, 320 MB | its `[test]` extra |
-| formats, EM | `python/modama-formats-em`: `pytest src`, also with `TZ=Europe/Berlin` | 163 | 25 s, 130 MB | |
-| search chain | `python/search-chain`: `pytest` | 74 | 25 s to 1 min | the `[browse]` extra; the EOSC submodules checked out |
-| end to end | `prototypes/search-stack`: `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e` | 29 checks | about 6 min on a fresh stack | Docker; a secrets folder with a language model key (its README, "Secrets for the end-to-end test") |
-| lint | the repository root: `uvx pre-commit run --all-files`, as CI runs it (ruff pinned in `.pre-commit-config.yaml`; its check leaves out `prototypes/`) | | seconds | for `prototypes/` too: `uvx ruff check`, with 7 known errors in notebooks (`BACKLOG.md`) |
+| Suite | Where, command | Time, temporary files | Needs |
+|---|---|---|---|
+| crawler | `python/crawler`: `pytest` | 5 to 7 min, 390 MB | the PostgreSQL binaries; both format packages installed |
+| formats, common | `python/modama-formats-common`: `pytest src`, then `TZ=Europe/Berlin pytest src` | 25 s, 320 MB | its `[test]` extra |
+| formats, EM | `python/modama-formats-em`: `pytest src`, also with `TZ=Europe/Berlin` | 25 s, 130 MB | |
+| search chain | `python/search-chain`: `pytest` | 25 s to 1 min | the `[browse]` extra; the EOSC submodules checked out |
+| end to end | `prototypes/search-stack`: `./downtest.sh --reset && ./uptest.sh && ./runtest.sh e2e` | about 6 min on a fresh stack | Docker; a secrets folder with a language model key (its README, "Secrets for the end-to-end test") |
+| lint | the repository root: `uvx pre-commit run --all-files`, as CI runs it (ruff pinned in `.pre-commit-config.yaml`; its check leaves out `prototypes/`). It checks only files Git tracks: `git add` new files first, or they pass unchecked | seconds | for `prototypes/` too: `uvx ruff check`, with 7 known errors in notebooks (`BACKLOG.md`) |
+
+A suite passes when every test passes and none is skipped: a missing prerequisite fails, naming what is missing (`AGENTS.md`, "Fail, don't skip"). The table gives no test counts, since they grow with every change.
 
 Times measured on 2026-11-13 in the VM (8 vCPUs), each suite alone; with other coding agents' suites running at the same time they take longer (the crawler's 6.5 min next to a second suite). Keep temporary files out of the shared `/tmp`: `pytest --basetemp /var/tmp/<you>/pytest` and `TMPDIR=/var/tmp/<you>/tmp`. While you iterate, run the tests the change most likely affects first, one run per case (`AGENTS.md`, standing rules); before a merge and after every merge into `crawler`, all suites, since one package's change can move another's results (a format package installed changes the crawler's tests: TEMPLATE.md, "Core requirements", 11). No CI job runs these suites or the end-to-end test yet (R13); for the crawler's area CI runs the pre-commit hooks only (`/.github/workflows/ci.yml`).
 
@@ -225,11 +227,12 @@ Two measures of what the instruments did: before `trace` existed, a fresh coding
 ## Finding and fixing an issue on real data
 
 1. **See it.** In browse, a snapshot ("Save for Claude"), `trace`, or a crawl's warnings on staging (`modama-crawler runs`; the field-test findings in `design/field-tests/`).
-2. **Ours or upstream's?** Read the error where it is raised: in our code, in a reader library, or in the file. Compare with a second reader where there is one (`ncempy_tags.py` beside the DM tests), and check which version of the library actually runs (the worker's image, not your venv).
+2. **Ours or upstream's?** Read the error where it is raised: in our code, in a reader library, or in the file. Compare with a second reader where there is one (`ncempy_tags.py` beside the DM tests), and check which version of the library actually runs (the worker's image, not your venv). Check the code you run against what the docs and `BACKLOG.md` claim: a revert or a merge can undo a documented fix, and the docs still describe it. The reproducer's test is the guard against that, so a fix without one is not done.
 3. **Cut a reproducer.** A real file goes into the repository only with its owner's agreement, and only what the rules and the extractor read: the header, not the data (`blockfile/tests/cut-header.sh` and `k2is/tests/cut-capture.sh` in `python/modama-formats-em`, beside the fixtures they made). Otherwise compose a file that has the offending lines, or generate one. Record where it came from and what was cut in `fixtures.toml`; recipes per format: `design/testing.md`, "Deriving small files from real-world cases".
-4. **Show the test failing** on the old code, with the fixture and a test named after the spec scenario you add.
+4. **Show the test failing** on the old code, with the fixture and a test named after the spec scenario you add. The scenario goes where the format's spec lives: the crawler's own formats in `openspec/specs/formats/`; those of `em` and `common` still in the deltas of unarchived changes (`em-formats-and-extraction`, `dm-containers-and-k2is`, `recognition-checks-content`, `common-*`; `find openspec/changes -path '*specs/formats/<area>/spec.md'`), into the requirement it belongs to. On the red run, the fixture plugin records nothing for a reproducer whose extraction fails (formats-testing spec, "A recorded extraction error is meant"); where it records one anyway (a bug in recognition, not extraction; a fixture marked `invalid-by-design` or `representative`), delete `expected/<fixture>.json` after the red run and let the run after the fix record it.
 5. **Fix, merge, run all suites**, and reload browse on the real file.
 6. **An upstream bug** goes into `BACKLOG.md`, "Sync with upstream", as *worked around here*, with how to report it.
+7. **Hand over** people first: the symptom as the person saw it, the cause, the fix, the reproducer (fixture and test, failing before and passing after); then for agents the commits, the commands and their output, the suites with the number of skipped tests.
 
 The worked example, the Merlin header (2026-11-12): staging's run 3 failed 97 of 104 Merlin headers, and @weber saw one in browse with `UnicodeDecodeError`. The cause was upstream's: RosettaSciIO's `parse_hdr_file` reads the header as UTF-8, and the Merlin software writes "µ" as the single byte 0xB5 (`Sensor Bias (V, µA)`). The reproducer is composed, not copied: a header with the lines of a public test header, plus the two lines quoted from the staging file's error message (`merlin/tests/generate.py`, fixture `not_utf8` in `fixtures.toml`). The fix reads the header in Latin-1 ourselves (`modama_formats_em/merlin/__init__.py`, `read_header`), the test checks `Sensor Bias (V, µA)`, and `BACKLOG.md` "Sync with upstream" has the upstream fix.
 

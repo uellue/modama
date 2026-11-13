@@ -108,9 +108,20 @@ def cmd_browse(args) -> int:
     from werkzeug.serving import run_simple
 
     from .browse import Browser, Settings
+    from .live import AT_ONCE
     from .upstream import Upstream
 
     env = os.environ.get
+    try:
+        at_once = int(env("MODAMA_BROWSE_LIVE", AT_ONCE))
+    except ValueError:
+        at_once = 0
+    if at_once < 1:
+        print(
+            "modama-chain: MODAMA_BROWSE_LIVE must be a whole number of at least 1",
+            file=sys.stderr,
+        )
+        return 2
     stores = stores_from_env()
     upstream = Path(env("MODAMA_BROWSE_UPSTREAM", "/upstream"))
     snapshots = env("MODAMA_BROWSE_SNAPSHOTS")
@@ -125,6 +136,7 @@ def cmd_browse(args) -> int:
             config=args.config,
             host_root=env("MODAMA_BROWSE_HOST_ROOT", str(stores.root)),
             snapshots=Path(snapshots) if snapshots else None,
+            at_once=at_once,
         )
     )
     run_simple(args.bind, args.port, app, threaded=True)
