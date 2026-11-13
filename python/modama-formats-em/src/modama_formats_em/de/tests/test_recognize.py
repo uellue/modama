@@ -77,7 +77,9 @@ def test_stems_that_nest(collection_tests, tmp_path):
     }
 
 
-def test_an_unread_info_file_of_a_longer_stem(collection_tests, tmp_path, monkeypatch):
+def test_an_info_file_of_a_longer_stem_that_cannot_be_read(
+    collection_tests, tmp_path, monkeypatch
+):
     # Review of read-limit-per-file: an info file that cannot be read (or is
     # refused over the read limit) keeps its stem's files out of the shorter
     # stem's acquisition; they stay as they are without em/de
