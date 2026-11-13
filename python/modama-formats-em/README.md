@@ -25,9 +25,15 @@ An extractor shows what the file or its reader (the format driver, for example R
 ## Setup and tests
 
 ```bash
-uv pip install --python ~/.venv/bin/python -e python/crawler[test] -e python/modama-formats-em
+uv pip install --python ~/.venv/bin/python -e "python/crawler[test]" -e python/modama-formats-em
 cd python/modama-formats-em && pytest src
+TZ=Europe/Berlin pytest src                       # once more in another time zone: dates as the file writes them
+pytest --basetemp /var/tmp/em/pytest src          # temporary files on disk, not in the shared /tmp
 ```
+
+About 25 s and 130 MB of temporary files. The crawler's README has every suite and how
+to run them side by side with other coding agents (`python/crawler/README.md`,
+"Running tests").
 
 Each format is a subpackage of `src/modama_formats_em/` with its MIME rules, fixtures and tests, written as `python/crawler/src/modama_crawler/formats/TEMPLATE.md` describes; the crawler's pytest plugin runs them. Real files as fixtures are added only with agreement on each file.
 

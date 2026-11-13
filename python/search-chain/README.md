@@ -14,6 +14,8 @@ modama-chain status                    # last crawl, harvest and indexing run, a
 Written for the search stack (`/prototypes/search-stack/`), where it is installed in the crawler container:
 `docker compose exec crawler modama-chain trace /notes/readme.txt`.
 
+Use it first, before SQL, `docker exec … python` or the stores' HTTP APIs: a question about where an item went that `trace`, `status` or `browse` cannot answer is a finding about this tool, to fix or to put in the backlog (`python/crawler/README.md`, "Seeing what happens").
+
 ```bash
 modama-chain browse [--config TOML] [--bind ADDRESS] [--port 7655]   # a local web page, below
 ```
@@ -84,4 +86,4 @@ From upstream (EOSC metadata-warehouse v1.10.0, data-commons-search 0.10.2), all
 
 ## Tests
 
-`pytest` here: the rules (flags, rank, T, keys) with canned inputs; `browse` on the crawler's and the EM collection's fixtures (paths, listings, the live part and its limits, each view's assembly, snapshots), which needs the extra `browse`, the crawler and `modama-formats-em` installed and the EOSC submodules checked out; the emulations' declarations against the repository's `prototypes/search-stack/` (`test_sync.py`; missing files fail). Against the real stack: `/prototypes/search-stack/runtest.sh e2e`, which also compares the browser's live views with what the stack stored.
+`pytest` here: the rules (flags, rank, T, keys) with canned inputs; `browse` on the crawler's and the EM collection's fixtures (paths, listings, the live part and its limits, each view's assembly, snapshots), which needs the extra `browse`, the crawler and `modama-formats-em` installed and the EOSC submodules checked out; the emulations' declarations against the repository's `prototypes/search-stack/` (`test_sync.py`; missing files fail). In a new worktree the submodules are empty: `git submodule update --init prototypes/EOSC-Data-Commons/data-commons-search prototypes/EOSC-Data-Commons/metadata-crawlers prototypes/EOSC-Data-Commons/metadata-warehouse` from the repository root first. Against the real stack: `/prototypes/search-stack/runtest.sh e2e`, which also compares the browser's live views with what the stack stored.
