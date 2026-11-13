@@ -210,6 +210,28 @@ def stored_record(
     return (row[0], row[1]) if row else None
 
 
+def flagged(
+    conn: psycopg.Connection,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
+    """The stored warnings as (path, text), and the failed extractions as (anchor, format, error) (review, D17).
+
+    The warnings are the recognition's, stored per folder as [path, text], and
+    those a dataset carries, at its anchor.
+    """
+    warnings = conn.execute(
+        """
+        SELECT w->>0, w->>1
+        FROM directories, jsonb_array_elements(pre_warnings || post_warnings) AS w
+        UNION ALL
+        SELECT anchor, w #>> '{}' FROM datasets, jsonb_array_elements(warnings) AS w
+        """
+    ).fetchall()
+    failures = conn.execute(
+        "SELECT anchor, format, extract_error FROM datasets WHERE extract_error IS NOT NULL"
+    ).fetchall()
+    return warnings, failures
+
+
 def record(conn: psycopg.Connection, identifier: str) -> Record | None:
     row = conn.execute(
         "SELECT identifier, datestamp FROM records WHERE identifier = %s", (identifier,)
