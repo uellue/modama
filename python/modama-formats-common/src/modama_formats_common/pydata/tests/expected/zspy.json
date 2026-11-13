@@ -23,9 +23,7 @@
         "shape [4, 4, 16, 16]"
       ],
       "values": {
-        "mapped_metadata": {
-          "zarr_format": 2
-        },
+        "mapped_metadata": {},
         "original_metadata": {
           "Experiments.4D-STEM scan.attributes._lazy": false,
           "Experiments.4D-STEM scan.axis-0._type": "UniformDataAxis",
@@ -96,7 +94,8 @@
           "Experiments.4D-STEM scan.package": "pyxem",
           "Experiments.4D-STEM scan.package_version": "0.0.0",
           "file_format": "ZSpy",
-          "file_format_version": "3.3"
+          "file_format_version": "3.3",
+          "zarr_format": 2
         }
       }
     }

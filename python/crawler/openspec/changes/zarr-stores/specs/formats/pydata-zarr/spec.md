@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Zarr stores (v2 and v3) and HyperSpy's `.zspy` stores as one collapsed dataset each, described by what their metadata files say, never by reading a chunk or anything outside the store. Known limit: the dataset's stamp is its folder's listing, so a metadata file rewritten below the store's first level, or in place, is extracted again only by the spot check, a change of the top-level listing or of the installation.
+Zarr stores (v2 and v3) and HyperSpy's `.zspy` stores as one collapsed dataset each, described by what their metadata files say, never by reading a chunk or anything outside the store; a change of any of its metadata files makes the store's dataset extracted again.
 
 ## ADDED Requirements
 
@@ -36,12 +36,12 @@ A Zarr store named `*.zspy` whose root attributes have `file_format` `ZSpy` SHAL
 - **WHEN** a store written by RosettaSciIO's zspy writer is named `scan.zarr`
 - **THEN** it is a dataset of the format `common/zarr`, described with HyperSpy's skip list and summary line
 
-### Requirement: The extractor of a collapsed store reads below its anchor
-The extractor SHALL read the metadata files of the store's nodes below its anchor, which are not members of the collapsed dataset; this is the one exception to the rule that an extractor reads its dataset's members only.
+### Requirement: A change of any metadata file is noticed
+The extractor SHALL read the metadata files of the store's nodes below its anchor, which are not members of the collapsed dataset; the dataset's stamp SHALL cover the name, size and times of every metadata file of the nodes the extractor walks (`zarr.json`, `.zarray`, `.zgroup`, `.zattrs`), found by `lstat` without listing an array's folder, and no chunk.
 
 #### Scenario: A metadata file below the first level changes
-- **WHEN** an attribute in `a/b/.zattrs` of a stored store is rewritten and the next crawl runs without the spot check picking the store
-- **THEN** the store's extraction is reused, and when the spot check picks it, the change shows as a spot-check difference
+- **WHEN** a store's `a/b/.zattrs` is rewritten in place, so that no folder's listing changes, and, separately, one of its chunks
+- **THEN** the store's stamp changes with the `.zattrs` and not with the chunk
 
 ### Requirement: A store is described by its metadata files
 The extractor SHALL walk the store's nodes (folders holding `zarr.json`, `.zarray` or `.zgroup`) from its root and give as `original_metadata`, under the node's dotted path, every attribute of every node, every entry of each array's metadata document as found, objects flattened as `a.b` and `a[2].b`, and the root's `zarr_format`.
@@ -97,7 +97,7 @@ The walk SHALL stop at 1,000 kept entries, 5,000 nodes, a third of the extractor
 
 #### Scenario: The walk stops at 5000 nodes
 - **WHEN** a store holds 6,000 empty groups
-- **THEN** `mapped_metadata.walk` says it was cut at the node limit of 5000, and the group's listing was not read beyond 5,001 names
+- **THEN** `mapped_metadata.walk` says it was cut at the object limit of 5000, and the group's listing was not read beyond 5,001 names
 
 #### Scenario: The walk stops after 16 MiB
 - **WHEN** a store holds 20 groups whose `.zattrs` are 1 MiB each

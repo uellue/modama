@@ -3,45 +3,42 @@
 Each node's attributes and each array's metadata document, as found, under
 the node's dotted path from the store's root, as the HDF5 walk names them
 (spec formats/pydata-zarr). Read with Python's json, as the Zarr v2 and v3
-specifications define the documents, not with zarr-python, which follows a
-symlink out of the store and fails a whole group on one codec or data type
-it does not know (change zarr-stores, design D1). Only metadata files are
-opened and only groups listed: never a chunk, never an array's folder, never
-a symlink, never anything but a regular file.
+specifications define the documents, not with zarr-python (decision of
+2026-11-13, 323; change zarr-stores, design D1): zarr-python 3.4.2 follows a
+group that is a symlink out of the store and returns that folder's
+attributes, and fails a whole group's listing on one codec or v3 data type it
+does not know. Here a name is looked at with lstat before it is opened, only
+folders and regular files are opened, never through a symlink, and only the
+metadata files of nodes and the folders of groups: never a chunk, never an
+array's folder.
 """
 
-import errno
+import hashlib
 import json
 import os
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from ..structured.entries import of_data
-from .values import ZSPY, Walk, headline, hyperspy, matches
+from .values import MAX_OBJECTS, ZSPY, Walk, headline, hyperspy, matches
 
 V3 = "zarr.json"
 ARRAY, GROUP, ATTRIBUTES = ".zarray", ".zgroup", ".zattrs"
+METADATA = (V3, ARRAY, GROUP, ATTRIBUTES)
 
-# The bounds besides the walk's (values.Walk): a metadata file over MAX_FILE
-# is not read, the walk stops after MAX_BYTES read, a group's listing is
-# read up to MAX_NAMES names (proposal zarr-stores, A5)
+# The bounds besides the walk's (values.Walk: entries, objects, time; a
+# group's listing by the HDF5 walk's room rule): a metadata file over
+# MAX_FILE is not read, the walk stops after MAX_BYTES read, and nodes below
+# MAX_DEPTH are not walked, as each level holds an open folder (@weber, 320)
 MAX_FILE = 1 << 20
 MAX_BYTES = 16 << 20
-MAX_NAMES = 10_000
-
-# Entries of a node's document said once for the store (zarr_format, in the
-# mapped values), or a copy of other nodes' documents (consolidated_metadata);
-# a document's attributes are the node's, under its own path
-LEFT_OUT = frozenset(
-    {"zarr_format", "node_type", "consolidated_metadata", "attributes"}
-)
+MAX_DEPTH = 100
+OBJECT_LIMIT = f"cut at the object limit of {MAX_OBJECTS}"  # as values.Walk says it
+BYTE_LIMIT = f"cut at the byte limit of {MAX_BYTES >> 20} MiB"
 
 FOLDER = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-# Non-blocking, so that opening a FIFO named like a metadata file does not wait
+# Non-blocking: a FIFO swapped in after the lstat must not make the open wait
 FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
-# What opening a name that is no regular file or folder of the store gives:
-# absent, a symlink (O_NOFOLLOW), a file where a folder was asked for
-NOT_THERE = (errno.ENOENT, errno.ELOOP, errno.ENOTDIR)
 
 Skip = Callable[[str, object], bool]
 
@@ -52,136 +49,217 @@ def nothing(name: str, value) -> bool:
 
 
 class Unreadable(ValueError):
-    """A metadata file that is not a JSON object."""
+    """A metadata file that is not a JSON object, or nested too deeply to read."""
+
+
+class Node:
+    """A folder of the store holding zarr.json, .zarray or .zgroup.
+
+    `files` are its metadata files that are regular files, with their lstat;
+    `folder` is the open folder, valid until the walk goes on. The walk lists
+    and enters it after the caller has looked at it only if `descend` is set.
+    """
+
+    def __init__(self, rel: str, depth: int, folder: int, files: dict):
+        self.rel = rel  # "" for the store's root, else "a/b"
+        self.depth = depth
+        self.folder = folder
+        self.files: dict[str, os.stat_result] = files
+        self.descend = False
+
+    @property
+    def dotted(self) -> str:
+        return self.rel.replace("/", ".")
+
+
+def _metadata_files(folder: int) -> dict[str, os.stat_result]:
+    """The metadata files of the open folder that are regular files, by lstat."""
+    found = {}
+    for name in METADATA:
+        try:
+            st = os.stat(name, dir_fd=folder, follow_symlinks=False)
+        except OSError:
+            continue  # absent, or not to be looked at: not there for the walk
+        if stat.S_ISREG(st.st_mode):
+            found[name] = st
+    return found
+
+
+def _is_node(files: dict) -> bool:
+    return V3 in files or ARRAY in files or GROUP in files
+
+
+class Tree:
+    """The nodes of a store, depth first, children in name order, within the bounds.
+
+    `enter(dotted)` decides before a child folder is opened whether it is
+    walked at all (a skip list's groups); `walk` counts the nodes and stops
+    the tree with its cut; `too_deep` names the nodes below which nothing
+    was walked.
+    """
+
+    def __init__(self, path: str, walk: Walk):
+        self.path = path
+        self.walk = walk
+        self.enter: Callable[[str], bool] = lambda dotted: True
+        self.too_deep: list[str] = []
+
+    def nodes(self) -> Iterator[Node]:
+        root = os.open(self.path, FOLDER)
+        try:
+            yield from self._below(Node("", 0, root, _metadata_files(root)))
+        finally:
+            os.close(root)
+
+    def _below(self, node: Node) -> Iterator[Node]:
+        self.walk.objects += 1
+        yield node
+        if not node.descend:
+            return
+        if node.depth == MAX_DEPTH:
+            self.too_deep.append(node.rel)
+            return
+        names, more = self._listing(node.folder)
+        for name in names:
+            if self.walk.over():
+                return
+            rel = f"{node.rel}/{name}" if node.rel else name
+            if not self.enter(rel.replace("/", ".")):
+                self.walk.objects += 1  # on a skip list: not entered
+                continue
+            try:
+                folder = os.open(name, FOLDER, dir_fd=node.folder)
+            except OSError:
+                continue  # gone, or a symlink since the listing: not walked
+            try:
+                files = _metadata_files(folder)
+                if _is_node(files):
+                    yield from self._below(Node(rel, node.depth + 1, folder, files))
+            finally:
+                os.close(folder)
+            if self.walk.cut:
+                return
+        if more:  # the walk had no room for the rest of the listing
+            self.walk.cut = OBJECT_LIMIT
+
+    def _listing(self, folder: int) -> tuple[list[str], bool]:
+        """The folder's subfolders that are no symlinks, in name order, and whether the
+        listing had more names than the walk has room for objects: it is read until it
+        holds one name more (the HDF5 walk's rule, `hdf5.hard_links`)."""
+        room = MAX_OBJECTS - self.walk.objects
+        names: list[str] = []
+        with os.scandir(folder) as listing:
+            for n, entry in enumerate(listing):
+                if n > room:
+                    return sorted(names), True
+                if entry.is_dir(follow_symlinks=False):
+                    names.append(entry.name)
+        return sorted(names), False
+
+
+def state(path: str) -> str:
+    """A digest of the names, sizes and times of the store's metadata files, for the
+    dataset's stamp (spec formats/pydata-zarr, "A change of any metadata file is
+    noticed"): the nodes the extractor walks, found by lstat; only a v3 node's zarr.json
+    is read, for its node_type, so that an array's folder is never listed."""
+    walk, budget = Walk(), _Budget()
+    found = []
+    nodes = Tree(path, walk).nodes()
+    try:
+        for node in nodes:
+            for name, st in sorted(node.files.items()):
+                rel = f"{node.rel}/{name}" if node.rel else name
+                found.append([rel, st.st_size, st.st_mtime, st.st_ctime])
+            node.descend = _group(node, budget)
+    except _Stop:
+        walk.cut = BYTE_LIMIT
+    except OSError as e:  # the store went away or cannot be opened: a stamp of its own
+        found.append(["error", e.errno])
+    finally:
+        nodes.close()
+    return hashlib.sha256(json.dumps([found, walk.cut]).encode()).hexdigest()
+
+
+def _group(node: Node, budget: "_Budget") -> bool:
+    """Whether a node is a group, from its marker files; a v3 node from its zarr.json's
+    node_type, a document that cannot be read counting as no group, one not read for
+    its size as a group (as the extractor takes it)."""
+    if V3 not in node.files:
+        return ARRAY not in node.files
+    try:
+        document = _read(node, V3, budget)
+    except Unreadable:
+        return False
+    return document is None or document.get("node_type") != "array"
 
 
 class _Stop(Exception):
     """The byte limit is reached."""
 
 
-class _Store:
-    """A walk of one store: the entries (Walk), bytes read, files and nodes not read."""
+class _Budget:
+    """Bytes read so far, and the metadata files not read for their size."""
 
     def __init__(self):
-        self.walk = Walk()
         self.read = 0
         self.not_read: list[str] = []
-        self.unreadable: list[str] = []
-        self.skip: Skip = nothing
 
-    def document(self, folder: int, name: str, where: str) -> dict | None:
-        """The JSON object of the metadata file `name` in the open folder; {} when it is
-        over MAX_FILE (named in not_read); None when there is none: absent, a symlink,
-        not a regular file. Raises Unreadable when it is not a JSON object."""
-        try:
-            fd = os.open(name, FILE, dir_fd=folder)
-        except OSError as e:
-            if e.errno in NOT_THERE:
-                return None
-            raise
-        try:
-            st = os.fstat(fd)
-            if not stat.S_ISREG(st.st_mode):
-                return None
-            if st.st_size > MAX_FILE:
-                self.not_read.append(where)
-                return {}
-            if self.read + st.st_size > MAX_BYTES:
-                self.walk.cut = f"cut at the byte limit of {MAX_BYTES >> 20} MiB"
-                raise _Stop
-            data = b""
-            while len(data) <= MAX_FILE and (more := os.read(fd, MAX_FILE + 1)):
-                data += more
-        finally:
-            os.close(fd)
-        self.read += len(data)
-        try:
-            document = json.loads(data)
-        except (ValueError, RecursionError) as e:
-            raise Unreadable(f"{where} is not JSON: {e}") from None
-        if not isinstance(document, dict):
-            raise Unreadable(f"{where} is not a JSON object")
-        return document
 
-    def node(self, folder: int, rel: str) -> tuple[bool, dict, dict] | None:
-        """(is an array, its metadata document, its attributes) of the open folder, or
-        None when it is no node: neither zarr.json nor .zarray nor .zgroup."""
-        where = f"{rel}/" if rel else ""
-        if (document := self.document(folder, V3, where + V3)) is not None:
-            attributes = document.get("attributes", {})
-            if not isinstance(attributes, dict):
-                raise Unreadable(f"{where}{V3}: attributes are not a JSON object")
-            return document.get("node_type") == "array", document, attributes
-        array = self.document(folder, ARRAY, where + ARRAY)
-        if array is None and (group := self.document(folder, GROUP, where + GROUP)) is None:
+def _read(node: Node, name: str, budget: _Budget) -> dict | None:
+    """The JSON object of a metadata file of the node; None when it is over MAX_FILE
+    (named in not_read) or no longer the regular file the lstat saw."""
+    looked = node.files[name]
+    where = f"{node.rel}/{name}" if node.rel else name
+    if looked.st_size > MAX_FILE:
+        budget.not_read.append(where)
+        return None
+    if budget.read + looked.st_size > MAX_BYTES:
+        raise _Stop
+    try:
+        fd = os.open(name, FILE, dir_fd=node.folder)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        same = (st.st_dev, st.st_ino) == (looked.st_dev, looked.st_ino)
+        if not same or not stat.S_ISREG(st.st_mode) or st.st_size > MAX_FILE:
             return None
-        attributes = self.document(folder, ATTRIBUTES, where + ATTRIBUTES) or {}
-        if array is not None:
-            return True, array, attributes
-        return False, group, attributes
+        data = b""
+        while len(data) <= MAX_FILE and (more := os.read(fd, MAX_FILE + 1)):
+            data += more
+    finally:
+        os.close(fd)
+    budget.read += len(data)
+    try:
+        document = json.loads(data)
+    except (ValueError, RecursionError, MemoryError) as e:
+        raise Unreadable(f"{where} is not JSON: {type(e).__name__}: {e}") from None
+    if not isinstance(document, dict):
+        raise Unreadable(f"{where} is not a JSON object")
+    return document
 
-    def add(self, path: str, value) -> None:
-        """Every value of value under path, as the structured area flattens a document."""
-        for name, found in of_data(value, path):
-            if self.walk.over():
-                raise _Stop
-            if not self.skip(name, found):
-                self.walk.add(name, found)
 
-    def visit(self, folder: int, rel: str, dotted: str, found) -> None:
-        """The node in the open folder, and below it the nodes of a group."""
-        is_array, document, attributes = found
-        if is_array:
-            for key, value in document.items():
-                if key not in LEFT_OUT:
-                    self.add(f"{dotted}.{key}" if dotted else key, value)
-        for key, value in attributes.items():
-            self.add(f"{dotted}.{key}" if dotted else key, value)
-        if is_array:
-            return  # its folder holds chunks: never listed
-        # Folders only, by the listing's own type (no stat), not symlinks; in
-        # name order, as Zarr keeps no order of its own (zarr-python sorts too)
-        names, more = [], False
-        with os.scandir(folder) as listing:
-            for n, entry in enumerate(listing):
-                if n == MAX_NAMES:
-                    more = True
-                    break
-                if entry.is_dir(follow_symlinks=False):
-                    names.append(entry.name)
-        for name in sorted(names):
-            if self.walk.over():
-                raise _Stop
-            self.child(folder, f"{rel}/{name}" if rel else name, name,
-                       f"{dotted}.{name}" if dotted else name)  # fmt: skip
-        if more:
-            self.walk.cut = f"cut at the listing limit of {MAX_NAMES} names"
-            raise _Stop
+def _documents(node: Node, budget: _Budget) -> tuple[bool, dict, dict]:
+    """(is an array, its metadata document, its attributes); {} for one not read."""
+    if V3 in node.files:
+        document = _read(node, V3, budget) or {}
+        attributes = document.get("attributes", {})
+        if not isinstance(attributes, dict):
+            raise Unreadable(f"{node.rel or '.'}/{V3}: attributes are not an object")
+        return document.get("node_type") == "array", document, attributes
+    marker = ARRAY if ARRAY in node.files else GROUP
+    document = _read(node, marker, budget) or {}
+    attributes = {}
+    if ATTRIBUTES in node.files:
+        attributes = _read(node, ATTRIBUTES, budget) or {}
+    return marker == ARRAY, document, attributes
 
-    def child(self, folder: int, rel: str, name: str, dotted: str) -> None:
-        """A subfolder of a group: walked if it is a node, not entered otherwise."""
-        if self.skip(dotted, None):
-            self.walk.objects += 1  # on the skip list: not entered
-            return
-        try:
-            fd = os.open(name, FOLDER, dir_fd=folder)
-        except OSError as e:
-            if e.errno in NOT_THERE:
-                return
-            raise
-        try:
-            try:
-                found = self.node(fd, rel)
-            except Unreadable:
-                self.unreadable.append(rel)
-                self.walk.objects += 1
-                return
-            if found is None:
-                return  # no node (.ipynb_checkpoints/): not entered
-            self.walk.objects += 1
-            self.visit(fd, rel, dotted, found)
-        finally:
-            os.close(fd)
+
+# Entries of a node's document not kept: its type, said by the walk's
+# structure; a copy of other nodes' documents; the attributes, the node's own
+# entries under its path (and zarr_format, but for the root's and that of a
+# nested store of another version)
+LEFT_OUT = frozenset({"node_type", "consolidated_metadata", "attributes"})
 
 
 def described(path: str) -> tuple[dict, dict]:
@@ -189,53 +267,87 @@ def described(path: str) -> tuple[dict, dict]:
 
     HyperSpy's skip list applies to a store whose root says it is HyperSpy's
     (file_format ZSpy), whatever its name. Raises Unreadable when the root's
-    metadata is not a JSON object, ValueError when the root is no node.
+    metadata cannot be read, ValueError when the root is no node.
     """
-    store = _Store()
-    folder = os.open(path, FOLDER)
+    walk, budget = Walk(), _Budget()
+    tree = Tree(path, walk)
+    skip: Skip = nothing
+    unreadable: list[str] = []
+    version = None
+
+    def add(name: str, value) -> None:
+        for dotted, found in of_data(value, name):
+            if walk.over():
+                raise _Stop
+            if not skip(dotted, found):
+                walk.add(dotted, found)
+
+    def join(dotted: str, key: str) -> str:
+        return f"{dotted}.{key}" if dotted else key
+
+    nodes = tree.nodes()
     try:
-        found = store.node(folder, "")
-        if found is None:
-            raise ValueError("no zarr.json, .zarray or .zgroup at the store's root")
-        if found[2].get("file_format") == ZSPY:
-            store.skip = hyperspy
-        try:
-            store.visit(folder, "", "", found)
-        except _Stop:
-            pass
+        for node in nodes:
+            if not node.rel and not _is_node(node.files):
+                raise ValueError("no zarr.json, .zarray or .zgroup at the store's root")
+            try:
+                is_array, document, attributes = _documents(node, budget)
+                pairs = [
+                    (join(node.dotted, k), v)
+                    for k, v in document.items()
+                    if is_array and k not in LEFT_OUT and k != "zarr_format"
+                ]
+                own = document.get("zarr_format", version)
+                if node.rel and own != version:  # a nested store of another version
+                    pairs.append((join(node.dotted, "zarr_format"), own))
+                pairs += [(join(node.dotted, k), v) for k, v in attributes.items()]
+                if not node.rel:
+                    version = document.get("zarr_format", 3 if V3 in node.files else 2)
+                    pairs.insert(0, ("zarr_format", version))
+                    if attributes.get("file_format") == ZSPY:
+                        skip = hyperspy
+                        tree.enter = lambda dotted: not hyperspy(dotted, None)
+                for name, value in pairs:
+                    add(name, value)
+            except (Unreadable, RecursionError, MemoryError) as e:
+                if not node.rel:
+                    raise Unreadable(str(e)) from None
+                unreadable.append(node.rel)
+                continue
+            node.descend = not is_array
+    except _Stop:
+        walk.cut = walk.cut or BYTE_LIMIT
     finally:
-        os.close(folder)
-    original, cut = store.walk.result()
-    mapped = {"zarr_format": found[1].get("zarr_format"), **cut}
-    if store.not_read:
-        mapped["not_read"] = store.not_read
-    if store.unreadable:
-        mapped["unreadable"] = store.unreadable
+        nodes.close()
+    original, cut = walk.result()
+    mapped = dict(cut)
+    for key, paths in (
+        ("not_read", budget.not_read),
+        ("unreadable", unreadable),
+        ("too_deep", tree.too_deep),
+    ):
+        if paths:
+            mapped[key] = paths
     return original, mapped
 
 
 # The summary line, the one positive list (TEMPLATE.md): a HyperSpy signal's
 # title, signal type and data shape, as for .hspy files (hdf5.HEADLINE); else
 # the shape and data type of the root array or of the first array one level
-# down (proposal zarr-stores, Q2)
-HEADLINE = (
+# down (@weber, 318)
+HYPERSPY = (
     "Experiments.*.metadata.General.title",
     "Experiments.*.metadata.Signal.signal_type",
     "Experiments.*.data.shape",
-    "shape",
-    "data_type",
-    "dtype",
-    "*.shape",
-    "*.data_type",
-    "*.dtype",
 )
+PLAIN = ("shape", "data_type", "dtype", "*.shape", "*.data_type", "*.dtype")
 TERMS = ("Experiments.*.metadata.Signal.signal_type",)
 
 
 def summary(values: dict) -> list[str]:
-    if any(matches(HEADLINE[2], k) for k in values):
-        return headline(values, HEADLINE[:3])
-    return headline(values, HEADLINE[3:])
+    if any(matches(HYPERSPY[2], k) for k in values):
+        return headline(values, HYPERSPY)
+    return headline(values, PLAIN)
 
 
 def terms(values: dict) -> list[str]:

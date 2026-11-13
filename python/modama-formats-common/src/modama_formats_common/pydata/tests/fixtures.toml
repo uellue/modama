@@ -101,7 +101,7 @@ generator = "modama_formats_common.pydata.tests.generate:python2"
 purpose = "representative"
 validity = "vendor-written: scan.zspy, written by RosettaSciIO 0.15.0's zspy writer (zarr 2.18.7) on 2026-11-13 from a signal dictionary shaped like a pyxem 4D-STEM scan (4 x 4 x 16 x 16 uint16, signal type electron_diffraction), made-up values, an entry nobody has seen, without consolidated metadata, as the four .zspy stores of the October listing"
 licence = "MIT"
-source = "write-zspy.py beside this file, run as its docstring says; written again on 2026-11-13, identical (diff -r)"
+source = "write_zspy.py beside this file, run as its docstring says (rosettasciio[zspy,hdf5]==0.15.0, consolidate=False); written again on 2026-11-13, identical (diff -r); the tree's digest, in fixtures/zspy: find scan.zspy -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum gives b213734357a9f6e7c6f6623253ee5fe2a54e96d35e64930b2acb85a63df1a5a8"
 
 [zarr_stores]
 purpose = "representative"

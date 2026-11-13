@@ -3,10 +3,11 @@
 RosettaSciIO 0.15.0's zspy writer needs zarr 2 (its extra `zspy` requires
 `zarr<3`), which cannot share a venv with the tests' zarr 3; so the store was
 written once, on 2026-11-13, and is committed. Its module imports h5py, which
-the extra `zspy` does not bring. To write it again, into a new folder:
+the extra `zspy` does not bring, and the extra `hdf5` does (there is no extra
+`hspy`). To write it again, into a new folder:
 
-    uv run --no-project --python 3.12 --with "rosettasciio[zspy]==0.15.0" \
-        --with h5py python write-zspy.py TARGET
+    uv run --no-project --python 3.12 --with "rosettasciio[zspy,hdf5]==0.15.0" \
+        python write_zspy.py TARGET
 
 (it ran with zarr 2.18.7, numcodecs 0.15.2, h5py 3.16.0). A signal dictionary
 as HyperSpy hands one to the writer, shaped like a pyxem 4D-STEM scan (signal

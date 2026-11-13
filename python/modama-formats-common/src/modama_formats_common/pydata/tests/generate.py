@@ -143,7 +143,7 @@ ABTEM = {
 def abtem_like(path: Path, zarr_format: int) -> None:
     """A group with abTEM-like root attributes and an array array0 of 8 x 8 x 16 x 16
     float32 in one chunk, written by zarr-python."""
-    g =zarr.create_group(store=str(path), zarr_format=zarr_format)
+    g = zarr.create_group(store=str(path), zarr_format=zarr_format)
     g.attrs.update(ABTEM)
     a = g.create_array("array0", shape=(8, 8, 16, 16), chunks=(8, 8, 16, 16),
                        dtype="float32")  # fmt: skip

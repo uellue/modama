@@ -42,9 +42,7 @@
         "<f4"
       ],
       "values": {
-        "mapped_metadata": {
-          "zarr_format": 2
-        },
+        "mapped_metadata": {},
         "original_metadata": {
           "array0.chunks": [
             8,
@@ -86,7 +84,8 @@
           "metadata0.label": "intensity",
           "metadata0.semiangle_cutoff": 20,
           "metadata0.type": "DiffractionPatterns",
-          "metadata0.units": "arb. unit"
+          "metadata0.units": "arb. unit",
+          "zarr_format": 2
         }
       }
     },
@@ -97,9 +96,7 @@
         "float32"
       ],
       "values": {
-        "mapped_metadata": {
-          "zarr_format": 3
-        },
+        "mapped_metadata": {},
         "original_metadata": {
           "array0.chunk_grid.configuration.chunk_shape": [
             8,
@@ -142,7 +139,8 @@
           "metadata0.label": "intensity",
           "metadata0.semiangle_cutoff": 20,
           "metadata0.type": "DiffractionPatterns",
-          "metadata0.units": "arb. unit"
+          "metadata0.units": "arb. unit",
+          "zarr_format": 3
         }
       }
     },
@@ -150,9 +148,7 @@
       "subjects": [],
       "summary": [],
       "values": {
-        "mapped_metadata": {
-          "zarr_format": 2
-        },
+        "mapped_metadata": {},
         "original_metadata": {
           "inner.zarr.array0.chunks": [
             2,
@@ -173,7 +169,8 @@
             2
           ],
           "inner.zarr.defocus": 50,
-          "kind": "a series of simulations"
+          "kind": "a series of simulations",
+          "zarr_format": 2
         }
       }
     }

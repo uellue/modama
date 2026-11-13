@@ -218,6 +218,13 @@ class Zarr(CoreZarr):
             values={"original_metadata": original, "mapped_metadata": mapped},
         )
 
+    def collapsed_state(self, path: str) -> str:
+        # Every metadata file the extractor may read, anywhere in the store
+        # (@weber, 319): a change below the store's first level is noticed too
+        from . import zarrstore
+
+        return zarrstore.state(path)
+
 
 class Zspy(Zarr):
     """A Zarr store named .zspy whose root attributes say file_format ZSpy, as
