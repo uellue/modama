@@ -23,10 +23,17 @@ licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
 source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_truncated.docx, sha256 8bb91125cc08ec4a5a771e86ff20cfd0646998b2c1da4361e0241036816a471f, unchanged"
 
 [protected_docx]
-purpose = "reproducer"
-validity = "vendor-written: a .docx encrypted with a password by Word, which writes it as an OLE2 file (EncryptedPackage); not a ZIP"
+purpose = "representative"
+validity = "vendor-written: a .docx encrypted with a password by Word, which writes it as an OLE2 file (EncryptionInfo, EncryptedPackage, the DataSpaces storage; no property sets); not a ZIP"
 licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
 source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testWORD_protected_passtika.docx, sha256 09b941cabd222172dfd0b213a6a3fd404348b930ca285fa951bad14afb0fdf5c, unchanged"
+
+[encrypted_xlsx]
+purpose = "reproducer"
+validity = "vendor-written bytes under another name: protected_docx's file copied at test time as budget.xlsx. The OLE2 file of an encrypted Office Open XML document is the same for every kind (EncryptionInfo, EncryptedPackage, DataSpaces), so its name alone says a workbook (Apache Tika's POIFSContainerDetector: without decrypting, the kind can't be told); olefile, the area's OLE2 library, cannot write OLE2 files"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "modama_formats_common.office.tests.generate:encrypted_xlsx, from protected_docx"
+generator = "modama_formats_common.office.tests.generate:encrypted_xlsx"
 
 [powerpoint_pptx]
 purpose = "representative"
@@ -120,6 +127,13 @@ validity = "written at test time by pypdf (the pinned version): one blank page, 
 licence = "MIT"
 source = "modama_formats_common.office.tests.generate:pdf_aes"
 generator = "modama_formats_common.office.tests.generate:pdf_aes"
+
+[pdf_broken_xmp]
+purpose = "reproducer"
+validity = "invalid-by-design: written at test time by pypdf (the pinned version): one blank page, an Info title, and an XMP metadata stream cut off inside the packet (not well-formed XML)"
+licence = "MIT"
+source = "modama_formats_common.office.tests.generate:pdf_broken_xmp"
+generator = "modama_formats_common.office.tests.generate:pdf_broken_xmp"
 
 [text_pdf]
 purpose = "reproducer"

@@ -7,6 +7,10 @@ with the code page the property set gives; a time as olefile gives it, with
 each property set: olefile's `get_userdefined_properties` pairs names and
 values by position, not by property id (BACKLOG, "Sync with upstream").
 
+An OLE2 file with an `EncryptedPackage` stream is an encrypted Office Open
+XML document: nothing else is read of it, and its summary line is
+`(encrypted)` (@weber, 2026-11-13, 242d).
+
 Skip list (spec formats/office, "What is left out", `SKIPPED`): the binary
 properties, which would otherwise be decoded as text; values not suitable for
 text (common.kept).
@@ -16,10 +20,14 @@ from datetime import datetime
 
 from modama_crawler.formats import Extracted
 
-from .common import headline, kept, opened
+from .common import ENCRYPTED, headline, kept, opened
 
 SUMMARY = "\x05SummaryInformation"
 DOCUMENT_SUMMARY = "\x05DocumentSummaryInformation"
+# The stream of an encrypted Office Open XML document (MS-OFFCRYPTO 2.3.4.4,
+# also under rights management), which libmagic ("CDFV2 Encrypted") and Apache
+# Tika (POIFSContainerDetector) look for
+ENCRYPTED_PACKAGE = "EncryptedPackage"
 # The binary properties by olefile's names: a picture, a signature, hyperlinks
 SKIPPED = frozenset({"thumbnail", "dig_sig", "hlinks"})
 # SummaryInformation's total edit time is a duration: olefile gives seconds
@@ -73,6 +81,18 @@ def extract(path: str) -> Extracted:
 
     pairs = []
     with opened(path) as f, olefile.OleFileIO(f) as ole:
+        if ole.exists(ENCRYPTED_PACKAGE):
+            # Only the directory's names are read, never the encrypted stream.
+            # No `encrypted` false for the other files: a legacy file encrypts
+            # its streams in its own ways, which are not looked for
+            return Extracted(
+                summary=[ENCRYPTED],
+                subjects=[],
+                values={
+                    "original_metadata": {},
+                    "mapped_metadata": {"encrypted": True},
+                },
+            )
         for stream, names in (
             (SUMMARY, olefile.OleMetadata.SUMMARY_ATTRIBS),
             (DOCUMENT_SUMMARY, olefile.OleMetadata.DOCSUM_ATTRIBS),
