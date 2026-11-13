@@ -113,7 +113,9 @@ exposes them and they are readable without root, and give joules per text.
 
 ## Setup on grace
 
-You need: Python 3.11 to 3.14 (3.13 is what production uses), glibc 2.34 or newer (onnxruntime-gpu's wheels),
+You need: Python 3.12 (the lock files `requirements-*.txt` are compiled for it, grace's miniforge Python
+3.12.12; for another version, compile them again from `requirements-*.in` with the command in their first
+lines), glibc 2.34 or newer (onnxruntime-gpu's wheels),
 an NVIDIA driver 580 or newer (CUDA 13), and access to pypi.org and huggingface.co (the model, 65 MB, at the
 pinned revision `aa8f8b060edb00e03bfdd08813a2949946c8ba55` of `qdrant/bge-small-en-v1.5-onnx-q`, is downloaded
 on the first run into `cache/`; the variants, 170 MB, are written next to it). Everything stays in the folder:
@@ -126,12 +128,12 @@ ssh grace
 cd ~/grace-embedding
 
 uname -m                  # aarch64
-python3 --version         # 3.11 to 3.14
+python3 --version         # 3.12
 ldd --version | head -1   # 2.34 or newer
 nvidia-smi                # "Driver Version: 580..." or newer, "CUDA Version: 13.x"; no other processes
                           # (grace, 2026-11-13: driver 620.70.06, CUDA 13.5, GH200 with 146831 MiB)
 free -g                   # confirm the RAM (grace, 2026-11-13: 478 GiB total, about 412 GiB available);
-                          # a case whose memory would exceed half of what is available is skipped
+                          # memory is checked before step D only (not yet before every case)
 
 python3 -m venv venv-cpu
 venv-cpu/bin/pip install --no-cache-dir --require-hashes -r requirements-cpu.txt

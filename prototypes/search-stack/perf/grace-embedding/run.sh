@@ -30,6 +30,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 venv_cpu="${VENV_CPU:-$here/venv-cpu}"
 venv_gpu="${VENV_GPU:-$here/venv-gpu}"
 export FASTEMBED_CACHE_DIR="${FASTEMBED_CACHE_DIR:-$here/cache}"
+# Hugging Face's own cache (and its xet logs) inside the folder too
+export HF_HOME="${HF_HOME:-$here/cache/hf}"
 if [ ! -x "$venv_cpu/bin/python" ]; then
 	echo "No CPU venv at $venv_cpu: see README.md, Setup." >&2
 	exit 2
