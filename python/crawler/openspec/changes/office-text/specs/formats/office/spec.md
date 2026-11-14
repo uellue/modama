@@ -80,14 +80,14 @@ When the conversion raises, takes more than 30 s, or a kept XML part declares a 
 
 #### Scenario: A DOCTYPE after a comment
 - **WHEN** a `.docx` whose `word/document.xml` has a comment of 2 KB, then `<!DOCTYPE w:document [<!ENTITY a "x">]>` before its root is extracted
-- **THEN** the extraction succeeds with the metadata, no `text`, `text not rendered` `Unrendered: word/document.xml: a DOCTYPE`, and the record's second description is the tag lines
+- **THEN** the extraction succeeds with the metadata, no `text`, `text not rendered` `Unrendered: word/document.xml: a DOCTYPE`, `xml bytes`, `bytes read` and `large document text` all the same, and the record's second description is the tag lines
 
 #### Scenario: A rendering over its deadline
 - **WHEN** the rendering of `testWORD_custom_props.docx` does not end within the deadline (in the test 0.2 s, a converter that sleeps 5 s)
 - **THEN** the extraction ends after the deadline with the metadata and `text not rendered` `TimeoutError: rendering took more than 0.2 s`
 
 ### Requirement: The size of a document's XML in its values
-For every rendered document the extractor SHALL put into `mapped_metadata` the bytes read of the file (`bytes read`), the XML parts' size uncompressed (`xml bytes`) and `large document text`, `true` when the bytes read are past 1 MiB, the text rendered all the same.
+For every document it tries to render, a failure of the copy included, the extractor SHALL put into `mapped_metadata` the bytes read of the file (`bytes read`), the XML parts' size uncompressed (`xml bytes`) and `large document text`, `true` when the bytes read are past 1 MiB, the text rendered all the same.
 
 #### Scenario: A large document
 - **WHEN** a `.docx` written by python-docx holds 2.6 MB of text in one paragraph

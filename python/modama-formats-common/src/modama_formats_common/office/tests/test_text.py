@@ -7,6 +7,7 @@ Run with -s to see each description and the bytes the extractor read.
 
 import io
 import os
+import signal
 import time
 import zipfile
 from pathlib import Path
@@ -238,7 +239,7 @@ def test_embedded_audio(collection_tests, tmp_path):
     pptx = described(collection_tests, "powerpoint_mp3", tmp_path)
     src = FIXTURES / "powerpoint_mp3" / "testPPT_embeddedMP3.pptx"
     with zipfile.ZipFile(src) as z:
-        doc, _ = rendered.proxy(z)
+        doc = rendered.proxy(z, rendered.xml_parts(z))
     with zipfile.ZipFile(doc) as p:
         assert p.getinfo("ppt/media/media1.mp3").file_size == 0
         assert p.getinfo("ppt/media/image1.png").file_size == 0
@@ -256,7 +257,7 @@ def test_a_part_of_unknown_type(tmp_path):
     with zipfile.ZipFile(path, "a") as z:
         z.writestr("word/blob.unknownext", b"x" * 1000)
     with zipfile.ZipFile(path) as z:
-        doc, _ = rendered.proxy(z)
+        doc = rendered.proxy(z, rendered.xml_parts(z))
     with zipfile.ZipFile(doc) as p:
         assert p.getinfo("word/blob.unknownext").file_size == 0
         assert p.getinfo("word/document.xml").file_size > 0
@@ -308,17 +309,27 @@ def test_a_part_with_a_doctype(collection_tests, tmp_path):
             + rest
         )
 
-    repacked(
+    path = repacked(
         FIXTURES / "word_docx" / "testWORD_custom_props.docx",
         tmp_path / "tree" / "dtd.docx",
         "word/document.xml",
         doctype,
     )
+    with zipfile.ZipFile(path) as z:
+        names = [i.filename for i in z.infolist()]
+        kept = rendered.xml_parts(z)
+        size = sum(z.getinfo(name).file_size for name in kept)
+    # Not the first part copied: the copy had started when it stopped
+    assert names.index("word/document.xml") > 0
     docx = one(collection_tests, tmp_path / "tree")
     assert "text" not in docx.extracted.values
     assert docx.mapped["text not rendered"] == (
         "Unrendered: word/document.xml: a DOCTYPE"
     )
+    # The sizes are there all the same (code review S1)
+    assert docx.mapped["xml bytes"] == size
+    assert docx.mapped["bytes read"] > 0
+    assert docx.mapped["large document text"] is False
     assert docx.original["core.title"] == "My Title"
     second = dc_metadata(docx.dataset, format_names([]))["description"][1]
     assert "core.title: My Title" in second.splitlines()
@@ -330,6 +341,7 @@ def test_a_rendering_over_its_deadline(collection_tests, tmp_path, monkeypatch):
 
     monkeypatch.setattr(rendered, "DEADLINE", 0.2)
     monkeypatch.setattr(rendered, "word", slow)
+    handler = signal.getsignal(signal.SIGALRM)
     start = time.monotonic()
     docx = described(collection_tests, "word_docx", tmp_path)
     assert time.monotonic() - start < 4  # two extractions, each stopped at 0.2 s
@@ -337,6 +349,9 @@ def test_a_rendering_over_its_deadline(collection_tests, tmp_path, monkeypatch):
         "TimeoutError: rendering took more than 0.2 s"
     )
     assert docx.original["core.title"] == "My Title"
+    # The timer is off and the handler restored (code review S2)
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    assert signal.getsignal(signal.SIGALRM) is handler
 
 
 # A document with much XML is flagged

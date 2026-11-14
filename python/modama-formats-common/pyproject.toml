@@ -40,6 +40,9 @@ dependencies = [
     # office: that HTML as Markdown (1.2.3 of 2026-06-30, MIT, brings beautifulsoup4
     # and six); pinned for the same reason
     "markdownify==1.2.3",
+    # office: markdownify's HTML parser (4.15.0 of 2026-06-07, MIT, brings soupsieve);
+    # pinned, as the recorded results hold the rendering it parses
+    "beautifulsoup4==4.15.0",
     # office: a presentation's slides, titles and notes (1.0.2 of 2024-08-07, MIT,
     # brings lxml, XlsxWriter, Pillow), only ever given the XML parts: it loads every
     # part of a package on open (BACKLOG, "Sync with upstream")

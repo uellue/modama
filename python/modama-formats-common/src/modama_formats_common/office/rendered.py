@@ -80,21 +80,30 @@ def no_dtd(name: str, data: bytes) -> None:
         raise Unrendered(f"{name}: a DOCTYPE") from error
 
 
-def proxy(z: ZipFile) -> tuple[BytesIO, int]:
-    """The package with its XML parts as they are and every other part empty (an unknown
-    content type too), uncompressed; and the XML parts' size uncompressed."""
+def xml_parts(z: ZipFile) -> set[str]:
+    """The member names of the package's XML parts, by the ZIP's directory and the
+    content types alone, before any of them is read."""
     typed = content_types(z)
-    out, size = BytesIO(), 0
+    return {
+        info.filename
+        for info in z.infolist()
+        if info.filename == CONTENT_TYPES or is_xml(typed(info.filename))
+    }
+
+
+def proxy(z: ZipFile, kept: set[str]) -> BytesIO:
+    """The package with the parts kept (xml_parts) as they are and every other part
+    empty, uncompressed."""
+    out = BytesIO()
     with ZipFile(out, "w") as w:
         for info in z.infolist():
             data = b""
-            if info.filename == CONTENT_TYPES or is_xml(typed(info.filename)):
+            if info.filename in kept:
                 data = z.read(info)
                 no_dtd(info.filename, data)
-                size += info.file_size
             w.writestr(ZipInfo(info.filename, info.date_time), data)
     out.seek(0)
-    return out, size
+    return out
 
 
 @contextmanager
@@ -207,14 +216,19 @@ def rendered(
 ) -> tuple[str | None, dict]:
     """The text for values["text"] (None: none) and the entries for mapped_metadata: the
     bytes read of the file and the XML parts' size (design D5), lines left out as may
-    holding a credential, why the text was not rendered."""
+    holding a credential, why the text was not rendered. The sizes are set before a
+    failure of the copy can stop it (a DTD, a broken part, memory), so it carries them."""
     mapped = {}
     try:
         with deadline(DEADLINE):
-            doc, size = proxy(z)
-            read = f.raw.read_so_far
-            mapped |= {"bytes read": read, "xml bytes": size}
-            mapped["large document text"] = read > LARGE
+            kept = xml_parts(z)
+            mapped["xml bytes"] = sum(z.getinfo(name).file_size for name in kept)
+            try:
+                doc = proxy(z, kept)
+            finally:
+                read = f.raw.read_so_far
+                mapped["bytes read"] = read
+                mapped["large document text"] = read > LARGE
             body = render(doc).strip()
     except Exception as error:  # noqa: BLE001 - any converter's failure keeps the metadata (D6)
         mapped["text not rendered"] = f"{type(error).__name__}: {error}"
