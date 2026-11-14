@@ -1,0 +1,32 @@
+{
+  "datasets": [
+    {
+      "anchor": "/._notes.txt",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/._notes.txt"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/octet-stream",
+      "warnings": []
+    },
+    {
+      "anchor": "/._scan.tif",
+      "basis": "single file",
+      "collapsed": false,
+      "format": "",
+      "members": [
+        "/._scan.tif"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "multipart/appledouble",
+      "warnings": []
+    }
+  ],
+  "skipped": [],
+  "warnings": []
+}

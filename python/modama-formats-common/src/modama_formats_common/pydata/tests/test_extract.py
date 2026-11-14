@@ -89,6 +89,24 @@ def test_a_numpy_array_file(collection_tests, tmp_path):
         )
 
 
+def test_an_appledouble_file_beside_a_numpy_array(collection_tests, tmp_path):
+    # Spec mime-database, "An AppleDouble file beside its data file" (the core's
+    # er-c.xml): 3,306 such files failed common/npy's extraction on staging
+    numpy.save(tmp_path / "m000019.npy", numpy.zeros(3))
+    header = b"\x00\x05\x16\x07\x00\x02\x00\x00" + b"Mac OS X".ljust(16)
+    (tmp_path / "._m000019.npy").write_bytes(header.ljust(4096, b"\x00"))
+    found = datasets(collection_tests, tmp_path)
+    finder = found["._m000019.npy"]
+    # No format: a single file, for which no extraction runs
+    assert (finder.type, finder.format, finder.basis) == (
+        "multipart/appledouble",
+        "",
+        "single file",
+    )
+    data = found["m000019.npy"]
+    assert (data.type, data.format) == ("application/x-npy", "common/npy")
+
+
 def test_the_header_only(collection_tests, tmp_path):
     a = numpy.asfortranarray(numpy.ones((1000, 1000)))
     numpy.save(tmp_path / "big.npy", a)
