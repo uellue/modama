@@ -25,7 +25,8 @@ rows=$(find "$logs_dir" -path '*task_id=run_transform_batch/*' -name '*.log' -pr
         e ~ /^Transform resources ready after / { load = $0; sub(/.*ready after /, "", load); sub(/".*/, "", load) }
         e ~ /^Transformed batch in / {
             split(e, w, " "); took = w[4]; sub(/,$/, "", took); indexed = w[5]
-            ended = $0; sub(/.*"timestamp":"[^T]*T/, "", ended); sub(/[.Z"].*/, "", ended)
+            # date and time, so that the sort below is in time order across days
+            ended = $0; sub(/.*"timestamp":"/, "", ended); sub(/[.Z"].*/, "", ended)
         }
         e ~ /from with API$/ { kind = "service" }
         e ~ /falling back to local model\.$/ { kind = "fallback" }
