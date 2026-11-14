@@ -1,0 +1,20 @@
+[package]
+name = "cache-tiling-toy"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Build and run from the repository root (target dir in the scratch folder, not in the checkout):
+#   RUSTFLAGS="-C target-cpu=native" cargo run --release \
+#     --manifest-path prototypes/search-stack/perf/cache-tiling/toy/Cargo.toml \
+#     --target-dir /var/tmp/embed-research-trials/toy-target -- attn|ffn [options]
+# See src/main.rs for what each experiment runs.
+
+[workspace]
+
+[dependencies]
+matrixmultiply = "0.3"
+
+[profile.release]
+codegen-units = 1
+lto = true
