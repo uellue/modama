@@ -1,3 +1,6 @@
 # Crawl the whole data tree, with every installed format (the defaults).
 [crawl]
-exclude = []
+# macOS AppleDouble files (`._name` beside `name`, Finder metadata) are not crawled
+# (@weber, 2026-11-14, decision 382: dropped for now, to review once people use the search).
+# Gitignore syntax, last match wins.
+exclude = ["._*"]
