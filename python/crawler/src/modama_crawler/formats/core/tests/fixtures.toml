@@ -5,3 +5,10 @@ purpose = "representative"
 validity = "parser-only: the generic single-file path only; a zip written by Python's zipfile, hand-written JSON, Python and XML text, and 64 zero bytes as .raw (the er-c.xml tie against Panasonic)"
 licence = "MIT"
 source = "shipped under fixtures/mixed; a.zip from zipfile, the rest typed"
+
+[appledouble]
+purpose = "representative"
+validity = "parser-only: the er-c.xml curation of macOS AppleDouble files, decision 371; ._scan.tif is RFC 1740's header (magic, version 2, the filler 'Mac OS X') padded with zeros to the 4,096 bytes of the files seen on staging, without entries; ._notes.txt is text under a name that starts with ._"
+licence = "MIT"
+source = "modama_crawler.formats.core.tests.generate:appledouble"
+generator = "modama_crawler.formats.core.tests.generate:appledouble"

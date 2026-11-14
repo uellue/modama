@@ -7,5 +7,26 @@
        Panasonic file matches its magic, anything else is application/octet-stream. -->
   <mime-type type="application/octet-stream">
     <glob pattern="*.raw"/>
+    <glob pattern="._*" weight="90"/>
+  </mime-type>
+
+  <!-- macOS AppleDouble files (decision 371, @weber 2026-11-14): `._<name>`
+       beside `<name>`, written when macOS copies to a file system without
+       resource forks; Finder metadata, whatever the extension (3,306 `._*.npy`
+       failed common/npy's extraction on staging). Upstream defines the type
+       without rules. The magic is RFC 1740's (0x00051607, at 0).
+       Names decide first (mime.py), and `*.npy` is longer than `._*`, so the
+       name rule needs a weight above every extension's (the highest is 80,
+       EMPAD's raw files). The same glob on the fallback type makes the name a
+       tie, so the content decides: AppleDouble magic gives this type, any other
+       file named `._*` is application/octet-stream. Its normal type (text/plain
+       for `._notes.txt`) is out of reach under the checking order, since a tie
+       between these two never resolves to it; the fallback is the safer rule,
+       as it claims nothing the content does not show. -->
+  <mime-type type="multipart/appledouble">
+    <glob pattern="._*" weight="90"/>
+    <magic>
+      <match type="big32" offset="0" value="0x00051607"/>
+    </magic>
   </mime-type>
 </mime-info>

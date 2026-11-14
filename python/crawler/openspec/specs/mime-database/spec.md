@@ -42,6 +42,17 @@ When two candidate types remain equally good, the result SHALL be their nearest 
 - **WHEN** a file matches two name rules of equal weight whose types are both subclasses of `application/x-hdf` and content does not decide
 - **THEN** its type is `application/x-hdf` and a warning names both candidates
 
+### Requirement: macOS AppleDouble files are recognised by name and content
+A file whose name starts with `._` SHALL be classified by its content: `multipart/appledouble` when it starts with the AppleDouble magic `0x00051607` (RFC 1740), whatever its extension, and `application/octet-stream` otherwise. No format SHALL claim it on the type its extension gives.
+
+#### Scenario: An AppleDouble file beside its data file
+- **WHEN** a folder holds the NumPy array `m000019.npy` and `._m000019.npy`, 4,096 bytes starting with the AppleDouble header
+- **THEN** `._m000019.npy` is a single-file dataset of type `multipart/appledouble` that no format claims, so no extraction runs, and `m000019.npy` is still `application/x-npy`, claimed by `common/npy`
+
+#### Scenario: A name that starts with `._` but no AppleDouble content
+- **WHEN** a file `._notes.txt` holds text
+- **THEN** its type is `application/octet-stream`, not `text/plain`: the name rule `._*` outweighs `*.txt`, and the tie it forces between AppleDouble and the fallback never resolves to the extension's type
+
 ### Requirement: Fallback types
 A file that matches nothing SHALL be `text/plain` if its first bytes look like text and `application/octet-stream` otherwise, regardless of its permission bits.
 

@@ -34,6 +34,32 @@ def test_detect(tmp_path, name, content, expected):
     assert detect(str(path)) == expected
 
 
+# What macOS writes beside a file it copies to a share without resource forks:
+# the AppleDouble header (RFC 1740: magic 0x00051607, version 0x00020000, the
+# filler "Mac OS X"), padded to the 4,096 bytes of the files seen on staging
+APPLEDOUBLE = (b"\x00\x05\x16\x07\x00\x02\x00\x00" + b"Mac OS X".ljust(16)).ljust(
+    4096, b"\x00"
+)
+
+
+@pytest.mark.parametrize(
+    "name, content, expected",
+    [
+        # mime-database scenario "An AppleDouble file beside its data file", by
+        # the core's definitions alone: the name ._* and the magic, whatever the extension
+        ("._scan.tif", APPLEDOUBLE, "multipart/appledouble"),
+        # Scenario "A name that starts with ._ but no AppleDouble content": the
+        # ._* rule outweighs *.txt, so the content decides between AppleDouble
+        # and the fallback, never text/plain
+        ("._notes.txt", b"just text\n", "application/octet-stream"),
+    ],
+)
+def test_appledouble(tmp_path, name, content, expected):
+    path = tmp_path / name
+    path.write_bytes(content)
+    assert detect_with_tie(str(path)) == (expected, None)
+
+
 def test_executable_bit_is_ignored(tmp_path):
     # mime-database scenario "Executable binary without extension"; Samba shares often set the bit
     path = tmp_path / "frame_0001"
