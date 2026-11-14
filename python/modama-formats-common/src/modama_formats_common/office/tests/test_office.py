@@ -204,7 +204,7 @@ def test_a_presentation(collection_tests, tmp_path):
         "title, Allison, Timothy B., 2015-09-30T17:58:06Z, "
         "Microsoft Office PowerPoint, Slides 1; "
     )
-    assert pptx.mapped == {"slides": 1}
+    assert pptx.mapped["slides"] == 1
 
 
 def test_a_workbook(collection_tests, tmp_path):
@@ -214,7 +214,7 @@ def test_a_workbook(collection_tests, tmp_path):
     }
 
 
-def test_only_the_property_parts_are_read(collection_tests, tmp_path):
+def test_only_the_xml_parts_are_read(collection_tests, tmp_path):
     src = FIXTURES / "powerpoint_pptx" / "testPPT_comment.pptx"
     big = tmp_path / "tree" / "big.pptx"
     repacked(src, big, "", bytes)
@@ -222,7 +222,8 @@ def test_only_the_property_parts_are_read(collection_tests, tmp_path):
         z.writestr("ppt/media/image9.png", os.urandom(5_000_000))
     (pptx,) = crawled(collection_tests, tmp_path / "tree")
     assert pptx.dataset.size > 5_000_000
-    assert pptx.mapped == {"slides": 1}
+    assert pptx.mapped["slides"] == 1
+    assert pptx.extracted.values["text"] == "# title\nsubtitle"
     assert pptx.bytes_read < 1_000_000
 
 

@@ -24,7 +24,11 @@
         "Pages 1"
       ],
       "values": {
-        "mapped_metadata": {},
+        "mapped_metadata": {
+          "bytes read": 34678,
+          "large document text": false,
+          "xml bytes": 49703
+        },
         "original_metadata": {
           "app.AppVersion": "16.0000",
           "app.Application": "Microsoft Office Word",
@@ -58,7 +62,8 @@
           "core.revision": "4",
           "core.subject": "",
           "core.title": ""
-        }
+        },
+        "text": "The **quick** *brown* fox."
       }
     }
   },

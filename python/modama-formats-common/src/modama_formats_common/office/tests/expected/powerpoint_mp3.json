@@ -1,0 +1,77 @@
+{
+  "datasets": [
+    {
+      "anchor": "/testPPT_embeddedMP3.pptx",
+      "basis": "ZIP header",
+      "collapsed": false,
+      "format": "common/pptx",
+      "members": [
+        "/testPPT_embeddedMP3.pptx"
+      ],
+      "parent": null,
+      "parts": [],
+      "type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "warnings": []
+    }
+  ],
+  "extractions": {
+    "/testPPT_embeddedMP3.pptx": {
+      "subjects": [],
+      "summary": [
+        "PowerPoint Presentation",
+        "Allison, Timothy B.",
+        "2017-11-27T17:31:23Z",
+        "Microsoft Office PowerPoint",
+        "Slides 1"
+      ],
+      "values": {
+        "mapped_metadata": {
+          "bytes read": 246931,
+          "large document text": false,
+          "slides": 1,
+          "xml bytes": 97393
+        },
+        "original_metadata": {
+          "app.AppVersion": "16.0000",
+          "app.Application": "Microsoft Office PowerPoint",
+          "app.HeadingPairs": [
+            "Fonts Used",
+            "3",
+            "Theme",
+            "1",
+            "Slide Titles",
+            "1"
+          ],
+          "app.HiddenSlides": "0",
+          "app.HyperlinksChanged": "false",
+          "app.LinksUpToDate": "false",
+          "app.MMClips": "1",
+          "app.Notes": "0",
+          "app.Paragraphs": "0",
+          "app.PresentationFormat": "Widescreen",
+          "app.ScaleCrop": "false",
+          "app.SharedDoc": "false",
+          "app.Slides": "1",
+          "app.TitlesOfParts": [
+            "Arial",
+            "Calibri",
+            "Calibri Light",
+            "Office Theme",
+            "PowerPoint Presentation"
+          ],
+          "app.TotalTime": "0",
+          "app.Words": "0",
+          "core.created": "2017-11-27T17:31:23Z",
+          "core.creator": "Allison, Timothy B.",
+          "core.lastModifiedBy": "Allison, Timothy B.",
+          "core.modified": "2017-11-27T17:32:06Z",
+          "core.revision": "1",
+          "core.title": "PowerPoint Presentation"
+        },
+        "text": "---"
+      }
+    }
+  },
+  "skipped": [],
+  "warnings": []
+}

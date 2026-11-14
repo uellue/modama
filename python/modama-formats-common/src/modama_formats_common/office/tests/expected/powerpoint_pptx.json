@@ -26,7 +26,10 @@
       ],
       "values": {
         "mapped_metadata": {
-          "slides": 1
+          "bytes read": 63969,
+          "large document text": false,
+          "slides": 1,
+          "xml bytes": 81809
         },
         "original_metadata": {
           "app.AppVersion": "15.0000",
@@ -64,7 +67,8 @@
           "core.modified": "2015-09-30T17:58:26Z",
           "core.revision": "1",
           "core.title": "title"
-        }
+        },
+        "text": "# title\nsubtitle"
       }
     }
   },
