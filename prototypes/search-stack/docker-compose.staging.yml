@@ -124,5 +124,9 @@ services:
       - "127.0.0.1:13000:3000"
 
   opensearch:
+    environment:
+      # 512 MB ran out of heap with 1.45 million records (indexing of 2026-11-14 failed
+      # with 429s, OutOfMemoryError in OpenSearch's log, also after the run); @weber 361
+      OPENSEARCH_JAVA_OPTS: -Xms8g -Xmx8g
     ports:
       - "127.0.0.1:19200:9200"

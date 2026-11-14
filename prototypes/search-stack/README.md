@@ -326,7 +326,7 @@ What is missing for production (backlog, "Deployment"), from the reviews of 2026
 - **No backups** of `crawler-db`, `postgres` and OpenSearch: their state is recreated from the data tree by a re-crawl, re-harvest and re-indexing (@weber, 2026-11-12: "The migration is just to avoid a recrawl, but we are working to make a recrawl cheap enough to not shed tears"); what is missing is that re-crawl documented as the way back, and cheap.
 - **Alerting on stalls:** a crawl that could not start its harvest exits with 3, and a failed harvest shows only in `modama-chain status`; nothing tells an admin (requirements-pipeline 2.5, wishlist "status signal").
 - **Pinned image versions:** `rabbitmq:3-management-alpine`, `postgres:16`, `postgres:17` float.
-- **Sizing:** the OpenSearch heap (512 MB) for about 430,000 records with embeddings; the duration of a first full crawl, harvest and indexing (not measured).
+- **Sizing:** the OpenSearch heap: 512 MB in the test stack held about 430,000 records with embeddings, but ran out of heap on staging with 1.45 million (2026-11-14), which now has 8 GB (`docker-compose.staging.yml`); what production needs is not measured. The duration of a first full crawl, harvest and indexing (not measured).
 - **Log timestamps:** the crawler's log lines have none (`docker compose logs -t` adds them).
 - **A changed `OAI_BASE_URL`** moves our endpoint (found by its repository code); records harvested under the old URL stay until the purge.
 - **Test environments per service and for the ensemble** (requirements-pipeline 2.7): this is one project for the search; with `deploy/`'s, the ensemble needs both together.
