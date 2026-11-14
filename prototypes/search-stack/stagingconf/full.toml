@@ -2,5 +2,6 @@
 [crawl]
 # macOS AppleDouble files (`._name` beside `name`, Finder metadata) are not crawled
 # (@weber, 2026-11-14, decision 382: dropped for now, to review once people use the search).
-# Gitignore syntax, last match wins.
-exclude = ["._*"]
+# AppleDouble files are always files; a folder named `._*` is crawled. They have any
+# extension or none (`._Folder` is the companion of a folder). Gitignore syntax, last match wins.
+exclude = ["._*", "!._*/"]
