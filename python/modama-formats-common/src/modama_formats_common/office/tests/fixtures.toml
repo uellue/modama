@@ -41,6 +41,18 @@ validity = "vendor-written: Microsoft Office PowerPoint 15 (AppVersion 15.0000),
 licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
 source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testPPT_comment.pptx, sha256 d06691124f53492224bf366f7cf086edbd33d79eccdbfbfdbe56c5c6b9b14954, unchanged"
 
+[powerpoint_mp3]
+purpose = "representative"
+validity = "vendor-written: Microsoft Office PowerPoint 16 (AppVersion 16.0000), one slide without a title holding an embedded MP3 (ppt/media/media1.mp3, 34,688 bytes) and its poster picture: the media parts are never read (change office-text)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testPPT_embeddedMP3.pptx, sha256 375f54146ddecfc4172a03920262b946900ebd1559eadbee5ffc133f01168ead, unchanged"
+
+[comment_docx]
+purpose = "representative"
+validity = "vendor-written: Microsoft Office Word 12 (AppVersion 12.0000), one paragraph with a comment (word/comments.xml): the comment is not shown (change office-text)"
+licence = "Apache-2.0 (LICENSE.fixtures beside this file)"
+source = "TIKA/tika-parser-microsoft-module/src/test/resources/test-documents/testComment.docx, sha256 740337ba9a0f0c9dd4cc0ea07b6a7b413c7b67ee28ec4b430a1a242c688fe5b5, unchanged"
+
 [excel_xlsx]
 purpose = "representative"
 validity = "vendor-written: Microsoft Excel 12 (AppVersion 12.0000), three sheets with <dimension>"

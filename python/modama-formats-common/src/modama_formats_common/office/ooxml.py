@@ -1,12 +1,15 @@
-"""Office Open XML packages (.docx, .pptx, .xlsx and their macro-enabled variants): the property parts.
+"""Office Open XML packages (.docx, .pptx, .xlsx and their macro-enabled variants): the property parts, and a document's text.
 
 The package's relationships (`_rels/.rels`) name the core, extended and
-custom properties and the main document; only these parts are read, never
-the document's other parts. For a workbook, openpyxl's read-only mode also
-reads the styles, the shared strings (the cells' texts) and each worksheet up
-to its <dimension>, when none of these parts of cell data is larger than
-MAX_PART. python-docx and python-pptx are not used: they load every part of the
-package on open, the pictures too (BACKLOG, "Sync with upstream").
+custom properties and the main document; for the metadata only these parts
+are read. For a workbook, openpyxl's read-only mode also reads the styles,
+the shared strings (the cells' texts) and each worksheet up to its
+<dimension>, when none of these parts of cell data is larger than MAX_PART.
+For a Word document or a presentation, every XML part is read to render its
+text (rendered.py, change office-text), never a picture, video or other
+embedded file: python-docx and python-pptx load every part of a package on
+open, the pictures too (BACKLOG, "Sync with upstream"), so python-pptx and
+mammoth only get a copy that holds the XML parts.
 
 Skip list (spec formats/office, "What is left out"): the attributes of the
 property elements, which are type annotations (`xsi:type="dcterms:W3CDTF"`)
@@ -19,6 +22,7 @@ from zipfile import ZipFile
 
 from modama_crawler.formats import Extracted
 
+from . import rendered
 from .common import MAX_PART, headline, kept, local, opened, part, text
 
 RELS = "_rels/.rels"
@@ -117,14 +121,19 @@ def sheets(z: ZipFile, main: str, f) -> dict:
         workbook.close()
 
 
-def extract(path: str, computed: Callable | None = None) -> Extracted:
-    """The property parts' entries but the skip list as original_metadata, what computed(z, main part, file) gives as mapped_metadata."""
+def extract(
+    path: str, computed: Callable | None = None, render: Callable | None = None
+) -> Extracted:
+    """The property parts' entries but the skip list as original_metadata, what computed(z, main part, file) gives as mapped_metadata; with render (rendered.word, rendered.slides), the document's text as values["text"]."""
+    shown = None
     with opened(path) as f, ZipFile(f) as z:
         parts = targets(z)
         original = kept(entries(z, parts))
         mapped = computed(z, parts["main"], f) if computed and "main" in parts else {}
-    return Extracted(
-        summary=headline(original, HEADLINE),
-        subjects=[],
-        values={"original_metadata": original, "mapped_metadata": mapped},
-    )
+        if render is not None:
+            shown, found = rendered.rendered(z, f, render, original)
+            mapped |= found
+    values = {"original_metadata": original, "mapped_metadata": mapped}
+    if shown is not None:
+        values["text"] = shown
+    return Extracted(summary=headline(original, HEADLINE), subjects=[], values=values)

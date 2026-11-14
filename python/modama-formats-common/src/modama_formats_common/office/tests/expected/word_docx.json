@@ -25,7 +25,11 @@
         "Pages 1"
       ],
       "values": {
-        "mapped_metadata": {},
+        "mapped_metadata": {
+          "bytes read": 27848,
+          "large document text": false,
+          "xml bytes": 51784
+        },
         "original_metadata": {
           "app.AppVersion": "14.0000",
           "app.Application": "Microsoft Office Word",
@@ -64,7 +68,8 @@
           "custom.myCustomBoolean": "true",
           "custom.myCustomNumber": "3",
           "custom.myCustomSecondDate": "2010-12-29T22:00:00Z"
-        }
+        },
+        "text": "core.subject: My subject\ncore.keywords: My Keyword\ncore.description: My Comments\n\nDocument content"
       }
     }
   },

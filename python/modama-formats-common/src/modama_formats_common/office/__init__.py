@@ -6,7 +6,8 @@ the files of its type and drops a misnamed one to the type its content gives
 those of OLE2, then PDF, so that a dropped file reaches the format of its
 content in the cases seen (an encrypted .docx is an OLE2 file, common/ole).
 Lock files get types of their own by name (office.xml), without a format.
-Extraction reads the metadata only: ooxml, odf, pdf, ole.
+Extraction reads the metadata (ooxml, odf, pdf, ole) and renders the text of
+Word documents and presentations (rendered).
 """
 
 from collections.abc import Iterable
@@ -15,7 +16,7 @@ from pathlib import Path
 from modama_crawler import mime
 from modama_crawler.formats import Collection, Dataset, Directory, Entry, Format
 
-from . import odf, ole, ooxml, pdf
+from . import odf, ole, ooxml, pdf, rendered
 
 HERE = Path(__file__).parent
 # The core's magic for PDF: %PDF- within the first 1,024 bytes
@@ -67,8 +68,11 @@ class Docx(Package):
     type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     reacts_to = frozenset({type})
 
+    def extract(self, dataset: Dataset, root: str):
+        return ooxml.extract(root + dataset.anchor, render=rendered.word)
 
-class Docm(Package):
+
+class Docm(Docx):
     # In lower case, as the MIME database gives it (freedesktop.org writes macroEnabled)
     type = "application/vnd.ms-word.document.macroenabled.12"
     reacts_to = frozenset({type})
@@ -79,7 +83,7 @@ class Pptx(Package):
     reacts_to = frozenset({type})
 
     def extract(self, dataset: Dataset, root: str):
-        return ooxml.extract(root + dataset.anchor, ooxml.slides)
+        return ooxml.extract(root + dataset.anchor, ooxml.slides, rendered.slides)
 
 
 class Xlsx(Package):

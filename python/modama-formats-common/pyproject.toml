@@ -33,6 +33,20 @@ dependencies = [
     "openpyxl==3.1.5",
     # office: PDF Info and XMP; the extra brings cryptography (unpinned) for AES-encrypted files
     "pypdf[crypto]==7.0.1",
+    # office: a Word document's text as HTML (1.13.0 of 2026-09-26, BSD-2-Clause,
+    # pure Python, brings cobble), only ever given the XML parts (change office-text);
+    # pinned, as the recorded results hold its rendering
+    "mammoth==1.13.0",
+    # office: that HTML as Markdown (1.2.3 of 2026-06-30, MIT, brings beautifulsoup4
+    # and six); pinned for the same reason
+    "markdownify==1.2.3",
+    # office: markdownify's HTML parser (4.15.0 of 2026-06-07, MIT, brings soupsieve);
+    # pinned, as the recorded results hold the rendering it parses
+    "beautifulsoup4==4.15.0",
+    # office: a presentation's slides, titles and notes (1.0.2 of 2024-08-07, MIT,
+    # brings lxml, XlsxWriter, Pillow), only ever given the XML parts: it loads every
+    # part of a package on open (BACKLOG, "Sync with upstream")
+    "python-pptx==1.0.2",
     # structured, text: YAML with the safe loader (yamldoc.py); current release on PyPI 2026-11-12, cp314 manylinux wheel with libyaml
     "PyYAML==6.0.3",
     # text: pinned exactly, as the fixtures' recorded results (expected/) and the
@@ -60,6 +74,9 @@ test = [
     # pydata: zarr's codecs; pinned, as the recorded results hold its blosc
     # defaults (cname, clevel, shuffle; 0.17.1 of 2026-10-20, cp314 wheels)
     "numcodecs==0.17.1",
+    # office: writes Word documents at test time (1.2.0 of 2025-06-16, MIT; change
+    # office-text); python-pptx, a dependency above, writes the decks
+    "python-docx==1.2.0",
 ]
 
 [project.entry-points."modama.formats"]
