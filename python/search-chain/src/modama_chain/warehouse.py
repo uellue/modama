@@ -176,10 +176,12 @@ def repository_code(conn: psycopg.Connection, harvest_url: str) -> str | None:
 
 
 def index_runs(airflow: str, user: str, password: str) -> list[IndexRun]:
-    """All runs of the indexing DAG, newest first, each with the harvest run it indexed.
+    """All runs of the indexing DAG, last triggered first, each with the harvest run it indexed.
 
     All, page by page: T needs every closed harvest's indexing run, and the
-    API cannot filter by conf.
+    API cannot filter by conf. Paged in id order, which new runs only extend;
+    sorted by when a run was triggered (run_after), not when it started: a run
+    cancelled before it started has no start and would sort first.
     """
     token = get_json(
         f"{airflow}/auth/token", "Airflow", {"username": user, "password": password}
@@ -187,13 +189,14 @@ def index_runs(airflow: str, user: str, password: str) -> list[IndexRun]:
     runs, page = [], 100
     while True:
         batch = get_json(
-            f"{airflow}/api/v2/dags/{INDEX_DAG}/dagRuns?order_by=-start_date&limit={page}&offset={len(runs)}",
+            f"{airflow}/api/v2/dags/{INDEX_DAG}/dagRuns?order_by=id&limit={page}&offset={len(runs)}",
             "Airflow",
             headers={"Authorization": f"Bearer {token}"},
         )["dag_runs"]
         runs += batch
         if len(batch) < page:
             break
+    runs.sort(key=lambda r: datetime.fromisoformat(r["run_after"]), reverse=True)
     return [
         IndexRun(
             r["state"],
