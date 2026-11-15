@@ -82,6 +82,8 @@ Each names its source: a request, a walk-through step, a page item. IDs are prov
 - **SU2 Questions about the search are answered (R46).** Which formats are read, what is excluded and why, how fresh the index is (T). Sources: R46 (2026-11-14); P6 step 4; E11, E12.
 - **SU3 Feedback and samples, with permission.** A user can mark an answer wrong or incomplete and add a comment; the question, the answer and the comment are kept for the maintainers only with the user's agreement. Sources: @weber 2026-11-15 ("the meta-requirement is to easily collect these samples, with user feedback and their permission"); item 385; P6 step 5; E13.
 - **SU4 Nothing visible is missing; missing is worse than bogus.** Carried over from 2026-11-04 (`requirements-pipeline.md` 1.1); measured by the stage counts (OP3).
+- **SU6 Lists and counts.** Questions over all matching records ("who created …", "how many …") are answered from an aggregation, not from repeated ranked searches. Source: the search API's log, 2026-11-14 17:29 (five searches for one "who else" question); P6 step 7; E14.
+- **SU7 The deployment's vocabulary.** The assistant knows the deployment's instruments, groups, projects and formats, so that "Spectra" means the institute's microscope and "dm4" a Gatan file. Source: the search API's log, 2026-11-14 05:10 and 17:36; P6 step 8; E15. Belongs with SU1 and MA9 (prompts per deployment).
 - **SU5 Access before production.** A login before production (item 178, 2026-11-12); per-user access to results later (`requirements.md`); until then, what the crawl account may read is what everyone sees (Q5).
 
 ### 2.3 to 2.12

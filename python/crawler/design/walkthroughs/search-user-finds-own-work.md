@@ -1,7 +1,24 @@
 # Walk-through: a search user looks for their own recent work
 
 Persona: the search user (`../stakeholders.md`): a scientist or research data manager at ER-C who looks for files in the institute's storage through the search's AI mode; knows their data and its jargon, not how the index is built. Situation: preparing a talk, they want their latest slides on a topic, then ask about something they can't find. Goal: open the right file within a minute and trust that nothing newer was missed. Done for them: the file is open, or they know why it isn't there.
-Confidence: simulated by Claude on 2026-11-15, on paper, from @weber's queries on staging: "Find Merlin acquisitions" (2026-11-11), the AI mode conversation exported on 2026-11-14 ("the latest presentation of [a person] on RDM challenges", then "There should also be pptx datasets?"; part of the real preparation of the demo's slides), and a probe about a person who is not in the data. The stored queries (OpenSearch `top_queries-*`, all @weber's, permission given on 2026-11-15) are still to be read; real users have not been asked (`../stakeholders.md`, how to make it real).
+Confidence: simulated by Claude on 2026-11-15, on paper, from @weber's queries on staging: "Find Merlin acquisitions" (2026-11-11), the AI mode conversation exported on 2026-11-14 ("the latest presentation of [a person] on RDM challenges", then "There should also be pptx datasets?"; part of the real preparation of the demo's slides), and a probe about a person who is not in the data; and the search API's log of the assistant's search calls on staging (37 calls, 2026-11-12 to 14, all @weber's questions, read with permission on 2026-11-15; summarised below without colleagues' names). Real users have not been asked (`../stakeholders.md`, how to make it real).
+
+## Questions seen in the search API's log
+
+Eleven conversations, as the model restated each question (`user_question`), with the number of searches it ran:
+
+| When (UTC) | Question (names replaced) | Searches | What it shows |
+|---|---|---|---|
+| 11-12 14:01 | Find DM4 files by [a colleague] | 4 | the name goes into `creator_name`; one call used a different surname than asked |
+| 11-14 05:10 | find dm4 please | 3 | after two searches it looked for "DM4 emtansine antibody-drug conjugate" and "DM4 dosimetry": the assistant treats DM4 as ambiguous across all sciences |
+| 11-14 05:56 | Latest presentation of [@weber] on RDM challenges, then "Are there pptx …?" | 4 | step 2 below |
+| 11-14 08:55 | [@weber]'s latest pptx datasets on the RDM challenge | 2 | the same, asked again after the office text was in |
+| 11-14 08:57, 09:01 | Datasets by or about [a person], "the artist, chemist and teacher" | 2 + 3 | the probe of step 6, twice |
+| 11-14 08:58 | Find a good exemplary electron holography dataset, a nice variety from different projects | 6 | six searches, the limit raised from 20 to 30, each restating the question more narrowly |
+| 11-14 09:02 | Overview of recent datasets by [@weber] | 2 | the first search used generic words ("survey and experimental data") |
+| 11-14 17:28 | find all npy datasets created in 2025 | 3 | a date filter (`start_date`, `end_date`) |
+| 11-14 17:29 | Who else besides [A] has created npy datasets in 2025, I saw [B], are there more creators? | 5 | a question about a list of people, answered by repeated searches of 20 to 30 hits |
+| 11-14 17:36 | what type of data was collected on the Spectra microscope? | 3 | the model searched "Spectra Raman microscope" and "Spectra JEOL": it doesn't know the institute's instruments |
 What exists: the search's web page (AI mode without login, through a forwarded port on staging), its answers with "Datasets cited in this answer" and links into the management interface's browser, the records as the crawler publishes them (since 2026-11-14 with the text of `.docx`/`.pptx` files).
 
 ## Steps
@@ -17,6 +34,10 @@ What exists: the search's web page (AI mode without login, through a forwarded p
 5. **Tell someone the answer was wrong.** Does: nothing possible; the page has no feedback. @weber asked for "a feature that allows quick feedback and retry to search chats" (2026-11-14, item 385) and for collecting such samples "easily, with user feedback and their permission" (2026-11-15). Would ask: "Who do I tell, and will it get better?"
 
 6. **Check that it doesn't make things up.** Does: asks about a person who is not in the data. Expected: "nothing found", not an invented biography. Not yet observed in a saved answer. Would ask: "Can I quote this answer?"
+
+7. **Ask for a list or a count.** Does (log, 11-14 17:29): "Who else besides [A] has created npy datasets in 2025 … are there more creators?". Seen: five searches of 20 to 30 hits each; a list of creators over all matching records is not what a ranked search returns. Would ask: "Can it just tell me everyone, or how many there are?"
+
+8. **Use the institute's own words.** Does (log, 11-14 17:36): "what type of data was collected on the Spectra microscope?". Seen: the model guessed a Raman microscope and a JEOL instrument; at the institute, "Spectra" is a known microscope. Likewise "find dm4 please" drifted into pharmacology. Would ask: "Doesn't it know our microscopes?"
 
 ## Product hat
 
@@ -48,10 +69,12 @@ None yet (questions put on 2026-11-15).
 - No facts about the index for meta-questions (step 4, R46).
 - No feedback, retry or sample collection in the page (step 5, item 385).
 - Cut links in the cited list, cause unknown (step 3, item 367).
+- No way to answer list or count questions over all matching records (step 7).
+- The assistant doesn't know the deployment's vocabulary: its instruments, groups, projects, file formats (step 8).
 
 ## Acceptance examples
 
-E10, E11, E12, E13 (in `../examples.md`).
+E10, E11, E12, E13, E14, E15 (in `../examples.md`).
 
 ## Questionnaire
 
