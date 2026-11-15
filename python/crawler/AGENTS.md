@@ -8,6 +8,7 @@
 |---|---|
 | Decisions and their reasons (the decision log at the end is authoritative) | `design/architecture.md` |
 | Requirements R\* and open questions Q\* | `design/requirements.md` |
+| Operating and maintaining the search (draft): requirements, personas, acceptance examples | `design/requirements-operations.md`, `design/stakeholders.md`, `design/examples.md` |
 | Behaviour contract, one directory per capability | `openspec/specs/` |
 | What is next, what is deferred | `BACKLOG.md` |
 | How to write a format collection: the rules; the workflow with builder and reviewer briefs | `src/modama_crawler/formats/TEMPLATE.md`; `/.claude/skills/format-collection/` |
