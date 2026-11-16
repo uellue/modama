@@ -30,3 +30,8 @@ Cleaned means: no session ids, no names of people, no private projects, nothing 
 - 2026-11-11 | positive | collaboration | Showing the data (the measured field mapping) instead of guessing was appreciated | effect: none
 - 2026-11-11 | positive | delegation | An unsupervised I/O study that would have taken a day or two by hand, with evidence | effect: none
 - 2026-11-11 | negative | method | A finding that matches the person's expectation risks being accepted unchecked; the run on production data decides | effect: prediction written down before the staging run
+- 2026-11-16 | positive | delegation | The search stack got up and running, with many parallel readers and fast embeddings on the GPU server; the process generally worked well | effect: none
+- 2026-11-16 | negative | credentials | Handling the various keys (env files holding keys) got very awkward, and an organisation of agents would make it worse | effect: requirement in `working-with-agents-routing.md`, R13
+- 2026-11-16 | negative | staging-access | Much of the person's time went into copying command lines to diagnose staging for the agent; a server that lets the agent diagnose and fix without seeing users' private data is needed | effect: open-items 370 to 373 (existing)
+- 2026-11-16 | negative | method | Too focused on one solution before the big picture: existing stacks (an enterprise file crawler with a content-extraction library) were not weighed early; an evaluation must ask not only what a tool does today but how well we and others can tailor and extend it | effect: ledger notes 2026-11-16
+- 2026-11-16 | positive | messages | Message length is OK, a bit on the long side | effect: ledger header
