@@ -114,8 +114,9 @@ def capture(out: Path, url: str) -> None:
 
 
 def match(before: list[dict], after: list[dict]) -> tuple[list, list, list]:
-    """Pairs of (before, after) by tag and name, then the rest by tag and nearest place
-    (renamed); and what is left over on either side."""
+    """Pairs of (before, after) by tag and name, then the rest by nearest place, the same
+    tag first (renamed; a clickable image that became a link changes its tag); and what
+    is left over on either side."""
     pairs, left = [], list(after)
     rest = []
     for b in before:
@@ -129,9 +130,10 @@ def match(before: list[dict], after: list[dict]) -> tuple[list, list, list]:
             rest.append(b)
     gone = []
     for b in rest:
-        near = [a for a in left if a["tag"] == b["tag"]]
         dist = lambda a: abs(a["box"][0] - b["box"][0]) + abs(a["box"][1] - b["box"][1])  # noqa: E731
-        a = min(near, key=dist, default=None)
+        a = min(left, key=lambda a: (a["tag"] != b["tag"], dist(a)), default=None)
+        if a and dist(a) > 200:
+            a = min(left, key=dist)
         if a and dist(a) <= 200:
             pairs.append((b, a))
             left.remove(a)

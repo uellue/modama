@@ -5,7 +5,11 @@ modama runs this search for the ER-C's data, and the page says so (@weber,
 acknowledgement; example queries from electron microscopy; Tools stay as they are):
 
 - Start page: the FZJ logo top left, a link to the ER-C's page; the modama logo above
-  the search instead of EOSC Data Commons'; three electron-microscopy example queries.
+  the search instead of EOSC Data Commons', a link to this deployment's landing page
+  (https://er-c-data.fz-juelich.de/, @weber 2026-11-16: it looked clickable and led
+  nowhere; upstream's clicks for its easter egg go with it, its code left unused);
+  three electron-microscopy example queries, which start AI Mode, not the keyword
+  search (@weber 2026-11-16: "IMO the traditional search is legacy").
 - Results and chat pages: modama's logo instead of EOSC's icon, and FZJ's next to it
   (on the results page only on phones and from xl, where the search bar has the room;
   the footer has it too). Profile page: modama's logo. modama.svg has much empty space
@@ -135,6 +139,15 @@ Applies after 0004.
  ];
  
  const toolCards: Array<{ tool: LandingTool; text: string; url: string }> = [
+@@ -57,7 +57,7 @@ export const LandingPage = () => {
+ 
+     const handleExample = (card: typeof dataCards[number]) => {
+         trackEvent('Landing', 'example_clicked', card.index);
+-        handleSearch(card.query, "cesnet/agentic", false, 'example');
++        handleSearch(card.query, "cesnet/agentic", true, 'example');  // AI Mode: the search we lead with
+     };
+ 
+     const handleChat = () => {
 @@ -100,11 +100,11 @@ export const LandingPage = () => {
          <div className="min-h-screen bg-eosc-bg flex flex-col items-center px-4 relative">
              <EasterEgg active={showEasterEgg} onComplete={() => setShowEasterEgg(false)}/>
@@ -152,19 +165,32 @@ Applies after 0004.
                  <div className="flex gap-4">
                      <button
                          onClick={handleAbout}
-@@ -143,9 +143,9 @@ export const LandingPage = () => {
+@@ -142,16 +142,15 @@ export const LandingPage = () => {
+             <div className="w-full max-w-7xl mx-auto flex-grow flex flex-col justify-center">
                  <div className="pt-6 pb-8 px-4 sm:px-0">
                      <div className="flex justify-center mt-8 sm:mt-16 mb-8">
-                         <img
+-                        <img
 -                            src={eoscLogo}
 -                            alt="EOSC Data Commons"
 -                            className="w-full max-w-lg h-auto cursor-pointer hover:opacity-90 active:opacity-80 transition-opacity select-none touch-manipulation"
-+                            src={modamaLogo}
-+                            alt="modama"
-+                            className="h-16 sm:h-24 aspect-[116/40] object-cover cursor-pointer hover:opacity-90 active:opacity-80 transition-opacity select-none touch-manipulation"
-                             onClick={handleLogoClick}
-                             onTouchEnd={(e) => {
-                                 e.preventDefault();
+-                            onClick={handleLogoClick}
+-                            onTouchEnd={(e) => {
+-                                e.preventDefault();
+-                                handleLogoClick();
+-                            }}
+-                        />
++                        {/* To this deployment's landing page; upstream's clicks for the easter egg
++                            are gone with it (EasterEgg and handleLogoClick are left unused). */}
++                        <a href="https://er-c-data.fz-juelich.de/" title="ER-C Data Management: the landing page">
++                            <img
++                                src={modamaLogo}
++                                alt="modama: ER-C Data Management, the landing page"
++                                className="h-16 sm:h-24 aspect-[116/40] object-cover hover:opacity-90 active:opacity-80 transition-opacity"
++                            />
++                        </a>
+                     </div>
+ 
+                     {/* Subtitle */}
 --- a/src/pages/ProfilePage.tsx
 +++ b/src/pages/ProfilePage.tsx
 @@ -21,7 +21,7 @@ import {useApiKeys} from "@/hooks/useApiKeys.ts";
