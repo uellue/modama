@@ -4,6 +4,13 @@ Status: draft by Claude, 2026-11-16 (10:03 UTC), options only, nothing decided. 
 
 This file decides *where each piece goes*, not what it says. It builds on O26 (sort every piece into its layer) and W12 in `working-with-agents.md`.
 
+## Decided so far
+
+- **The rule decides, not a list** (@weber, 2026-11-16: "I like your reasoning on how to split it up, a nice meta answer (rule to decide instead of decision outright). Let's run with that!"): a piece gets a repository of its own by the criteria in "Separate repositories" below; everything else goes to the layer whose readers need it.
+- **R5** The authorised officer: designed in the private working repository, then public on GitHub under `uellue` once it has code (@weber: "I like it!").
+- **R7** What the officer runs on and with which model: kept as a question for the officer's own design, not settled here (@weber: "Let's keep the question and work on that in the appropriate place").
+- **R4** Walks 1 and 2 first, "only as a test to see where they should go" (@weber); done on the small path, results below.
+
 ## What there is to route
 
 `working-with-agents.md` (about 15,000 words, options O1 to O39, questions W1 to W19) with `working-with-agents/` (five research reports, two scout experiments); `equivalences.md`; the ledger notes of 2026-11-12 to 11-16 in `kaizen.md`; the two kaizen issue drafts in `/.claude/drafts/`; `/docs/working-with-claude.md` (goal 3, about 5,000 words); 24 files of @weber's agent memory.
@@ -15,7 +22,7 @@ This file decides *where each piece goes*, not what it says. It builds on O26 (s
 | K | kaizen plugin, `uellue/skills` | the manager, colleagues, anyone who installs it (its `requirements.md` 1.4: the principal first, close colleagues next, others invited but not catered to yet) | public; "no details of other projects"; skills are Claude Code's, Codex reads only `AGENTS.md`; has `design/` (its own stakeholders, requirements, research) and `benchmarks/`; its README already has a section "Working with agents: lessons learned" |
 | M | modama: this repository (crawler, top level), the private working repository after the demo (379) | contributors' people and agents | the top level is settled with the colleagues; the crawler's `AGENTS.md` is ours; public on GitHub except the private working repository |
 | S | a separate repository on GitHub | to be found out: people outside a plugin, other tools, code that is not a skill | does not exist; one more home to keep alive |
-| P | @weber personally | @weber and the agents working for him | agent memory (per user, per machine), the open-items page, a private board or repository; private |
+| P | @weber personally | @weber and the agents working for him | agent memory (per checkout path, per machine), the open-items page, a private board or repository; private; splits in two (R8) |
 
 Found while sorting: section 8's layers have a fifth that none of the four holds, **the ER-C team across projects** (know-how shared by modama, LiberTEM and later projects, internal findings: O11's record, W7). It is not modama-specific, not public, not personal. Question R1 below.
 
@@ -73,7 +80,7 @@ Lean: the officer now (as a design first, R5 to R7); S4 decided with R1; S1 by t
 
 ## Walks proposed
 
-Personas from kaizen's stakeholder record (`uellue/skills`, `design/stakeholders.md`), to be confirmed before walking:
+Personas from kaizen's stakeholder record (`uellue/skills`, `design/stakeholders.md`). Walks 1 and 2 done (2026-11-16, small path, simulated, results in R8 to R12 and RE1 to RE7); 3 and 4 not yet:
 
 1. **The manager** (@weber, interviewed) starts agent work on a second project (for example LiberTEM) next week: which piece does each session need, and where does it find it? Tests K, P and the fifth layer.
 2. **The colleague starting with agents** joins modama next to @weber's agents, maybe on Codex: what reaches them, from where, and what must not (P)? Tests M, K's reach without skills, and S1.
@@ -86,5 +93,25 @@ Personas from kaizen's stakeholder record (`uellue/skills`, `design/stakeholders
 - **R2** Research and comparison: K's `design/research/` (with the plugin's own requirements), or S1?
 - **R3** Does K take method that is not a skill (the tree of agents, layers, the gatekeeper's design) as documents, or only what a skill, hook or brief carries?
 - **R5** Where does the officer's repository live: public on GitHub (under `uellue` or `modama-rdm`), or private on the institute's GitLab first? Lean: public on GitHub under `uellue` once it has code, since a safety gate gains from outside eyes and holds no secrets if policy and credentials stay out; designed in the private working repository until then.
-- **R6** Is there one officer per person (it carries that person's authority, O31: "directly under my authority") or one per team with a policy per person? Lean: one per person to start, as the quote says; a team's officer when a second person needs one (O25).
-- **R7** What does it run on, and with which model? Lean: a separate process with only the tools for its acts (O31), not a Claude Code session with a shell; the model a question for its design, preferably not the requesters' (section 4, copies share errors).
+- **R6** Is there one officer per person (it carries that person's authority, O31: "directly under my authority") or one per team with a policy per person? Lean: one per person to start, as the quote says; a team's officer when a second person needs one (O25). @weber, 2026-11-16: "With agents it is now much easier to maintain sth like a 'quasi-fork', idk how to describe it, where new features are transferred through what humans may label 'osmosis', i.e. picking it up without a formal channel. Skills also work that way. A bit how bacteria handle gene transfer: Not with sexual procreation like in higher organisms, but by transferring gene snippets around, iirc even across species boundaries. People transfer useful sentences to their agents just like that." I read this as: one officer per person, each person's copy free to diverge, improvements travelling between copies by being picked up, not merged through one upstream. Software has a name for the pattern: **clone-and-own** (software product-line engineering: copy a variant, adapt it, carry changes between the copies by hand or with tool support); the biology is horizontal gene transfer. Not yet checked: the literature on how clone-and-own fares (sources to be read before this is cited). The strongest argument against, for the officer only: a snippet picked up into a safety gate is outside code entering the gate. So the membrane is selective: policy sentences and skills may travel freely between people, but anything entering an officer's mechanism passes the same review as any change to it, and only its person takes it in (O31: only the person changes its rules). The mechanism's public repository is then the common ancestor the copies pick from, not an upstream they must follow. Open: whether that answers R6 (one per person, clone-and-own), and whether "clone-and-own" is the word to use.
+- **R7** What does it run on, and with which model? Deferred to the officer's design (above). The agent's lean, kept for that place: a separate process with only the tools for its acts (O31), not a Claude Code session with a shell; preferably not the requesters' model (section 4, copies share errors).
+
+From the walks (`walkthroughs/manager-second-project.md`, `walkthroughs/colleague-joins-agent-work.md`):
+
+- **R8** P is two layers, not one: what follows the person across projects and machines (how he works, the portfolio map, his ledger in shared projects) and what belongs to one checkout (auto memory). Today only the second exists, so nothing of the first reaches a LiberTEM session. The established pattern for the first is a **dotfiles repository**: a private personal repository that devvm provisions into every VM, holding a `~/.claude/CLAUDE.md` (or `~/.codex/AGENTS.md`) and the portfolio map. Lean: yes, a private personal repository on the institute's GitLab.
+- **R9** kaizen's standing instructions reach a session only through the project's instruction file, which in LiberTEM belongs to other maintainers. A plugin can ship hooks: a kaizen `SessionStart` hook (on start and after a summary) that adds the standing instructions would bring them to any project without touching its files, and would also be O1 (rules back after a summary). Lean: propose it for kaizen, with the project file still able to override. To check first: what a plugin hook may inject, with the `claude-code-guide` agent, as kaizen's `CLAUDE.md` asks for claims about Claude Code.
+- **R10** kaizen's debrief commits its ledger into the project; in a project the person does not own alone, it should go to the person's place (R8's repository). Lean: a ledger location setting in kaizen, default the project, as today.
+- **R11** modama's `AGENTS.md` mixes rules every contributor's agent can follow with kaizen commands (`/kaizen:update`, offer `/kaizen:debrief`) and one person's provenance. Lean: as O26 says, team rules phrased as the team's (provenance in the decision log), kaizen's block marked "if you use kaizen".
+- **R12** A colleague without Claude Code needs a short, tool-neutral guide to how the team works with agents. Lean: this is S1's case; whether it is a repository of its own or kaizen's README section made tool-neutral is R2.
+
+## Acceptance examples (from the walks)
+
+Kept here, not in `design/examples.md`, which holds the search's examples.
+
+- **RE1** When @weber opens a session in a new checkout on a new VM, his way of working (numbered items, commands in the final message, check before claiming) is in effect from the first message, without copying memory files by hand. Walk 1, step 1.
+- **RE2** When @weber works in a project whose instruction file belongs to others, kaizen's standing instructions hold in his sessions, also after a context summary, with no line added to that project's files. Walk 1, step 2.
+- **RE3** When an agent in LiberTEM touches the CPU count in containers, one search in one place finds modama's finding and the drafted fix. Walk 1, step 3.
+- **RE4** A debrief in a project @weber does not own alone commits nothing into that project unasked; its ledger lands in his place. Walk 1, step 6.
+- **RE5** A colleague's Codex agent reading modama's `AGENTS.md` meets only rules it can follow without kaizen and that the team agreed to; kaizen's steps are marked as such. Walk 2, step 2.
+- **RE6** A colleague asking what is open finds it in the team's tracker, not on one person's private page. Walk 2, step 3.
+- **RE7** A colleague without Claude Code reaches a short, tool-neutral guide to how the team works with agents from the README in two clicks. Walk 2, step 4.
