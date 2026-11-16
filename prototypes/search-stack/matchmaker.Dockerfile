@@ -1,11 +1,17 @@
 # The EOSC search web frontend (matchmaker), built from upstream's source at v0.14.0 with
 # our patches on top (patches/matchmaker/, applied in order; a patch that does not apply
 # fails the build). The stages follow upstream's Dockerfile, target production; unlike
-# it, npm also reads upstream's .npmrc (min-release-age). Build context: patches/matchmaker.
+# it, npm also reads upstream's .npmrc (min-release-age). Build context: patches/matchmaker;
+# named contexts `branding` (branding/) and `landingpage` (deploy/landingpage/): the logos
+# of patch 0005, from where the repository keeps them.
 # Drop a patch once upstream has it; with none left, use upstream's image directly again.
 FROM busybox:1.37.0 AS source
 # a commit, not the tag: the content cannot move
 ADD https://github.com/EOSC-Data-Commons/matchmaker.git#e7138c898926ebb79e45dd7d20cbf838dcf5dbe5 /src
+COPY --from=branding modama.svg /src/src/assets/modama.svg
+# fzj_logo.jpg is a PNG: named by what it is
+COPY --from=landingpage fzj_logo.jpg /src/src/assets/fzj-logo.png
+COPY --from=landingpage favicon.ico /src/src/assets/fzj-favicon.ico
 COPY *.patch /patches/
 RUN cd /src && for p in /patches/*.patch; do echo "applying $p" && patch -p1 -i "$p" || exit 1; done
 

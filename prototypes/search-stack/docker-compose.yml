@@ -423,6 +423,9 @@ services:
       context: patches/matchmaker
       dockerfile: ../../matchmaker.Dockerfile
       target: production
+      additional_contexts:
+        branding: ../../branding
+        landingpage: ../../deploy/landingpage
     image: search-stack-matchmaker:0.14.0-patched
     # Two server processes instead of upstream's one per logical CPU (`npm run prod`:
     # pm2-runtime -i max; 48 on the dev server, about 110 MB each): the server only passes

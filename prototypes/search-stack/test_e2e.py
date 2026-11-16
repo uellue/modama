@@ -518,7 +518,7 @@ def test_the_frontend_serves_its_page(tree):
     with urllib.request.urlopen(FRONTEND + "/", timeout=30) as response:
         assert response.headers.get_content_type() == "text/html"
         page = response.read().decode()
-    assert "<title>EOSC Data Commons</title>" in page, page[:500]
+    assert "<title>modama search</title>" in page, page[:500]  # patch 0005
 
 
 def test_the_chat_page_needs_no_login(tree):

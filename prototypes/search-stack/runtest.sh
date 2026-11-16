@@ -6,10 +6,31 @@
 #   runtest.sh e2e    the end-to-end test (test_e2e.py): builds a test tree, crawls,
 #                     harvests, searches, injects faults. About 4 minutes; it needs a
 #                     fresh stack: ./downtest.sh --reset && ./uptest.sh first.
+#   runtest.sh brand baseline   screenshots and controls of matchmaker's pages, before a
+#                               change to its look (README, "Branding check")
+#   runtest.sh brand  the same after the change, compared with the baseline
+#                     BRANDCHECK_URL: another matchmaker (staging: http://127.0.0.1:13000)
 set -uo pipefail
 cd "$(dirname "$0")"
 [ -e .env ] || echo "MODAMA_SECRETS_DIR=./testconf/secrets" > .env  # as uptest.sh
 dc() { docker compose "$@"; }
+
+if [ "${1:-}" = brand ]; then
+    out=brandcheck/out
+    label=current
+    [ "${2:-}" = baseline ] && label=baseline
+    [ "$label" = baseline ] || [ -e "$out/baseline/controls.json" ] ||
+        { echo "FAIL  no baseline: ./runtest.sh brand baseline, before the change" >&2; exit 1; }
+    docker build -q -t search-stack-brandcheck brandcheck > /dev/null || exit 1
+    rm -rf "${out:?}/$label" && mkdir -p "$out/$label"
+    # host network and 127.0.0.1, so matchmaker's analytics stay off (localhost only)
+    bc() { docker run --rm --network host -u "$(id -u):$(id -g)" -e HOME=/tmp \
+        -v "$PWD/brandcheck:/brandcheck" search-stack-brandcheck python3 /brandcheck/check.py "$@"; }
+    bc capture "/brandcheck/out/$label" "${BRANDCHECK_URL:-http://127.0.0.1:3000}" || exit 1
+    [ "$label" = baseline ] && exit 0
+    bc compare /brandcheck/out/baseline /brandcheck/out/current
+    exit $?
+fi
 
 if [ "${1:-}" = e2e ]; then
     # The chat test runs by default and needs a key in keys.env for the provider of the chat

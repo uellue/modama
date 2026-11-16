@@ -1,0 +1,663 @@
+The look of modama's design (mgmtinterface-new/DESIGN.md)
+
+Upstream's own colours and font never apply: tailwind.config.ts defines the eosc-*
+colours and Roboto, but Tailwind v4 reads that file only through @config, which
+index.css does not have (RepositoryStats.tsx says so: "Tailwind eosc-* tokens are
+no-ops under v4"). The page's colours come from hex values in its class names and
+from Tailwind's default palette. Put modama's design in the theme Tailwind v4 reads,
+so that the colours are set in one place:
+
+- index.css: an @theme block. DESIGN.md's colours are Tailwind v3's blue and slate
+  scales: the blue-* classes get v3's blues (v4's differ), the gray-* classes the
+  slate scale, upstream's eosc-* names DESIGN.md's tokens (a comment names each).
+  Plus Jakarta Sans and JetBrains Mono instead of Roboto, from Google Fonts as in
+  mgmtinterface-new; font-light at 400, DESIGN.md's lightest weight.
+- The hex values in class names become the eosc-* names (the sed command below);
+  the results page's gradient becomes the background colour.
+- RepositoryStats.tsx: the chart colours, which take values, not classes, get the
+  same values.
+
+To make it again on a new upstream version, in its source:
+
+  grep -rlE '\-\[#(002337|646363|009FE3|1A1A1A|E0E0E0|FAFAFA|3b7dd8|E5E7EB)\]' src --include=*.tsx \
+    | xargs sed -i -E 's/-\[#002337\]/-eosc-dark-blue/g; s/-\[#646363\]/-eosc-gray/g;
+        s/-\[#009FE3\]/-eosc-light-blue/g; s/-\[#1A1A1A\]/-eosc-text/g;
+        s/-\[#E0E0E0\]/-eosc-border/g; s/-\[#FAFAFA\]/-eosc-bg/g;
+        s/-\[#3b7dd8\]/-blue-500/g; s/-\[#E5E7EB\]/-gray-200/g'
+
+then the edits to index.css, RepositoryStats.tsx and SearchPage.tsx as here. Only the
+look changes; upstream could take it as a theme, and this patch would go.
+
+Applies to matchmaker v0.14.0 (e7138c898926ebb79e45dd7d20cbf838dcf5dbe5) after 0001 to 0003.
+
+--- a/src/components/ConversationExportView.tsx
++++ b/src/components/ConversationExportView.tsx
+@@ -20,7 +20,7 @@ import euLogo from "@/assets/EU_blue.png";
+ 
+ type ConversationExportViewProps = ExportableConversation & ExportOptions;
+ 
+-const LABEL = 'text-[11px] font-semibold uppercase tracking-wide text-[#646363] break-after-avoid';
++const LABEL = 'text-[11px] font-semibold uppercase tracking-wide text-eosc-gray break-after-avoid';
+ 
+ /** One tool call: what the thread calls it, and the JSON of what was asked and how much came back. */
+ const ExportToolCall = ({toolCall}: { toolCall: ToolCall }) => {
+@@ -116,16 +116,16 @@ export const ConversationExportView = ({
+     const originHref = sanitizeLinkHref(origin);
+ 
+     return (
+-        <article data-export-document="" className="w-full bg-white text-[#1A1A1A]">
++        <article data-export-document="" className="w-full bg-white text-eosc-text">
+             <table role="presentation" className="w-full border-collapse">
+                 <tbody>
+                 <tr>
+                     <td className="p-0 align-top">
+                         <header
+-                            className="flex flex-wrap items-end justify-between gap-4 border-b border-[#E0E0E0] pb-4">
++                            className="flex flex-wrap items-end justify-between gap-4 border-b border-eosc-border pb-4">
+                             <img src={eoscLogo} alt={SITE_NAME} className="h-9 w-auto"/>
+-                            <div className="text-right text-xs leading-relaxed text-[#646363]">
+-                                <p className="font-semibold text-[#002337]">AI Mode conversation</p>
++                            <div className="text-right text-xs leading-relaxed text-eosc-gray">
++                                <p className="font-semibold text-eosc-dark-blue">AI Mode conversation</p>
+                                 <p>Exported on {formatExportDate(exportedAt)}</p>
+                                 {originHref && (
+                                     <p>from <a href={originHref} className="underline">{origin}</a></p>
+@@ -139,7 +139,7 @@ export const ConversationExportView = ({
+                         {messages.map((message, index) => message.sender === 'user' ? (
+                             <section key={index} className="mt-8 break-inside-avoid">
+                                 <h2 className={LABEL}>Question</h2>
+-                                <p className="mt-1.5 whitespace-pre-wrap break-words rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-[15px] leading-relaxed text-[#002337]">
++                                <p className="mt-1.5 whitespace-pre-wrap break-words rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-[15px] leading-relaxed text-eosc-dark-blue">
+                                     {message.content}
+                                 </p>
+                             </section>
+@@ -162,7 +162,7 @@ export const ConversationExportView = ({
+                 <tr>
+                     <td className="p-0">
+                         <footer
+-                            className="mt-10 flex items-start justify-between gap-6 border-t border-[#E0E0E0] pt-3 text-[11px] leading-relaxed text-[#646363]">
++                            className="mt-10 flex items-start justify-between gap-6 border-t border-eosc-border pt-3 text-[11px] leading-relaxed text-eosc-gray">
+                             <div>
+                                 <p>
+                                     Generated with {SITE_NAME} AI Mode
+--- a/src/components/RepositoryStats.tsx
++++ b/src/components/RepositoryStats.tsx
+@@ -13,11 +13,11 @@ import {
+ import {fetchRepositoryStats} from "@/lib/api.ts";
+ import {RepositoryStat, RepositoryStatsResponse} from "@/types/commons.ts";
+ 
+-// Brand palette (Tailwind eosc-* tokens are no-ops under v4, so hex is hardcoded)
+-const DARK_BLUE = "#002337";
+-const ACCENT_BLUE = "#009FE3";
+-const MID_BLUE = "#3b7dd8";
+-const GRAY = "#646363";
++// Brand palette: the values of the eosc-* names in index.css (charts take colours, not classes)
++const DARK_BLUE = "#0f172a";
++const ACCENT_BLUE = "#2563eb";
++const MID_BLUE = "#3b82f6";
++const GRAY = "#475569";
+ 
+ // Floor for how many subjects to show; the actual count scales up to fill the
+ // height of the repository chart (see subjectData) so the two columns stay
+@@ -68,10 +68,10 @@ const RepoTooltip = ({active, payload}: {
+     if (!active || !payload?.length) return null;
+     const datum = payload[0].payload;
+     return (
+-        <div className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-2 shadow-sm">
+-            <p className="text-sm font-medium text-[#002337]">{datum.name}</p>
+-            <p className="text-xs text-[#646363]">{datum.code}</p>
+-            <p className="text-sm text-[#009FE3] mt-1">{formatNumber(datum.datasets)} datasets</p>
++        <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
++            <p className="text-sm font-medium text-eosc-dark-blue">{datum.name}</p>
++            <p className="text-xs text-eosc-gray">{datum.code}</p>
++            <p className="text-sm text-eosc-light-blue mt-1">{formatNumber(datum.datasets)} datasets</p>
+         </div>
+     );
+ };
+@@ -83,9 +83,9 @@ const SubjectTooltip = ({active, payload}: {
+     if (!active || !payload?.length) return null;
+     const datum = payload[0].payload;
+     return (
+-        <div className="bg-white border border-[#E5E7EB] rounded-lg px-3 py-2 shadow-sm max-w-xs">
+-            <p className="text-sm font-medium text-[#002337] break-words">{datum.subject}</p>
+-            <p className="text-sm text-[#009FE3] mt-1">{formatNumber(datum.count)} datasets</p>
++        <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm max-w-xs">
++            <p className="text-sm font-medium text-eosc-dark-blue break-words">{datum.subject}</p>
++            <p className="text-sm text-eosc-light-blue mt-1">{formatNumber(datum.count)} datasets</p>
+         </div>
+     );
+ };
+@@ -186,7 +186,7 @@ export const RepositoryStats = () => {
+         return (
+             <div
+                 className="bg-white border border-eosc-border rounded-xl p-8 flex items-center justify-center min-h-[300px]">
+-                <p className="text-sm font-light text-[#646363] animate-pulse">Loading statistics…</p>
++                <p className="text-sm font-light text-eosc-gray animate-pulse">Loading statistics…</p>
+             </div>
+         );
+     }
+@@ -195,7 +195,7 @@ export const RepositoryStats = () => {
+         return (
+             <div
+                 className="bg-white border border-eosc-border rounded-xl p-8 flex items-center justify-center min-h-[300px]">
+-                <p className="text-sm font-light text-[#646363]">
++                <p className="text-sm font-light text-eosc-gray">
+                     {error ?? "No statistics available."}
+                 </p>
+             </div>
+@@ -207,24 +207,24 @@ export const RepositoryStats = () => {
+             {/* KPI strip */}
+             <div className="flex flex-wrap gap-6 sm:gap-12 mb-8 justify-center sm:justify-start">
+                 <div>
+-                    <p className="text-3xl sm:text-4xl font-light text-[#002337]">
++                    <p className="text-3xl sm:text-4xl font-light text-eosc-dark-blue">
+                         {formatNumber(stats.total_datasets)}
+                     </p>
+-                    <p className="text-sm font-light text-[#646363] mt-1">Datasets indexed</p>
++                    <p className="text-sm font-light text-eosc-gray mt-1">Datasets indexed</p>
+                 </div>
+                 <div>
+-                    <p className="text-3xl sm:text-4xl font-light text-[#002337]">
++                    <p className="text-3xl sm:text-4xl font-light text-eosc-dark-blue">
+                         {activeRepos.length}
+                     </p>
+-                    <p className="text-sm font-light text-[#646363] mt-1">Active repositories</p>
++                    <p className="text-sm font-light text-eosc-gray mt-1">Active repositories</p>
+                 </div>
+             </div>
+ 
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                 {/* Datasets per repository */}
+                 <div>
+-                    <h4 className="text-base font-medium text-[#002337] mb-1">Datasets per repository</h4>
+-                    <p className="text-xs font-light text-[#646363] mb-4">
++                    <h4 className="text-base font-medium text-eosc-dark-blue mb-1">Datasets per repository</h4>
++                    <p className="text-xs font-light text-eosc-gray mb-4">
+                         Select a repository to explore its top subjects
+                     </p>
+                     <ResponsiveContainer width="100%" height={repoChartHeight}>
+@@ -272,10 +272,10 @@ export const RepositoryStats = () => {
+ 
+                 {/* Top subjects for the selected repository */}
+                 <div>
+-                    <h4 className="text-base font-medium text-[#002337] mb-1">
++                    <h4 className="text-base font-medium text-eosc-dark-blue mb-1">
+                         Top subjects
+                     </h4>
+-                    <p className="text-xs font-light text-[#646363] mb-4 truncate">
++                    <p className="text-xs font-light text-eosc-gray mb-4 truncate">
+                         {selectedRepo ? displayName(selectedRepo.code, selectedRepo.name) : ""}
+                     </p>
+                     {subjectData.length > 0 ? (
+@@ -310,7 +310,7 @@ export const RepositoryStats = () => {
+                         </ResponsiveContainer>
+                     ) : (
+                         <div className="flex items-center justify-center min-h-[240px]">
+-                            <p className="text-sm font-light text-[#646363]">No subject data available.</p>
++                            <p className="text-sm font-light text-eosc-gray">No subject data available.</p>
+                         </div>
+                     )}
+                 </div>
+--- a/src/components/UserMenu.tsx
++++ b/src/components/UserMenu.tsx
+@@ -32,7 +32,7 @@ export const UserMenu = ({user, onLogout, onProfile, onConversations}: UserMenuP
+         <div className="relative" ref={menuRef}>
+             <button
+                 onClick={() => setIsOpen(!isOpen)}
+-                className="w-9 h-9 rounded-full bg-[#002337] text-white flex items-center justify-center font-medium hover:bg-opacity-90 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#009FE3]"
++                className="w-9 h-9 rounded-full bg-eosc-dark-blue text-white flex items-center justify-center font-medium hover:bg-opacity-90 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-eosc-light-blue"
+                 title={user.name || user.email}
+                 aria-haspopup="menu"
+                 aria-expanded={isOpen}
+--- a/src/components/dataplayer/FilePreviewModal.tsx
++++ b/src/components/dataplayer/FilePreviewModal.tsx
+@@ -244,7 +244,7 @@ export const FilePreviewModal = ({file, onClose}: FilePreviewModalProps) => {
+                     <div className="flex items-center gap-3 shrink-0">
+                         {file.size && (
+                             <span
+-                                className="text-[#646363] px-2 py-1 bg-gray-50 border border-eosc-border rounded text-xs font-light">
++                                className="text-eosc-gray px-2 py-1 bg-gray-50 border border-eosc-border rounded text-xs font-light">
+                                 {file.size}
+                             </span>
+                         )}
+--- a/src/components/dataplayer/FileTree.tsx
++++ b/src/components/dataplayer/FileTree.tsx
+@@ -110,8 +110,8 @@ const TreeRow = ({node, depth, expanded, onToggle, onPreview}: TreeRowProps) =>
+                         className={`h-4 w-4 shrink-0 text-eosc-gray transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                     />
+                     {isOpen
+-                        ? <FolderOpen className="h-4 w-4 shrink-0 text-[#3b7dd8]"/>
+-                        : <Folder className="h-4 w-4 shrink-0 text-[#3b7dd8]"/>}
++                        ? <FolderOpen className="h-4 w-4 shrink-0 text-blue-500"/>
++                        : <Folder className="h-4 w-4 shrink-0 text-blue-500"/>}
+                     <span className="text-sm text-eosc-text font-light break-all" title={node.name}>
+                         {node.name}
+                     </span>
+@@ -158,7 +158,7 @@ const TreeRow = ({node, depth, expanded, onToggle, onPreview}: TreeRowProps) =>
+             <div className="flex items-center gap-3 shrink-0">
+                 {file?.size ? (
+                     <span
+-                        className="text-[#646363] px-2 py-1 bg-gray-50 border border-eosc-border rounded text-xs font-light">
++                        className="text-eosc-gray px-2 py-1 bg-gray-50 border border-eosc-border rounded text-xs font-light">
+                         {file.size}
+                     </span>
+                 ) : (
+--- a/src/index.css
++++ b/src/index.css
+@@ -1,7 +1,53 @@
+-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
++@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+ 
+ @import "tailwindcss";
+ 
++/*
++ * The look of modama's design (mgmtinterface-new/DESIGN.md), in the theme Tailwind v4
++ * reads (it ignores tailwind.config.ts without @config). DESIGN.md's colours are
++ * Tailwind v3's blue and slate scales: the page's blue-* classes get those values, its
++ * gray-* classes the slate scale, and upstream's eosc-* names DESIGN.md's tokens.
++ */
++@theme {
++    --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
++    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
++    /* DESIGN.md's lightest weight is 400; upstream sets most text in font-light */
++    --font-weight-light: 400;
++
++    --color-eosc-dark-blue: #0f172a; /* on-surface */
++    --color-eosc-text: #0f172a; /* on-surface */
++    --color-eosc-black: #0f172a; /* on-surface */
++    --color-eosc-light-blue: #2563eb; /* primary */
++    --color-eosc-gray: #475569; /* on-surface-variant */
++    --color-eosc-border: #e2e8f5; /* outline */
++    --color-eosc-bg: #f1f5fd; /* background */
++    --color-eosc-card: #ffffff; /* surface */
++
++    --color-blue-50: #eff6ff;
++    --color-blue-100: #dbeafe;
++    --color-blue-200: #bfdbfe;
++    --color-blue-300: #93c5fd;
++    --color-blue-400: #60a5fa;
++    --color-blue-500: #3b82f6; /* inverse-primary */
++    --color-blue-600: #2563eb; /* primary */
++    --color-blue-700: #1d4ed8; /* primary-variant */
++    --color-blue-800: #1e40af;
++    --color-blue-900: #1e3a8a;
++    --color-blue-950: #172554;
++
++    --color-gray-50: #f8fafc; /* surface-variant */
++    --color-gray-100: #f1f5f9;
++    --color-gray-200: #e2e8f0;
++    --color-gray-300: #cbd5e1;
++    --color-gray-400: #94a3b8; /* outline-variant */
++    --color-gray-500: #64748b; /* on-surface-dim */
++    --color-gray-600: #475569; /* on-surface-variant */
++    --color-gray-700: #334155;
++    --color-gray-800: #1e293b;
++    --color-gray-900: #0f172a; /* on-surface */
++    --color-gray-950: #020617;
++}
++
+ @layer base {
+     /**
+      * Tailwind CSS theme
+--- a/src/pages/AcceptableUsePage.tsx
++++ b/src/pages/AcceptableUsePage.tsx
+@@ -3,27 +3,27 @@ import {Footer} from "../components/Footer";
+ 
+ const AcceptableUsePage = () => {
+     return (
+-        <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
++        <div className="min-h-screen bg-eosc-bg flex flex-col">
+             <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 py-12">
+                 <Link
+                     to="/"
+-                    className="text-sm text-[#009FE3] hover:text-[#002337] transition-colors"
++                    className="text-sm text-eosc-light-blue hover:text-eosc-dark-blue transition-colors"
+                 >
+                     &larr; Back to Home
+                 </Link>
+ 
+-                <h1 className="text-3xl font-bold text-[#002337] mt-6 mb-2">
++                <h1 className="text-3xl font-bold text-eosc-dark-blue mt-6 mb-2">
+                     EOSC Data Commons Services AUP
+                 </h1>
+-                <p className="text-xs text-[#646363] mb-10">
++                <p className="text-xs text-eosc-gray mb-10">
+                     Version 7 &middot; Approved 10 June 2026
+                 </p>
+ 
+                 <section className="mb-8">
+-                    <h2 className="text-lg font-semibold text-[#002337] mb-3">
++                    <h2 className="text-lg font-semibold text-eosc-dark-blue mb-3">
+                         Acceptable Use Policy
+                     </h2>
+-                    <div className="text-sm text-[#1A1A1A] font-light leading-relaxed space-y-3">
++                    <div className="text-sm text-eosc-text font-light leading-relaxed space-y-3">
+                         <p>
+                             This Acceptable Use Policy and Conditions of Use (&ldquo;AUP&rdquo;) defines the
+                             rules and conditions that govern your access to and use (including transmission,
+@@ -91,7 +91,7 @@ const AcceptableUsePage = () => {
+                             The administrative contact for this AUP is:{' '}
+                             <a
+                                 href="mailto:eosc-data-commons-po@mailman.egi.eu"
+-                                className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors wrap-break-word"
++                                className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors wrap-break-word"
+                             >
+                                 eosc-data-commons-po@mailman.egi.eu
+                             </a>
+@@ -100,7 +100,7 @@ const AcceptableUsePage = () => {
+                             The security contact for this AUP is:{' '}
+                             <a
+                                 href="mailto:eosc-data-commons-security@mailman.egi.eu"
+-                                className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors wrap-break-word"
++                                className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors wrap-break-word"
+                             >
+                                 eosc-data-commons-security@mailman.egi.eu
+                             </a>
+@@ -109,7 +109,7 @@ const AcceptableUsePage = () => {
+                             The privacy statements (e.g. Privacy Notices) are located at:{' '}
+                             <Link
+                                 to="/privacy-policy"
+-                                className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                                className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                             >
+                                 EOSC Data Commons Privacy Policy
+                             </Link>
+@@ -120,7 +120,7 @@ const AcceptableUsePage = () => {
+                                 href="https://wise-community.org/wise-baseline-aup/"
+                                 target="_blank"
+                                 rel="noopener noreferrer"
+-                                className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                                className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                             >
+                                 The WISE Baseline Acceptable Use Policy and Conditions of Use
+                             </a>, Version 1, 25 Feb 2019, used under CC BY-NC-SA 4.0
+--- a/src/pages/ChatPage.tsx
++++ b/src/pages/ChatPage.tsx
+@@ -653,7 +653,7 @@ const ChatPage: FC = () => {
+                                             className={`flex gap-2 md:gap-3 max-w-full md:max-w-[85%] min-w-0 ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+                                             {/* Avatar */}
+                                             <div
+-                                                className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center shadow-sm mt-1 overflow-hidden ${msg.sender === 'user' ? 'bg-[#002337] text-white text-sm font-medium' : 'bg-white border border-gray-100 p-1'}`}>
++                                                className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center shadow-sm mt-1 overflow-hidden ${msg.sender === 'user' ? 'bg-eosc-dark-blue text-white text-sm font-medium' : 'bg-white border border-gray-100 p-1'}`}>
+                                                 {msg.sender === 'user' ? (
+                                                     getUserInitials(user)
+                                                 ) : (
+--- a/src/pages/PrivacyPolicyPage.tsx
++++ b/src/pages/PrivacyPolicyPage.tsx
+@@ -9,8 +9,8 @@ interface PolicySectionProps {
+ 
+ const PolicySection = ({title, children}: PolicySectionProps) => (
+     <section className="mb-8">
+-        <h2 className="text-lg font-semibold text-[#002337] mb-3">{title}</h2>
+-        <div className="text-sm text-[#1A1A1A] font-light leading-relaxed space-y-3">
++        <h2 className="text-lg font-semibold text-eosc-dark-blue mb-3">{title}</h2>
++        <div className="text-sm text-eosc-text font-light leading-relaxed space-y-3">
+             {children}
+         </div>
+     </section>
+@@ -18,19 +18,19 @@ const PolicySection = ({title, children}: PolicySectionProps) => (
+ 
+ const PrivacyPolicyPage = () => {
+     return (
+-        <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
++        <div className="min-h-screen bg-eosc-bg flex flex-col">
+             <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 py-12">
+                 <Link
+                     to="/"
+-                    className="text-sm text-[#009FE3] hover:text-[#002337] transition-colors"
++                    className="text-sm text-eosc-light-blue hover:text-eosc-dark-blue transition-colors"
+                 >
+                     &larr; Back to Home
+                 </Link>
+ 
+-                <h1 className="text-3xl font-bold text-[#002337] mt-6 mb-2">
++                <h1 className="text-3xl font-bold text-eosc-dark-blue mt-6 mb-2">
+                     EOSC Data Commons Privacy Policy
+                 </h1>
+-                <p className="text-xs text-[#646363] mb-10">
++                <p className="text-xs text-eosc-gray mb-10">
+                     Version 7 &middot; Approved 10 June 2026
+                 </p>
+ 
+@@ -69,7 +69,7 @@ const PrivacyPolicyPage = () => {
+                         E-mail:{' '}
+                         <a
+                             href="mailto:dpo@egi.eu"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                         >
+                             dpo@egi.eu
+                         </a>
+@@ -85,7 +85,7 @@ const PrivacyPolicyPage = () => {
+                             href="https://autoriteitpersoonsgegevens.nl/en/contact-dutch-dpa/contact-us"
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors wrap-break-word"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors wrap-break-word"
+                         >
+                             https://autoriteitpersoonsgegevens.nl/en/contact-dutch-dpa/contact-us
+                         </a>.
+@@ -204,7 +204,7 @@ const PrivacyPolicyPage = () => {
+                             href="https://edpb.europa.eu/about-edpb/board/members_en"
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors wrap-break-word"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors wrap-break-word"
+                         >
+                             https://edpb.europa.eu/about-edpb/board/members_en
+                         </a>.
+@@ -235,7 +235,7 @@ const PrivacyPolicyPage = () => {
+                             href="https://documents.egi.eu/public/ShowDocument?docid=3737"
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                         >
+                             EGI Document 3737: EGI Foundation Technical and Organisational Measures (TOM)
+                         </a>.
+@@ -250,7 +250,7 @@ const PrivacyPolicyPage = () => {
+                             href="https://wiki.refeds.org/display/CODE/Code+of+Conduct+for+Service+Providers+1.0"
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                         >
+                             Code of Conduct for Service Providers
+                         </a>{' '}
+@@ -259,7 +259,7 @@ const PrivacyPolicyPage = () => {
+                             href="https://documents.egi.eu/public/ShowDocument?docid=2732"
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                         >
+                             EGI-doc-2732-v3: Policy on the Processing of Personal Data
+                         </a>.
+@@ -270,7 +270,7 @@ const PrivacyPolicyPage = () => {
+                             href="https://aarc-community.org/policy/policy-development-kit/"
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                         >
+                             AARC Policy development kit
+                         </a>{' '}
+@@ -279,7 +279,7 @@ const PrivacyPolicyPage = () => {
+                             href="https://creativecommons.org/licenses/by-nc-sa/4.0/"
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="text-[#009FE3] hover:text-[#002337] underline underline-offset-2 transition-colors"
++                            className="text-eosc-light-blue hover:text-eosc-dark-blue underline underline-offset-2 transition-colors"
+                         >
+                             CC BY-NC-SA 4.0
+                         </a>).
+--- a/src/pages/ProfilePage.tsx
++++ b/src/pages/ProfilePage.tsx
+@@ -102,21 +102,21 @@ const ApiKeyCard = ({meta, configured, disabled, onSave, onRemove, onReveal}: Ap
+     };
+ 
+     return (
+-        <div className="bg-white border border-[#E0E0E0] rounded-xl p-6">
++        <div className="bg-white border border-eosc-border rounded-xl p-6">
+             <div className="flex items-start justify-between gap-4">
+                 <div className="flex items-start gap-3">
+                     <div
+-                        className="w-10 h-10 rounded-lg bg-[#FAFAFA] border border-[#E0E0E0] flex items-center justify-center shrink-0">
+-                        <KeyRound className="w-5 h-5 text-[#002337]"/>
++                        className="w-10 h-10 rounded-lg bg-eosc-bg border border-eosc-border flex items-center justify-center shrink-0">
++                        <KeyRound className="w-5 h-5 text-eosc-dark-blue"/>
+                     </div>
+                     <div>
+-                        <h3 className="text-base font-medium text-[#1A1A1A]">{meta.label}</h3>
+-                        <p className="text-sm text-[#646363] mt-0.5">{meta.description}</p>
++                        <h3 className="text-base font-medium text-eosc-text">{meta.label}</h3>
++                        <p className="text-sm text-eosc-gray mt-0.5">{meta.description}</p>
+                         <a
+                             href={meta.helpUrl}
+                             target="_blank"
+                             rel="noopener noreferrer"
+-                            className="inline-flex items-center gap-1 text-xs text-[#009FE3] hover:underline mt-1.5"
++                            className="inline-flex items-center gap-1 text-xs text-eosc-light-blue hover:underline mt-1.5"
+                         >
+                             Where do I get this? <ExternalLink className="w-3 h-3"/>
+                         </a>
+@@ -129,7 +129,7 @@ const ApiKeyCard = ({meta, configured, disabled, onSave, onRemove, onReveal}: Ap
+                     </span>
+                 ) : (
+                     <span
+-                        className="inline-flex items-center gap-1.5 text-xs font-medium text-[#646363] bg-[#FAFAFA] border border-[#E0E0E0] rounded-full px-2.5 py-1 shrink-0">
++                        className="inline-flex items-center gap-1.5 text-xs font-medium text-eosc-gray bg-eosc-bg border border-eosc-border rounded-full px-2.5 py-1 shrink-0">
+                         <span className="w-1.5 h-1.5 rounded-full bg-gray-300"/> Not set
+                     </span>
+                 )}
+@@ -137,19 +137,19 @@ const ApiKeyCard = ({meta, configured, disabled, onSave, onRemove, onReveal}: Ap
+ 
+             {configured && (
+                 <div className="mt-5">
+-                    <label className="block text-xs font-medium text-[#646363] mb-1.5">Stored value</label>
++                    <label className="block text-xs font-medium text-eosc-gray mb-1.5">Stored value</label>
+                     <div className="flex items-center gap-2">
+                         <input
+                             type="text"
+                             readOnly
+                             value={revealed ?? '••••••••••••'}
+-                            className="flex-1 min-w-0 px-3 py-2 text-sm font-mono bg-[#FAFAFA] border border-[#E0E0E0] rounded-lg text-[#1A1A1A] focus:outline-none"
++                            className="flex-1 min-w-0 px-3 py-2 text-sm font-mono bg-eosc-bg border border-eosc-border rounded-lg text-eosc-text focus:outline-none"
+                         />
+                         <button
+                             type="button"
+                             onClick={handleToggleReveal}
+                             disabled={disabled || revealing}
+-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-[#1A1A1A] border border-[#E0E0E0] rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
++                            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-eosc-text border border-eosc-border rounded-lg hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                         >
+                             {revealing ? <Loader2 className="w-4 h-4 animate-spin"/> : revealed !== null ?
+                                 <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+@@ -159,7 +159,7 @@ const ApiKeyCard = ({meta, configured, disabled, onSave, onRemove, onReveal}: Ap
+                             <button
+                                 type="button"
+                                 onClick={handleCopy}
+-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-[#1A1A1A] border border-[#E0E0E0] rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
++                                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-eosc-text border border-eosc-border rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                             >
+                                 {copied ? <Check className="w-4 h-4 text-green-600"/> : <Copy className="w-4 h-4"/>}
+                                 {copied ? 'Copied' : 'Copy'}
+@@ -170,7 +170,7 @@ const ApiKeyCard = ({meta, configured, disabled, onSave, onRemove, onReveal}: Ap
+             )}
+ 
+             <div className="mt-5">
+-                <label className="block text-xs font-medium text-[#646363] mb-1.5">
++                <label className="block text-xs font-medium text-eosc-gray mb-1.5">
+                     {configured ? 'Replace key' : 'Set key'}
+                 </label>
+                 <div className="flex items-center gap-2">
+@@ -183,14 +183,14 @@ const ApiKeyCard = ({meta, configured, disabled, onSave, onRemove, onReveal}: Ap
+                             disabled={disabled || busy !== 'idle'}
+                             autoComplete="off"
+                             spellCheck={false}
+-                            className="w-full px-3 py-2 pr-10 text-sm bg-white border border-[#E0E0E0] rounded-lg text-[#1A1A1A] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#009FE3] focus:border-transparent disabled:opacity-50"
++                            className="w-full px-3 py-2 pr-10 text-sm bg-white border border-eosc-border rounded-lg text-eosc-text placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-eosc-light-blue focus:border-transparent disabled:opacity-50"
+                         />
+                         <button
+                             type="button"
+                             onClick={() => setShowInput(s => !s)}
+                             tabIndex={-1}
+                             aria-label={showInput ? 'Hide input' : 'Show input'}
+-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#1A1A1A] cursor-pointer"
++                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-eosc-text cursor-pointer"
+                         >
+                             {showInput ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+                         </button>
+@@ -199,7 +199,7 @@ const ApiKeyCard = ({meta, configured, disabled, onSave, onRemove, onReveal}: Ap
+                         type="button"
+                         onClick={handleSave}
+                         disabled={disabled || busy !== 'idle' || !value.trim()}
+-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#002337] rounded-lg hover:bg-opacity-90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
++                        className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-eosc-dark-blue rounded-lg hover:bg-opacity-90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                     >
+                         {busy === 'saving' && <Loader2 className="w-4 h-4 animate-spin"/>}
+                         Save
+@@ -244,7 +244,7 @@ export const ProfilePage = () => {
+     }, [gateShown, trackEvent]);
+ 
+     return (
+-        <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
++        <div className="min-h-screen bg-eosc-bg flex flex-col">
+             {!userLoading && !user && (
+                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                     <div
+@@ -275,7 +275,7 @@ export const ProfilePage = () => {
+                 </div>
+             )}
+ 
+-            <header className="bg-white border-b border-[#E0E0E0] shrink-0 py-3 px-6 flex items-center">
++            <header className="bg-white border-b border-eosc-border shrink-0 py-3 px-6 flex items-center">
+                 <img
+                     src={dataCommonsIconBlue}
+                     alt="EOSC Logo"
+@@ -287,20 +287,20 @@ export const ProfilePage = () => {
+             <main className="flex-1 w-full max-w-2xl mx-auto px-4 py-10">
+                 <button
+                     onClick={() => navigate('/')}
+-                    className="inline-flex items-center gap-1.5 text-sm text-[#646363] hover:text-[#1A1A1A] mb-6 cursor-pointer"
++                    className="inline-flex items-center gap-1.5 text-sm text-eosc-gray hover:text-eosc-text mb-6 cursor-pointer"
+                 >
+                     <ArrowLeft className="w-4 h-4"/> Back to home
+                 </button>
+ 
+-                <h1 className="text-2xl font-light text-[#1A1A1A]">API Keys</h1>
+-                <p className="text-[#646363] mt-1">
++                <h1 className="text-2xl font-light text-eosc-text">API Keys</h1>
++                <p className="text-eosc-gray mt-1">
+                     Provide your own keys so the platform can act on your behalf. They are stored securely in the
+                     EGI Secret Store and are only accessible to you.
+                 </p>
+ 
+                 <div
+-                    className="flex items-start gap-2 text-xs text-[#646363] bg-[#FAFAFA] border border-[#E0E0E0] rounded-lg px-3 py-2 mt-4">
+-                    <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-[#009FE3]"/>
++                    className="flex items-start gap-2 text-xs text-eosc-gray bg-eosc-bg border border-eosc-border rounded-lg px-3 py-2 mt-4">
++                    <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-eosc-light-blue"/>
+                     <span>Keys are write-only by default — reveal a stored value only when you need it.</span>
+                 </div>
+ 
+@@ -331,7 +331,7 @@ export const ProfilePage = () => {
+                 )}
+ 
+                 {keysLoading && !unavailable ? (
+-                    <div className="flex items-center justify-center gap-2 text-[#646363] py-16">
++                    <div className="flex items-center justify-center gap-2 text-eosc-gray py-16">
+                         <Loader2 className="w-5 h-5 animate-spin"/> Loading…
+                     </div>
+                 ) : (
+--- a/src/pages/SearchPage.tsx
++++ b/src/pages/SearchPage.tsx
+@@ -108,7 +108,7 @@ export const SearchPage = () => {
+     const ErrorIcon = errorState.icon;
+ 
+     return (
+-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
++        <div className="min-h-screen bg-eosc-bg">
+             <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md shadow-sm">
+                 {/* On phones the search bar takes its own row below the logo and the account
+                     controls; side by side it leaves no room to type. */}

@@ -307,9 +307,33 @@ The chat's language model is the search API's setting, `DEFAULT_LLM_MODEL` in `k
 
 A link in the chat's answer whose address holds brackets, as many of our paths do (`SI data (20)`, `(3) Spectrum of … (low-loss).dm4`), stays one link, with its number in the answer's references; upstream's page ended the link at the first closing bracket and showed the rest as text (staging finding F19, 2026-11-12). The third patch (`patches/matchmaker/0003-links-with-brackets-in-the-address.patch`, decision 212) reads a link's address as CommonMark does, with brackets in balanced pairs (nested up to three deep); a bracket without its pair makes no link. `test_e2e.py` checks that the built page code has the patch's address pattern and no longer upstream's.
 
-`matchmaker.Dockerfile` builds upstream's commit `e7138c8` (tag v0.14.0) in upstream's stages; `npm ci` then fetches upstream's locked npm packages at build time (about 640 for the build, 340 in the image), where we used to pull upstream's prebuilt image. After a change to the patch: `docker compose build matchmaker && docker compose up -d --no-deps matchmaker`.
-
 To check by eye, logged out (a private window): on http://localhost:3000 turn on AI Mode, ask "Find datasets about ferritin": the chat page answers, its sidebar lists the question and says conversations are kept only with an account. Reload: the conversation is gone and a new one starts. The search API's rate limit is off here (`RATE_LIMITING_ENABLED`). Turned on, it would allow a visitor without login one chat or search request per 10 seconds per client address (`rate_limit.py`); behind matchmaker, whose proxy sends no `X-Forwarded-For` (`server.ts`), that address is matchmaker's, so all visitors together would share that one request (read from the code, not tried).
+
+## The page's look
+
+The page carries modama's design (`mgmtinterface-new/DESIGN.md`) and is co-branded: modama and Forschungszentrum Jülich, with EOSC Data Commons credited in the footer with its EU funding line; e-INFRA CZ's acknowledgement is gone, since this deployment does not use its computing (@weber, 2026-11-16). Two patches, each with its reasons in its header:
+
+- `patches/matchmaker/0004-design-tokens.patch`: DESIGN.md's colours and fonts in the theme Tailwind v4 reads. Upstream's own `eosc-*` colours and Roboto never applied (Tailwind v4 ignores `tailwind.config.ts` without `@config`); the patch gives those names DESIGN.md's values, its hex colours in class names become the names (a `sed` command in the header remakes it on a new upstream version), and the `gray-*` and `blue-*` classes get DESIGN.md's slate and blue. Only the look changes.
+- `patches/matchmaker/0005-co-branding.patch`: the logos, the footer, the title "modama search", the favicon, and electron-microscopy example queries. The images come from where the repository keeps them, `branding/modama.svg` and `deploy/landingpage/` (`fzj_logo.jpg`, a PNG, and `favicon.ico`), through the named build contexts `branding` and `landingpage`.
+
+### Branding check
+
+Before a change to the page's look, take a baseline of the running matchmaker; after it, the same again, compared with the baseline:
+
+```bash
+./runtest.sh brand baseline       # before the change: screenshots and controls into brandcheck/out/baseline/
+docker compose build matchmaker && docker compose up -d --no-deps matchmaker
+./runtest.sh brand                # after: brandcheck/out/current/, one PASS/FAIL line per page and width
+BRANDCHECK_URL=http://127.0.0.1:13000 ./runtest.sh brand   # staging's matchmaker instead (on its host)
+```
+
+It opens the start page, the results for "ferritin" and the chat page at 1440, 1024 and 390 px (a phone) in Chromium (Playwright's image, `brandcheck/Dockerfile`), takes a full-page screenshot of each, and lists every control a visitor can operate: links, buttons, fields, and anything with a pointer cursor (upstream's example cards are clickable `<div>`s). For each it records whether it is visible, inside the page's width, not covered at its centre, enabled, reached by the Tab key, and for a text field whether typing arrives. The comparison fails when a control of the baseline is gone or does worse on one of these, or the page now scrolls sideways; moves, renamed and new controls are notes, judged on the screenshots. It runs on the host network against `127.0.0.1`, where matchmaker's analytics are off. The results page needs indexed records: after `./downtest.sh --reset`, run the end-to-end test first.
+
+What the comparison cannot judge is whether the page looks right. For that, a hallway test: a fresh agent gets DESIGN.md, the requirements of the change and the two sets of screenshots, writes what it expects first, and judges as a first-time visitor (`python/crawler/design/hallway/2026-11-16-matchmaker-branding.md`, with its brief).
+
+## Building matchmaker
+
+`matchmaker.Dockerfile` builds upstream's commit `e7138c8` (tag v0.14.0) in upstream's stages; `npm ci` then fetches upstream's locked npm packages at build time (about 640 for the build, 340 in the image), where we used to pull upstream's prebuilt image. After a change to the patch: `docker compose build matchmaker && docker compose up -d --no-deps matchmaker`.
 
 ## Open
 
