@@ -1,0 +1,24 @@
+Library of known things. Each entry: its name, then what it does in neutral, structural words (what it relates, which operations, which direction, which constraints), so that problems described in other words can be matched against it. Fuzz these descriptions the same way as the problems (synonyms, inversion, generalisation, parts), and look for intersections.
+
+- gitignore patterns: an ordered list of path patterns in plain text files; wildcards, anchoring to a base directory or matching at any depth; a later pattern overrides an earlier one; negation re-includes; files can be layered (global, per repository, per directory).
+- rsync filter rules: an ordered list of include and exclude rules over paths during a tree copy; the first matching rule wins; rule files can be merged from several places.
+- linter rule selection (ruff, flake8): rules identified by prefix codes; a configuration file selects groups or single rules by prefix, starting from a default set, with additional selects and ignores; the more specific selector wins.
+- Python entry points: installed packages declare named objects under named groups; a host program discovers all objects of a group at run time without knowing the packages in advance.
+- systemd presets: vendor-supplied and administrator-supplied files list enable or disable lines with name globs; the first match wins; applied when a unit is installed.
+- OAI-PMH: a provider exposes metadata records about the items it holds, each with an identifier, a datestamp and set membership, over HTTP; harvesters periodically pull the records that are new, changed or deleted since their last visit; aggregators built on harvesters combine many providers and offer search over all of them; the items themselves stay at the provider.
+- RSS and Atom feeds: a publisher exposes a list of recent entries with dates and links; readers poll the list and show what is new; no history beyond the window, no deletions.
+- XML sitemaps: a site lists its pages with last-modified dates so that crawlers of search engines can find and revisit them; the pages stay on the site.
+- LDAP directory: a tree of entries with typed attributes; clients search by attribute filters within a subtree; entries are written by administrators or synchronised from another directory.
+- DNS zone transfer (AXFR, IXFR): a secondary server copies a zone from a primary, in full or as the changes since a serial number.
+- AMQP message queue: producers publish messages to exchanges; consumers receive them from queues bound by routing rules; messages are removed once acknowledged.
+- WebDAV: HTTP extended with operations to list, read, write, lock and move resources in a hierarchy; mountable as a network drive by common operating systems.
+- SMB: a network file protocol with logins from a central directory; native in Windows, macOS and Linux file managers.
+- NFS: a network file protocol for Unix-like systems, mounting a remote tree into the local one.
+- shared-mime-info: a database of file types with name patterns and byte signatures at offsets, with priorities; a reader determines a file's type by checking names and contents in a fixed order.
+- Dublin Core: fifteen generic elements for describing an item (title, creator, subject, description, date, type, format, identifier, and others).
+- OpenSearch and Elasticsearch: a server that indexes documents with fields, answers full-text, faceted and vector queries; documents must be sent to it by some other program.
+- CKAN: a catalogue application where organisations publish descriptions of datasets with links to the data; it can harvest descriptions from other catalogues and offers search over them.
+- Alembic: versioned, ordered scripts that change a database schema; each database records which version it is at; upgrades apply the missing scripts in order.
+- ccache: a cache of compiler outputs keyed by a hash of the inputs and the compiler's identity; a hit reuses the stored output instead of compiling again.
+- S3 object storage: a flat namespace of objects in buckets, read and written over HTTP by key; listing by key prefix; no partial updates.
+- iCalendar and CalDAV: calendar entries with times and recurrence rules, stored on a server and synchronised by clients.
