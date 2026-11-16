@@ -22,4 +22,5 @@ People find a distant analogy mostly when someone hints at it, and so do models;
 | Our problem | Candidate | Status |
 |---|---|---|
 | Removing records of files that are gone, from harvester, warehouse and search | OAI-PMH deleted records (tombstones), which harvesters already understand | @weber, 2026-11-15 ("an organic way to purge"); the harvester and warehouse have bugs on that path (`BACKLOG.md`); purge proposal on its branch |
+| Finding files in a large shared tree (the row above, the other way round) | established enterprise search over file shares (OpenSearch with FSCrawler and Tika, Microsoft Search with a file-share connector, Nextcloud full-text search, Recoll) | the baseline to compare and benchmark against; what modama does better than these is its case (@weber, 2026-11-16; `BACKLOG.md`) |
 | Reusing an extraction when nothing it depends on changed | a build cache keyed by the inputs and the tool's version (as ccache or a build system's action cache) | noticed 2026-11-16 while writing this file; the extractor identity (`identity.py`) is that key; not compared with build systems yet |
