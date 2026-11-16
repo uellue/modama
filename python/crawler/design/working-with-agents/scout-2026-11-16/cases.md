@@ -1,0 +1,9 @@
+Four design problems follow. For each, before anything gets built: which existing tools, standards, file formats, protocols or conventions already solve this problem, or one with the same structure? Name up to five candidates per problem, most fitting first, each with one line on why it fits, and one line on where the fit breaks. If you think nothing existing fits, say so.
+
+C1. A program walks a very large directory tree. Operators must be able to declare, in a plain text file kept with the deployment, which paths the program skips entirely. Entries are name patterns with wildcards; a pattern can be anchored to one directory or match at any depth; a later entry can bring back something an earlier entry excluded. Software packages that extend the program can propose defaults, which operators can add to.
+
+C2. A program contains many small, independent handlers, each with a two-part identifier (group, name), contributed by separately installed packages. Each installation decides which handlers are active: whole groups or single handlers, starting from a default set, with exceptions in both directions. The choice is written in the installation's configuration file and should be immediately understandable to the developers and operators who will maintain it.
+
+C3. An institute keeps millions of files from many groups in one shared directory tree. People want to find files by what is in them, by who made them, by kind and by date, including by asking questions in natural language, and get links that open the files. The files stay where they are. The team wants to avoid building and maintaining a search system of its own.
+
+C4. Staff on Windows, macOS and Linux computers need to read files from, and add files to, a central store over the institute network, logging in with their institute accounts, ideally from the file managers they already use. One proposal is a custom web upload interface with a small client program.
