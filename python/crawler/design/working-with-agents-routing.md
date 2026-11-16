@@ -12,7 +12,33 @@ This file decides *where each piece goes*, not what it says. It builds on O26 (s
 - **R8** A private portfolio repository of @weber's (@weber, 2026-11-16: "yes agree, I need my own private portfolio repo. Also associated communication and signaling channels."). It holds what follows him across projects and machines: how he works (`~/.claude/CLAUDE.md`, provisioned by devvm), the portfolio map (O16), priorities, the decision queue and digest, ledgers of projects he does not own alone (R10). Its channels: R14; the officer's policy: R15.
 - **R15** The officer's policy gets a small repository of its own, written by the person only, and public for now (@weber, 2026-11-16: "yes exactly. I think that one can be public for now, let's see how that will evolve. The portfolio makes no sense public, and contains a lot of more private 'noise'."). So three repositories for the officer's world: the mechanism (public), the policy (public), the portfolio (private). What a public policy must not hold: R16.
 - **R16** The lean taken "for now" (@weber, 2026-11-16): public rules and tiers with hosts and projects by alias; the filter list and the alias mapping private; the officer fails to start without them.
+- **R2** The research and comparison go to the kaizen repository, referenced from its README (@weber, 2026-11-16).
+- **R3** The embodiment of the agent organisation (roles, the tree, events, housekeeping) goes to a repository of its own; kaizen takes "the rationale and research so far" (@weber).
+- **R6** One officer per person, clone-and-own, with the selective membrane as read above (@weber: "yes exactly!").
+- **R13** The vault is kept as a tool and an option, not decided. The underlying requirement (@weber): "make key management, authentication and authorization safe, predictable, understandable and convenient in practice", to be worked on in its own place.
+- **R9** Yes (@weber: "Important instructions slipping out of sight was a recurring theme here, I think. A bit like posting a note 'remember to empty the dishwasher'").
+- **R10** Yes, and more generally the debrief routes between ledgers; in the portfolio repository, ledger entries are probably work items (issues), routed on from there (@weber).
+- **R11** Yes.
+- **R12** Yes; where, see the packages below (@weber: "at least some part of that needs to go to the contributor docs of every project, or where else?").
+- **R14** Worked out there, with kaizen; the portfolio repository becomes the headquarters from which things are routed to places of their own (@weber).
+- **Walks 3 and 4** are not needed for the routing (walk 3 tests O2's notes files, walk 4 the officer's design); they go as notes with the packages they test (@weber).
 - **R4** Walks 1 and 2 first, "only as a test to see where they should go" (@weber); done on the small path, results below.
+
+## The packages (draft, 2026-11-16, from the decisions below)
+
+Each package goes to its place and is worked out there; O, W and R numbers refer to `working-with-agents.md` and this file.
+
+| Package | Destination | Contents |
+|---|---|---|
+| Method and rationale | kaizen, `uellue/skills` (public; abstracted, no other projects' details) | research and comparison (sections 2 to 4, 9, the five reports) in `design/research/`, linked from the README (R2, R3); for skills, hooks and briefs: the standing rules back after a summary (O1, R9), push back and the debrief's signals (O39, O14), a session per area with a notes file (O2), one writer, independent review, pause-point checklists (O3, O5, O7), roles by their preparation (O9, O38) and the words (W19), lessons become checks (O12), kaizen for teams and the board (O22, O24), routing between ledgers (R10), the analogy skill (O33, O35, O37, the scouts as a benchmark); notes: walk 3. Vehicles: the two drafted issues in `/.claude/drafts/`, to be brought up to date |
+| The agent organisation | a new repository (R3) | its embodiment: roles and their definitions, the tree (O10, O19, O25), the assistant (O29), identity and limited credentials (O30), events and housekeeping (O13, O14), the layers (O26, O28); the credentials requirement of R13 is a candidate home |
+| The officer's mechanism | a new repository, public under `uellue` once it has code, designed privately first (R5) | O31's gatekeeper, clone-and-own per person (R6), what it runs on (R7), where its keys live (R13); notes: walk 4 |
+| The officer's policy | a new public repository, written by the person only (R15) | rules and tiers, hosts and projects by alias (R16) |
+| Portfolio headquarters | @weber's private repository on the institute's GitLab (R8, R14) | how he works (`~/.claude/CLAUDE.md`, via devvm), the portfolio map (O16), priorities, the decision queue that replaces the open-items page, the digest, ledgers of shared projects as work items (R10), the officer's private filters and aliases (R16), the sorting of the 24 memory files (O21, W11); R1 until decided |
+| modama | this repository, its private working repository (379), the top level with the colleagues | team rules out of personal form and kaizen's commands marked (R11), contributors' rules (O8, O20 to O23), `equivalences.md` (O32), the area list and notes files (O2, W5), the raw evidence (sections 1 and 5, the scouts' answers) |
+| Working with agents, per project | every project's contributor docs (R12) | see below |
+
+**R12, where else.** One home per fact: the general part (how to work with agents, tool-neutral) lives once, in kaizen's README and research, and every project's contributor docs link to it instead of copying it; what is specific to the project (which rules its agents follow, what is reviewed, how agent work is marked, O20) goes into its contributor docs (`CONTRIBUTING`, `AGENTS.md`). Kaizen could ship the template for that section and keep it in step, as `/kaizen:update` does for the standing instructions. Rules shared by every ER-C project, if there are any, would be R1's place.
 
 ## What there is to route
 
@@ -98,7 +124,7 @@ Personas from kaizen's stakeholder record (`uellue/skills`, `design/stakeholders
 
 ## Open questions
 
-- **R1** The fifth layer, ER-C across projects (O11's record, colleagues' shared conventions): a home of its own (a group on the institute's GitLab), or folded into M's private working repository until a second project needs it?
+- **R1** The fifth layer, ER-C across projects (O11's record, colleagues' shared conventions): a home of its own (a group on the institute's GitLab), or folded into M's private working repository until a second project needs it? New option since R14: start in the portfolio headquarters, which already spans the projects, and move out by the rule (a different audience) when the first colleague needs it. Lean: that.
 - **R2** Research and comparison: K's `design/research/` (with the plugin's own requirements), or S1?
 - **R3** Does K take method that is not a skill (the tree of agents, layers, the gatekeeper's design) as documents, or only what a skill, hook or brief carries?
 - **R5** Where does the officer's repository live: public on GitHub (under `uellue` or `modama-rdm`), or private on the institute's GitLab first? Lean: public on GitHub under `uellue` once it has code, since a safety gate gains from outside eyes and holds no secrets if policy and credentials stay out; designed in the private working repository until then.
