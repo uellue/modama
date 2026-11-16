@@ -307,6 +307,7 @@ Checks that caught real problems, each with what it caught. They are the experie
 | `/prototypes/search-stack/perf/`, `/prototypes/search-stack/field-test/` | the search stack's benchmarks and probes; the field test's scripts |
 | `/docs/research/` | research notes behind decisions (CPU oversubscription, schema migrations, …) |
 | `design/hallway/` | hallway tests: a fresh tester on a tool or a document, and what they found |
+| `design/equivalences.md` | our problems and the established tools, standards and conventions that solve them; read before designing a new mechanism |
 
 ## How we work
 

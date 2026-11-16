@@ -19,6 +19,7 @@
 | Lessons on working with agents, with the reasons behind the rules below | `/docs/working-with-claude.md` |
 | Proposals on how we work with agents and the kaizen plugin, skill friction, the inbox | `design/kaizen.md` |
 | Organising work with many agents and several people (draft, 2026-11-16): research, options, open questions | `design/working-with-agents.md` |
+| Our problems and the established things that solve them: read before building a matcher, parser, protocol, scheduler, store or configuration syntax | `design/equivalences.md` |
 
 ## Standing rules
 
