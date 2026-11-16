@@ -11,6 +11,7 @@ This file decides *where each piece goes*, not what it says. It builds on O26 (s
 - **R7** What the officer runs on and with which model: kept as a question for the officer's own design, not settled here (@weber: "Let's keep the question and work on that in the appropriate place").
 - **R8** A private portfolio repository of @weber's (@weber, 2026-11-16: "yes agree, I need my own private portfolio repo. Also associated communication and signaling channels."). It holds what follows him across projects and machines: how he works (`~/.claude/CLAUDE.md`, provisioned by devvm), the portfolio map (O16), priorities, the decision queue and digest, ledgers of projects he does not own alone (R10). Its channels: R14; the officer's policy: R15.
 - **R15** The officer's policy gets a small repository of its own, written by the person only, and public for now (@weber, 2026-11-16: "yes exactly. I think that one can be public for now, let's see how that will evolve. The portfolio makes no sense public, and contains a lot of more private 'noise'."). So three repositories for the officer's world: the mechanism (public), the policy (public), the portfolio (private). What a public policy must not hold: R16.
+- **R16** The lean taken "for now" (@weber, 2026-11-16): public rules and tiers with hosts and projects by alias; the filter list and the alias mapping private; the officer fails to start without them.
 - **R4** Walks 1 and 2 first, "only as a test to see where they should go" (@weber); done on the small path, results below.
 
 ## What there is to route
